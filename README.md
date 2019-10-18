@@ -15,6 +15,33 @@
  - limitations under the License.
  -->
 
-# Iceberg
-A python implementation of the Iceberg table format.
-See the project level README for more details: https://github.com/apache/incubator-iceberg
+# Iceberg Python
+
+Iceberg is a python library for programatic access to iceberg table metadata as well as data access. The intention is to provide a functional subset of the java library.
+
+## Getting Started
+
+Iceberg python is currently in development, for development and testing purposes the best way to install the library is to perform the following steps:
+
+```
+git clone https://github.com/apache/incubator-iceberg.git
+cd incubator-iceberg/python
+pip install -e .
+```
+
+## Testing
+Testing is done using tox. The config can be found in `tox.ini` within the python directory of the iceberg project.
+
+```
+# simply run tox from within the python dir
+tox
+```
+
+## Get in Touch
+
+- Email:
+    * [dev@iceberg.apache.org](mailto:dev@iceberg.apache.org)
+
+- Issues
+    * [File a github incident](https://github.com/apache/incubator-iceberg/issues)
+
