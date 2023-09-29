@@ -1,2 +1,4 @@
 .rat-excludes
 build
+.gitignore
+poetry.lock

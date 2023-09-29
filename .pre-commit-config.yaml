@@ -15,8 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 ---
-files: ^python/
-exclude: ^python/vendor/
+exclude: ^vendor/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -44,12 +43,12 @@ repos:
     hooks:
       - id: mypy
         args:
-          [--install-types, --non-interactive, --config=python/pyproject.toml]
+          [--install-types, --non-interactive, --config=pyproject.toml]
   - repo: https://github.com/hadialqattan/pycln
     rev: v2.2.2
     hooks:
       - id: pycln
-        args: [--config=python/pyproject.toml]
+        args: [--config=pyproject.toml]
   - repo: https://github.com/executablebooks/mdformat
     rev: 0.7.17
     hooks:
