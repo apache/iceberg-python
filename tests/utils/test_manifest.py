@@ -340,8 +340,8 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
                 writer.add_entry(manifest_entries[0])
 
         expected_metadata = {
-            "schema": test_schema.json(),
-            "partition-spec": test_spec.json(),
+            "schema": test_schema.model_dump_json(),
+            "partition-spec": test_spec.model_dump_json(),
             "partition-spec-id": str(test_spec.spec_id),
             "format-version": str(format_version),
         }
