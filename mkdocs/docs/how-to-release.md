@@ -57,14 +57,16 @@ Before committing the files to the Apache SVN artifact distribution SVN hashes n
 Go to [Github Actions and run the `Python release` action](https://github.com/apache/iceberg/actions/workflows/python-release.yml). **Set the version to master, since we cannot modify the source**. Download the zip, and sign the files:
 
 ```bash
-for name in $(ls release-master/pyiceberg-*.whl release-master/pyiceberg-*.tar.gz)
+cd release-master/
+
+for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
 do
     gpg --yes --armor --local-user fokko@apache.org --output "${name}.asc" --detach-sig "${name}"
-    shasum -a 512 "${name}.asc" > "${name}.asc.sha512"
+    shasum -a 512 "${name}" > "${name}.sha512"
 done
 ```
 
-Now we can upload the files
+Now we can upload the files from the same directory:
 
 ```bash
 export SVN_TMP_DIR=/tmp/iceberg-${VERSION_BRANCH}/
@@ -72,7 +74,7 @@ svn checkout https://dist.apache.org/repos/dist/dev/iceberg $SVN_TMP_DIR
 
 export SVN_TMP_DIR_VERSIONED=${SVN_TMP_DIR}pyiceberg-$VERSION/
 mkdir -p $SVN_TMP_DIR_VERSIONED
-cp release-master/* $SVN_TMP_DIR_VERSIONED
+cp * $SVN_TMP_DIR_VERSIONED
 svn add $SVN_TMP_DIR_VERSIONED
 svn ci -m "PyIceberg ${VERSION}" ${SVN_TMP_DIR_VERSIONED}
 ```
@@ -92,10 +94,14 @@ Final step is to generate the email to the dev mail list:
 ```bash
 cat << EOF > release-announcement-email.txt
 To: dev@iceberg.apache.org
-Subject: [VOTE] Release Apache PyIceberg $VERSION_WITHOUT_RC
+Subject: [VOTE] Release Apache PyIceberg $VERSION
 Hi Everyone,
 
 I propose that we release the following RC as the official PyIceberg $VERSION_WITHOUT_RC release.
+
+A summary of the high level features:
+
+* <Add summary by hand>
 
 The commit ID is $LAST_COMMIT_ID
 
