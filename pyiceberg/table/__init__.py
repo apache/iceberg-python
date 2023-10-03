@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import uuid
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
@@ -497,6 +498,14 @@ class Table:
     def location(self) -> str:
         """Return the table's base location."""
         return self.metadata.location
+
+    def new_snapshot_id(self) -> int:
+        """Generate a new snapshot-id that's not in use."""
+        snapshot_id = _generate_snapshot_id()
+        while self.snapshot_by_id(snapshot_id) is not None:
+            snapshot_id = _generate_snapshot_id()
+
+        return snapshot_id
 
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
@@ -1566,3 +1575,15 @@ def _add_and_move_fields(
     elif len(moves) > 0:
         return _move_fields(fields, moves)
     return None if len(adds) == 0 else tuple(*fields, *adds)
+
+
+def _generate_snapshot_id() -> int:
+    """Generate a new Snapshot ID from a UUID.
+
+    Right shifting the 64 bits removes the MAC address and time
+    leaving only the part that's based on the clock (and has the
+    highest entropy).
+
+    Returns: An 64 bit long
+    """
+    return uuid.uuid4().int & (1 << 64) - 1
