@@ -100,6 +100,8 @@ if TYPE_CHECKING:
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
 
+_JAVA_LONG_MAX = 9223372036854775807
+
 
 class Transaction:
     _table: Table
@@ -107,10 +109,10 @@ class Transaction:
     _requirements: Tuple[TableRequirement, ...]
 
     def __init__(
-        self,
-        table: Table,
-        actions: Optional[Tuple[TableUpdate, ...]] = None,
-        requirements: Optional[Tuple[TableRequirement, ...]] = None,
+            self,
+            table: Table,
+            actions: Optional[Tuple[TableUpdate, ...]] = None,
+            requirements: Optional[Tuple[TableRequirement, ...]] = None,
     ):
         self._table = table
         self._updates = actions or ()
@@ -161,7 +163,8 @@ class Transaction:
         for requirement in new_requirements:
             type_new_requirement = type(requirement)
             if any(type(requirement) == type_new_requirement for update in self._requirements):
-                raise ValueError(f"Requirements in a single commit need to be unique, duplicate: {type_new_requirement}")
+                raise ValueError(
+                    f"Requirements in a single commit need to be unique, duplicate: {type_new_requirement}")
         self._requirements = self._requirements + new_requirements
         return self
 
@@ -188,6 +191,47 @@ class Transaction:
             The alter table builder.
         """
         return self._append_updates(SetPropertiesUpdate(updates=updates))
+
+    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
+        """Add a new snapshot to the table.
+
+        Returns:
+            A new UpdateSchema.
+        """
+        self._append_updates(AddSnapshotUpdate(snapshot=snapshot))
+
+        return self
+
+    def set_ref_snapshot(self,
+                         snapshot_id: int,
+                         ref_name: str = "main",
+                         type: str = "branch",
+                         max_age_ref_ms: Optional[int] = None,
+                         max_snapshot_age_ms: Optional[int] = None,
+                         min_snapshots_to_keep: Optional[int] = None) -> Transaction:
+        """Update a ref to a snapshot.
+
+        Returns:
+            A new UpdateSchema.
+        """
+        self._append_updates(
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_age_ref_ms=max_age_ref_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep
+            )
+        )
+
+        if current_snapshot := self._table.current_snapshot():
+            self._append_requirements(
+                AssertRefSnapshotId(
+                    snapshot_id=current_snapshot.snapshot_id
+                )
+            )
+        return self
 
     def update_schema(self) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -296,7 +340,8 @@ class AddSortOrderUpdate(TableUpdate):
 class SetDefaultSortOrderUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.set_default_sort_order
     sort_order_id: int = Field(
-        alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order", default=-1
+        alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order",
+        default=-1
     )
 
 
@@ -310,9 +355,9 @@ class SetSnapshotRefUpdate(TableUpdate):
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
-    max_age_ref_ms: int = Field(alias="max-ref-age-ms")
-    max_snapshot_age_ms: int = Field(alias="max-snapshot-age-ms")
-    min_snapshots_to_keep: int = Field(alias="min-snapshots-to-keep")
+    max_age_ref_ms: Optional[int] = Field(alias="max-ref-age-ms")
+    max_snapshot_age_ms: Optional[int] = Field(alias="max-snapshot-age-ms")
+    min_snapshots_to_keep: Optional[int] = Field(alias="min-snapshots-to-keep")
 
 
 class RemoveSnapshotsUpdate(TableUpdate):
@@ -364,7 +409,7 @@ class AssertRefSnapshotId(TableRequirement):
     """
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
-    ref: str
+    ref: str = Field(default="main")
     snapshot_id: int = Field(..., alias="snapshot-id")
 
 
@@ -422,7 +467,7 @@ class Table:
     catalog: Catalog
 
     def __init__(
-        self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
+            self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
     ) -> None:
         self.identifier = identifier
         self.metadata = metadata
@@ -446,13 +491,13 @@ class Table:
         return self.identifier
 
     def scan(
-        self,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+            self,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+            selected_fields: Tuple[str, ...] = ("*",),
+            case_sensitive: bool = True,
+            snapshot_id: Optional[int] = None,
+            options: Properties = EMPTY_DICT,
+            limit: Optional[int] = None,
     ) -> DataScan:
         return DataScan(
             table=self,
@@ -483,7 +528,8 @@ class Table:
     def sort_order(self) -> SortOrder:
         """Return the sort order of this table."""
         return next(
-            sort_order for sort_order in self.metadata.sort_orders if sort_order.order_id == self.metadata.default_sort_order_id
+            sort_order for sort_order in self.metadata.sort_orders if
+            sort_order.order_id == self.metadata.default_sort_order_id
         )
 
     def sort_orders(self) -> Dict[int, SortOrder]:
@@ -538,7 +584,10 @@ class Table:
             raise ValueError("Currently only unpartitioned tables are supported")
         from pyiceberg.io.pyarrow import write_file
 
-        write_file(self, df)
+        snapshot = write_file(self, df)
+        with self.transaction() as tx:
+            tx.add_snapshot(snapshot=snapshot)
+            tx.set_ref_snapshot(snapshot_id=snapshot.snapshot_id)
 
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
@@ -621,14 +670,14 @@ class TableScan(ABC):
     limit: Optional[int]
 
     def __init__(
-        self,
-        table: Table,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+            self,
+            table: Table,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+            selected_fields: Tuple[str, ...] = ("*",),
+            case_sensitive: bool = True,
+            snapshot_id: Optional[int] = None,
+            options: Properties = EMPTY_DICT,
+            limit: Optional[int] = None,
     ):
         self.table = table
         self.row_filter = _parse_row_filter(row_filter)
@@ -702,11 +751,11 @@ class FileScanTask(ScanTask):
     length: int
 
     def __init__(
-        self,
-        data_file: DataFile,
-        delete_files: Optional[Set[DataFile]] = None,
-        start: Optional[int] = None,
-        length: Optional[int] = None,
+            self,
+            data_file: DataFile,
+            delete_files: Optional[Set[DataFile]] = None,
+            start: Optional[int] = None,
+            length: Optional[int] = None,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
@@ -715,10 +764,10 @@ class FileScanTask(ScanTask):
 
 
 def _open_manifest(
-    io: FileIO,
-    manifest: ManifestFile,
-    partition_filter: Callable[[DataFile], bool],
-    metrics_evaluator: Callable[[DataFile], bool],
+        io: FileIO,
+        manifest: ManifestFile,
+        partition_filter: Callable[[DataFile], bool],
+        metrics_evaluator: Callable[[DataFile], bool],
 ) -> List[ManifestEntry]:
     return [
         manifest_entry
@@ -739,7 +788,8 @@ def _min_data_file_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[
+    DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -751,10 +801,11 @@ def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entr
     Returns:
         A set of files that are relevant for the data file.
     """
-    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
+    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry):]
 
     if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
+        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA,
+                                               EqualTo("file_path", data_entry.data_file.file_path))
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -766,14 +817,14 @@ def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entr
 
 class DataScan(TableScan):
     def __init__(
-        self,
-        table: Table,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+            self,
+            table: Table,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+            selected_fields: Tuple[str, ...] = ("*",),
+            case_sensitive: bool = True,
+            snapshot_id: Optional[int] = None,
+            options: Properties = EMPTY_DICT,
+            limit: Optional[int] = None,
     ):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
@@ -787,7 +838,8 @@ class DataScan(TableScan):
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id],
+                                           self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table.specs()[spec_id]
@@ -810,8 +862,8 @@ class DataScan(TableScan):
         """
         return manifest.content == ManifestContent.DATA or (
             # Not interested in deletes that are older than the data
-            manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
+                manifest.content == ManifestContent.DELETES
+                and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
         )
 
     def plan_files(self) -> Iterable[FileScanTask]:
@@ -852,19 +904,19 @@ class DataScan(TableScan):
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(
-            *executor.map(
-                lambda args: _open_manifest(*args),
-                [
-                    (
-                        io,
-                        manifest,
-                        partition_evaluators[manifest.partition_spec_id],
-                        metrics_evaluator,
-                    )
-                    for manifest in manifests
-                    if self._check_sequence_number(min_data_sequence_number, manifest)
-                ],
-            )
+                *executor.map(
+                    lambda args: _open_manifest(*args),
+                    [
+                        (
+                                io,
+                                manifest,
+                                partition_evaluators[manifest.partition_spec_id],
+                                metrics_evaluator,
+                        )
+                        for manifest in manifests
+                        if self._check_sequence_number(min_data_sequence_number, manifest)
+                    ],
+                )
         ):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
@@ -872,7 +924,8 @@ class DataScan(TableScan):
             elif data_file.content == DataFileContent.POSITION_DELETES:
                 positional_delete_entries.add(manifest_entry)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+                raise ValueError(
+                    "PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
@@ -949,11 +1002,11 @@ class UpdateSchema:
     _transaction: Optional[Transaction]
 
     def __init__(
-        self,
-        table: Table,
-        transaction: Optional[Transaction] = None,
-        allow_incompatible_changes: bool = False,
-        case_sensitive: bool = True,
+            self,
+            table: Table,
+            transaction: Optional[Transaction] = None,
+            allow_incompatible_changes: bool = False,
+            case_sensitive: bool = True,
     ) -> None:
         self._table = table
         self._schema = table.schema()
@@ -974,7 +1027,8 @@ class UpdateSchema:
             return column_name
 
         self._id_to_parent = {
-            field_id: get_column_name(parent_field_id) for field_id, parent_field_id in self._schema._lazy_id_to_parent.items()
+            field_id: get_column_name(parent_field_id) for field_id, parent_field_id in
+            self._schema._lazy_id_to_parent.items()
         }
 
         self._allow_incompatible_changes = allow_incompatible_changes
@@ -1002,7 +1056,8 @@ class UpdateSchema:
         return self
 
     def add_column(
-        self, path: Union[str, Tuple[str, ...]], field_type: IcebergType, doc: Optional[str] = None, required: bool = False
+            self, path: Union[str, Tuple[str, ...]], field_type: IcebergType, doc: Optional[str] = None,
+            required: bool = False
     ) -> UpdateSchema:
         """Add a new column to a nested struct or Add a new top-level column.
 
@@ -1190,11 +1245,11 @@ class UpdateSchema:
             )
 
     def update_column(
-        self,
-        path: Union[str, Tuple[str, ...]],
-        field_type: Optional[IcebergType] = None,
-        required: Optional[bool] = None,
-        doc: Optional[str] = None,
+            self,
+            path: Union[str, Tuple[str, ...]],
+            field_type: Optional[IcebergType] = None,
+            required: Optional[bool] = None,
+            doc: Optional[str] = None,
     ) -> UpdateSchema:
         """Update the type of column.
 
@@ -1226,7 +1281,8 @@ class UpdateSchema:
                 try:
                     promote(field.field_type, field_type)
                 except ResolveError as e:
-                    raise ValidationError(f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
+                    raise ValidationError(
+                        f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
 
         if updated := self._updates.get(field.field_id):
             self._updates[field.field_id] = NestedField(
@@ -1333,7 +1389,8 @@ class UpdateSchema:
         if field_id == before_field_id:
             raise ValueError(f"Cannot move {full_name} before itself")
 
-        self._move(Move(field_id=field_id, full_name=full_name, other_field_id=before_field_id, op=MoveOperation.Before))
+        self._move(
+            Move(field_id=field_id, full_name=full_name, other_field_id=before_field_id, op=MoveOperation.Before))
 
         return self
 
@@ -1421,7 +1478,8 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
     _moves: Dict[int, List[Move]]
 
     def __init__(
-        self, adds: Dict[int, List[NestedField]], updates: Dict[int, NestedField], deletes: Set[int], moves: Dict[int, List[Move]]
+            self, adds: Dict[int, List[NestedField]], updates: Dict[int, NestedField], deletes: Set[int],
+            moves: Dict[int, List[Move]]
     ) -> None:
         self._adds = adds
         self._updates = updates
@@ -1505,10 +1563,11 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
         if element_type is None:
             raise ValueError(f"Cannot delete element type from list: {element_result}")
 
-        return ListType(element_id=list_type.element_id, element=element_type, element_required=list_type.element_required)
+        return ListType(element_id=list_type.element_id, element=element_type,
+                        element_required=list_type.element_required)
 
     def map(
-        self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
+            self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
     ) -> Optional[IcebergType]:
         key_id: int = map_type.key_field.field_id
 
@@ -1570,7 +1629,7 @@ def _move_fields(fields: Tuple[NestedField, ...], moves: List[Move]) -> Tuple[Ne
 
 
 def _add_and_move_fields(
-    fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[Move]
+        fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[Move]
 ) -> Optional[Tuple[NestedField, ...]]:
     if len(adds) > 0:
         # always apply adds first so that added fields can be moved
@@ -1593,4 +1652,14 @@ def _generate_snapshot_id() -> int:
 
     Returns: An 64 bit long
     """
-    return uuid.uuid4().int & (1 << 64) - 1
+    rnd_uuid = uuid.uuid4()
+    snapshot_id = int.from_bytes(
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
+    )
+
+    snapshot_id = snapshot_id * -1 if snapshot_id < 0 else snapshot_id
+
+    if snapshot_id > _JAVA_LONG_MAX:
+        raise ValueError(f"Snapshot ID should not be larger than signed 63 bit ({_JAVA_LONG_MAX}): {snapshot_id}")
+
+    return snapshot_id

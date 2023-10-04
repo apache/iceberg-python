@@ -37,7 +37,7 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import EMPTY_DICT, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -100,14 +100,6 @@ class FileFormat(str, Enum):
 
 
 DATA_FILE_TYPE_V1 = StructType(
-    NestedField(
-        field_id=134,
-        name="content",
-        field_type=IntegerType(),
-        required=False,
-        doc="Contents of the file: 0=data, 1=position deletes, 2=equality deletes",
-        initial_default=DataFileContent.DATA,
-    ),
     NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
     NestedField(
         field_id=101,
@@ -129,8 +121,9 @@ DATA_FILE_TYPE_V1 = StructType(
         field_id=105,
         name="block_size_in_bytes",
         field_type=LongType(),
-        required=False,
+        required=True,
         doc="Deprecated. Always write a default in v1. Do not write in v2.",
+        initial_default=DEFAULT_BLOCK_SIZE
     ),
     NestedField(
         field_id=108,
@@ -308,7 +301,16 @@ class DataFile(Record):
         return self.file_path == other.file_path if isinstance(other, DataFile) else False
 
 
-MANIFEST_ENTRY_SCHEMA = Schema(
+MANIFEST_ENTRY_SCHEMA_V1 = Schema(
+    NestedField(0, "status", IntegerType(), required=True),
+    NestedField(1, "snapshot_id", LongType(), required=True),
+    NestedField(2, "data_file", DATA_FILE_TYPE_V1, required=True),
+)
+
+MANIFEST_ENTRY_SCHEMA_V1_STRUCT = MANIFEST_ENTRY_SCHEMA_V1.as_struct()
+
+
+MANIFEST_ENTRY_SCHEMA_V2 = Schema(
     NestedField(0, "status", IntegerType(), required=True),
     NestedField(1, "snapshot_id", LongType(), required=False),
     NestedField(3, "data_sequence_number", LongType(), required=False),
@@ -316,14 +318,14 @@ MANIFEST_ENTRY_SCHEMA = Schema(
     NestedField(2, "data_file", DATA_FILE_TYPE_V1, required=True),
 )
 
-MANIFEST_ENTRY_SCHEMA_STRUCT = MANIFEST_ENTRY_SCHEMA.as_struct()
+MANIFEST_ENTRY_SCHEMA_V2_STRUCT = MANIFEST_ENTRY_SCHEMA_V2.as_struct()
 
 
-def manifest_entry_schema_with_data_file(data_file: StructType) -> Schema:
+def manifest_entry_schema_with_data_file(data_file: StructType, format_version: Literal[1, 2]) -> Schema:
     return Schema(
         *[
             NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-            for field in MANIFEST_ENTRY_SCHEMA.fields
+            for field in (MANIFEST_ENTRY_SCHEMA_V1 if format_version == 1 else MANIFEST_ENTRY_SCHEMA_V2).fields
         ]
     )
 
@@ -337,7 +339,7 @@ class ManifestEntry(Record):
     data_file: DataFile
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMA_STRUCT, **named_data})
+        super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMA_V2_STRUCT, **named_data})
 
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
@@ -407,14 +409,11 @@ def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partition
     return [field.to_summary() for field in field_stats]
 
 
-MANIFEST_FILE_SCHEMA: Schema = Schema(
+MANIFEST_FILE_SCHEMA_V1: Schema = Schema(
     NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
     NestedField(501, "manifest_length", LongType(), required=True),
     NestedField(502, "partition_spec_id", IntegerType(), required=True),
-    NestedField(517, "content", IntegerType(), required=False, initial_default=ManifestContent.DATA),
-    NestedField(515, "sequence_number", LongType(), required=False, initial_default=0),
-    NestedField(516, "min_sequence_number", LongType(), required=False, initial_default=0),
-    NestedField(503, "added_snapshot_id", LongType(), required=False),
+    NestedField(503, "added_snapshot_id", LongType(), required=True),
     NestedField(504, "added_files_count", IntegerType(), required=False),
     NestedField(505, "existing_files_count", IntegerType(), required=False),
     NestedField(506, "deleted_files_count", IntegerType(), required=False),
@@ -425,7 +424,28 @@ MANIFEST_FILE_SCHEMA: Schema = Schema(
     NestedField(519, "key_metadata", BinaryType(), required=False),
 )
 
-MANIFEST_FILE_SCHEMA_STRUCT = MANIFEST_FILE_SCHEMA.as_struct()
+MANIFEST_FILE_SCHEMA_V1_STRUCT = MANIFEST_FILE_SCHEMA_V1.as_struct()
+
+
+MANIFEST_FILE_SCHEMA_V2: Schema = Schema(
+    NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
+    NestedField(501, "manifest_length", LongType(), required=True),
+    NestedField(502, "partition_spec_id", IntegerType(), required=True),
+    NestedField(517, "content", IntegerType(), required=False, initial_default=ManifestContent.DATA),
+    NestedField(515, "sequence_number", LongType(), required=False, initial_default=0),
+    NestedField(516, "min_sequence_number", LongType(), required=False, initial_default=0),
+    NestedField(503, "added_snapshot_id", LongType(), required=True),
+    NestedField(504, "added_files_count", IntegerType(), required=False),
+    NestedField(505, "existing_files_count", IntegerType(), required=False),
+    NestedField(506, "deleted_files_count", IntegerType(), required=False),
+    NestedField(512, "added_rows_count", LongType(), required=False),
+    NestedField(513, "existing_rows_count", LongType(), required=False),
+    NestedField(514, "deleted_rows_count", LongType(), required=False),
+    NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
+    NestedField(519, "key_metadata", BinaryType(), required=False),
+)
+
+MANIFEST_FILE_SCHEMA_V2_STRUCT = MANIFEST_FILE_SCHEMA_V2.as_struct()
 
 POSITIONAL_DELETE_SCHEMA = Schema(
     NestedField(2147483546, "file_path", StringType()), NestedField(2147483545, "pos", IntegerType())
@@ -467,7 +487,7 @@ class ManifestFile(Record):
     key_metadata: Optional[bytes]
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_FILE_SCHEMA_STRUCT, **named_data})
+        super().__init__(*data, **{"struct": MANIFEST_FILE_SCHEMA_V2_STRUCT, **named_data})
 
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
@@ -566,7 +586,9 @@ class ManifestWriter(ABC):
     _min_data_sequence_number: Optional[int]
     _partitions: List[Record]
 
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str]):
+    def __init__(
+        self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str] = EMPTY_DICT
+    ) -> None:
         self.closed = False
         self._spec = spec
         self._schema = schema
@@ -617,6 +639,7 @@ class ManifestWriter(ABC):
         self.closed = True
         min_sequence_number = self._min_data_sequence_number or UNASSIGNED_SEQ
         return ManifestFile(
+            struct=MANIFEST_FILE_SCHEMA_V1_STRUCT,
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
             partition_spec_id=self._spec.spec_id,
@@ -680,13 +703,12 @@ class ManifestWriterV1(ManifestWriter):
 
     def new_writer(self) -> AvroOutputFile[ManifestEntry]:
         v1_data_file_type = data_file_with_partition(self._spec.partition_type(self._schema), format_version=1)
-        v1_manifest_entry_schema = manifest_entry_schema_with_data_file(v1_data_file_type)
+        v1_manifest_entry_schema = manifest_entry_schema_with_data_file(v1_data_file_type, format_version=1)
         return AvroOutputFile[ManifestEntry](self._output_file, v1_manifest_entry_schema, "manifest_entry", self._meta)
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
-        wrapped_entry = ManifestEntry(*entry.record_fields())
-        wrapped_entry.data_file.block_size_in_bytes = DEFAULT_BLOCK_SIZE
-        return wrapped_entry
+        entry.data_file.block_size_in_bytes = DEFAULT_BLOCK_SIZE
+        return entry
 
 
 class ManifestWriterV2(ManifestWriter):
@@ -768,14 +790,14 @@ class ManifestListWriter(ABC):
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, output_file: OutputFile, meta: Dict[str, str]):
+    def __init__(self, output_file: OutputFile, meta: Dict[str, Any]):
         self._output_file = output_file
         self._meta = meta
         self._manifest_files = []
 
     def __enter__(self) -> ManifestListWriter:
         """Open the writer for writing."""
-        self._writer = AvroOutputFile[ManifestFile](self._output_file, MANIFEST_FILE_SCHEMA, "manifest_file", self._meta)
+        self._writer = AvroOutputFile[ManifestFile](self._output_file, self.schema(), "manifest_file", self._meta)
         self._writer.__enter__()
         return self
 
@@ -788,6 +810,10 @@ class ManifestListWriter(ABC):
         """Close the writer."""
         self._writer.__exit__(exc_type, exc_value, traceback)
         return
+
+    @abstractmethod
+    def schema(self) -> Schema:
+        ...
 
     @abstractmethod
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -803,6 +829,9 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             output_file, {"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"}
         )
+
+    def schema(self) -> Schema:
+        return MANIFEST_FILE_SCHEMA_V1
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
         if manifest_file.content != ManifestContent.DATA:
@@ -826,6 +855,9 @@ class ManifestListWriterV2(ManifestListWriter):
         )
         self._commit_snapshot_id = snapshot_id
         self._sequence_number = sequence_number
+
+    def schema(self) -> Schema:
+        return MANIFEST_FILE_SCHEMA_V2
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
         wrapped_manifest_file = ManifestFile(*manifest_file.record_fields())
