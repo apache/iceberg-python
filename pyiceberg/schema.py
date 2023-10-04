@@ -1143,7 +1143,7 @@ class _BuildPositionAccessors(SchemaVisitor[Dict[Position, Accessor]]):
     """A schema visitor for generating a field ID to accessor index.
 
     Example:
-        >>> from pyiceberg.schema import Schema
+        >>> from pyiceberg.file_schema import Schema
         >>> from pyiceberg.types import *
         >>> schema = Schema(
         ...     NestedField(field_id=2, name="id", field_type=IntegerType(), required=False),

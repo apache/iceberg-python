@@ -29,6 +29,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Optional,
     Tuple,
 )
 from uuid import UUID
@@ -39,6 +40,7 @@ from pyiceberg.utils.decimal import decimal_required_bytes, decimal_to_bytes
 from pyiceberg.utils.singleton import Singleton
 
 
+@dataclass(frozen=True)
 class Writer(Singleton):
     @abstractmethod
     def write(self, encoder: BinaryEncoder, val: Any) -> Any:
@@ -49,16 +51,19 @@ class Writer(Singleton):
         return f"{self.__class__.__name__}()"
 
 
+@dataclass(frozen=True)
 class NoneWriter(Writer):
-    def write(self, _: BinaryEncoder, __: Any) -> None:
-        pass
+    def write(self, encoder: BinaryEncoder, __: Any) -> None:
+        encoder.write_int(0)
 
 
+@dataclass(frozen=True)
 class BooleanWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: bool) -> None:
         encoder.write_boolean(val)
 
 
+@dataclass(frozen=True)
 class IntegerWriter(Writer):
     """Longs and ints are encoded the same way, and there is no long in Python."""
 
@@ -66,41 +71,49 @@ class IntegerWriter(Writer):
         encoder.write_int(val)
 
 
+@dataclass(frozen=True)
 class FloatWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: float) -> None:
         encoder.write_float(val)
 
 
+@dataclass(frozen=True)
 class DoubleWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: float) -> None:
         encoder.write_double(val)
 
 
+@dataclass(frozen=True)
 class DateWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: int) -> None:
         encoder.write_int(val)
 
 
+@dataclass(frozen=True)
 class TimeWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: int) -> None:
         encoder.write_int(val)
 
 
+@dataclass(frozen=True)
 class TimestampWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: int) -> None:
         encoder.write_int(val)
 
 
+@dataclass(frozen=True)
 class TimestamptzWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: int) -> None:
         encoder.write_int(val)
 
 
+@dataclass(frozen=True)
 class StringWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: Any) -> None:
         encoder.write_utf8(val)
 
 
+@dataclass(frozen=True)
 class UUIDWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: UUID) -> None:
         encoder.write(val.bytes)
@@ -124,6 +137,7 @@ class FixedWriter(Writer):
         return f"FixedWriter({self._len})"
 
 
+@dataclass(frozen=True)
 class BinaryWriter(Writer):
     """Variable byte length writer."""
 
@@ -158,11 +172,12 @@ class OptionWriter(Writer):
 
 @dataclass(frozen=True)
 class StructWriter(Writer):
-    field_writers: Tuple[Writer, ...] = dataclassfield()
+    field_writers: Tuple[Tuple[Optional[int], Writer], ...] = dataclassfield()
 
     def write(self, encoder: BinaryEncoder, val: Record) -> None:
-        for writer, value in zip(self.field_writers, val.record_fields()):
-            writer.write(encoder, value)
+        for pos, writer in self.field_writers:
+            # When pos is None, then it is a default value
+            writer.write(encoder, val[pos] if pos is not None else None)
 
     def __eq__(self, other: Any) -> bool:
         """Implement the equality operator for this object."""
@@ -170,7 +185,7 @@ class StructWriter(Writer):
 
     def __repr__(self) -> str:
         """Return string representation of this object."""
-        return f"StructWriter({','.join(repr(field) for field in self.field_writers)})"
+        return f"StructWriter(tuple(({','.join(repr(field) for field in self.field_writers)})))"
 
     def __hash__(self) -> int:
         """Return the hash of the writer as hash of this object."""
@@ -201,3 +216,12 @@ class MapWriter(Writer):
             self.value_writer.write(encoder, v)
         if len(val) > 0:
             encoder.write_int(0)
+
+
+@dataclass(frozen=True)
+class DefaultWriter(Writer):
+    writer: Writer
+    value: Any
+
+    def write(self, encoder: BinaryEncoder, _: Any) -> None:
+        self.writer.write(encoder, self.value)
