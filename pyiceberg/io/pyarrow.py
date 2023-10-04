@@ -112,7 +112,7 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     write_manifest,
-    write_manifest_list, MANIFEST_ENTRY_SCHEMA_V1_STRUCT,
+    write_manifest_list,
 )
 from pyiceberg.schema import (
     PartnerAccessor,
@@ -1589,7 +1589,6 @@ def write_file(table: Table, df: pa.Table) -> Snapshot:
     snapshot_id = table.new_snapshot_id()
 
     manifest_entry = ManifestEntry(
-        struct=MANIFEST_ENTRY_SCHEMA_V1_STRUCT,
         status=ManifestEntryStatus.ADDED,
         snapshot_id=snapshot_id,
         data_sequence_number=None,
@@ -1613,7 +1612,6 @@ def write_file(table: Table, df: pa.Table) -> Snapshot:
 
     current_snapshot = table.current_snapshot()
     parent_snapshot_id = current_snapshot.snapshot_id if current_snapshot is not None else None
-    sequence_number = None
 
     manifest_list_file_path = f'{table.location()}/metadata/{_generate_manifest_list_filename(snapshot_id=snapshot_id)}'
     print(f"manifest-list: {manifest_list_file_path}")
@@ -1622,7 +1620,7 @@ def write_file(table: Table, df: pa.Table) -> Snapshot:
         output_file=table.io.new_output(manifest_list_file_path),
         snapshot_id=snapshot_id,
         parent_snapshot_id=parent_snapshot_id,
-        sequence_number=sequence_number,
+        sequence_number=None,
     )
 
     with manifest_list_writer as writer:
@@ -1631,7 +1629,6 @@ def write_file(table: Table, df: pa.Table) -> Snapshot:
     return Snapshot(
         snapshot_id=snapshot_id,
         parent_snapshot_id=parent_snapshot_id,
-        sequence_number=sequence_number,
         timestamp_ms=int(time() * 1000),
         manifest_list=manifest_list_file_path,
         summary=None,

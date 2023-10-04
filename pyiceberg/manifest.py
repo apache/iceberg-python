@@ -58,6 +58,7 @@ from pyiceberg.types import (
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
+DEFAULT_READ_VERSION: Literal[2] = 2
 
 
 class DataFileContent(int, Enum):
@@ -99,94 +100,185 @@ class FileFormat(str, Enum):
         return f"FileFormat.{self.name}"
 
 
-DATA_FILE_TYPE_V1 = StructType(
-    NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
-    NestedField(
-        field_id=101,
-        name="file_format",
-        field_type=StringType(),
-        required=True,
-        doc="File format name: avro, orc, or parquet",
+DATA_FILE_TYPE: Dict[int, StructType] = {
+    1: StructType(
+        NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(
+            field_id=101,
+            name="file_format",
+            field_type=StringType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+        ),
+        NestedField(
+            field_id=102,
+            name="partition",
+            field_type=StructType(),
+            required=True,
+            doc="Partition data tuple, schema based on the partition spec",
+        ),
+        NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
+        NestedField(
+            field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"
+        ),
+        NestedField(
+            field_id=105,
+            name="block_size_in_bytes",
+            field_type=LongType(),
+            required=True,
+            doc="Deprecated. Always write a default in v1. Do not write in v2.",
+            write_default=DEFAULT_BLOCK_SIZE,
+        ),
+        NestedField(
+            field_id=108,
+            name="column_sizes",
+            field_type=MapType(key_id=117, key_type=IntegerType(), value_id=118, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total size on disk",
+        ),
+        NestedField(
+            field_id=109,
+            name="value_counts",
+            field_type=MapType(key_id=119, key_type=IntegerType(), value_id=120, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total count, including null and NaN",
+        ),
+        NestedField(
+            field_id=110,
+            name="null_value_counts",
+            field_type=MapType(key_id=121, key_type=IntegerType(), value_id=122, value_type=LongType()),
+            required=False,
+            doc="Map of column id to null value count",
+        ),
+        NestedField(
+            field_id=137,
+            name="nan_value_counts",
+            field_type=MapType(key_id=138, key_type=IntegerType(), value_id=139, value_type=LongType()),
+            required=False,
+            doc="Map of column id to number of NaN values in the column",
+        ),
+        NestedField(
+            field_id=125,
+            name="lower_bounds",
+            field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to lower bound",
+        ),
+        NestedField(
+            field_id=128,
+            name="upper_bounds",
+            field_type=MapType(key_id=129, key_type=IntegerType(), value_id=130, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to upper bound",
+        ),
+        NestedField(
+            field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"
+        ),
+        NestedField(
+            field_id=132,
+            name="split_offsets",
+            field_type=ListType(element_id=133, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Splittable offsets",
+        ),
+        NestedField(field_id=140, name="sort_order_id", field_type=IntegerType(), required=False, doc="Sort order ID"),
     ),
-    NestedField(
-        field_id=102,
-        name="partition",
-        field_type=StructType(),
-        required=True,
-        doc="Partition data tuple, schema based on the partition spec",
+    2: StructType(
+        NestedField(
+            field_id=134,
+            name="content",
+            field_type=IntegerType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+            initial_default=DataFileContent.DATA,
+        ),
+        NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(
+            field_id=101,
+            name="file_format",
+            field_type=StringType(),
+            required=True,
+            doc="File format name: avro, orc, or parquet",
+        ),
+        NestedField(
+            field_id=102,
+            name="partition",
+            field_type=StructType(),
+            required=True,
+            doc="Partition data tuple, schema based on the partition spec",
+        ),
+        NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
+        NestedField(
+            field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"
+        ),
+        NestedField(
+            field_id=108,
+            name="column_sizes",
+            field_type=MapType(key_id=117, key_type=IntegerType(), value_id=118, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total size on disk",
+        ),
+        NestedField(
+            field_id=109,
+            name="value_counts",
+            field_type=MapType(key_id=119, key_type=IntegerType(), value_id=120, value_type=LongType()),
+            required=False,
+            doc="Map of column id to total count, including null and NaN",
+        ),
+        NestedField(
+            field_id=110,
+            name="null_value_counts",
+            field_type=MapType(key_id=121, key_type=IntegerType(), value_id=122, value_type=LongType()),
+            required=False,
+            doc="Map of column id to null value count",
+        ),
+        NestedField(
+            field_id=137,
+            name="nan_value_counts",
+            field_type=MapType(key_id=138, key_type=IntegerType(), value_id=139, value_type=LongType()),
+            required=False,
+            doc="Map of column id to number of NaN values in the column",
+        ),
+        NestedField(
+            field_id=125,
+            name="lower_bounds",
+            field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to lower bound",
+        ),
+        NestedField(
+            field_id=128,
+            name="upper_bounds",
+            field_type=MapType(key_id=129, key_type=IntegerType(), value_id=130, value_type=BinaryType()),
+            required=False,
+            doc="Map of column id to upper bound",
+        ),
+        NestedField(
+            field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"
+        ),
+        NestedField(
+            field_id=132,
+            name="split_offsets",
+            field_type=ListType(element_id=133, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Splittable offsets",
+        ),
+        NestedField(
+            field_id=135,
+            name="equality_ids",
+            field_type=ListType(element_id=136, element_type=LongType(), element_required=True),
+            required=False,
+            doc="Field ids used to determine row equality in equality delete files.",
+        ),
+        NestedField(
+            field_id=140,
+            name="sort_order_id",
+            field_type=IntegerType(),
+            required=False,
+            doc="	ID representing sort order for this file",
+        ),
     ),
-    NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
-    NestedField(field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"),
-    NestedField(
-        field_id=105,
-        name="block_size_in_bytes",
-        field_type=LongType(),
-        required=True,
-        doc="Deprecated. Always write a default in v1. Do not write in v2.",
-        initial_default=DEFAULT_BLOCK_SIZE
-    ),
-    NestedField(
-        field_id=108,
-        name="column_sizes",
-        field_type=MapType(key_id=117, key_type=IntegerType(), value_id=118, value_type=LongType()),
-        required=False,
-        doc="Map of column id to total size on disk",
-    ),
-    NestedField(
-        field_id=109,
-        name="value_counts",
-        field_type=MapType(key_id=119, key_type=IntegerType(), value_id=120, value_type=LongType()),
-        required=False,
-        doc="Map of column id to total count, including null and NaN",
-    ),
-    NestedField(
-        field_id=110,
-        name="null_value_counts",
-        field_type=MapType(key_id=121, key_type=IntegerType(), value_id=122, value_type=LongType()),
-        required=False,
-        doc="Map of column id to null value count",
-    ),
-    NestedField(
-        field_id=137,
-        name="nan_value_counts",
-        field_type=MapType(key_id=138, key_type=IntegerType(), value_id=139, value_type=LongType()),
-        required=False,
-        doc="Map of column id to number of NaN values in the column",
-    ),
-    NestedField(
-        field_id=125,
-        name="lower_bounds",
-        field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
-        required=False,
-        doc="Map of column id to lower bound",
-    ),
-    NestedField(
-        field_id=128,
-        name="upper_bounds",
-        field_type=MapType(key_id=129, key_type=IntegerType(), value_id=130, value_type=BinaryType()),
-        required=False,
-        doc="Map of column id to upper bound",
-    ),
-    NestedField(field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"),
-    NestedField(
-        field_id=132,
-        name="split_offsets",
-        field_type=ListType(element_id=133, element_type=LongType(), element_required=True),
-        required=False,
-        doc="Splittable offsets",
-    ),
-    NestedField(
-        field_id=135,
-        name="equality_ids",
-        field_type=ListType(element_id=136, element_type=LongType(), element_required=True),
-        required=False,
-        doc="Equality comparison field IDs",
-    ),
-    NestedField(field_id=140, name="sort_order_id", field_type=IntegerType(), required=False, doc="Sort order ID"),
-    NestedField(field_id=141, name="spec_id", field_type=IntegerType(), required=False, doc="Partition spec ID"),
-)
-
-DATA_FILE_TYPE_V2 = StructType(*[field for field in DATA_FILE_TYPE_V1.fields if field.field_id != 105])
+}
 
 
 @singledispatch
@@ -231,7 +323,7 @@ def data_file_with_partition(partition_type: StructType, format_version: Literal
             )
             if field.field_id == 102
             else field
-            for field in (DATA_FILE_TYPE_V1.fields if format_version == 1 else DATA_FILE_TYPE_V2.fields)
+            for field in DATA_FILE_TYPE[format_version].fields
         ]
     )
 
@@ -244,7 +336,6 @@ class DataFile(Record):
         "partition",
         "record_count",
         "file_size_in_bytes",
-        "block_size_in_bytes",
         "column_sizes",
         "value_counts",
         "null_value_counts",
@@ -255,7 +346,6 @@ class DataFile(Record):
         "split_offsets",
         "equality_ids",
         "sort_order_id",
-        "spec_id",
     )
     content: DataFileContent
     file_path: str
@@ -263,7 +353,6 @@ class DataFile(Record):
     partition: Record
     record_count: int
     file_size_in_bytes: int
-    block_size_in_bytes: Optional[int]
     column_sizes: Dict[int, int]
     value_counts: Dict[int, int]
     null_value_counts: Dict[int, int]
@@ -274,7 +363,6 @@ class DataFile(Record):
     split_offsets: Optional[List[int]]
     equality_ids: Optional[List[int]]
     sort_order_id: Optional[int]
-    spec_id: Optional[int]
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""
@@ -283,10 +371,10 @@ class DataFile(Record):
             value = FileFormat[value]
         super().__setattr__(name, value)
 
-    def __init__(self, format_version: Literal[1, 2] = 1, *data: Any, **named_data: Any) -> None:
+    def __init__(self, format_version: Literal[1, 2] = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
         super().__init__(
             *data,
-            **{"struct": DATA_FILE_TYPE_V1 if format_version == 1 else DATA_FILE_TYPE_V2, **named_data},
+            **{"struct": DATA_FILE_TYPE[format_version], **named_data},
         )
 
     def __hash__(self) -> int:
@@ -301,31 +389,29 @@ class DataFile(Record):
         return self.file_path == other.file_path if isinstance(other, DataFile) else False
 
 
-MANIFEST_ENTRY_SCHEMA_V1 = Schema(
-    NestedField(0, "status", IntegerType(), required=True),
-    NestedField(1, "snapshot_id", LongType(), required=True),
-    NestedField(2, "data_file", DATA_FILE_TYPE_V1, required=True),
-)
+MANIFEST_ENTRY_SCHEMAS = {
+    1: Schema(
+        NestedField(0, "status", IntegerType(), required=True),
+        NestedField(1, "snapshot_id", LongType(), required=True),
+        NestedField(2, "data_file", DATA_FILE_TYPE[1], required=True),
+    ),
+    2: Schema(
+        NestedField(0, "status", IntegerType(), required=True),
+        NestedField(1, "snapshot_id", LongType(), required=False),
+        NestedField(3, "data_sequence_number", LongType(), required=False),
+        NestedField(4, "file_sequence_number", LongType(), required=False),
+        NestedField(2, "data_file", DATA_FILE_TYPE[2], required=True),
+    ),
+}
 
-MANIFEST_ENTRY_SCHEMA_V1_STRUCT = MANIFEST_ENTRY_SCHEMA_V1.as_struct()
-
-
-MANIFEST_ENTRY_SCHEMA_V2 = Schema(
-    NestedField(0, "status", IntegerType(), required=True),
-    NestedField(1, "snapshot_id", LongType(), required=False),
-    NestedField(3, "data_sequence_number", LongType(), required=False),
-    NestedField(4, "file_sequence_number", LongType(), required=False),
-    NestedField(2, "data_file", DATA_FILE_TYPE_V1, required=True),
-)
-
-MANIFEST_ENTRY_SCHEMA_V2_STRUCT = MANIFEST_ENTRY_SCHEMA_V2.as_struct()
+MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_version, schema in MANIFEST_ENTRY_SCHEMAS.items()}
 
 
-def manifest_entry_schema_with_data_file(data_file: StructType, format_version: Literal[1, 2]) -> Schema:
+def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_file: StructType) -> Schema:
     return Schema(
         *[
             NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-            for field in (MANIFEST_ENTRY_SCHEMA_V1 if format_version == 1 else MANIFEST_ENTRY_SCHEMA_V2).fields
+            for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
         ]
     )
 
@@ -339,7 +425,7 @@ class ManifestEntry(Record):
     data_file: DataFile
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMA_V2_STRUCT, **named_data})
+        super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMAS_STRUCT[DEFAULT_READ_VERSION], **named_data})
 
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
@@ -409,7 +495,7 @@ def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partition
     return [field.to_summary() for field in field_stats]
 
 
-MANIFEST_FILE_SCHEMA_V1: Schema = Schema(
+MANIFEST_FILE_SCHEMA: Schema = Schema(
     NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
     NestedField(501, "manifest_length", LongType(), required=True),
     NestedField(502, "partition_spec_id", IntegerType(), required=True),
@@ -424,28 +510,8 @@ MANIFEST_FILE_SCHEMA_V1: Schema = Schema(
     NestedField(519, "key_metadata", BinaryType(), required=False),
 )
 
-MANIFEST_FILE_SCHEMA_V1_STRUCT = MANIFEST_FILE_SCHEMA_V1.as_struct()
+MANIFEST_FILE_SCHEMA_STRUCT = MANIFEST_FILE_SCHEMA.as_struct()
 
-
-MANIFEST_FILE_SCHEMA_V2: Schema = Schema(
-    NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
-    NestedField(501, "manifest_length", LongType(), required=True),
-    NestedField(502, "partition_spec_id", IntegerType(), required=True),
-    NestedField(517, "content", IntegerType(), required=False, initial_default=ManifestContent.DATA),
-    NestedField(515, "sequence_number", LongType(), required=False, initial_default=0),
-    NestedField(516, "min_sequence_number", LongType(), required=False, initial_default=0),
-    NestedField(503, "added_snapshot_id", LongType(), required=True),
-    NestedField(504, "added_files_count", IntegerType(), required=False),
-    NestedField(505, "existing_files_count", IntegerType(), required=False),
-    NestedField(506, "deleted_files_count", IntegerType(), required=False),
-    NestedField(512, "added_rows_count", LongType(), required=False),
-    NestedField(513, "existing_rows_count", LongType(), required=False),
-    NestedField(514, "deleted_rows_count", LongType(), required=False),
-    NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
-    NestedField(519, "key_metadata", BinaryType(), required=False),
-)
-
-MANIFEST_FILE_SCHEMA_V2_STRUCT = MANIFEST_FILE_SCHEMA_V2.as_struct()
 
 POSITIONAL_DELETE_SCHEMA = Schema(
     NestedField(2147483546, "file_path", StringType()), NestedField(2147483545, "pos", IntegerType())
@@ -487,7 +553,7 @@ class ManifestFile(Record):
     key_metadata: Optional[bytes]
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_FILE_SCHEMA_V2_STRUCT, **named_data})
+        super().__init__(*data, **{"struct": MANIFEST_FILE_SCHEMA_STRUCT, **named_data})
 
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
@@ -509,7 +575,7 @@ class ManifestFile(Record):
         input_file = io.new_input(self.manifest_path)
         with AvroFile[ManifestEntry](
             input_file,
-            MANIFEST_ENTRY_SCHEMA,
+            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
@@ -625,9 +691,25 @@ class ManifestWriter(ABC):
     def content(self) -> ManifestContent:
         ...
 
+    @property
     @abstractmethod
-    def new_writer(self) -> AvroOutputFile[ManifestEntry]:
+    def version(self) -> Literal[1, 2]:
         ...
+
+    def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
+        data_file_type = data_file_with_partition(
+            format_version=format_version, partition_type=self._spec.partition_type(self._schema)
+        )
+        return manifest_entry_schema_with_data_file(format_version=format_version, data_file=data_file_type)
+
+    def new_writer(self) -> AvroOutputFile[ManifestEntry]:
+        return AvroOutputFile[ManifestEntry](
+            output_file=self._output_file,
+            file_schema=self._with_partition(self.version),
+            schema=self._with_partition(DEFAULT_READ_VERSION) if self.version != DEFAULT_READ_VERSION else None,
+            schema_name="manifest_entry",
+            metadata=self._meta,
+        )
 
     @abstractmethod
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
@@ -639,7 +721,6 @@ class ManifestWriter(ABC):
         self.closed = True
         min_sequence_number = self._min_data_sequence_number or UNASSIGNED_SEQ
         return ManifestFile(
-            struct=MANIFEST_FILE_SCHEMA_V1_STRUCT,
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
             partition_spec_id=self._spec.spec_id,
@@ -701,13 +782,11 @@ class ManifestWriterV1(ManifestWriter):
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
 
-    def new_writer(self) -> AvroOutputFile[ManifestEntry]:
-        v1_data_file_type = data_file_with_partition(self._spec.partition_type(self._schema), format_version=1)
-        v1_manifest_entry_schema = manifest_entry_schema_with_data_file(v1_data_file_type, format_version=1)
-        return AvroOutputFile[ManifestEntry](self._output_file, v1_manifest_entry_schema, "manifest_entry", self._meta)
+    @property
+    def version(self) -> Literal[1, 2]:
+        return 1
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
-        entry.data_file.block_size_in_bytes = DEFAULT_BLOCK_SIZE
         return entry
 
 
@@ -730,10 +809,9 @@ class ManifestWriterV2(ManifestWriter):
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
 
-    def new_writer(self) -> AvroOutputFile[ManifestEntry]:
-        v2_data_file_type = data_file_with_partition(self._spec.partition_type(self._schema), format_version=2)
-        v2_manifest_entry_schema = manifest_entry_schema_with_data_file(v2_data_file_type)
-        return AvroOutputFile[ManifestEntry](self._output_file, v2_manifest_entry_schema, "manifest_entry", self._meta)
+    @property
+    def version(self) -> Literal[1, 2]:
+        return 2
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
         if entry.data_sequence_number is None:
@@ -741,35 +819,7 @@ class ManifestWriterV2(ManifestWriter):
                 raise ValueError(f"Found unassigned sequence number for an entry from snapshot: {entry.snapshot_id}")
             if entry.status != ManifestEntryStatus.ADDED:
                 raise ValueError("Only entries with status ADDED can have null sequence number")
-        # In v2, we should not write block_size_in_bytes field
-        wrapped_data_file_v2_debug = DataFile(
-            format_version=2,
-            content=entry.data_file.content,
-            file_path=entry.data_file.file_path,
-            file_format=entry.data_file.file_format,
-            partition=entry.data_file.partition,
-            record_count=entry.data_file.record_count,
-            file_size_in_bytes=entry.data_file.file_size_in_bytes,
-            column_sizes=entry.data_file.column_sizes,
-            value_counts=entry.data_file.value_counts,
-            null_value_counts=entry.data_file.null_value_counts,
-            nan_value_counts=entry.data_file.nan_value_counts,
-            lower_bounds=entry.data_file.lower_bounds,
-            upper_bounds=entry.data_file.upper_bounds,
-            key_metadata=entry.data_file.key_metadata,
-            split_offsets=entry.data_file.split_offsets,
-            equality_ids=entry.data_file.equality_ids,
-            sort_order_id=entry.data_file.sort_order_id,
-            spec_id=entry.data_file.spec_id,
-        )
-        wrapped_entry = ManifestEntry(
-            status=entry.status,
-            snapshot_id=entry.snapshot_id,
-            data_sequence_number=entry.data_sequence_number,
-            file_sequence_number=entry.file_sequence_number,
-            data_file=wrapped_data_file_v2_debug,
-        )
-        return wrapped_entry
+        return entry
 
 
 def write_manifest(
@@ -797,7 +847,9 @@ class ManifestListWriter(ABC):
 
     def __enter__(self) -> ManifestListWriter:
         """Open the writer for writing."""
-        self._writer = AvroOutputFile[ManifestFile](self._output_file, self.schema(), "manifest_file", self._meta)
+        self._writer = AvroOutputFile[ManifestFile](
+            output_file=self._output_file, file_schema=MANIFEST_FILE_SCHEMA, schema_name="manifest_file", metadata=self._meta
+        )
         self._writer.__enter__()
         return self
 
@@ -812,10 +864,6 @@ class ManifestListWriter(ABC):
         return
 
     @abstractmethod
-    def schema(self) -> Schema:
-        ...
-
-    @abstractmethod
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
         ...
 
@@ -825,13 +873,10 @@ class ManifestListWriter(ABC):
 
 
 class ManifestListWriterV1(ManifestListWriter):
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: int):
+    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int]):
         super().__init__(
             output_file, {"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"}
         )
-
-    def schema(self) -> Schema:
-        return MANIFEST_FILE_SCHEMA_V1
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
         if manifest_file.content != ManifestContent.DATA:
@@ -841,9 +886,11 @@ class ManifestListWriterV1(ManifestListWriter):
 
 class ManifestListWriterV2(ManifestListWriter):
     _commit_snapshot_id: int
-    _sequence_number: int
+    _sequence_number: Optional[int]
 
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: int, sequence_number: int):
+    def __init__(
+        self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int], sequence_number: Optional[int]
+    ):
         super().__init__(
             output_file,
             {
@@ -855,9 +902,6 @@ class ManifestListWriterV2(ManifestListWriter):
         )
         self._commit_snapshot_id = snapshot_id
         self._sequence_number = sequence_number
-
-    def schema(self) -> Schema:
-        return MANIFEST_FILE_SCHEMA_V2
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
         wrapped_manifest_file = ManifestFile(*manifest_file.record_fields())
@@ -883,7 +927,11 @@ class ManifestListWriterV2(ManifestListWriter):
 
 
 def write_manifest_list(
-    format_version: Literal[1, 2], output_file: OutputFile, snapshot_id: int, parent_snapshot_id: int, sequence_number: int
+    format_version: Literal[1, 2],
+    output_file: OutputFile,
+    snapshot_id: int,
+    parent_snapshot_id: Optional[int],
+    sequence_number: Optional[int],
 ) -> ManifestListWriter:
     if format_version == 1:
         return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id)

@@ -27,7 +27,7 @@ import pytest
 
 from pyiceberg.avro.decoder import BinaryDecoder, StreamingBinaryDecoder, new_decoder
 from pyiceberg.avro.decoder_fast import CythonBinaryDecoder
-from pyiceberg.avro.resolver import resolve
+from pyiceberg.avro.resolver import resolve_reader
 from pyiceberg.io import InputStream
 from pyiceberg.types import DoubleType, FloatType
 
@@ -194,7 +194,7 @@ def test_skip_utf8(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_read_int_as_float(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
     decoder = decoder_class(b"\x00\x00\x9A\x41")
-    reader = resolve(FloatType(), DoubleType())
+    reader = resolve_reader(FloatType(), DoubleType())
     assert reader.read(decoder) == 19.25
 
 
