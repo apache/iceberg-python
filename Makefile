@@ -16,7 +16,7 @@
 # under the License.
 
 install-poetry:
-        pip3 install setuptools --upgrade
+	pip3 install setuptools --upgrade
 	pip3 install poetry==1.6.1
 
 install-dependencies:
