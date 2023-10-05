@@ -1646,20 +1646,12 @@ def _add_and_move_fields(
 def _generate_snapshot_id() -> int:
     """Generate a new Snapshot ID from a UUID.
 
-    Right shifting the 64 bits removes the MAC address and time
-    leaving only the part that's based on the clock (and has the
-    highest entropy).
-
     Returns: An 64 bit long
     """
     rnd_uuid = uuid.uuid4()
     snapshot_id = int.from_bytes(
         bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
     )
-
-    snapshot_id = snapshot_id * -1 if snapshot_id < 0 else snapshot_id
-
-    if snapshot_id > _JAVA_LONG_MAX:
-        raise ValueError(f"Snapshot ID should not be larger than signed 63 bit ({_JAVA_LONG_MAX}): {snapshot_id}")
+    snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 
     return snapshot_id
