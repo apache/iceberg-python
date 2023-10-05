@@ -1562,3 +1562,7 @@ def test_write() -> None:
     tbl = cat.load_table('default.coordinates')
 
     tbl.write_arrow(df)
+
+    tbl = cat.load_table('default.coordinates')
+
+    print(tbl.scan().to_arrow())

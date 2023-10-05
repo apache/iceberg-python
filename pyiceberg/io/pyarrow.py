@@ -1562,7 +1562,8 @@ def write_file(table: Table, df: pa.Table) -> Snapshot:
     with fo.create() as fos:
         # TODO: Check Parquet version
         # TODO: How many files do we want to write?
-        with pq.ParquetWriter(fos, file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+            # TODO: Set row group size?
             writer.write_table(df)
 
     df = DataFile(

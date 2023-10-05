@@ -499,6 +499,9 @@ MANIFEST_FILE_SCHEMA: Schema = Schema(
     NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
     NestedField(501, "manifest_length", LongType(), required=True),
     NestedField(502, "partition_spec_id", IntegerType(), required=True),
+    NestedField(517, "content", IntegerType(), required=False, initial_default=ManifestContent.DATA),
+    NestedField(515, "sequence_number", LongType(), required=False, initial_default=0),
+    NestedField(516, "min_sequence_number", LongType(), required=False, initial_default=0),
     NestedField(503, "added_snapshot_id", LongType(), required=True),
     NestedField(504, "added_files_count", IntegerType(), required=False),
     NestedField(505, "existing_files_count", IntegerType(), required=False),
@@ -735,7 +738,7 @@ class ManifestWriter(ABC):
             existing_rows_count=self._existing_rows,
             deleted_rows_count=self._deleted_rows,
             partitions=construct_partition_summaries(self._spec, self._schema, self._partitions),
-            key_metadatas=None,
+            key_metadata=None,
         )
 
     def add_entry(self, entry: ManifestEntry) -> ManifestWriter:
