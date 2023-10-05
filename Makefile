@@ -16,7 +16,8 @@
 # under the License.
 
 install-poetry:
-	pip install poetry==1.6.1
+        pip3 install setuptools --upgrade
+	pip3 install poetry==1.6.1
 
 install-dependencies:
 	poetry install -E pyarrow -E hive -E s3fs -E glue -E adlfs -E duckdb -E ray -E sql-postgres -E gcsfs
