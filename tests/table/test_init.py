@@ -41,6 +41,7 @@ from pyiceberg.table import (
     StaticTable,
     Table,
     UpdateSchema,
+    _generate_snapshot_id,
     _match_deletes_to_datafile,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
@@ -506,3 +507,8 @@ def test_add_nested_list_type_column(table: Table) -> None:
         element_required=False,
     )
     assert new_schema.highest_field_id == 7
+
+
+def test_generate_snapshot_id(table: Table) -> None:
+    assert isinstance(_generate_snapshot_id(), int)
+    assert isinstance(table.new_snapshot_id(), int)
