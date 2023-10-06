@@ -15,14 +15,17 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
+import os
+from unittest import mock
 from uuid import UUID
 
 import pytest
 from requests_mock import Mocker
 
 import pyiceberg
-from pyiceberg.catalog import PropertiesUpdateSummary, Table
+from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
 from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.utils.config import Config
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
@@ -943,3 +946,39 @@ def test_request_session_with_ssl_client_cert() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
+
+
+EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
+
+
+@mock.patch.dict(os.environ, EXAMPLE_ENV)
+@mock.patch("pyiceberg.catalog.Config.get_catalog_config")
+def test_catalog_from_environment_variables(catalog_config_mock, rest_mock) -> None:
+    catalog_config_mock.return_value = Config._from_environment_variables({}).get("catalog").get("production")
+    catalog = load_catalog("production")
+    assert catalog.uri == TEST_URI
+
+
+@mock.patch.dict(os.environ, EXAMPLE_ENV)
+@mock.patch("pyiceberg.catalog._ENV_CONFIG.get_catalog_config")
+def test_catalog_from_environment_variables_override(catalog_config_mock, rest_mock) -> None:
+    rest_mock.get(
+        "https://other-service.io/api/v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+
+    catalog_config_mock.return_value = Config._from_environment_variables({}).get("catalog").get("production")
+    catalog = load_catalog("production", uri="https://other-service.io/api")
+    assert catalog.uri == "https://other-service.io/api"
+
+
+def test_catalog_from_parameters_empty_env(rest_mock) -> None:
+    rest_mock.get(
+        f"https://other-service.io/api/v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+
+    catalog = load_catalog("production", uri="https://other-service.io/api")
+    assert catalog.uri == "https://other-service.io/api"

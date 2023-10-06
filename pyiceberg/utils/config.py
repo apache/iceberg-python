@@ -43,7 +43,7 @@ def merge_config(lhs: RecursiveDict, rhs: RecursiveDict) -> RecursiveDict:
                 new_config[rhs_key] = merge_config(lhs_value, rhs_value)
             else:
                 # Take the non-null value, with precedence on rhs
-                new_config[rhs_key] = lhs_value or rhs_value
+                new_config[rhs_key] = rhs_value or lhs_value
         else:
             # New key
             new_config[rhs_key] = rhs_value
