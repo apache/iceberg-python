@@ -104,25 +104,25 @@ def table(catalog: Catalog) -> Table:
 
 @pytest.mark.integration
 def test_table_properties(table: Table) -> None:
-    assert table.properties == {}
+    assert table.properties == {'write.parquet.compression-codec': 'zstd'}
 
     with table.transaction() as transaction:
         transaction.set_properties(abc="🤪")
 
-    assert table.properties == {"abc": "🤪"}
+    assert table.properties == {"abc": "🤪", 'write.parquet.compression-codec': 'zstd'}
 
     with table.transaction() as transaction:
         transaction.remove_properties("abc")
 
-    assert table.properties == {}
+    assert table.properties == {'write.parquet.compression-codec': 'zstd'}
 
     table = table.transaction().set_properties(abc="def").commit_transaction()
 
-    assert table.properties == {"abc": "def"}
+    assert table.properties == {"abc": "def", 'write.parquet.compression-codec': 'zstd'}
 
     table = table.transaction().remove_properties("abc").commit_transaction()
 
-    assert table.properties == {}
+    assert table.properties == {'write.parquet.compression-codec': 'zstd'}
 
 
 @pytest.fixture()
