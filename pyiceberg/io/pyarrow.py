@@ -1103,7 +1103,7 @@ def _primitive_to_phyisical(iceberg_type: PrimitiveType) -> str:
     return visit(iceberg_type, _PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR)
 
 
-class PrimitiveToPyhsicalType(SchemaVisitorPerPrimitiveType[str]):
+class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
     def schema(self, schema: Schema, struct_result: str) -> str:
         raise ValueError(f"Expected primitive-type, got: {schema}")
 
@@ -1123,7 +1123,7 @@ class PrimitiveToPyhsicalType(SchemaVisitorPerPrimitiveType[str]):
         return "BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
-        raise ValueError("unknown")
+        return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_boolean(self, boolean_type: BooleanType) -> str:
         return "BOOLEAN"
@@ -1162,7 +1162,7 @@ class PrimitiveToPyhsicalType(SchemaVisitorPerPrimitiveType[str]):
         return "BYTE_ARRAY"
 
 
-_PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR = PrimitiveToPyhsicalType()
+_PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR = PrimitiveToPhysicalType()
 
 
 class StatsAggregator:
