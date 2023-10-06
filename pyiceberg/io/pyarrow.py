@@ -1123,6 +1123,7 @@ _PRIMITIVE_TO_PHYSICAL = {
     StringType(): "BYTE_ARRAY",
     UUIDType(): "FIXED_LEN_BYTE_ARRAY",
     BinaryType(): "BYTE_ARRAY",
+    FixedType(length=0): "BYTE_ARRAY",
 }
 _PHYSICAL_TYPES = set(_PRIMITIVE_TO_PHYSICAL.values()).union({"INT96"})
 

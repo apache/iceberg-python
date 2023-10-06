@@ -1,0 +1,169 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# pylint:disable=redefined-outer-name
+
+import uuid
+from datetime import date, datetime, time
+
+import pyarrow as pa
+import pytest
+from pyspark.sql import SparkSession
+
+from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.schema import Schema
+from pyiceberg.table import Table
+from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    IntegerType,
+    LongType,
+    NestedField,
+    StringType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+)
+
+
+@pytest.fixture()
+def catalog() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+TEST_DATA_WITH_NULL = {
+    'bool': [False, None, True],
+    'string': ['a', None, 'z'],
+    # Go over the 16 bytes to kick in truncation
+    'string_long': ['a' * 22, None, 'z' * 22],
+    'int': [1, None, 9],
+    'long': [1, None, 9],
+    'float': [0.0, None, 0.9],
+    'double': [0.0, None, 0.9],
+    'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    'timestamptz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
+    # Not supported by Spark
+    # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
+    # Not natively supported by Arrow
+    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+    'binary': [b'\01', None, b'\22'],
+    'fixed': [
+        uuid.UUID('00000000-0000-0000-0000-000000000000').bytes,
+        None,
+        uuid.UUID('11111111-1111-1111-1111-111111111111').bytes,
+    ],
+}
+
+TABLE_SCHEMA = Schema(
+    NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
+    NestedField(field_id=2, name="string", field_type=StringType(), required=False),
+    NestedField(field_id=3, name="string_long", field_type=StringType(), required=False),
+    NestedField(field_id=4, name="int", field_type=IntegerType(), required=False),
+    NestedField(field_id=5, name="long", field_type=LongType(), required=False),
+    NestedField(field_id=6, name="float", field_type=FloatType(), required=False),
+    NestedField(field_id=7, name="double", field_type=DoubleType(), required=False),
+    NestedField(field_id=8, name="timestamp", field_type=TimestampType(), required=False),
+    NestedField(field_id=9, name="timestamptz", field_type=TimestamptzType(), required=False),
+    NestedField(field_id=10, name="date", field_type=DateType(), required=False),
+    # NestedField(field_id=11, name="time", field_type=TimeType(), required=False),
+    # NestedField(field_id=12, name="uuid", field_type=BooleanType(), required=False),
+    NestedField(field_id=12, name="binary", field_type=BinaryType(), required=False),
+    NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
+)
+
+
+@pytest.fixture
+def arrow_table_with_null(catalog: Catalog) -> pa.Table:
+    """PyArrow table with all kinds of columns"""
+    pa_schema = pa.schema(
+        [
+            ("bool", pa.bool_()),
+            ("string", pa.string()),
+            ("string_long", pa.string()),
+            ("int", pa.int32()),
+            ("long", pa.int64()),
+            ("float", pa.float32()),
+            ("double", pa.float64()),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+            ("date", pa.date32()),
+            # Not supported by Spark
+            # ("time", pa.time64("us")),
+            # Not natively supported by Arrow
+            # ("uuid", pa.fixed(16)),
+            ("binary", pa.binary()),
+            ("fixed", pa.binary(16)),
+        ]
+    )
+    return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
+
+
+@pytest.fixture()
+def table_with_null(catalog: Catalog, arrow_table_with_null: pa.Table) -> Table:
+    identifier = "default.arrow_table_with_null"
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA)
+
+    tbl.write_arrow(arrow_table_with_null)
+
+    return tbl
+
+
+@pytest.mark.integration
+def test_query_table_using_spark(table_with_null: Table) -> None:
+    identifier = "default.arrow_table_with_null"
+
+    import os
+    os.environ["PYSPARK_SUBMIT_ARGS"] = "--packages org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.0,org.apache.iceberg:iceberg-aws-bundle:1.4.0 pyspark-shell"
+
+    spark = (
+        SparkSession.builder.appName("PyIceberg integration test")
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
+        # .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
+        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.defaultCatalog", "integration")
+        .getOrCreate()
+    )
+    df = spark.table(identifier)
+
+    for col in TEST_DATA_WITH_NULL.keys():
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
+
+    df
