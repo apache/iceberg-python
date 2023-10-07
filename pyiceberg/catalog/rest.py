@@ -62,6 +62,7 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     Table,
+    TableIdentifier,
     TableMetadata,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -301,7 +302,10 @@ class RestCatalog(Catalog):
         # Update URI based on overrides
         self.uri = config[URI]
 
-    def _split_identifier_for_path(self, identifier: Union[str, Identifier]) -> Properties:
+    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
+        if isinstance(identifier, TableIdentifier):
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
             raise NoSuchTableError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
