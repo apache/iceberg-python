@@ -74,6 +74,7 @@ from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
+    IcebergRootModel,
     Identifier,
     KeyDefaultDict,
     Properties,
@@ -402,8 +403,25 @@ class AssertDefaultSortOrderId(TableRequirement):
     default_sort_order_id: int = Field(..., alias="default-sort-order-id")
 
 
+class Namespace(IcebergRootModel[List[str]]):
+    """Reference to one or more levels of a namespace."""
+
+    root: List[str] = Field(
+        ...,
+        description='Reference to one or more levels of a namespace',
+        example=['accounting', 'tax'],
+    )
+
+
+class TableIdentifier(IcebergBaseModel):
+    """Fully Qualified identifier to a table."""
+
+    namespace: Namespace
+    name: str
+
+
 class CommitTableRequest(IcebergBaseModel):
-    identifier: Identifier = Field()
+    identifier: TableIdentifier = Field()
     requirements: Tuple[SerializeAsAny[TableRequirement], ...] = Field(default_factory=tuple)
     updates: Tuple[SerializeAsAny[TableUpdate], ...] = Field(default_factory=tuple)
 
@@ -526,7 +544,11 @@ class Table:
 
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
-            CommitTableRequest(identifier=self.identifier[1:], updates=updates, requirements=requirements)
+            CommitTableRequest(
+                identifier=TableIdentifier(namespace=self.identifier[:-1], name=self.identifier[-1]),
+                updates=updates,
+                requirements=requirements,
+            )
         )  # pylint: disable=W0212
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location

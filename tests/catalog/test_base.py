@@ -46,8 +46,10 @@ from pyiceberg.table import (
     AddSchemaUpdate,
     CommitTableRequest,
     CommitTableResponse,
+    Namespace,
     SetCurrentSchemaUpdate,
     Table,
+    TableIdentifier,
 )
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -119,8 +121,8 @@ class InMemoryCatalog(Catalog):
         for update in table_request.updates:
             if isinstance(update, AddSchemaUpdate):
                 add_schema_update: AddSchemaUpdate = update
-                identifier = Catalog.identifier_to_tuple(table_request.identifier)
-                table = self.__tables[("com", *identifier)]
+                identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
+                table = self.__tables[identifier]
                 new_metadata = new_table_metadata(
                     add_schema_update.schema_,
                     table.metadata.partition_specs[0],
@@ -528,7 +530,7 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
     # When
     response = given_table.catalog._commit_table(  # pylint: disable=W0212
         CommitTableRequest(
-            identifier=given_table.identifier[1:],
+            identifier=TableIdentifier(namespace=Namespace(given_table.identifier[:-1]), name=given_table.identifier[-1]),
             updates=[
                 AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
                 SetCurrentSchemaUpdate(schema_id=-1),
