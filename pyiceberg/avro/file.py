@@ -233,17 +233,18 @@ class AvroOutputFile(Generic[D]):
         output_file: OutputFile,
         file_schema: Schema,
         schema_name: str,
-        schema: Optional[Schema] = None,
+        data_schema: Optional[Schema] = None,
         metadata: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         self.output_file = output_file
         self.file_schema = file_schema
         self.schema_name = schema_name
         self.sync_bytes = os.urandom(SYNC_SIZE)
-        if schema is None:
-            self.writer = construct_writer(self.file_schema)
-        else:
-            self.writer = resolve_writer(self.file_schema, schema)
+        self.writer = (
+            construct_writer(file_schema=self.file_schema)
+            if data_schema is None
+            else resolve_writer(data_schema=data_schema, write_schema=self.file_schema)
+        )
         self.metadata = metadata
 
     def __enter__(self) -> AvroOutputFile[D]:

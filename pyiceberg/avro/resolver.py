@@ -60,7 +60,6 @@ from pyiceberg.avro.writer import (
     IntegerWriter,
     ListWriter,
     MapWriter,
-    NoneWriter,
     OptionWriter,
     StringWriter,
     StructWriter,
@@ -199,19 +198,21 @@ CONSTRUCT_WRITER_VISITOR = ConstructWriter()
 
 
 def resolve_writer(
-    struct_schema: Union[Schema, IcebergType],
+    data_schema: Union[Schema, IcebergType],
     write_schema: Union[Schema, IcebergType],
 ) -> Writer:
     """Resolve the file and read schema to produce a reader.
 
     Args:
-        struct_schema (Schema | IcebergType): The schema of the Avro file.
+        data_schema (Schema | IcebergType): The schema of the Avro file.
         write_schema (Schema | IcebergType): The requested read schema which is equal, subset or superset of the file schema.
 
     Raises:
         NotImplementedError: If attempting to resolve an unrecognized object type.
     """
-    return visit_with_partner(struct_schema, write_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore
+    if write_schema == data_schema:
+        return construct_writer(write_schema)
+    return visit_with_partner(write_schema, data_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore
 
 
 def resolve_reader(
@@ -256,61 +257,47 @@ class EnumReader(Reader):
 
 
 class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
-    def schema(self, schema: Schema, expected_schema: Optional[IcebergType], result: Writer) -> Writer:
+    def schema(self, write_schema: Schema, data_schema: Optional[IcebergType], result: Writer) -> Writer:
         return result
 
-    def struct(self, struct: StructType, provided_struct: Optional[IcebergType], field_writers: List[Writer]) -> Writer:
-        if not isinstance(provided_struct, StructType):
-            raise ResolveError(f"File/write schema are not aligned for struct, got {provided_struct}")
+    def struct(self, write_schema: StructType, data_struct: Optional[IcebergType], field_writers: List[Writer]) -> Writer:
+        if not isinstance(data_struct, StructType):
+            raise ResolveError(f"File/write schema are not aligned for struct, got {data_struct}")
 
-        provided_struct_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(provided_struct.fields)}
-
+        data_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(data_struct.fields)}
         results: List[Tuple[Optional[int], Writer]] = []
-        iter(field_writers)
 
-        for pos, write_field in enumerate(struct.fields):
-            if write_field.field_id in provided_struct_positions:
-                results.append((provided_struct_positions[write_field.field_id], field_writers[pos]))
+        for writer, write_field in zip(field_writers, write_schema.fields):
+            if write_field.field_id in data_positions:
+                results.append((data_positions[write_field.field_id], writer))
             else:
                 # There is a default value
-                if isinstance(write_field, NestedField) and write_field.write_default is not None:
+                if write_field.write_default is not None:
                     # The field is not in the record, but there is a write default value
-                    default_writer = DefaultWriter(
-                        writer=visit(write_field.field_type, CONSTRUCT_WRITER_VISITOR), value=write_field.write_default
-                    )
-                    results.append((None, default_writer))
+                    results.append((None, DefaultWriter(writer=writer, value=write_field.write_default)))
                 elif write_field.required:
                     raise ValueError(f"Field is required, and there is no write default: {write_field}")
-                else:
-                    results.append((pos, NoneWriter()))
 
         return StructWriter(field_writers=tuple(results))
 
-    def field(self, field: NestedField, expected_field: Optional[IcebergType], field_writer: Writer) -> Writer:
-        return field_writer if field.required else OptionWriter(field_writer)
+    def field(self, write_field: NestedField, data_type: Optional[IcebergType], field_writer: Writer) -> Writer:
+        return field_writer if write_field.required else OptionWriter(field_writer)
 
-    def list(self, list_type: ListType, expected_list: Optional[IcebergType], element_reader: Writer) -> Writer:
-        if expected_list and not isinstance(expected_list, ListType):
-            raise ResolveError(f"File/read schema are not aligned for list, got {expected_list}")
+    def list(self, write_list_type: ListType, write_list: Optional[IcebergType], element_reader: Writer) -> Writer:
+        return ListWriter(element_reader if write_list_type.element_required else OptionWriter(element_reader))
 
-        return ListWriter(element_reader if list_type.element_required else OptionWriter(element_reader))
+    def map(
+        self, write_map_type: MapType, write_primitive: Optional[IcebergType], key_reader: Writer, value_reader: Writer
+    ) -> Writer:
+        return MapWriter(key_reader, value_reader if write_map_type.value_required else OptionWriter(value_reader))
 
-    def map(self, map_type: MapType, expected_map: Optional[IcebergType], key_reader: Writer, value_reader: Writer) -> Writer:
-        if expected_map and not isinstance(expected_map, MapType):
-            raise ResolveError(f"File/read schema are not aligned for map, got {expected_map}")
-
-        return MapWriter(key_reader, value_reader if map_type.value_required else OptionWriter(value_reader))
-
-    def primitive(self, primitive: PrimitiveType, expected_primitive: Optional[IcebergType]) -> Writer:
-        if expected_primitive is not None:
-            if not isinstance(expected_primitive, PrimitiveType):
-                raise ResolveError(f"File/read schema are not aligned for {primitive}, got {expected_primitive}")
-
+    def primitive(self, write_primitive: PrimitiveType, data_primitive: Optional[IcebergType]) -> Writer:
+        if data_primitive is not None:
             # ensure that the type can be projected to the expected
-            if primitive != expected_primitive:
-                promote(primitive, expected_primitive)
+            if write_primitive != data_primitive:
+                promote(data_primitive, write_primitive)
 
-        return super().primitive(primitive, expected_primitive)
+        return super().primitive(write_primitive, write_primitive)
 
     def visit_boolean(self, boolean_type: BooleanType, partner: Optional[IcebergType]) -> Writer:
         return BooleanWriter()
