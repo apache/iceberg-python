@@ -46,6 +46,8 @@ from pyiceberg.types import (
     TimestampType,
 )
 
+DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
+
 
 @pytest.fixture()
 def catalog() -> Catalog:
@@ -104,25 +106,25 @@ def table(catalog: Catalog) -> Table:
 
 @pytest.mark.integration
 def test_table_properties(table: Table) -> None:
-    assert table.properties == {}
+    assert table.properties == DEFAULT_PROPERTIES
 
     with table.transaction() as transaction:
         transaction.set_properties(abc="🤪")
 
-    assert table.properties == {"abc": "🤪"}
+    assert table.properties == dict(**{"abc": "🤪"}, **DEFAULT_PROPERTIES)
 
     with table.transaction() as transaction:
         transaction.remove_properties("abc")
 
-    assert table.properties == {}
+    assert table.properties == DEFAULT_PROPERTIES
 
     table = table.transaction().set_properties(abc="def").commit_transaction()
 
-    assert table.properties == {"abc": "def"}
+    assert table.properties == dict(**{"abc": "def"}, **DEFAULT_PROPERTIES)
 
     table = table.transaction().remove_properties("abc").commit_transaction()
 
-    assert table.properties == {}
+    assert table.properties == DEFAULT_PROPERTIES
 
 
 @pytest.fixture()
