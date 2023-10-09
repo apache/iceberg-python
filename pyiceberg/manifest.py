@@ -916,7 +916,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 raise ValueError(
                     f"Found unassigned sequence number for a manifest from snapshot: {wrapped_manifest_file.added_snapshot_id}"
                 )
-            wrapped_manifest_file.sequence_number = self._sequence_number
+            wrapped_manifest_file.sequence_number = self._sequence_number or 0
 
         if wrapped_manifest_file.min_sequence_number == UNASSIGNED_SEQ:
             if self._commit_snapshot_id != wrapped_manifest_file.added_snapshot_id:
@@ -925,7 +925,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 )
             # if the min sequence number is not determined, then there was no assigned sequence number for any file
             # written to the wrapped manifest. Replace the unassigned sequence number with the one for this commit
-            wrapped_manifest_file.min_sequence_number = self._sequence_number
+            wrapped_manifest_file.min_sequence_number = self._sequence_number or 0
         return wrapped_manifest_file
 
 

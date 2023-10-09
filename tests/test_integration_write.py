@@ -17,7 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime
 
 import pyarrow as pa
 import pytest
@@ -40,7 +40,6 @@ from pyiceberg.types import (
     StringType,
     TimestampType,
     TimestamptzType,
-    TimeType,
 )
 
 
@@ -94,7 +93,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=9, name="timestamptz", field_type=TimestamptzType(), required=False),
     NestedField(field_id=10, name="date", field_type=DateType(), required=False),
     # NestedField(field_id=11, name="time", field_type=TimeType(), required=False),
-    # NestedField(field_id=12, name="uuid", field_type=BooleanType(), required=False),
+    # NestedField(field_id=12, name="uuid", field_type=UuidType(), required=False),
     NestedField(field_id=12, name="binary", field_type=BinaryType(), required=False),
     NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
 )
@@ -142,12 +141,16 @@ def table_with_null(catalog: Catalog, arrow_table_with_null: pa.Table) -> Table:
     return tbl
 
 
-@pytest.mark.integration
-def test_query_table_using_spark(table_with_null: Table) -> None:
-    identifier = "default.arrow_table_with_null"
-
+@pytest.fixture(scope="session")
+def spark() -> SparkSession:
     import os
-    os.environ["PYSPARK_SUBMIT_ARGS"] = "--packages org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.0,org.apache.iceberg:iceberg-aws-bundle:1.4.0 pyspark-shell"
+
+    os.environ[
+        "PYSPARK_SUBMIT_ARGS"
+    ] = "--packages org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.0,org.apache.iceberg:iceberg-aws-bundle:1.4.0 pyspark-shell"
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
 
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
@@ -155,15 +158,33 @@ def test_query_table_using_spark(table_with_null: Table) -> None:
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
         .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-        # .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
         .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
         .config("spark.sql.defaultCatalog", "integration")
         .getOrCreate()
     )
+
+    return spark
+
+
+def test_query_count(spark: SparkSession, col: str) -> None:
+    df = spark.table("default.arrow_table_with_null")
+    assert df.count() == 3, f"Expected 3 rows for {col}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
+def test_query_filter_null(spark: SparkSession, col: str) -> None:
+    identifier = "default.arrow_table_with_null"
     df = spark.table(identifier)
+    assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
 
-    for col in TEST_DATA_WITH_NULL.keys():
-        assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
 
-    df
+@pytest.mark.integration
+@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
+def test_query_filter_not_null(spark: SparkSession, col: str) -> None:
+    identifier = "default.arrow_table_with_null"
+    df = spark.table(identifier)
+    assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"

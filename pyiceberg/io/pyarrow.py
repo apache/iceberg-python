@@ -1131,7 +1131,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         raise ValueError(f"Expected primitive-type, got: {map_type}")
 
     def visit_fixed(self, fixed_type: FixedType) -> str:
-        return "BYTE_ARRAY"
+        return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
         return "FIXED_LEN_BYTE_ARRAY"
