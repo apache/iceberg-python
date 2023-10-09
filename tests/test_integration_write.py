@@ -98,9 +98,22 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
 )
 
+@pytest.fixture(scope="session")
+def session_catalog() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
 
-@pytest.fixture
-def arrow_table_with_null(catalog: Catalog) -> pa.Table:
+
+@pytest.fixture(scope="session")
+def arrow_table_with_null() -> pa.Table:
     """PyArrow table with all kinds of columns"""
     pa_schema = pa.schema(
         [
@@ -125,16 +138,16 @@ def arrow_table_with_null(catalog: Catalog) -> pa.Table:
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
-@pytest.fixture()
-def table_with_null(catalog: Catalog, arrow_table_with_null: pa.Table) -> Table:
+@pytest.fixture(scope="session")
+def table_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> Table:
     identifier = "default.arrow_table_with_null"
 
     try:
-        catalog.drop_table(identifier=identifier)
+        session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
-    tbl = catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA)
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA)
 
     tbl.write_arrow(arrow_table_with_null)
 
@@ -169,14 +182,15 @@ def spark() -> SparkSession:
     return spark
 
 
-def test_query_count(spark: SparkSession, col: str) -> None:
+@pytest.mark.integration
+def test_query_count(spark: SparkSession, table_with_null: Table) -> None:
     df = spark.table("default.arrow_table_with_null")
-    assert df.count() == 3, f"Expected 3 rows for {col}"
+    assert df.count() == 3, "Expected 3 rows"
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_null(spark: SparkSession, col: str) -> None:
+def test_query_filter_null(spark: SparkSession, table_with_null: Table, col: str) -> None:
     identifier = "default.arrow_table_with_null"
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
@@ -184,7 +198,7 @@ def test_query_filter_null(spark: SparkSession, col: str) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_not_null(spark: SparkSession, col: str) -> None:
+def test_query_filter_not_null(spark: SparkSession, table_with_null: Table, col: str) -> None:
     identifier = "default.arrow_table_with_null"
     df = spark.table(identifier)
     assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
