@@ -286,5 +286,12 @@ def test_all_primitive_types(is_required: bool) -> None:
             it = iter(avro_reader)
             avro_entry = next(it)
 
+        # read with fastavro
+        with open(tmp_avro_file, "rb") as fo:
+            r = reader(fo=fo)
+            it_fastavro = iter(r)
+            avro_entry_read_with_fastavro = list(next(it_fastavro).values())
+
     for idx, field in enumerate(all_primitives_schema.as_struct()):
         assert record[idx] == avro_entry[idx], f"Invalid {field}"
+        assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"
