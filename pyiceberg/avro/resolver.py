@@ -270,13 +270,15 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
         for writer, file_field in zip(file_writers, file_schema.fields):
             if file_field.field_id in record_struct_positions:
                 results.append((record_struct_positions[file_field.field_id], writer))
-            else:
+            elif file_field.required:
                 # There is a default value
                 if file_field.write_default is not None:
                     # The field is not in the record, but there is a write default value
                     results.append((None, DefaultWriter(writer=writer, value=file_field.write_default)))  # type: ignore
                 elif file_field.required:
                     raise ValueError(f"Field is required, and there is no write default: {file_field}")
+            else:
+                results.append((None, OptionWriter(option=writer)))
 
         return StructWriter(field_writers=tuple(results))
 

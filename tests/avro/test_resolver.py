@@ -393,3 +393,16 @@ def test_writer_one_more_field() -> None:
     expected = StructWriter(((2, DoubleWriter()), (1, StringWriter())))
 
     assert actual == expected
+
+
+def test_writer_missing_optional_in_read_schema() -> None:
+    actual = resolve_writer(
+        record_schema=Schema(),
+        file_schema=Schema(
+            NestedField(field_id=1, name="str", type=StringType(), required=False),
+        ),
+    )
+
+    expected = StructWriter(field_writers=((None, OptionWriter(option=OptionWriter(option=StringWriter()))),))
+
+    assert actual == expected
