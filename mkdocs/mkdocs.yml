@@ -17,8 +17,8 @@
 ---
 site_name: PyIceberg
 site_url: https://py.iceberg.apache.org/
-repo_url: "https://github.com/apache/iceberg/tree/master/python"
-repo_name: "apache/iceberg/python"
+repo_url: "https://github.com/apache/iceberg-python"
+repo_name: "apache/iceberg-python"
 
 plugins:
   - gen-files:

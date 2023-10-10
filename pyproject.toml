@@ -81,7 +81,7 @@ requests-mock = "1.11.0"
 moto = "^4.2.5"
 typing-extensions = "4.8.0"
 pytest-mock = "3.11.1"
-cython = "3.0.2"
+cython = "3.0.3"
 pyspark = "3.4.1"
 
 [[tool.mypy.overrides]]

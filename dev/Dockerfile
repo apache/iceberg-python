@@ -38,7 +38,7 @@ WORKDIR ${SPARK_HOME}
 
 ENV SPARK_VERSION=3.4.1
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.4_2.12
-ENV ICEBERG_VERSION=1.3.1
+ENV ICEBERG_VERSION=1.4.0
 ENV AWS_SDK_VERSION=2.20.18
 ENV PYICEBERG_VERSION=0.4.0
 
@@ -50,13 +50,9 @@ RUN curl --retry 3 -s -C - https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}
 RUN curl -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar -Lo iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
  && mv iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar /opt/spark/jars
 
-# Download Java AWS SDK
-RUN curl -s https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar -Lo bundle-${AWS_SDK_VERSION}.jar \
- && mv bundle-${AWS_SDK_VERSION}.jar /opt/spark/jars
-
-# Download URL connection client required for S3FileIO
-RUN curl -s https://repo1.maven.org/maven2/software/amazon/awssdk/url-connection-client/${AWS_SDK_VERSION}/url-connection-client-${AWS_SDK_VERSION}.jar -Lo url-connection-client-${AWS_SDK_VERSION}.jar \
- && mv url-connection-client-${AWS_SDK_VERSION}.jar /opt/spark/jars
+# Download AWS bundle
+RUN curl -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar -Lo iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
+ && mv iceberg-aws-bundle-${ICEBERG_VERSION}.jar /opt/spark/jars
 
 COPY spark-defaults.conf /opt/spark/conf
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
