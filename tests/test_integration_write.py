@@ -26,7 +26,6 @@ from pyspark.sql import SparkSession
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -98,6 +97,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
 )
 
+
 @pytest.fixture(scope="session")
 def session_catalog() -> Catalog:
     return load_catalog(
@@ -147,9 +147,7 @@ def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={
-        'format-version': '1'
-    })
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
     tbl.write_arrow(arrow_table_with_null)
 
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
@@ -164,9 +162,7 @@ def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={
-        'format-version': '2'
-    })
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
     tbl.write_arrow(arrow_table_with_null)
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
