@@ -166,7 +166,7 @@ class Transaction:
         self._requirements = self._requirements + new_requirements
         return self
 
-    def set_table_version(self, format_version: Literal[1, 2]) -> Transaction:
+    def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
         """Set the table to a certain version.
 
         Args:
@@ -175,7 +175,15 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        raise NotImplementedError("Not yet implemented")
+        if format_version not in {1, 2}:
+            raise ValueError(f"Unsupported table format version: {format_version}")
+
+        if format_version < self._table.metadata.format_version:
+            raise ValueError(f"Cannot downgrade v{self._table.metadata.format_version} table to v{format_version}")
+        if format_version > self._table.metadata.format_version:
+            return self._append_updates(UpgradeFormatVersionUpdate(format_version=format_version))
+        else:
+            return self
 
     def set_properties(self, **updates: str) -> Transaction:
         """Set properties.
@@ -481,6 +489,10 @@ class Table:
             options=options,
             limit=limit,
         )
+
+    @property
+    def format_version(self) -> Literal[1, 2]:
+        return self.metadata.format_version
 
     def schema(self) -> Schema:
         """Return the schema for this table."""
