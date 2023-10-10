@@ -374,25 +374,25 @@ def test_scan_branch(test_positional_mor_deletes: Table) -> None:
 
 
 @pytest.mark.integration
-def test_update_table_version(table_test_table_version: Table) -> None:
+def test_upgrade_table_version(table_test_table_version: Table) -> None:
     assert table_test_table_version.format_version == 1
 
     with table_test_table_version.transaction() as transaction:
-        transaction.set_table_version(format_version=1)
+        transaction.upgrade_table_version(format_version=1)
 
     assert table_test_table_version.format_version == 1
 
     with table_test_table_version.transaction() as transaction:
-        transaction.set_table_version(format_version=2)
+        transaction.upgrade_table_version(format_version=2)
 
     assert table_test_table_version.format_version == 2
 
     with pytest.raises(ValueError) as e:  # type: ignore
         with table_test_table_version.transaction() as transaction:
-            transaction.set_table_version(format_version=1)
+            transaction.upgrade_table_version(format_version=1)
     assert "Cannot downgrade v2 table to v1" in str(e.value)
 
     with pytest.raises(ValueError) as e:
         with table_test_table_version.transaction() as transaction:
-            transaction.set_table_version(format_version=3)
+            transaction.upgrade_table_version(format_version=3)
     assert "Unsupported table format version: 3" in str(e.value)

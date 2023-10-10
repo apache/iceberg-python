@@ -166,7 +166,7 @@ class Transaction:
         self._requirements = self._requirements + new_requirements
         return self
 
-    def set_table_version(self, format_version: Literal[1, 2]) -> Transaction:
+    def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
         """Set the table to a certain version.
 
         Args:
