@@ -16,6 +16,7 @@
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
 import os
+from typing import cast
 from unittest import mock
 from uuid import UUID
 
@@ -25,7 +26,6 @@ from requests_mock import Mocker
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
 from pyiceberg.catalog.rest import RestCatalog
-from pyiceberg.utils.config import Config
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
@@ -41,12 +41,14 @@ from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
+from pyiceberg.typedef import RecursiveDict
 from pyiceberg.types import (
     BooleanType,
     IntegerType,
     NestedField,
     StringType,
 )
+from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
@@ -953,32 +955,34 @@ EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": TEST_URI}
 
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
 @mock.patch("pyiceberg.catalog.Config.get_catalog_config")
-def test_catalog_from_environment_variables(catalog_config_mock, rest_mock) -> None:
-    catalog_config_mock.return_value = Config._from_environment_variables({}).get("catalog").get("production")
-    catalog = load_catalog("production")
+def test_catalog_from_environment_variables(catalog_config_mock: mock.Mock, rest_mock: Mocker) -> None:
+    env_config: RecursiveDict = Config._from_environment_variables({})
+    catalog_config_mock.return_value = cast(RecursiveDict, env_config.get("catalog")).get("production")
+    catalog = cast(RestCatalog, load_catalog("production"))
     assert catalog.uri == TEST_URI
 
 
 @mock.patch.dict(os.environ, EXAMPLE_ENV)
 @mock.patch("pyiceberg.catalog._ENV_CONFIG.get_catalog_config")
-def test_catalog_from_environment_variables_override(catalog_config_mock, rest_mock) -> None:
+def test_catalog_from_environment_variables_override(catalog_config_mock: mock.Mock, rest_mock: Mocker) -> None:
+    rest_mock.get(
+        "https://other-service.io/api/v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    env_config: RecursiveDict = Config._from_environment_variables({})
+
+    catalog_config_mock.return_value = cast(RecursiveDict, env_config.get("catalog")).get("production")
+    catalog = cast(RestCatalog, load_catalog("production", uri="https://other-service.io/api"))
+    assert catalog.uri == "https://other-service.io/api"
+
+
+def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
     rest_mock.get(
         "https://other-service.io/api/v1/config",
         json={"defaults": {}, "overrides": {}},
         status_code=200,
     )
 
-    catalog_config_mock.return_value = Config._from_environment_variables({}).get("catalog").get("production")
-    catalog = load_catalog("production", uri="https://other-service.io/api")
-    assert catalog.uri == "https://other-service.io/api"
-
-
-def test_catalog_from_parameters_empty_env(rest_mock) -> None:
-    rest_mock.get(
-        f"https://other-service.io/api/v1/config",
-        json={"defaults": {}, "overrides": {}},
-        status_code=200,
-    )
-
-    catalog = load_catalog("production", uri="https://other-service.io/api")
+    catalog = cast(RestCatalog, load_catalog("production", uri="https://other-service.io/api"))
     assert catalog.uri == "https://other-service.io/api"

@@ -20,6 +20,7 @@ from unittest import mock
 import pytest
 from strictyaml import as_document
 
+from pyiceberg.typedef import RecursiveDict
 from pyiceberg.utils.config import Config, _lowercase_dictionary_keys, merge_config
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": "https://service.io/api"}
@@ -55,9 +56,9 @@ def test_lowercase_dictionary_keys() -> None:
     expected = {"upper": {"nested_upper": {"YES"}}}
     assert _lowercase_dictionary_keys(uppercase_keys) == expected  # type: ignore
 
+
 def test_merge_config() -> None:
-    lhs = {"common_key": "abc123"}
-    rhs = {"common_key": "xyz789"}
+    lhs: RecursiveDict = {"common_key": "abc123"}
+    rhs: RecursiveDict = {"common_key": "xyz789"}
     result = merge_config(lhs, rhs)
     assert result["common_key"] == rhs["common_key"]
-
