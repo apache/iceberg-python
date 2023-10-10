@@ -706,7 +706,7 @@ class ManifestWriter(ABC):
         return AvroOutputFile[ManifestEntry](
             output_file=self._output_file,
             file_schema=self._with_partition(self.version),
-            data_schema=self._with_partition(DEFAULT_READ_VERSION),
+            record_schema=self._with_partition(DEFAULT_READ_VERSION),
             schema_name="manifest_entry",
             metadata=self._meta,
         )

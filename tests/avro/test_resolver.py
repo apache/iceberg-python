@@ -317,7 +317,7 @@ def test_resolver_initial_value() -> None:
 
 
 def test_resolve_writer() -> None:
-    actual = resolve_writer(data_schema=MANIFEST_ENTRY_SCHEMAS[2], write_schema=MANIFEST_ENTRY_SCHEMAS[1])
+    actual = resolve_writer(record_schema=MANIFEST_ENTRY_SCHEMAS[2], file_schema=MANIFEST_ENTRY_SCHEMAS[1])
     expected = StructWriter(
         (
             (0, IntegerWriter()),
@@ -353,8 +353,8 @@ def test_resolve_writer() -> None:
 def test_resolve_writer_promotion() -> None:
     with pytest.raises(ResolveError) as exc_info:
         _ = resolve_writer(
-            data_schema=Schema(NestedField(field_id=1, name="floating", type=DoubleType(), required=True)),
-            write_schema=Schema(NestedField(field_id=1, name="floating", type=FloatType(), required=True)),
+            record_schema=Schema(NestedField(field_id=1, name="floating", type=DoubleType(), required=True)),
+            file_schema=Schema(NestedField(field_id=1, name="floating", type=FloatType(), required=True)),
         )
 
     assert "Cannot promote double to float" in str(exc_info.value)
@@ -362,11 +362,11 @@ def test_resolve_writer_promotion() -> None:
 
 def test_writer_ordering() -> None:
     actual = resolve_writer(
-        data_schema=Schema(
+        record_schema=Schema(
             NestedField(field_id=1, name="str", type=StringType(), required=True),
             NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
         ),
-        write_schema=Schema(
+        file_schema=Schema(
             NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
             NestedField(field_id=1, name="str", type=StringType(), required=True),
         ),
@@ -379,12 +379,12 @@ def test_writer_ordering() -> None:
 
 def test_writer_one_more_field() -> None:
     actual = resolve_writer(
-        data_schema=Schema(
+        record_schema=Schema(
             NestedField(field_id=3, name="bool", type=BooleanType(), required=True),
             NestedField(field_id=1, name="str", type=StringType(), required=True),
             NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
         ),
-        write_schema=Schema(
+        file_schema=Schema(
             NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
             NestedField(field_id=1, name="str", type=StringType(), required=True),
         ),
