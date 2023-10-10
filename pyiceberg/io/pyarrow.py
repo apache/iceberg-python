@@ -34,7 +34,6 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
 from itertools import chain
-from time import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -52,7 +51,6 @@ from typing import (
     cast,
 )
 from urllib.parse import urlparse
-from uuid import uuid4
 
 import numpy as np
 import pyarrow as pa
@@ -109,10 +107,6 @@ from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
     FileFormat,
-    ManifestEntry,
-    ManifestEntryStatus,
-    write_manifest,
-    write_manifest_list,
 )
 from pyiceberg.schema import (
     PartnerAccessor,
@@ -126,7 +120,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import Snapshot
+from pyiceberg.table import Snapshot, WriteTask, _generate_datafile_filename
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -1574,39 +1568,25 @@ def fill_parquet_file_metadata(
     df.split_offsets = split_offsets
 
 
-def _generate_datafile_filename(extension: str) -> str:
-    # Mimics the behavior in the Java API:
-    # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
-    return f"00000-0-{uuid4()}-0.{extension}"
+def write_file(table: Table, tasks: Iterator[WriteTask]) -> Snapshot:
+    task = next(tasks)
 
+    try:
+        _ = next(tasks)
+        # If there are more tasks, raise an exception
+        raise ValueError("Only partitioned writes are supported")
+    except StopIteration:
+        pass
 
-def _generate_manifest_filename(num: int = 0) -> str:
-    return f"{uuid4()}-m{num}.avro"
+    df = task.df
 
-
-def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
-    # Mimics the behavior in Java:
-    # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
-    return f"snap-{snapshot_id}-{attempt}-{uuid4()}.avro"
-
-
-def write_file(table: Table, df: pa.Table) -> Snapshot:
-    from pyarrow import parquet as pq
-
-    # For now just Parquet
-    # TODO: Check path
-    # TODO: Should we check if the file exists? It will fail if this is the case
     file_path = f'{table.location()}/data/{_generate_datafile_filename("parquet")}'
     file_schema = schema_to_pyarrow(table.schema())
 
-    # TODO: Add compression
     collected_metrics: List[pq.FileMetaData] = []
     fo = table.io.new_output(file_path)
     with fo.create() as fos:
-        # TODO: Check Parquet version
-        # TODO: How many files do we want to write?
         with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
-            # TODO: Set row group size?
             writer.write_table(df)
 
     df = DataFile(
@@ -1622,59 +1602,10 @@ def write_file(table: Table, df: pa.Table) -> Snapshot:
         equality_ids=table.schema().identifier_field_ids,
         key_metadata=None,
     )
-
     fill_parquet_file_metadata(
         df=df,
         parquet_metadata=collected_metrics[0],
         stats_columns=compute_statistics_plan(table.schema(), table.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
-
-    snapshot_id = table.new_snapshot_id()
-
-    manifest_entry = ManifestEntry(
-        status=ManifestEntryStatus.ADDED,
-        snapshot_id=snapshot_id,
-        data_sequence_number=None,
-        file_sequence_number=None,
-        data_file=df,
-    )
-
-    manifest_file_path = f'{table.location()}/metadata/{_generate_manifest_filename()}'
-    print(f"manifest: {manifest_file_path}")
-    manifest_writer = write_manifest(
-        format_version=table.metadata.format_version,
-        spec=table.spec(),
-        schema=table.schema(),
-        output_file=table.io.new_output(manifest_file_path),
-        snapshot_id=snapshot_id,
-    )
-    with manifest_writer as writer:
-        writer.add_entry(manifest_entry)
-
-    manifest_file = writer.to_manifest_file()
-
-    current_snapshot = table.current_snapshot()
-    parent_snapshot_id = current_snapshot.snapshot_id if current_snapshot is not None else None
-
-    manifest_list_file_path = f'{table.location()}/metadata/{_generate_manifest_list_filename(snapshot_id=snapshot_id)}'
-    print(f"manifest-list: {manifest_list_file_path}")
-    manifest_list_writer = write_manifest_list(
-        format_version=table.metadata.format_version,
-        output_file=table.io.new_output(manifest_list_file_path),
-        snapshot_id=snapshot_id,
-        parent_snapshot_id=parent_snapshot_id,
-        sequence_number=None,
-    )
-
-    with manifest_list_writer as writer:
-        writer.add_manifests([manifest_file])
-
-    return Snapshot(
-        snapshot_id=snapshot_id,
-        parent_snapshot_id=parent_snapshot_id,
-        timestamp_ms=int(time() * 1000),
-        manifest_list=manifest_list_file_path,
-        summary=None,
-        schema_id=table.schema().schema_id,
-    )
+    return df

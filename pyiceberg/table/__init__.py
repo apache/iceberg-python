@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
 from itertools import chain
+from time import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -59,7 +60,10 @@ from pyiceberg.manifest import (
     DataFileContent,
     ManifestContent,
     ManifestEntry,
+    ManifestEntryStatus,
     ManifestFile,
+    write_manifest,
+    write_manifest_list,
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import (
@@ -607,9 +611,8 @@ class Table:
     def write_arrow(self, df: pa.Table, mode: Literal['append', 'overwrite'] = 'overwrite') -> None:
         if len(self.spec().fields) > 0:
             raise ValueError("Currently only unpartitioned tables are supported")
-        from pyiceberg.io.pyarrow import write_file
 
-        snapshot = write_file(self, df)
+        snapshot = _write_file(self, df)
         with self.transaction() as tx:
             tx.add_snapshot(snapshot=snapshot)
             tx.set_ref_snapshot(snapshot_id=snapshot.snapshot_id)
@@ -1674,3 +1677,77 @@ def _generate_snapshot_id() -> int:
     snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 
     return snapshot_id
+
+
+@dataclass(frozen=True)
+class WriteTask:
+    df: pa.Table
+    # Later to be extended with partition information
+
+
+def _generate_datafile_filename(extension: str) -> str:
+    # Mimics the behavior in the Java API:
+    # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
+    return f"00000-0-{uuid.uuid4()}-0.{extension}"
+
+
+def _generate_manifest_filename(num: int = 0) -> str:
+    return f"{uuid.uuid4()}-m{num}.avro"
+
+
+def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
+    # Mimics the behavior in Java:
+    # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
+    return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
+
+
+def _write_file(table: Table, df: pa.Table) -> Snapshot:
+    snapshot_id = table.new_snapshot_id()
+
+    from pyiceberg.io.pyarrow import write_file
+
+    # This is an iter so we can stream it later
+    data_file = write_file(table, iter([WriteTask(df)]))
+
+    manifest_entry = ManifestEntry(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=snapshot_id,
+        data_sequence_number=None,
+        file_sequence_number=None,
+        data_file=data_file,
+    )
+
+    manifest_file_path = f'{table.location()}/metadata/{_generate_manifest_filename()}'
+    manifest_writer = write_manifest(
+        format_version=table.metadata.format_version,
+        spec=table.spec(),
+        schema=table.schema(),
+        output_file=table.io.new_output(manifest_file_path),
+        snapshot_id=snapshot_id,
+    )
+    with manifest_writer as writer:
+        writer.add_entry(manifest_entry)
+
+    manifest_file = manifest_writer.to_manifest_file()
+
+    current_snapshot = table.current_snapshot()
+    parent_snapshot_id = current_snapshot.snapshot_id if current_snapshot is not None else None
+
+    manifest_list_file_path = f'{table.location()}/metadata/{_generate_manifest_list_filename(snapshot_id=snapshot_id)}'
+    with write_manifest_list(
+        format_version=table.metadata.format_version,
+        output_file=table.io.new_output(manifest_list_file_path),
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=parent_snapshot_id,
+        sequence_number=None,
+    ) as writer:
+        writer.add_manifests([manifest_file])
+
+    return Snapshot(
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=parent_snapshot_id,
+        timestamp_ms=int(time() * 1000),
+        manifest_list=manifest_list_file_path,
+        summary=None,
+        schema_id=table.schema().schema_id,
+    )
