@@ -138,20 +138,38 @@ def arrow_table_with_null() -> pa.Table:
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
-@pytest.fixture(scope="session")
-def table_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> Table:
-    identifier = "default.arrow_table_with_null"
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_v1_with_null"
 
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA)
-
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={
+        'format-version': '1'
+    })
     tbl.write_arrow(arrow_table_with_null)
 
-    return tbl
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_v2_with_null"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={
+        'format-version': '2'
+    })
+    tbl.write_arrow(arrow_table_with_null)
+
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session")
@@ -183,22 +201,25 @@ def spark() -> SparkSession:
 
 
 @pytest.mark.integration
-def test_query_count(spark: SparkSession, table_with_null: Table) -> None:
-    df = spark.table("default.arrow_table_with_null")
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_count(spark: SparkSession, format_version: int) -> None:
+    df = spark.table(f"default.arrow_table_v{format_version}_with_null")
     assert df.count() == 3, "Expected 3 rows"
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_null(spark: SparkSession, table_with_null: Table, col: str) -> None:
-    identifier = "default.arrow_table_with_null"
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v{format_version}_with_null"
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_not_null(spark: SparkSession, table_with_null: Table, col: str) -> None:
-    identifier = "default.arrow_table_with_null"
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_filter_not_null(spark: SparkSession, col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v{format_version}_with_null"
     df = spark.table(identifier)
     assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
