@@ -529,6 +529,13 @@ class Table:
         """Return the table's base location."""
         return self.metadata.location
 
+    @property
+    def last_sequence_number(self) -> int:
+        return self.metadata.last_sequence_number
+
+    def next_sequence_number(self) -> int:
+        return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
