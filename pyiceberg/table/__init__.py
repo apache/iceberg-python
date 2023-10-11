@@ -612,7 +612,12 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Currently only unpartitioned tables are supported")
 
-        snapshot = _write_file(self, df)
+        if mode == "overwrite":
+            snapshot = _write_dataframe(self, df)
+        elif mode == "overwrite":
+
+        else:
+            raise ValueError(f"Unknown write mode: {mode}")
         with self.transaction() as tx:
             tx.add_snapshot(snapshot=snapshot)
             tx.set_ref_snapshot(snapshot_id=snapshot.snapshot_id)
@@ -1701,7 +1706,7 @@ def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
     return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
 
 
-def _write_file(table: Table, df: pa.Table) -> Snapshot:
+def _write_dataframe(table: Table, df: pa.Table) -> Snapshot:
     snapshot_id = table.new_snapshot_id()
 
     from pyiceberg.io.pyarrow import write_file
