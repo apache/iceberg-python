@@ -282,7 +282,7 @@ def test_query_filter_appended_null(spark: SparkSession, col: str, format_versio
 @pytest.mark.integration
 @pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
-    identifier = "default.table_v1_v2_appended_with_null"
+    identifier = "default.arrow_table_v1_v2_appended_with_null"
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
     assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"

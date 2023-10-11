@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
 from itertools import chain
-from time import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -622,24 +621,25 @@ class Table:
         snapshot_id = self.new_snapshot_id()
         parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
 
-        new_entry = _dataframe_to_manifest(self, snapshot_id=snapshot_id, df=df)
+        new_entries = _dataframe_to_entries(self, snapshot_id=snapshot_id, df=df)
+        manifests: [ManifestFile] = [_entries_to_manifest(table=self, snapshot_id=snapshot_id, manifest_entries=new_entries)]
+
         if mode == "overwrite":
-            manifests = [new_entry]
             if _ := self.current_snapshot():
                 operation = Operation.OVERWRITE
             else:
                 operation = Operation.APPEND
         elif mode == "append":
-            manifests = [new_entry]
+            merge = _MergeAppend(table=self, snapshot_id=snapshot_id, manifests=manifests)
             if current_snapshot := self.current_snapshot():
                 for manifest in current_snapshot.manifests(self.io):
-                    manifests.append(manifest)
-
+                    merge.append_manifest(manifest)
+            manifests = merge.manifests()
             operation = Operation.APPEND
         else:
             raise ValueError(f"Unknown write mode: {mode}")
 
-        snapshot = _manifest_entries_to_manifest_list(
+        snapshot = _manifests_to_manifest_list(
             self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=manifests, operation=operation
         )
 
@@ -1721,8 +1721,8 @@ def _generate_datafile_filename(extension: str) -> str:
     return f"00000-0-{uuid.uuid4()}-0.{extension}"
 
 
-def _generate_manifest_filename(num: int = 0) -> str:
-    return f"{uuid.uuid4()}-m{num}.avro"
+def _new_manifest_path(location: str, num: int = 0) -> str:
+    return f'{location}/metadata/{uuid.uuid4()}-m{num}.avro'
 
 
 def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
@@ -1731,34 +1731,37 @@ def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
     return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
 
 
-def _dataframe_to_manifest(table: Table, snapshot_id: int, df: pa.Table) -> ManifestFile:
+def _dataframe_to_entries(table: Table, snapshot_id: int, df: pa.Table) -> Iterable[ManifestEntry]:
     from pyiceberg.io.pyarrow import write_file
 
-    manifest_file_path = f'{table.location()}/metadata/{_generate_manifest_filename()}'
+    # This is an iter, so we don't have to materialize everything every time
+    # This will be more relevant when we start doing partitioned writes
+    for data_file in write_file(table, iter([WriteTask(df)])):
+        yield ManifestEntry(
+            status=ManifestEntryStatus.ADDED,
+            snapshot_id=snapshot_id,
+            data_sequence_number=None,
+            file_sequence_number=None,
+            data_file=data_file,
+        )
+
+
+def _entries_to_manifest(table: Table, snapshot_id: int, manifest_entries: Iterable[ManifestEntry]) -> ManifestFile:
     manifest_writer = write_manifest(
         format_version=table.metadata.format_version,
         spec=table.spec(),
         schema=table.schema(),
-        output_file=table.io.new_output(manifest_file_path),
+        output_file=table.io.new_output(_new_manifest_path(table.location())),
         snapshot_id=snapshot_id,
     )
     with manifest_writer as writer:
-        # This is an iter, so we don't have to materialize everything every time
-        # This will be more relevant when we start doing partitioned writes
-        for data_file in write_file(table, iter([WriteTask(df)])):
-            manifest_entry = ManifestEntry(
-                status=ManifestEntryStatus.ADDED,
-                snapshot_id=snapshot_id,
-                data_sequence_number=None,
-                file_sequence_number=None,
-                data_file=data_file,
-            )
+        for manifest_entry in manifest_entries:
             writer.add_entry(manifest_entry)
 
     return manifest_writer.to_manifest_file()
 
 
-def _manifest_entries_to_manifest_list(
+def _manifests_to_manifest_list(
     table: Table, snapshot_id: int, parent_snapshot_id: Optional[int], manifests: List[ManifestFile], operation: Operation
 ) -> Snapshot:
     manifest_list_file_path = f'{table.location()}/metadata/{_generate_manifest_list_filename(snapshot_id=snapshot_id)}'
@@ -1774,9 +1777,56 @@ def _manifest_entries_to_manifest_list(
     return Snapshot(
         snapshot_id=snapshot_id,
         parent_snapshot_id=parent_snapshot_id,
-        timestamp_ms=int(time() * 1000),
         manifest_list=manifest_list_file_path,
         sequence_number=table.next_sequence_number(),
         summary=Summary(operation=operation),
         schema_id=table.schema().schema_id,
     )
+
+
+class _MergeAppend:
+    _table: Table
+    _snapshot_id: int
+    _added_manifests: List[ManifestFile]
+
+    def __init__(self, table: Table, snapshot_id: int, manifests: Optional[List[ManifestFile]] = None) -> None:
+        self._table = table
+        self._snapshot_id = snapshot_id
+        self._added_manifests = manifests or []
+
+    def append_manifest(self, manifest_file: ManifestFile) -> _MergeAppend:
+        if manifest_file.content != ManifestContent.DATA:
+            raise ValueError(f"Can only add DATA manifests: {manifest_file.content}")
+
+        if manifest_file.added_snapshot_id is not None and self._snapshot_id != manifest_file.added_snapshot_id:
+            # We have to rewrite the manifest because there is a new snapshot
+            self._added_manifests.append(self._copy_manifest(manifest_file))
+        else:
+            self._added_manifests.append(manifest_file)
+
+        return self
+
+    def _copy_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
+        """Rewrites a manifest file with a new snapshot-id.
+
+        Args:
+            manifest_file: The existing manifest file
+
+        Returns:
+            New manifest file with the current snapshot-id
+        """
+        with write_manifest(
+            format_version=self._table.format_version,
+            spec=self._table.specs()[manifest_file.partition_spec_id],
+            # TODO: We want to get the schema from the metadata
+            schema=self._table.schema(),
+            output_file=self._table.io.new_output(_new_manifest_path(self._table.location())),
+            snapshot_id=self._snapshot_id,
+        ) as writer:
+            for entry in manifest_file.fetch_manifest_entry(self._table.io, discard_deleted=True):
+                writer.add_entry(entry)
+
+        return writer.to_manifest_file()
+
+    def manifests(self) -> List[ManifestFile]:
+        return self._added_manifests

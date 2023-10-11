@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import time
 from enum import Enum
 from typing import (
     Any,
@@ -86,7 +87,7 @@ class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
     sequence_number: Optional[int] = Field(alias="sequence-number", default=None)
-    timestamp_ms: int = Field(alias="timestamp-ms")
+    timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: Optional[str] = Field(
         alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
     )
