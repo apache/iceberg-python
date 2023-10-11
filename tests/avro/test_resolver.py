@@ -32,12 +32,25 @@ from pyiceberg.avro.reader import (
     StringReader,
     StructReader,
 )
-from pyiceberg.avro.resolver import ResolveError, resolve
+from pyiceberg.avro.resolver import ResolveError, resolve_reader, resolve_writer
+from pyiceberg.avro.writer import (
+    BinaryWriter,
+    DefaultWriter,
+    DoubleWriter,
+    IntegerWriter,
+    ListWriter,
+    MapWriter,
+    OptionWriter,
+    StringWriter,
+    StructWriter,
+)
 from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
+    BooleanType,
     DecimalType,
     DoubleType,
     FloatType,
@@ -81,7 +94,7 @@ def test_resolver() -> None:
         NestedField(6, "preferences", MapType(7, StringType(), 8, StringType())),
         schema_id=1,
     )
-    read_tree = resolve(write_schema, read_schema)
+    read_tree = resolve_reader(write_schema, read_schema)
 
     assert read_tree == StructReader(
         (
@@ -117,7 +130,7 @@ def test_resolver_new_required_field() -> None:
     )
 
     with pytest.raises(ResolveError) as exc_info:
-        resolve(write_schema, read_schema)
+        resolve_reader(write_schema, read_schema)
 
     assert "2: data: required string is non-optional, and not part of the file schema" in str(exc_info.value)
 
@@ -133,7 +146,7 @@ def test_resolver_invalid_evolution() -> None:
     )
 
     with pytest.raises(ResolveError) as exc_info:
-        resolve(write_schema, read_schema)
+        resolve_reader(write_schema, read_schema)
 
     assert "Cannot promote long to double" in str(exc_info.value)
 
@@ -147,7 +160,7 @@ def test_resolver_promotion_string_to_binary() -> None:
         NestedField(1, "id", BinaryType()),
         schema_id=1,
     )
-    resolve(write_schema, read_schema)
+    resolve_reader(write_schema, read_schema)
 
 
 def test_resolver_promotion_binary_to_string() -> None:
@@ -159,7 +172,7 @@ def test_resolver_promotion_binary_to_string() -> None:
         NestedField(1, "id", StringType()),
         schema_id=1,
     )
-    resolve(write_schema, read_schema)
+    resolve_reader(write_schema, read_schema)
 
 
 def test_resolver_change_type() -> None:
@@ -173,69 +186,69 @@ def test_resolver_change_type() -> None:
     )
 
     with pytest.raises(ResolveError) as exc_info:
-        resolve(write_schema, read_schema)
+        resolve_reader(write_schema, read_schema)
 
     assert "File/read schema are not aligned for list, got map<string, string>" in str(exc_info.value)
 
 
 def test_resolve_int_to_long() -> None:
-    assert resolve(IntegerType(), LongType()) == IntegerReader()
+    assert resolve_reader(IntegerType(), LongType()) == IntegerReader()
 
 
 def test_resolve_float_to_double() -> None:
     # We should still read floats, because it is encoded in 4 bytes
-    assert resolve(FloatType(), DoubleType()) == FloatReader()
+    assert resolve_reader(FloatType(), DoubleType()) == FloatReader()
 
 
 def test_resolve_decimal_to_decimal() -> None:
     # DecimalType(P, S) to DecimalType(P2, S) where P2 > P
-    assert resolve(DecimalType(19, 25), DecimalType(22, 25)) == DecimalReader(19, 25)
+    assert resolve_reader(DecimalType(19, 25), DecimalType(22, 25)) == DecimalReader(19, 25)
 
 
 def test_struct_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(StructType(), StringType())
+        assert resolve_reader(StructType(), StringType())
 
 
 def test_map_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(MapType(1, StringType(), 2, IntegerType()), StringType())
+        assert resolve_reader(MapType(1, StringType(), 2, IntegerType()), StringType())
 
 
 def test_primitive_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(IntegerType(), MapType(1, StringType(), 2, IntegerType()))
+        assert resolve_reader(IntegerType(), MapType(1, StringType(), 2, IntegerType()))
 
 
 def test_integer_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(IntegerType(), StringType())
+        assert resolve_reader(IntegerType(), StringType())
 
 
 def test_float_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(FloatType(), StringType())
+        assert resolve_reader(FloatType(), StringType())
 
 
 def test_string_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(StringType(), FloatType())
+        assert resolve_reader(StringType(), FloatType())
 
 
 def test_binary_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(BinaryType(), FloatType())
+        assert resolve_reader(BinaryType(), FloatType())
 
 
 def test_decimal_not_aligned() -> None:
     with pytest.raises(ResolveError):
-        assert resolve(DecimalType(22, 19), StringType())
+        assert resolve_reader(DecimalType(22, 19), StringType())
 
 
 def test_resolve_decimal_to_decimal_reduce_precision() -> None:
     # DecimalType(P, S) to DecimalType(P2, S) where P2 > P
     with pytest.raises(ResolveError) as exc_info:
-        _ = resolve(DecimalType(19, 25), DecimalType(10, 25)) == DecimalReader(22, 25)
+        _ = resolve_reader(DecimalType(19, 25), DecimalType(10, 25)) == DecimalReader(22, 25)
 
     assert "Cannot reduce precision from decimal(19, 25) to decimal(10, 25)" in str(exc_info.value)
 
@@ -293,7 +306,7 @@ def test_resolver_initial_value() -> None:
         schema_id=2,
     )
 
-    assert resolve(write_schema, read_schema) == StructReader(
+    assert resolve_reader(write_schema, read_schema) == StructReader(
         (
             (None, StringReader()),  # The one we skip
             (0, DefaultReader("vo")),
@@ -301,3 +314,95 @@ def test_resolver_initial_value() -> None:
         Record,
         read_schema.as_struct(),
     )
+
+
+def test_resolve_writer() -> None:
+    actual = resolve_writer(record_schema=MANIFEST_ENTRY_SCHEMAS[2], file_schema=MANIFEST_ENTRY_SCHEMAS[1])
+    expected = StructWriter(
+        (
+            (0, IntegerWriter()),
+            (1, IntegerWriter()),
+            (
+                4,
+                StructWriter(
+                    (
+                        (1, StringWriter()),
+                        (2, StringWriter()),
+                        (3, StructWriter(())),
+                        (4, IntegerWriter()),
+                        (5, IntegerWriter()),
+                        (None, DefaultWriter(writer=IntegerWriter(), value=67108864)),
+                        (6, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                        (7, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                        (8, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                        (9, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                        (10, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=BinaryWriter()))),
+                        (11, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=BinaryWriter()))),
+                        (12, OptionWriter(option=BinaryWriter())),
+                        (13, OptionWriter(option=ListWriter(element_writer=IntegerWriter()))),
+                        (15, OptionWriter(option=IntegerWriter())),
+                    )
+                ),
+            ),
+        )
+    )
+
+    assert actual == expected
+
+
+def test_resolve_writer_promotion() -> None:
+    with pytest.raises(ResolveError) as exc_info:
+        _ = resolve_writer(
+            record_schema=Schema(NestedField(field_id=1, name="floating", type=DoubleType(), required=True)),
+            file_schema=Schema(NestedField(field_id=1, name="floating", type=FloatType(), required=True)),
+        )
+
+    assert "Cannot promote double to float" in str(exc_info.value)
+
+
+def test_writer_ordering() -> None:
+    actual = resolve_writer(
+        record_schema=Schema(
+            NestedField(field_id=1, name="str", type=StringType(), required=True),
+            NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
+        ),
+        file_schema=Schema(
+            NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
+            NestedField(field_id=1, name="str", type=StringType(), required=True),
+        ),
+    )
+
+    expected = StructWriter(((1, DoubleWriter()), (0, StringWriter())))
+
+    assert actual == expected
+
+
+def test_writer_one_more_field() -> None:
+    actual = resolve_writer(
+        record_schema=Schema(
+            NestedField(field_id=3, name="bool", type=BooleanType(), required=True),
+            NestedField(field_id=1, name="str", type=StringType(), required=True),
+            NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
+        ),
+        file_schema=Schema(
+            NestedField(field_id=2, name="dbl", type=DoubleType(), required=True),
+            NestedField(field_id=1, name="str", type=StringType(), required=True),
+        ),
+    )
+
+    expected = StructWriter(((2, DoubleWriter()), (1, StringWriter())))
+
+    assert actual == expected
+
+
+def test_writer_missing_optional_in_read_schema() -> None:
+    actual = resolve_writer(
+        record_schema=Schema(),
+        file_schema=Schema(
+            NestedField(field_id=1, name="str", type=StringType(), required=False),
+        ),
+    )
+
+    expected = StructWriter(field_writers=((None, OptionWriter(option=StringWriter())),))
+
+    assert actual == expected

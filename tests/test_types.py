@@ -18,6 +18,7 @@
 import pickle
 from typing import Type
 
+import pydantic_core
 import pytest
 
 from pyiceberg.exceptions import ValidationError
@@ -207,6 +208,11 @@ def test_nested_field() -> None:
     assert isinstance(field_var.field_type, StructType)
     assert str(field_var) == str(eval(repr(field_var)))
     assert field_var == pickle.loads(pickle.dumps(field_var))
+
+    with pytest.raises(pydantic_core.ValidationError) as exc_info:
+        _ = (NestedField(1, "field", StringType(), required=True, write_default=(1, "a", True)),)  # type: ignore
+
+    assert "validation errors for NestedField" in str(exc_info.value)
 
 
 @pytest.mark.parametrize("input_index,input_type", non_parameterized_types)
