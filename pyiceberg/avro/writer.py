@@ -52,12 +52,6 @@ class Writer(Singleton):
 
 
 @dataclass(frozen=True)
-class NoneWriter(Writer):
-    def write(self, encoder: BinaryEncoder, __: Any) -> None:
-        encoder.write_int(0)
-
-
-@dataclass(frozen=True)
 class BooleanWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: bool) -> None:
         encoder.write_boolean(val)

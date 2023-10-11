@@ -275,7 +275,7 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             name="sort_order_id",
             field_type=IntegerType(),
             required=False,
-            doc="	ID representing sort order for this file",
+            doc="ID representing sort order for this file",
         ),
     ),
 }
@@ -709,7 +709,7 @@ class ManifestWriter(ABC):
         return AvroOutputFile[ManifestEntry](
             output_file=self._output_file,
             file_schema=self._with_partition(self.version),
-            schema=self._with_partition(DEFAULT_READ_VERSION) if self.version != DEFAULT_READ_VERSION else None,
+            record_schema=self._with_partition(DEFAULT_READ_VERSION),
             schema_name="manifest_entry",
             metadata=self._meta,
         )

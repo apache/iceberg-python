@@ -615,7 +615,7 @@ class Table:
         if mode == "overwrite":
             snapshot = _write_dataframe(self, df)
         elif mode == "overwrite":
-
+            pass
         else:
             raise ValueError(f"Unknown write mode: {mode}")
         with self.transaction() as tx:
