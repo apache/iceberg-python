@@ -278,7 +278,7 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
                 elif file_field.required:
                     raise ValueError(f"Field is required, and there is no write default: {file_field}")
             else:
-                results.append((None, OptionWriter(option=writer)))
+                results.append((None, writer))
 
         return StructWriter(field_writers=tuple(results))
 

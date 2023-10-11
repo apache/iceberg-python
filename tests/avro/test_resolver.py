@@ -403,6 +403,6 @@ def test_writer_missing_optional_in_read_schema() -> None:
         ),
     )
 
-    expected = StructWriter(field_writers=((None, OptionWriter(option=OptionWriter(option=StringWriter()))),))
+    expected = StructWriter(field_writers=((None, OptionWriter(option=StringWriter())),))
 
     assert actual == expected
