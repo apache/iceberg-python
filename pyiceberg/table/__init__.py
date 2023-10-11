@@ -574,6 +574,13 @@ class Table:
         """Return the table's base location."""
         return self.metadata.location
 
+    @property
+    def last_sequence_number(self) -> int:
+        return self.metadata.last_sequence_number
+
+    def next_sequence_number(self) -> int:
+        return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
@@ -613,9 +620,10 @@ class Table:
             raise ValueError("Currently only unpartitioned tables are supported")
 
         if mode == "overwrite":
-            snapshot = _write_dataframe(self, df)
-        elif mode == "overwrite":
-            pass
+            snapshot = _dataframe_to_manifest_entries(self, df)
+        elif mode == "append":
+            # WIP
+            snapshot = _dataframe_to_manifest_entries(self, df)
         else:
             raise ValueError(f"Unknown write mode: {mode}")
         with self.transaction() as tx:
@@ -1706,21 +1714,20 @@ def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
     return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
 
 
-def _write_dataframe(table: Table, df: pa.Table) -> Snapshot:
+def _dataframe_to_manifest_entries(table: Table, df: pa.Table) -> Iterable[ManifestEntry]:
     snapshot_id = table.new_snapshot_id()
 
     from pyiceberg.io.pyarrow import write_file
 
-    # This is an iter so we can stream it later
-    data_file = write_file(table, iter([WriteTask(df)]))
-
-    manifest_entry = ManifestEntry(
+    # This is an iter, so we don't have to materialize everything every time
+    # This will be more relevant when we start doing partitioned writes
+    return (ManifestEntry(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=snapshot_id,
         data_sequence_number=None,
         file_sequence_number=None,
         data_file=data_file,
-    )
+    ) for data_file in write_file(table, iter([WriteTask(df)])))
 
     manifest_file_path = f'{table.location()}/metadata/{_generate_manifest_filename()}'
     manifest_writer = write_manifest(
@@ -1753,6 +1760,7 @@ def _write_dataframe(table: Table, df: pa.Table) -> Snapshot:
         parent_snapshot_id=parent_snapshot_id,
         timestamp_ms=int(time() * 1000),
         manifest_list=manifest_list_file_path,
+        sequence_number=table.next_sequence_number(),
         summary=None,
         schema_id=table.schema().schema_id,
     )
