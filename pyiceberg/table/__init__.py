@@ -240,6 +240,10 @@ class Transaction:
 
         if current_snapshot := self._table.current_snapshot():
             self._append_requirements(AssertRefSnapshotId(snapshot_id=current_snapshot.snapshot_id))
+        else:
+            # Check how we can check for an empty snapshot 🤔🤔🤔
+            # self._append_requirements(AssertRefSnapshotId(snapshot_id=None))
+            pass
         return self
 
     def update_schema(self) -> UpdateSchema:
@@ -1784,6 +1788,16 @@ def _manifests_to_manifest_list(
     )
 
 
+class _AppendManifest(ABC):
+    @abstractmethod
+    def append_manifest(self, manifest_file: ManifestFile) -> _AppendManifest:
+        pass
+
+    @abstractmethod
+    def manifests(self) -> List[ManifestFile]:
+        pass
+
+
 class _MergeAppend:
     _table: Table
     _snapshot_id: int
@@ -1830,3 +1844,106 @@ class _MergeAppend:
 
     def manifests(self) -> List[ManifestFile]:
         return self._added_manifests
+
+
+class _Summary:
+    added_size: int
+    removed_size: int
+    added_files: int
+    removed_files: int
+    added_eq_delete_files: int
+    removed_ed_delete_files: int
+    added_pos_delete_files: int
+    removed_pos_delete_files: int
+    added_delete_files: int
+    removed_delete_files: int
+    added_records: int
+    deleted_records: int
+    added_pos_deletes: int
+    removed_pos_deleted: int
+    added_eq_deletes: int
+    removed_eq_deletes: int
+
+    def __init__(self) -> None:
+        self.added_size = 0
+        self.removed_size = 0
+        self.added_files = 0
+        self.removed_files = 0
+        self.added_eq_delete_files = 0
+        self.removed_ed_delete_files = 0
+        self.added_pos_delete_files = 0
+        self.removed_pos_delete_files = 0
+        self.added_delete_files = 0
+        self.removed_delete_files = 0
+        self.added_records = 0
+        self.deleted_records = 0
+        self.added_pos_deletes = 0
+        self.removed_pos_deleted = 0
+        self.added_eq_deletes = 0
+        self.removed_eq_deletes = 0
+
+    def add_file(self, data_file: DataFile) -> None:
+        if data_file.content == DataFileContent.DATA:
+            self.added_files += 1
+            self.added_records += data_file.record_count
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self.added_delete_files += 1
+            self.added_pos_delete_files += 1
+            self.added_pos_deletes += data_file.record_count
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            self.added_delete_files += 1
+            self.added_eq_delete_files += 1
+            self.added_eq_deletes += data_file.record_count
+        else:
+            raise ValueError(f"Unknown data file content: {data_file.content}")
+
+    def removed_file(self, data_file: DataFile) -> None:
+        if data_file.content == DataFileContent.DATA:
+            self.removed_files += 1
+            self.deleted_records += data_file.record_count
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self.removed_delete_files += 1
+            self.removed_pos_delete_files += 1
+            self.removed_pos_deletes += data_file.record_count
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            self.removed_delete_files += 1
+            self.removed_eq_delete_files += 1
+            self.removed_eq_deletes += data_file.record_count
+        else:
+            raise ValueError(f"Unknown data file content: {data_file.content}")
+
+    def added_manifest(self, manifest: ManifestFile) -> None:
+        if manifest.content == ManifestContent.DATA:
+            self.added_files += manifest.added_files_count
+            self.added_records += manifest.added_rows_count
+            self.removed_files += manifest.deleted_files_count
+            self.deleted_records += manifest.deleted_rows_count
+        elif manifest.content == ManifestContent.DELETES:
+            self.added_delete_files += manifest.added_files_count
+            self.removed_delete_files += manifest.deleted_files_count
+        else:
+            raise ValueError(f"Unknown manifest file content: {manifest.content}")
+
+    def _set_when_non_zero(self, properties: Dict[str, str], num: int, property_name: str) -> None:
+        if num > 0:
+            properties[property_name] = str(num)
+
+    def build(self) -> Dict[str, str]:
+        properties: Dict[str, str] = {}
+        self._set_when_non_zero(properties, self.added_size, 'added-files-size')
+        self._set_when_non_zero(properties, self.removed_size, 'removed-files-size')
+        self._set_when_non_zero(properties, self.added_files, 'added-data-files')
+        self._set_when_non_zero(properties, self.removed_files, 'removed-data-files')
+        self._set_when_non_zero(properties, self.added_eq_delete_files, 'added-equality-delete-files')
+        self._set_when_non_zero(properties, self.removed_ed_delete_files, 'removed-equality-delete-files')
+        self._set_when_non_zero(properties, self.added_pos_delete_files, 'added-position-delete-files')
+        self._set_when_non_zero(properties, self.removed_pos_delete_files, 'removed-position-delete-files')
+        self._set_when_non_zero(properties, self.added_delete_files, 'added-delete-files')
+        self._set_when_non_zero(properties, self.removed_delete_files, 'removed-delete-files')
+        self._set_when_non_zero(properties, self.added_records, 'added-records')
+        self._set_when_non_zero(properties, self.deleted_records, 'deleted-records')
+        self._set_when_non_zero(properties, self.added_pos_deletes, 'added-position-deletes')
+        self._set_when_non_zero(properties, self.removed_pos_deleted, 'removed-position-deletes')
+        self._set_when_non_zero(properties, self.added_eq_deletes, 'added-equality-deletes')
+        self._set_when_non_zero(properties, self.removed_eq_deletes, 'removed-equality-deletes')
+        return properties
