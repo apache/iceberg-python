@@ -154,6 +154,23 @@ def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
 
 
 @pytest.fixture(scope="session", autouse=True)
+def table_v1_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_v1_appended_with_null"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+
+    for _ in range(2):
+        tbl.write_arrow(arrow_table_with_null, mode='append')
+
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
 def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v2_with_null"
 
@@ -164,6 +181,45 @@ def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
     tbl.write_arrow(arrow_table_with_null)
+
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_v2_appended_with_null"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
+
+    for _ in range(2):
+        tbl.write_arrow(arrow_table_with_null, mode='append')
+
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_v1_v2_appended_with_null"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+    tbl.write_arrow(arrow_table_with_null)
+
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+    with tbl.transaction() as tx:
+        tx.upgrade_table_version(format_version=2)
+
+    tbl.write_arrow(arrow_table_with_null, mode='append')
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
@@ -210,12 +266,23 @@ def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -
     identifier = f"default.arrow_table_v{format_version}_with_null"
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
+    assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_not_null(spark: SparkSession, col: str, format_version: int) -> None:
-    identifier = f"default.arrow_table_v{format_version}_with_null"
+def test_query_filter_appended_null(spark: SparkSession, col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v{format_version}_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
+    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
+def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
+    identifier = "default.table_v1_v2_appended_with_null"
+    df = spark.table(identifier)
+    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
