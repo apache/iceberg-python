@@ -20,13 +20,14 @@ from typing import (
     Any,
     Dict,
     List,
+    Mapping,
     Optional,
 )
 
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import ManifestFile, read_manifest_list
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, read_manifest_list
 from pyiceberg.typedef import IcebergBaseModel
 
 OPERATION = "operation"
@@ -52,7 +53,7 @@ class Operation(Enum):
         return f"Operation.{self.name}"
 
 
-class Summary(IcebergBaseModel):
+class Summary(IcebergBaseModel, Mapping):
     """A class that stores the summary information for a Snapshot.
 
     The snapshot summary’s operation field is used by some operations,
@@ -65,6 +66,16 @@ class Summary(IcebergBaseModel):
     def __init__(self, operation: Operation, **data: Any) -> None:
         super().__init__(operation=operation, **data)
         self._additional_properties = data
+
+    def __getitem__(self, __key) -> Optional[Any]:
+        if __key == 'operation':
+            return self.operation
+        else:
+            return self._additional_properties.get(__key)
+
+    def __len__(self):
+        # Operation is required
+        return 1 + len(self._additional_properties)
 
     @model_serializer
     def ser_model(self) -> Dict[str, str]:
@@ -117,3 +128,132 @@ class MetadataLogEntry(IcebergBaseModel):
 class SnapshotLogEntry(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     timestamp_ms: int = Field(alias="timestamp-ms")
+
+
+class SnapshotSummaryCollector:
+    added_size: int
+    removed_size: int
+    added_files: int
+    removed_files: int
+    added_eq_delete_files: int
+    removed_eq_delete_files: int
+    added_pos_delete_files: int
+    removed_pos_delete_files: int
+    added_delete_files: int
+    removed_delete_files: int
+    added_records: int
+    deleted_records: int
+    added_pos_deletes: int
+    removed_pos_deletes: int
+    added_eq_deletes: int
+    removed_eq_deletes: int
+
+    def __init__(self) -> None:
+        self.added_size = 0
+        self.removed_size = 0
+        self.added_files = 0
+        self.removed_files = 0
+        self.added_eq_delete_files = 0
+        self.removed_eq_delete_files = 0
+        self.added_pos_delete_files = 0
+        self.removed_pos_delete_files = 0
+        self.added_delete_files = 0
+        self.removed_delete_files = 0
+        self.added_records = 0
+        self.deleted_records = 0
+        self.added_pos_deletes = 0
+        self.removed_pos_deletes = 0
+        self.added_eq_deletes = 0
+        self.removed_eq_deletes = 0
+
+    def add_file(self, data_file: DataFile) -> None:
+        if data_file.content == DataFileContent.DATA:
+            self.added_files += 1
+            self.added_records += data_file.record_count
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self.added_delete_files += 1
+            self.added_pos_delete_files += 1
+            self.added_pos_deletes += data_file.record_count
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            self.added_delete_files += 1
+            self.added_eq_delete_files += 1
+            self.added_eq_deletes += data_file.record_count
+        else:
+            raise ValueError(f"Unknown data file content: {data_file.content}")
+
+    def removed_file(self, data_file: DataFile) -> None:
+        if data_file.content == DataFileContent.DATA:
+            self.removed_files += 1
+            self.deleted_records += data_file.record_count
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self.removed_delete_files += 1
+            self.removed_pos_delete_files += 1
+            self.removed_pos_deletes += data_file.record_count
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            self.removed_delete_files += 1
+            self.removed_eq_delete_files += 1
+            self.removed_eq_deletes += data_file.record_count
+        else:
+            raise ValueError(f"Unknown data file content: {data_file.content}")
+
+    def added_manifest(self, manifest: ManifestFile) -> None:
+        if manifest.content == ManifestContent.DATA:
+            self.added_files += manifest.added_files_count
+            self.added_records += manifest.added_rows_count
+            self.removed_files += manifest.deleted_files_count
+            self.deleted_records += manifest.deleted_rows_count
+        elif manifest.content == ManifestContent.DELETES:
+            self.added_delete_files += manifest.added_files_count
+            self.removed_delete_files += manifest.deleted_files_count
+        else:
+            raise ValueError(f"Unknown manifest file content: {manifest.content}")
+
+    def build(self) -> Dict[str, str]:
+        def set_non_zero(properties: Dict[str, str], num: int, property_name: str) -> None:
+            if num > 0:
+                properties[property_name] = str(num)
+
+        properties: Dict[str, str] = {}
+        set_non_zero(properties, self.added_size, 'added-files-size')
+        set_non_zero(properties, self.removed_size, 'removed-files-size')
+        set_non_zero(properties, self.added_files, 'added-data-files')
+        set_non_zero(properties, self.removed_files, 'removed-data-files')
+        set_non_zero(properties, self.added_eq_delete_files, 'added-equality-delete-files')
+        set_non_zero(properties, self.removed_eq_delete_files, 'removed-equality-delete-files')
+        set_non_zero(properties, self.added_pos_delete_files, 'added-position-delete-files')
+        set_non_zero(properties, self.removed_pos_delete_files, 'removed-position-delete-files')
+        set_non_zero(properties, self.added_delete_files, 'added-delete-files')
+        set_non_zero(properties, self.removed_delete_files, 'removed-delete-files')
+        set_non_zero(properties, self.added_records, 'added-records')
+        set_non_zero(properties, self.deleted_records, 'deleted-records')
+        set_non_zero(properties, self.added_pos_deletes, 'added-position-deletes')
+        set_non_zero(properties, self.removed_pos_deletes, 'removed-position-deletes')
+        set_non_zero(properties, self.added_eq_deletes, 'added-equality-deletes')
+        set_non_zero(properties, self.removed_eq_deletes, 'removed-equality-deletes')
+
+        return properties
+
+
+def merge_snapshot_summaries(previous_summary: Optional[Mapping], summary: Mapping) -> Dict[str, str]:
+    properties = ['records', 'files-size', 'data-files', 'delete-files', 'position-deletes', 'equality-deletes']
+
+    def _update_totals(total_property: str, added_property: str, removed_property: str):
+        if new_total := previous_summary.get(total_property):
+            new_total = int(new_total)
+            if new_total >= 0 and (added := summary.get(added_property)):
+                new_total += int(added)
+            if new_total >= 0 and (removed := summary.get(removed_property)):
+                new_total -= int(removed)
+            if new_total >= 0:
+                summary[total_property] = str(new_total)
+
+    if not previous_summary:
+        previous_summary = {f'total-{prop}': '0' for prop in properties}
+
+    for prop in properties:
+        _update_totals(
+            total_property=f'total-{prop}',
+            added_property=f'added-{prop}',
+            removed_property=f'deleted-{prop}',
+        )
+    return summary

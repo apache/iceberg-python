@@ -73,7 +73,13 @@ from pyiceberg.schema import (
     visit,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
-from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotLogEntry, Summary
+from pyiceberg.table.snapshots import (
+    Operation,
+    Snapshot,
+    SnapshotLogEntry,
+    SnapshotSummaryCollector,
+    merge_snapshot_summaries,
+)
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -626,25 +632,30 @@ class Table:
         parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
 
         new_entries = _dataframe_to_entries(self, snapshot_id=snapshot_id, df=df)
-        manifests: [ManifestFile] = [_entries_to_manifest(table=self, snapshot_id=snapshot_id, manifest_entries=new_entries)]
+        new_manifest = _entries_to_manifest(table=self, snapshot_id=snapshot_id, manifest_entries=new_entries)
 
+        merge = _MergeAppend(table=self, snapshot_id=snapshot_id, manifests=[new_manifest])
         if mode == "overwrite":
             if _ := self.current_snapshot():
                 operation = Operation.OVERWRITE
             else:
                 operation = Operation.APPEND
         elif mode == "append":
-            merge = _MergeAppend(table=self, snapshot_id=snapshot_id, manifests=manifests)
             if current_snapshot := self.current_snapshot():
                 for manifest in current_snapshot.manifests(self.io):
                     merge.append_manifest(manifest)
-            manifests = merge.manifests()
             operation = Operation.APPEND
         else:
             raise ValueError(f"Unknown write mode: {mode}")
 
+        summary = merge_snapshot_summaries(
+            previous_summary=None if parent_snapshot_id is None else self.snapshot_by_id(parent_snapshot_id).summary,
+            summary=merge.summary(),
+        )
+        summary['operation'] = operation
+
         snapshot = _manifests_to_manifest_list(
-            self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=manifests, operation=operation
+            self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=merge.manifests(), summary=summary
         )
 
         with self.transaction() as tx:
@@ -1766,7 +1777,7 @@ def _entries_to_manifest(table: Table, snapshot_id: int, manifest_entries: Itera
 
 
 def _manifests_to_manifest_list(
-    table: Table, snapshot_id: int, parent_snapshot_id: Optional[int], manifests: List[ManifestFile], operation: Operation
+    table: Table, snapshot_id: int, parent_snapshot_id: Optional[int], manifests: List[ManifestFile], summary: Dict[str, str]
 ) -> Snapshot:
     manifest_list_file_path = f'{table.location()}/metadata/{_generate_manifest_list_filename(snapshot_id=snapshot_id)}'
     with write_manifest_list(
@@ -1783,7 +1794,7 @@ def _manifests_to_manifest_list(
         parent_snapshot_id=parent_snapshot_id,
         manifest_list=manifest_list_file_path,
         sequence_number=table.next_sequence_number(),
-        summary=Summary(operation=operation),
+        summary=summary,
         schema_id=table.schema().schema_id,
     )
 
@@ -1845,105 +1856,8 @@ class _MergeAppend:
     def manifests(self) -> List[ManifestFile]:
         return self._added_manifests
 
-
-class _Summary:
-    added_size: int
-    removed_size: int
-    added_files: int
-    removed_files: int
-    added_eq_delete_files: int
-    removed_ed_delete_files: int
-    added_pos_delete_files: int
-    removed_pos_delete_files: int
-    added_delete_files: int
-    removed_delete_files: int
-    added_records: int
-    deleted_records: int
-    added_pos_deletes: int
-    removed_pos_deleted: int
-    added_eq_deletes: int
-    removed_eq_deletes: int
-
-    def __init__(self) -> None:
-        self.added_size = 0
-        self.removed_size = 0
-        self.added_files = 0
-        self.removed_files = 0
-        self.added_eq_delete_files = 0
-        self.removed_ed_delete_files = 0
-        self.added_pos_delete_files = 0
-        self.removed_pos_delete_files = 0
-        self.added_delete_files = 0
-        self.removed_delete_files = 0
-        self.added_records = 0
-        self.deleted_records = 0
-        self.added_pos_deletes = 0
-        self.removed_pos_deleted = 0
-        self.added_eq_deletes = 0
-        self.removed_eq_deletes = 0
-
-    def add_file(self, data_file: DataFile) -> None:
-        if data_file.content == DataFileContent.DATA:
-            self.added_files += 1
-            self.added_records += data_file.record_count
-        elif data_file.content == DataFileContent.POSITION_DELETES:
-            self.added_delete_files += 1
-            self.added_pos_delete_files += 1
-            self.added_pos_deletes += data_file.record_count
-        elif data_file.content == DataFileContent.EQUALITY_DELETES:
-            self.added_delete_files += 1
-            self.added_eq_delete_files += 1
-            self.added_eq_deletes += data_file.record_count
-        else:
-            raise ValueError(f"Unknown data file content: {data_file.content}")
-
-    def removed_file(self, data_file: DataFile) -> None:
-        if data_file.content == DataFileContent.DATA:
-            self.removed_files += 1
-            self.deleted_records += data_file.record_count
-        elif data_file.content == DataFileContent.POSITION_DELETES:
-            self.removed_delete_files += 1
-            self.removed_pos_delete_files += 1
-            self.removed_pos_deletes += data_file.record_count
-        elif data_file.content == DataFileContent.EQUALITY_DELETES:
-            self.removed_delete_files += 1
-            self.removed_eq_delete_files += 1
-            self.removed_eq_deletes += data_file.record_count
-        else:
-            raise ValueError(f"Unknown data file content: {data_file.content}")
-
-    def added_manifest(self, manifest: ManifestFile) -> None:
-        if manifest.content == ManifestContent.DATA:
-            self.added_files += manifest.added_files_count
-            self.added_records += manifest.added_rows_count
-            self.removed_files += manifest.deleted_files_count
-            self.deleted_records += manifest.deleted_rows_count
-        elif manifest.content == ManifestContent.DELETES:
-            self.added_delete_files += manifest.added_files_count
-            self.removed_delete_files += manifest.deleted_files_count
-        else:
-            raise ValueError(f"Unknown manifest file content: {manifest.content}")
-
-    def _set_when_non_zero(self, properties: Dict[str, str], num: int, property_name: str) -> None:
-        if num > 0:
-            properties[property_name] = str(num)
-
-    def build(self) -> Dict[str, str]:
-        properties: Dict[str, str] = {}
-        self._set_when_non_zero(properties, self.added_size, 'added-files-size')
-        self._set_when_non_zero(properties, self.removed_size, 'removed-files-size')
-        self._set_when_non_zero(properties, self.added_files, 'added-data-files')
-        self._set_when_non_zero(properties, self.removed_files, 'removed-data-files')
-        self._set_when_non_zero(properties, self.added_eq_delete_files, 'added-equality-delete-files')
-        self._set_when_non_zero(properties, self.removed_ed_delete_files, 'removed-equality-delete-files')
-        self._set_when_non_zero(properties, self.added_pos_delete_files, 'added-position-delete-files')
-        self._set_when_non_zero(properties, self.removed_pos_delete_files, 'removed-position-delete-files')
-        self._set_when_non_zero(properties, self.added_delete_files, 'added-delete-files')
-        self._set_when_non_zero(properties, self.removed_delete_files, 'removed-delete-files')
-        self._set_when_non_zero(properties, self.added_records, 'added-records')
-        self._set_when_non_zero(properties, self.deleted_records, 'deleted-records')
-        self._set_when_non_zero(properties, self.added_pos_deletes, 'added-position-deletes')
-        self._set_when_non_zero(properties, self.removed_pos_deleted, 'removed-position-deletes')
-        self._set_when_non_zero(properties, self.added_eq_deletes, 'added-equality-deletes')
-        self._set_when_non_zero(properties, self.removed_eq_deletes, 'removed-equality-deletes')
-        return properties
+    def summary(self) -> Dict[str, str]:
+        ssc = SnapshotSummaryCollector()
+        for manifest in self._added_manifests:
+            ssc.added_manifest(manifest)
+        return ssc.build()
