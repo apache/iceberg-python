@@ -182,6 +182,7 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="Splittable offsets",
         ),
         NestedField(field_id=140, name="sort_order_id", field_type=IntegerType(), required=False, doc="Sort order ID"),
+        NestedField(field_id=141, name="spec_id", field_type=IntegerType(), required=False, doc="Partition spec ID"),
     ),
     2: StructType(
         NestedField(
@@ -277,6 +278,13 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             required=False,
             doc="ID representing sort order for this file",
         ),
+        NestedField(
+            field_id=141,
+            name="spec_id",
+            field_type=IntegerType(),
+            required=False,
+            doc="ID representing spec id for this file",
+        ),
     ),
 }
 
@@ -346,6 +354,7 @@ class DataFile(Record):
         "split_offsets",
         "equality_ids",
         "sort_order_id",
+        "spec_id",
     )
     content: DataFileContent
     file_path: str
@@ -363,6 +372,7 @@ class DataFile(Record):
     split_offsets: Optional[List[int]]
     equality_ids: Optional[List[int]]
     sort_order_id: Optional[int]
+    spec_id: Optional[int]
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""

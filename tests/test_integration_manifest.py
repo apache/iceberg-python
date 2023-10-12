@@ -101,6 +101,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
         split_offsets=entry.data_file.split_offsets,
         equality_ids=entry.data_file.equality_ids,
         sort_order_id=entry.data_file.sort_order_id,
+        spec_id=entry.data_file.spec_id,
     )
     wrapped_entry_v2 = ManifestEntry(*entry.record_fields())
     wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
