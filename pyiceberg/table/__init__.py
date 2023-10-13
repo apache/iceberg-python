@@ -631,10 +631,11 @@ class Table:
         snapshot_id = self.new_snapshot_id()
         parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
 
-        new_entries = _dataframe_to_entries(self, snapshot_id=snapshot_id, df=df)
-        new_manifest = _entries_to_manifest(table=self, snapshot_id=snapshot_id, manifest_entries=new_entries)
+        data_files = _dataframe_to_data_files(self, snapshot_id=snapshot_id, df=df)
+        merge = _MergeAppend(table=self, snapshot_id=snapshot_id)
+        for data_file in data_files:
+            merge.append_datafile(data_file)
 
-        merge = _MergeAppend(table=self, snapshot_id=snapshot_id, manifests=[new_manifest])
         if mode == "overwrite":
             if _ := self.current_snapshot():
                 operation = Operation.OVERWRITE
@@ -648,14 +649,16 @@ class Table:
         else:
             raise ValueError(f"Unknown write mode: {mode}")
 
+        new_summary, manifests = merge.manifests()
         summary = merge_snapshot_summaries(
+            operation=operation,
             previous_summary=None if parent_snapshot_id is None else self.snapshot_by_id(parent_snapshot_id).summary,
-            summary=merge.summary(),
+            summary=new_summary,
         )
         summary['operation'] = operation
 
         snapshot = _manifests_to_manifest_list(
-            self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=merge.manifests(), summary=summary
+            self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=manifests, summary=summary
         )
 
         with self.transaction() as tx:
@@ -1746,34 +1749,12 @@ def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
     return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
 
 
-def _dataframe_to_entries(table: Table, snapshot_id: int, df: pa.Table) -> Iterable[ManifestEntry]:
+def _dataframe_to_data_files(table: Table, snapshot_id: int, df: pa.Table) -> Iterable[ManifestEntry]:
     from pyiceberg.io.pyarrow import write_file
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    for data_file in write_file(table, iter([WriteTask(df)])):
-        yield ManifestEntry(
-            status=ManifestEntryStatus.ADDED,
-            snapshot_id=snapshot_id,
-            data_sequence_number=None,
-            file_sequence_number=None,
-            data_file=data_file,
-        )
-
-
-def _entries_to_manifest(table: Table, snapshot_id: int, manifest_entries: Iterable[ManifestEntry]) -> ManifestFile:
-    manifest_writer = write_manifest(
-        format_version=table.metadata.format_version,
-        spec=table.spec(),
-        schema=table.schema(),
-        output_file=table.io.new_output(_new_manifest_path(table.location())),
-        snapshot_id=snapshot_id,
-    )
-    with manifest_writer as writer:
-        for manifest_entry in manifest_entries:
-            writer.add_entry(manifest_entry)
-
-    return manifest_writer.to_manifest_file()
+    yield from write_file(table, iter([WriteTask(df)]))
 
 
 def _manifests_to_manifest_list(
@@ -1813,11 +1794,17 @@ class _MergeAppend:
     _table: Table
     _snapshot_id: int
     _added_manifests: List[ManifestFile]
+    _added_datafiles: List[DataFile]
 
-    def __init__(self, table: Table, snapshot_id: int, manifests: Optional[List[ManifestFile]] = None) -> None:
+    def __init__(self, table: Table, snapshot_id: int) -> None:
         self._table = table
         self._snapshot_id = snapshot_id
-        self._added_manifests = manifests or []
+        self._added_manifests = []
+        self._added_datafiles = []
+
+    def append_datafile(self, data_file: DataFile) -> _MergeAppend:
+        self._added_datafiles.append(data_file)
+        return self
 
     def append_manifest(self, manifest_file: ManifestFile) -> _MergeAppend:
         if manifest_file.content != ManifestContent.DATA:
@@ -1853,11 +1840,32 @@ class _MergeAppend:
 
         return writer.to_manifest_file()
 
-    def manifests(self) -> List[ManifestFile]:
-        return self._added_manifests
-
-    def summary(self) -> Dict[str, str]:
+    def manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
         ssc = SnapshotSummaryCollector()
         for manifest in self._added_manifests:
             ssc.added_manifest(manifest)
-        return ssc.build()
+
+        if self._added_datafiles:
+            with write_manifest(
+                format_version=self._table.format_version,
+                spec=self._table.spec(),
+                # TODO: We want to get the schema from the metadata
+                schema=self._table.schema(),
+                output_file=self._table.io.new_output(_new_manifest_path(self._table.location())),
+                snapshot_id=self._snapshot_id,
+            ) as writer:
+                for data_file in self._added_datafiles:
+                    writer.add_entry(
+                        ManifestEntry(
+                            status=ManifestEntryStatus.ADDED,
+                            snapshot_id=self._snapshot_id,
+                            data_sequence_number=None,
+                            file_sequence_number=None,
+                            data_file=data_file,
+                        )
+                    )
+                    ssc.add_file(data_file=data_file)
+
+            self._added_manifests.append(writer.to_manifest_file())
+
+        return ssc.build(), self._added_manifests

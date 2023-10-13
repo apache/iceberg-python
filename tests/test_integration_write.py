@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-
 import uuid
 from datetime import date, datetime
 
@@ -286,3 +285,93 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
     assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+
+
+def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_summaries"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+
+    tbl.write_arrow(arrow_table_with_null, mode='append')
+    tbl.write_arrow(arrow_table_with_null, mode='append')
+    tbl.write_arrow(arrow_table_with_null, mode='overwrite')
+
+    rows = spark.sql(
+        f"""
+        SELECT operation, summary
+        FROM {identifier}.snapshots
+        ORDER BY committed_at ASC
+    """
+    ).collect()
+
+    operations = [row.operation for row in rows]
+    assert operations == ['append', 'append', 'overwrite']
+
+    summaries = [row.summary for row in rows]
+
+    # Spark after append operation
+    # {
+    #     "added-data-files": "1",
+    #     "added-records": "1",
+    #     "added-files-size": "392",
+    #     "total-equality-deletes": "0",
+    #     "total-position-deletes": "0",
+    #     "total-delete-files": "0",
+    #     "total-files-size": "392",
+    #     "total-records": "1",
+    #     "total-data-files": "1"
+    # }
+    summaries
+    assert summaries[0] == {
+        'added-data-files': '1',
+        'added-files-size': '5111',
+        'added-records': '3',
+        'total-data-files': '1',
+        'total-delete-files': '0',
+        'total-equality-deletes': '0',
+        'total-files-size': '5111',
+        'total-position-deletes': '0',
+        'total-records': '3',
+    }
+
+    assert summaries[1] == {
+        'added-data-files': '1',
+        'added-files-size': '5111',
+        'added-records': '3',
+        'total-data-files': '2',
+        'total-delete-files': '0',
+        'total-equality-deletes': '0',
+        'total-files-size': '10222',
+        'total-position-deletes': '0',
+        'total-records': '6',
+    }
+
+    # Spark after overwrite operation
+    # {
+    #     "added-data-files": "1",
+    #     "added-records": "1",
+    #     "added-files-size": "392",
+    #     "removed-files-size": "784",
+    #     "deleted-data-files": "2",
+    #     "deleted-records": "2",
+    #     "total-equality-deletes": "0",
+    #     "total-records": "1",
+    #     "total-position-deletes": "0",
+    #     "total-delete-files": "0",
+    #     "total-files-size": "392",
+    #     "total-data-files": "1"
+    # }
+    assert summaries[2] == {
+        'added-data-files': '1',
+        'added-records': '3',
+        'total-data-files': '4',
+        'total-delete-files': '0',
+        'total-equality-deletes': '0',
+        'total-files-size': '0',
+        'total-position-deletes': '0',
+        'total-records': '12',
+    }
