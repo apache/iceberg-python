@@ -610,9 +610,12 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
 
 
 def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> ManifestEntry:
-    """Inherits below properties from manifest file:
-        - sequence numbers.
-        - partition spec id.
+    """
+    Inherits properties from manifest file.
+
+    The properties that will be inherited are:
+    - sequence numbers
+    - partition spec id.
 
     More information about inheriting sequence numbers: https://iceberg.apache.org/spec/#sequence-number-inheritance
 
