@@ -182,7 +182,6 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="Splittable offsets",
         ),
         NestedField(field_id=140, name="sort_order_id", field_type=IntegerType(), required=False, doc="Sort order ID"),
-        NestedField(field_id=141, name="spec_id", field_type=IntegerType(), required=False, doc="Partition spec ID"),
     ),
     2: StructType(
         NestedField(
@@ -277,13 +276,6 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             field_type=IntegerType(),
             required=False,
             doc="ID representing sort order for this file",
-        ),
-        NestedField(
-            field_id=141,
-            name="spec_id",
-            field_type=IntegerType(),
-            required=False,
-            doc="ID representing spec id for this file",
         ),
     ),
 }
@@ -592,7 +584,7 @@ class ManifestFile(Record):
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
             return [
-                _inherit_sequence_number(entry, self)
+                _inherit_from_manifest(entry, self)
                 for entry in reader
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
@@ -617,18 +609,21 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
         yield from reader
 
 
-def _inherit_sequence_number(entry: ManifestEntry, manifest: ManifestFile) -> ManifestEntry:
-    """Inherits the sequence numbers.
+def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> ManifestEntry:
+    """Inherits below properties from manifest file:
+        - sequence numbers.
+        - partition spec id.
 
-    More information in the spec: https://iceberg.apache.org/spec/#sequence-number-inheritance
+    More information about inheriting sequence numbers: https://iceberg.apache.org/spec/#sequence-number-inheritance
 
     Args:
-        entry: The manifest entry that has null sequence numbers.
-        manifest: The manifest that has a sequence number.
+        entry: The manifest entry.
+        manifest: The manifest file.
 
     Returns:
-        The manifest entry with the sequence numbers set.
+        The manifest entry with properties inherited.
     """
+    # Inherit sequence numbers.
     # The snapshot_id is required in V1, inherit with V2 when null
     if entry.snapshot_id is None:
         entry.snapshot_id = manifest.added_snapshot_id
@@ -643,6 +638,9 @@ def _inherit_sequence_number(entry: ManifestEntry, manifest: ManifestFile) -> Ma
     if entry.file_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
         # Only available in V2, always 0 in V1
         entry.file_sequence_number = manifest.sequence_number
+
+    # Inherit partition spec id.
+    entry.data_file.spec_id = manifest.partition_spec_id
 
     return entry
 

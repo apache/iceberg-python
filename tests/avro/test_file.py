@@ -135,7 +135,6 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         split_offsets=[4, 133697593],
         equality_ids=[],
         sort_order_id=4,
-        spec_id=3,
     )
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
