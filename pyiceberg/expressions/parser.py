@@ -233,11 +233,11 @@ def handle_not(result: ParseResults) -> Not:
 
 
 def handle_and(result: ParseResults) -> And:
-    return And(result[0][0], result[0][1])
+    return And(*result[0])
 
 
 def handle_or(result: ParseResults) -> Or:
-    return Or(result[0][0], result[0][1])
+    return Or(*result[0])
 
 
 boolean_expression = infix_notation(

@@ -160,6 +160,14 @@ def test_and_or_with_parens() -> None:
     )
 
 
+def test_multiple_and_or() -> None:
+    assert And(EqualTo("foo", 1), EqualTo("bar", 2), EqualTo("baz", 3)) == parser.parse("foo = 1 and bar = 2 and baz = 3")
+    assert Or(EqualTo("foo", 1), EqualTo("foo", 2), EqualTo("foo", 3)) == parser.parse("foo = 1 or foo = 2 or foo = 3")
+    assert Or(
+        And(NotNull("foo"), LessThan("foo", 5)), And(GreaterThan("foo", 10), LessThan("foo", 100), IsNull("bar"))
+    ) == parser.parse("foo is not null and foo < 5 or (foo > 10 and foo < 100 and bar is null)")
+
+
 def test_starts_with() -> None:
     assert StartsWith("foo", "data") == parser.parse("foo LIKE 'data'")
 
