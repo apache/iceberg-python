@@ -53,7 +53,7 @@ class Operation(Enum):
         return f"Operation.{self.name}"
 
 
-class Summary(IcebergBaseModel, Mapping):
+class Summary(IcebergBaseModel, Mapping[str, str]):
     """A class that stores the summary information for a Snapshot.
 
     The snapshot summary’s operation field is used by some operations,
@@ -239,31 +239,39 @@ properties = ['records', 'files-size', 'data-files', 'delete-files', 'position-d
 
 
 def truncate_table_summary(summary: Dict[str, str]) -> Dict[str, str]:
-    truncated_metrics = {}
+    truncated_metrics = {
+        'total-data-files': '0',
+        'total-delete-files': '0',
+        'total-records': '0',
+        'total-files-size': '0',
+        'total-position-deletes': '0',
+        'total-equality-deletes': '0',
+    }
 
     def _cast_to_int(value: str) -> Optional[int]:
         return int(value) if value is not None else None
 
     if value := _cast_to_int(summary.get('total-data-files')):
-        truncated_metrics['deleted-data-files'] = value
+        truncated_metrics['deleted-data-files'] = str(value)
     if value := _cast_to_int(summary.get('total-delete-files')):
-        truncated_metrics['removed-delete-files'] = value
+        truncated_metrics['removed-delete-files'] = str(value)
     if value := _cast_to_int(summary.get('total-records')):
-        truncated_metrics['deleted-records'] = value
+        truncated_metrics['deleted-records'] = str(value)
     if value := _cast_to_int(summary.get('total-files-size')):
-        truncated_metrics['removed-files-size'] = value
+        truncated_metrics['removed-files-size'] = str(value)
     if value := _cast_to_int(summary.get('total-position-deletes')):
-        truncated_metrics['removed-position-deletes'] = value
+        truncated_metrics['removed-position-deletes'] = str(value)
     if value := _cast_to_int(summary.get('total-equality-deletes')):
-        truncated_metrics['removed-equality-deletes'] = value
+        truncated_metrics['removed-equality-deletes'] = str(value)
 
     return truncated_metrics
 
 
 def merge_snapshot_summaries(operation: Operation, previous_summary: Optional[Mapping], summary: Mapping) -> Dict[str, str]:
-    if previous_summary is not None and operation == Operation.OVERWRITE:
-        previous_summary = truncate_table_summary(previous_summary)
-    else:
+    if operation == Operation.OVERWRITE:
+        summary.update(truncate_table_summary(previous_summary))
+
+    if not previous_summary:
         previous_summary = {
             'total-data-files': '0',
             'total-delete-files': '0',

@@ -367,11 +367,15 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     # }
     assert summaries[2] == {
         'added-data-files': '1',
+        'added-files-size': '5111',
         'added-records': '3',
-        'total-data-files': '4',
+        'deleted-data-files': '2',
+        'deleted-records': '6',
+        'removed-files-size': '10222',
+        'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '0',
+        'total-files-size': '15333',
         'total-position-deletes': '0',
-        'total-records': '12',
+        'total-records': '3',
     }

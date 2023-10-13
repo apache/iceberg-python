@@ -1842,9 +1842,6 @@ class _MergeAppend:
 
     def manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
         ssc = SnapshotSummaryCollector()
-        for manifest in self._added_manifests:
-            ssc.added_manifest(manifest)
-
         if self._added_datafiles:
             with write_manifest(
                 format_version=self._table.format_version,
