@@ -28,6 +28,16 @@ github:
     - apache
     - hacktoberfest
     - pyiceberg
+  enabled_merge_buttons:
+    merge: false
+    squash: true
+    rebase: true
+  protected_branches:
+    main:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+
+      required_linear_history: true
   features:
     wiki: true
     issues: true

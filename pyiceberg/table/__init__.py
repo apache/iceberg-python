@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import uuid
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
@@ -74,6 +75,7 @@ from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
+    IcebergRootModel,
     Identifier,
     KeyDefaultDict,
     Properties,
@@ -164,7 +166,7 @@ class Transaction:
         self._requirements = self._requirements + new_requirements
         return self
 
-    def set_table_version(self, format_version: Literal[1, 2]) -> Transaction:
+    def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
         """Set the table to a certain version.
 
         Args:
@@ -173,7 +175,15 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        raise NotImplementedError("Not yet implemented")
+        if format_version not in {1, 2}:
+            raise ValueError(f"Unsupported table format version: {format_version}")
+
+        if format_version < self._table.metadata.format_version:
+            raise ValueError(f"Cannot downgrade v{self._table.metadata.format_version} table to v{format_version}")
+        if format_version > self._table.metadata.format_version:
+            return self._append_updates(UpgradeFormatVersionUpdate(format_version=format_version))
+        else:
+            return self
 
     def set_properties(self, **updates: str) -> Transaction:
         """Set properties.
@@ -402,8 +412,25 @@ class AssertDefaultSortOrderId(TableRequirement):
     default_sort_order_id: int = Field(..., alias="default-sort-order-id")
 
 
+class Namespace(IcebergRootModel[List[str]]):
+    """Reference to one or more levels of a namespace."""
+
+    root: List[str] = Field(
+        ...,
+        description='Reference to one or more levels of a namespace',
+        example=['accounting', 'tax'],
+    )
+
+
+class TableIdentifier(IcebergBaseModel):
+    """Fully Qualified identifier to a table."""
+
+    namespace: Namespace
+    name: str
+
+
 class CommitTableRequest(IcebergBaseModel):
-    identifier: Identifier = Field()
+    identifier: TableIdentifier = Field()
     requirements: Tuple[SerializeAsAny[TableRequirement], ...] = Field(default_factory=tuple)
     updates: Tuple[SerializeAsAny[TableUpdate], ...] = Field(default_factory=tuple)
 
@@ -463,6 +490,10 @@ class Table:
             limit=limit,
         )
 
+    @property
+    def format_version(self) -> Literal[1, 2]:
+        return self.metadata.format_version
+
     def schema(self) -> Schema:
         """Return the schema for this table."""
         return next(schema for schema in self.metadata.schemas if schema.schema_id == self.metadata.current_schema_id)
@@ -498,6 +529,21 @@ class Table:
         """Return the table's base location."""
         return self.metadata.location
 
+    @property
+    def last_sequence_number(self) -> int:
+        return self.metadata.last_sequence_number
+
+    def _next_sequence_number(self) -> int:
+        return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
+
+    def new_snapshot_id(self) -> int:
+        """Generate a new snapshot-id that's not in use."""
+        snapshot_id = _generate_snapshot_id()
+        while self.snapshot_by_id(snapshot_id) is not None:
+            snapshot_id = _generate_snapshot_id()
+
+        return snapshot_id
+
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if snapshot_id := self.metadata.current_snapshot_id:
@@ -526,7 +572,11 @@ class Table:
 
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
-            CommitTableRequest(identifier=self.identifier[1:], updates=updates, requirements=requirements)
+            CommitTableRequest(
+                identifier=TableIdentifier(namespace=self.identifier[:-1], name=self.identifier[-1]),
+                updates=updates,
+                requirements=requirements,
+            )
         )  # pylint: disable=W0212
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location
@@ -1566,3 +1616,17 @@ def _add_and_move_fields(
     elif len(moves) > 0:
         return _move_fields(fields, moves)
     return None if len(adds) == 0 else tuple(*fields, *adds)
+
+
+def _generate_snapshot_id() -> int:
+    """Generate a new Snapshot ID from a UUID.
+
+    Returns: An 64 bit long
+    """
+    rnd_uuid = uuid.uuid4()
+    snapshot_id = int.from_bytes(
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
+    )
+    snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
+
+    return snapshot_id

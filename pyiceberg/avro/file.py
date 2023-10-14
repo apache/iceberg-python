@@ -38,7 +38,7 @@ from pyiceberg.avro.codecs import KNOWN_CODECS, Codec
 from pyiceberg.avro.decoder import BinaryDecoder, new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.reader import Reader
-from pyiceberg.avro.resolver import construct_reader, construct_writer, resolve
+from pyiceberg.avro.resolver import construct_reader, construct_writer, resolve_reader, resolve_writer
 from pyiceberg.avro.writer import Writer
 from pyiceberg.io import InputFile, OutputFile, OutputStream
 from pyiceberg.schema import Schema
@@ -172,7 +172,7 @@ class AvroFile(Generic[D]):
         if not self.read_schema:
             self.read_schema = self.schema
 
-        self.reader = resolve(self.schema, self.read_schema, self.read_types, self.read_enums)
+        self.reader = resolve_reader(self.schema, self.read_schema, self.read_types, self.read_enums)
 
         return self
 
@@ -222,18 +222,29 @@ class AvroFile(Generic[D]):
 class AvroOutputFile(Generic[D]):
     output_file: OutputFile
     output_stream: OutputStream
-    schema: Schema
+    file_schema: Schema
     schema_name: str
     encoder: BinaryEncoder
     sync_bytes: bytes
     writer: Writer
 
-    def __init__(self, output_file: OutputFile, schema: Schema, schema_name: str, metadata: Dict[str, str] = EMPTY_DICT) -> None:
+    def __init__(
+        self,
+        output_file: OutputFile,
+        file_schema: Schema,
+        schema_name: str,
+        record_schema: Optional[Schema] = None,
+        metadata: Dict[str, str] = EMPTY_DICT,
+    ) -> None:
         self.output_file = output_file
-        self.schema = schema
+        self.file_schema = file_schema
         self.schema_name = schema_name
         self.sync_bytes = os.urandom(SYNC_SIZE)
-        self.writer = construct_writer(self.schema)
+        self.writer = (
+            construct_writer(file_schema=self.file_schema)
+            if record_schema is None
+            else resolve_writer(record_schema=record_schema, file_schema=self.file_schema)
+        )
         self.metadata = metadata
 
     def __enter__(self) -> AvroOutputFile[D]:
@@ -247,7 +258,6 @@ class AvroOutputFile(Generic[D]):
         self.encoder = BinaryEncoder(self.output_stream)
 
         self._write_header()
-        self.writer = construct_writer(self.schema)
 
         return self
 
@@ -258,7 +268,7 @@ class AvroOutputFile(Generic[D]):
         self.output_stream.close()
 
     def _write_header(self) -> None:
-        json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.schema, schema_name=self.schema_name))
+        json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.file_schema, schema_name=self.schema_name))
         meta = {**self.metadata, _SCHEMA_KEY: json_schema, _CODEC_KEY: "null"}
         header = AvroFileHeader(magic=MAGIC, meta=meta, sync=self.sync_bytes)
         construct_writer(META_SCHEMA).write(self.encoder, header)

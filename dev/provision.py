@@ -279,3 +279,25 @@ for table_name, partition in [
         (CAST('2023-03-12' AS date), CAST('2023-03-12 12:22:00' AS timestamp), 12, 'l');
     """
     )
+
+# There is an issue with CREATE OR REPLACE
+# https://github.com/apache/iceberg/issues/8756
+spark.sql(
+    """
+DROP TABLE IF EXISTS default.test_table_version
+"""
+)
+
+spark.sql(
+    """
+CREATE TABLE default.test_table_version (
+    dt     date,
+    number integer,
+    letter string
+)
+USING iceberg
+TBLPROPERTIES (
+    'format-version'='1'
+);
+"""
+)

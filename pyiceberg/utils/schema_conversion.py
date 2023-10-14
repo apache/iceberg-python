@@ -48,6 +48,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from pyiceberg.utils.decimal import decimal_required_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -565,10 +566,17 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             }
 
     def visit_fixed(self, fixed_type: FixedType) -> AvroType:
-        return {"type": "fixed", "size": len(fixed_type)}
+        return {"type": "fixed", "size": len(fixed_type), "name": f"fixed_{len(fixed_type)}"}
 
     def visit_decimal(self, decimal_type: DecimalType) -> AvroType:
-        return {"type": "bytes", "logicalType": "decimal", "precision": decimal_type.precision, "scale": decimal_type.scale}
+        return {
+            "type": "fixed",
+            "size": decimal_required_bytes(decimal_type.precision),
+            "logicalType": "decimal",
+            "precision": decimal_type.precision,
+            "scale": decimal_type.scale,
+            "name": f"decimal_{decimal_type.precision}_{decimal_type.scale}",
+        }
 
     def visit_boolean(self, boolean_type: BooleanType) -> AvroType:
         return "boolean"
@@ -603,7 +611,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         return "string"
 
     def visit_uuid(self, uuid_type: UUIDType) -> AvroType:
-        return {"type": "fixed", "size": "16", "logicalType": "uuid"}
+        return {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed"}
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"

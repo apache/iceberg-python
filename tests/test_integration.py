@@ -46,6 +46,8 @@ from pyiceberg.types import (
     TimestampType,
 )
 
+DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
+
 
 @pytest.fixture()
 def catalog() -> Catalog:
@@ -81,6 +83,11 @@ def table_test_all_types(catalog: Catalog) -> Table:
     return catalog.load_table("default.test_all_types")
 
 
+@pytest.fixture()
+def table_test_table_version(catalog: Catalog) -> Table:
+    return catalog.load_table("default.test_table_version")
+
+
 TABLE_NAME = ("default", "t1")
 
 
@@ -104,25 +111,25 @@ def table(catalog: Catalog) -> Table:
 
 @pytest.mark.integration
 def test_table_properties(table: Table) -> None:
-    assert table.properties == {}
+    assert table.properties == DEFAULT_PROPERTIES
 
     with table.transaction() as transaction:
         transaction.set_properties(abc="🤪")
 
-    assert table.properties == {"abc": "🤪"}
+    assert table.properties == dict(**{"abc": "🤪"}, **DEFAULT_PROPERTIES)
 
     with table.transaction() as transaction:
         transaction.remove_properties("abc")
 
-    assert table.properties == {}
+    assert table.properties == DEFAULT_PROPERTIES
 
     table = table.transaction().set_properties(abc="def").commit_transaction()
 
-    assert table.properties == {"abc": "def"}
+    assert table.properties == dict(**{"abc": "def"}, **DEFAULT_PROPERTIES)
 
     table = table.transaction().remove_properties("abc").commit_transaction()
 
-    assert table.properties == {}
+    assert table.properties == DEFAULT_PROPERTIES
 
 
 @pytest.fixture()
@@ -364,3 +371,28 @@ def test_scan_tag(test_positional_mor_deletes: Table) -> None:
 def test_scan_branch(test_positional_mor_deletes: Table) -> None:
     arrow_table = test_positional_mor_deletes.scan().use_ref("without_5").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
+
+
+@pytest.mark.integration
+def test_upgrade_table_version(table_test_table_version: Table) -> None:
+    assert table_test_table_version.format_version == 1
+
+    with table_test_table_version.transaction() as transaction:
+        transaction.upgrade_table_version(format_version=1)
+
+    assert table_test_table_version.format_version == 1
+
+    with table_test_table_version.transaction() as transaction:
+        transaction.upgrade_table_version(format_version=2)
+
+    assert table_test_table_version.format_version == 2
+
+    with pytest.raises(ValueError) as e:  # type: ignore
+        with table_test_table_version.transaction() as transaction:
+            transaction.upgrade_table_version(format_version=1)
+    assert "Cannot downgrade v2 table to v1" in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        with table_test_table_version.transaction() as transaction:
+            transaction.upgrade_table_version(format_version=3)
+    assert "Unsupported table format version: 3" in str(e.value)
