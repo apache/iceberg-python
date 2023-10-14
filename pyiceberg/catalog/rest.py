@@ -319,6 +319,10 @@ class RestCatalog(Catalog):
 
     def _handle_non_200_response(self, exc: HTTPError, error_handler: Dict[int, Type[Exception]]) -> None:
         exception: Type[Exception]
+
+        if exc.response is None:
+            raise ValueError("Did not receive a response")
+
         code = exc.response.status_code
         if code in error_handler:
             exception = error_handler[code]
