@@ -54,10 +54,10 @@ Both the source distribution (`sdist`) and the binary distributions (`wheels`) n
 
 Before committing the files to the Apache SVN artifact distribution SVN hashes need to be generated, and those need to be signed with gpg to make sure that they are authentic.
 
-Go to [Github Actions and run the `Python release` action](https://github.com/apache/iceberg/actions/workflows/python-release.yml). **Set the version to master, since we cannot modify the source**. Download the zip, and sign the files:
+Go to [Github Actions and run the `Python release` action](https://github.com/apache/iceberg/actions/workflows/python-release.yml). **Set the version to main, since we cannot modify the source**. Download the zip, and sign the files:
 
 ```bash
-cd release-master/
+cd release-main/
 
 for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
 do
