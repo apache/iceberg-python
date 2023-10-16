@@ -30,7 +30,8 @@ from pyiceberg.avro.codecs import DeflateCodec
 from pyiceberg.avro.file import META_SCHEMA, AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
-    MANIFEST_ENTRY_SCHEMA,
+    DEFAULT_BLOCK_SIZE,
+    MANIFEST_ENTRY_SCHEMAS,
     DataFile,
     DataFileContent,
     FileFormat,
@@ -116,7 +117,7 @@ def todict(obj: Any) -> Any:
         return obj
 
 
-def test_write_manifest_entry_with_iceberg_read_with_fastavro() -> None:
+def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
     data_file = DataFile(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
@@ -124,7 +125,6 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro() -> None:
         partition=Record(),
         record_count=131327,
         file_size_in_bytes=220669226,
-        block_size_in_bytes=67108864,
         column_sizes={1: 220661854},
         value_counts={1: 131327},
         null_value_counts={1: 0},
@@ -135,7 +135,6 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro() -> None:
         split_offsets=[4, 133697593],
         equality_ids=[],
         sort_order_id=4,
-        spec_id=3,
     )
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
@@ -151,7 +150,76 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro() -> None:
         tmp_avro_file = tmpdir + "/manifest_entry.avro"
 
         with avro.AvroOutputFile[ManifestEntry](
-            PyArrowFileIO().new_output(tmp_avro_file), MANIFEST_ENTRY_SCHEMA, "manifest_entry", additional_metadata
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[1],
+            schema_name="manifest_entry",
+            record_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            metadata=additional_metadata,
+        ) as out:
+            out.write_block([entry])
+
+        with open(tmp_avro_file, "rb") as fo:
+            r = reader(fo=fo)
+
+            for k, v in additional_metadata.items():
+                assert k in r.metadata
+                assert v == r.metadata[k]
+
+            it = iter(r)
+
+            fa_entry = next(it)
+
+        v2_entry = todict(entry)
+
+        # These are not written in V1
+        del v2_entry['data_sequence_number']
+        del v2_entry['file_sequence_number']
+        del v2_entry['data_file']['content']
+        del v2_entry['data_file']['equality_ids']
+
+        # Required in V1
+        v2_entry['data_file']['block_size_in_bytes'] = DEFAULT_BLOCK_SIZE
+
+        assert v2_entry == fa_entry
+
+
+def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path="s3://some-path/some-file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=131327,
+        file_size_in_bytes=220669226,
+        column_sizes={1: 220661854},
+        value_counts={1: 131327},
+        null_value_counts={1: 0},
+        nan_value_counts={},
+        lower_bounds={1: b"aaaaaaaaaaaaaaaa"},
+        upper_bounds={1: b"zzzzzzzzzzzzzzzz"},
+        key_metadata=b"\xde\xad\xbe\xef",
+        split_offsets=[4, 133697593],
+        equality_ids=[],
+        sort_order_id=4,
+    )
+    entry = ManifestEntry(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=8638475580105682862,
+        data_sequence_number=0,
+        file_sequence_number=0,
+        data_file=data_file,
+    )
+
+    additional_metadata = {"foo": "bar"}
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest_entry.avro"
+
+        with avro.AvroOutputFile[ManifestEntry](
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            schema_name="manifest_entry",
+            metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
 
@@ -169,7 +237,8 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro() -> None:
         assert todict(entry) == fa_entry
 
 
-def test_write_manifest_entry_with_fastavro_read_with_iceberg() -> None:
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: int) -> None:
     data_file = DataFile(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
@@ -189,6 +258,9 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg() -> None:
         sort_order_id=4,
         spec_id=3,
     )
+    if format_version == 1:
+        data_file.block_size_in_bytes = DEFAULT_BLOCK_SIZE
+
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
@@ -200,14 +272,14 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg() -> None:
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/manifest_entry.avro"
 
-        schema = AvroSchemaConversion().iceberg_to_avro(MANIFEST_ENTRY_SCHEMA, schema_name="manifest_entry")
+        schema = AvroSchemaConversion().iceberg_to_avro(MANIFEST_ENTRY_SCHEMAS[format_version], schema_name="manifest_entry")
 
         with open(tmp_avro_file, "wb") as out:
             writer(out, schema, [todict(entry)])
 
         with avro.AvroFile[ManifestEntry](
             PyArrowFileIO().new_input(tmp_avro_file),
-            MANIFEST_ENTRY_SCHEMA,
+            MANIFEST_ENTRY_SCHEMAS[format_version],
             {-1: ManifestEntry, 2: DataFile},
         ) as avro_reader:
             it = iter(avro_reader)
@@ -286,5 +358,12 @@ def test_all_primitive_types(is_required: bool) -> None:
             it = iter(avro_reader)
             avro_entry = next(it)
 
+        # read with fastavro
+        with open(tmp_avro_file, "rb") as fo:
+            r = reader(fo=fo)
+            it_fastavro = iter(r)
+            avro_entry_read_with_fastavro = list(next(it_fastavro).values())
+
     for idx, field in enumerate(all_primitives_schema.as_struct()):
         assert record[idx] == avro_entry[idx], f"Invalid {field}"
+        assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"

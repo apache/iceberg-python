@@ -53,6 +53,7 @@ from pyiceberg.avro.writer import (
     BooleanWriter,
     DateWriter,
     DecimalWriter,
+    DefaultWriter,
     DoubleWriter,
     FixedWriter,
     FloatWriter,
@@ -112,11 +113,12 @@ def construct_reader(
 
     Args:
         file_schema (Schema | IcebergType): The schema of the Avro file.
+        read_types (Dict[int, Callable[..., StructProtocol]]): Constructors for structs for certain field-ids
 
     Raises:
         NotImplementedError: If attempting to resolve an unrecognized object type.
     """
-    return resolve(file_schema, file_schema, read_types)
+    return resolve_reader(file_schema, file_schema, read_types)
 
 
 def construct_writer(file_schema: Union[Schema, IcebergType]) -> Writer:
@@ -128,7 +130,7 @@ def construct_writer(file_schema: Union[Schema, IcebergType]) -> Writer:
     Raises:
         NotImplementedError: If attempting to resolve an unrecognized object type.
     """
-    return visit(file_schema, ConstructWriter())
+    return visit(file_schema, CONSTRUCT_WRITER_VISITOR)
 
 
 class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
@@ -138,7 +140,7 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
         return struct_result
 
     def struct(self, struct: StructType, field_results: List[Writer]) -> Writer:
-        return StructWriter(tuple(field_results))
+        return StructWriter(tuple((pos, result) for pos, result in enumerate(field_results)))
 
     def field(self, field: NestedField, field_result: Writer) -> Writer:
         return field_result if field.required else OptionWriter(field_result)
@@ -192,7 +194,28 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
         return BinaryWriter()
 
 
-def resolve(
+CONSTRUCT_WRITER_VISITOR = ConstructWriter()
+
+
+def resolve_writer(
+    record_schema: Union[Schema, IcebergType],
+    file_schema: Union[Schema, IcebergType],
+) -> Writer:
+    """Resolve the file and read schema to produce a reader.
+
+    Args:
+        record_schema (Schema | IcebergType): The schema of the record in memory.
+        file_schema (Schema | IcebergType): The schema of the file that will be written
+
+    Raises:
+        NotImplementedError: If attempting to resolve an unrecognized object type.
+    """
+    if record_schema == file_schema:
+        return construct_writer(file_schema)
+    return visit_with_partner(file_schema, record_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore
+
+
+def resolve_reader(
     file_schema: Union[Schema, IcebergType],
     read_schema: Union[Schema, IcebergType],
     read_types: Dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
@@ -210,7 +233,7 @@ def resolve(
         NotImplementedError: If attempting to resolve an unrecognized object type.
     """
     return visit_with_partner(
-        file_schema, read_schema, SchemaResolver(read_types, read_enums), SchemaPartnerAccessor()
+        file_schema, read_schema, ReadSchemaResolver(read_types, read_enums), SchemaPartnerAccessor()
     )  # type: ignore
 
 
@@ -233,7 +256,95 @@ class EnumReader(Reader):
         pass
 
 
-class SchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
+class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
+    def schema(self, file_schema: Schema, record_schema: Optional[IcebergType], result: Writer) -> Writer:
+        return result
+
+    def struct(self, file_schema: StructType, record_struct: Optional[IcebergType], file_writers: List[Writer]) -> Writer:
+        if not isinstance(record_struct, StructType):
+            raise ResolveError(f"File/write schema are not aligned for struct, got {record_struct}")
+
+        record_struct_positions: Dict[int, int] = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
+        results: List[Tuple[Optional[int], Writer]] = []
+
+        for writer, file_field in zip(file_writers, file_schema.fields):
+            if file_field.field_id in record_struct_positions:
+                results.append((record_struct_positions[file_field.field_id], writer))
+            elif file_field.required:
+                # There is a default value
+                if file_field.write_default is not None:
+                    # The field is not in the record, but there is a write default value
+                    results.append((None, DefaultWriter(writer=writer, value=file_field.write_default)))  # type: ignore
+                elif file_field.required:
+                    raise ValueError(f"Field is required, and there is no write default: {file_field}")
+            else:
+                results.append((None, writer))
+
+        return StructWriter(field_writers=tuple(results))
+
+    def field(self, file_field: NestedField, record_type: Optional[IcebergType], field_writer: Writer) -> Writer:
+        return field_writer if file_field.required else OptionWriter(field_writer)
+
+    def list(self, file_list_type: ListType, file_list: Optional[IcebergType], element_writer: Writer) -> Writer:
+        return ListWriter(element_writer if file_list_type.element_required else OptionWriter(element_writer))
+
+    def map(
+        self, file_map_type: MapType, file_primitive: Optional[IcebergType], key_writer: Writer, value_writer: Writer
+    ) -> Writer:
+        return MapWriter(key_writer, value_writer if file_map_type.value_required else OptionWriter(value_writer))
+
+    def primitive(self, file_primitive: PrimitiveType, record_primitive: Optional[IcebergType]) -> Writer:
+        if record_primitive is not None:
+            # ensure that the type can be projected to the expected
+            if file_primitive != record_primitive:
+                promote(record_primitive, file_primitive)
+
+        return super().primitive(file_primitive, file_primitive)
+
+    def visit_boolean(self, boolean_type: BooleanType, partner: Optional[IcebergType]) -> Writer:
+        return BooleanWriter()
+
+    def visit_integer(self, integer_type: IntegerType, partner: Optional[IcebergType]) -> Writer:
+        return IntegerWriter()
+
+    def visit_long(self, long_type: LongType, partner: Optional[IcebergType]) -> Writer:
+        return IntegerWriter()
+
+    def visit_float(self, float_type: FloatType, partner: Optional[IcebergType]) -> Writer:
+        return FloatWriter()
+
+    def visit_double(self, double_type: DoubleType, partner: Optional[IcebergType]) -> Writer:
+        return DoubleWriter()
+
+    def visit_decimal(self, decimal_type: DecimalType, partner: Optional[IcebergType]) -> Writer:
+        return DecimalWriter(decimal_type.precision, decimal_type.scale)
+
+    def visit_date(self, date_type: DateType, partner: Optional[IcebergType]) -> Writer:
+        return DateWriter()
+
+    def visit_time(self, time_type: TimeType, partner: Optional[IcebergType]) -> Writer:
+        return TimeWriter()
+
+    def visit_timestamp(self, timestamp_type: TimestampType, partner: Optional[IcebergType]) -> Writer:
+        return TimestampWriter()
+
+    def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: Optional[IcebergType]) -> Writer:
+        return TimestamptzWriter()
+
+    def visit_string(self, string_type: StringType, partner: Optional[IcebergType]) -> Writer:
+        return StringWriter()
+
+    def visit_uuid(self, uuid_type: UUIDType, partner: Optional[IcebergType]) -> Writer:
+        return UUIDWriter()
+
+    def visit_fixed(self, fixed_type: FixedType, partner: Optional[IcebergType]) -> Writer:
+        return FixedWriter(len(fixed_type))
+
+    def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Writer:
+        return BinaryWriter()
+
+
+class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     __slots__ = ("read_types", "read_enums", "context")
     read_types: Dict[int, Callable[..., StructProtocol]]
     read_enums: Dict[int, Callable[..., Enum]]
@@ -279,7 +390,7 @@ class SchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
             for field, result_reader in zip(struct.fields, field_readers)
         ]
 
-        file_fields = {field.field_id: field for field in struct.fields}
+        file_fields = {field.field_id for field in struct.fields}
         for pos, read_field in enumerate(expected_struct.fields):
             if read_field.field_id not in file_fields:
                 if isinstance(read_field, NestedField) and read_field.initial_default is not None:

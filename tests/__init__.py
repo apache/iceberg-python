@@ -14,15 +14,3 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-mkdocs==1.5.3
-griffe==0.36.5
-jinja2==3.1.2
-mkdocstrings==0.23.0
-mkdocstrings-python==1.7.3
-mkdocs-literate-nav==0.6.1
-mkdocs-autorefs==0.5.0
-mkdocs-gen-files==0.5.0
-mkdocs-material==9.4.2
-mkdocs-material-extensions==1.2
-mkdocs-section-index==0.3.8

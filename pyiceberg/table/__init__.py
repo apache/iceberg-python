@@ -75,6 +75,7 @@ from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
+    IcebergRootModel,
     Identifier,
     KeyDefaultDict,
     Properties,
@@ -165,7 +166,7 @@ class Transaction:
         self._requirements = self._requirements + new_requirements
         return self
 
-    def set_table_version(self, format_version: Literal[1, 2]) -> Transaction:
+    def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
         """Set the table to a certain version.
 
         Args:
@@ -174,7 +175,15 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        raise NotImplementedError("Not yet implemented")
+        if format_version not in {1, 2}:
+            raise ValueError(f"Unsupported table format version: {format_version}")
+
+        if format_version < self._table.metadata.format_version:
+            raise ValueError(f"Cannot downgrade v{self._table.metadata.format_version} table to v{format_version}")
+        if format_version > self._table.metadata.format_version:
+            return self._append_updates(UpgradeFormatVersionUpdate(format_version=format_version))
+        else:
+            return self
 
     def set_properties(self, **updates: str) -> Transaction:
         """Set properties.
@@ -403,8 +412,25 @@ class AssertDefaultSortOrderId(TableRequirement):
     default_sort_order_id: int = Field(..., alias="default-sort-order-id")
 
 
+class Namespace(IcebergRootModel[List[str]]):
+    """Reference to one or more levels of a namespace."""
+
+    root: List[str] = Field(
+        ...,
+        description='Reference to one or more levels of a namespace',
+        example=['accounting', 'tax'],
+    )
+
+
+class TableIdentifier(IcebergBaseModel):
+    """Fully Qualified identifier to a table."""
+
+    namespace: Namespace
+    name: str
+
+
 class CommitTableRequest(IcebergBaseModel):
-    identifier: Identifier = Field()
+    identifier: TableIdentifier = Field()
     requirements: Tuple[SerializeAsAny[TableRequirement], ...] = Field(default_factory=tuple)
     updates: Tuple[SerializeAsAny[TableUpdate], ...] = Field(default_factory=tuple)
 
@@ -464,6 +490,10 @@ class Table:
             limit=limit,
         )
 
+    @property
+    def format_version(self) -> Literal[1, 2]:
+        return self.metadata.format_version
+
     def schema(self) -> Schema:
         """Return the schema for this table."""
         return next(schema for schema in self.metadata.schemas if schema.schema_id == self.metadata.current_schema_id)
@@ -498,6 +528,13 @@ class Table:
     def location(self) -> str:
         """Return the table's base location."""
         return self.metadata.location
+
+    @property
+    def last_sequence_number(self) -> int:
+        return self.metadata.last_sequence_number
+
+    def _next_sequence_number(self) -> int:
+        return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
 
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
@@ -535,7 +572,11 @@ class Table:
 
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
-            CommitTableRequest(identifier=self.identifier[1:], updates=updates, requirements=requirements)
+            CommitTableRequest(
+                identifier=TableIdentifier(namespace=self.identifier[:-1], name=self.identifier[-1]),
+                updates=updates,
+                requirements=requirements,
+            )
         )  # pylint: disable=W0212
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location

@@ -195,9 +195,9 @@ Renaming a field in an Iceberg table is simple:
 
 ```python
 with table.update_schema() as update:
-    update.rename("retries", "num_retries")
+    update.rename_column("retries", "num_retries")
     # This will rename `confirmed_by` to `exchange`
-    update.rename("properties.confirmed_by", "exchange")
+    update.rename_column("properties.confirmed_by", "exchange")
 ```
 
 ### Move column

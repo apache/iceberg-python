@@ -25,7 +25,7 @@ on:
       version:
         description: 'Version'
         type: string
-        default: 'master'
+        default: 'main'
 
 
 jobs:
@@ -50,18 +50,16 @@ jobs:
 
       - name: Set version
         run: python -m poetry version "${{ inputs.version }}"
-        working-directory: ./python
-        if: "${{ github.event.inputs.version != 'master' }}"
+        if: "${{ github.event.inputs.version != 'main' }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
         run: python3 -m poetry build --format=sdist
         if: startsWith(matrix.os, 'ubuntu')
-        working-directory: ./python
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.0
+        uses: pypa/cibuildwheel@v2.16.2
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"

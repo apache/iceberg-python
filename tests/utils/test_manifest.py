@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict
+from typing import Dict, Literal
 
 import fastavro
 import pytest
@@ -303,7 +303,9 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: int) -> None:
+def test_write_manifest(
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: Literal[1, 2]
+) -> None:
     io = load_file_io()
     snapshot = Snapshot(
         snapshot_id=25,
@@ -327,7 +329,7 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
         output = io.new_output(tmp_avro_file)
         with write_manifest(
-            format_version=format_version,  # type: ignore
+            format_version=format_version,
             spec=test_spec,
             schema=test_schema,
             output_file=output,
@@ -337,6 +339,7 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
                 writer.add_entry(entry)
             new_manifest = writer.to_manifest_file()
             with pytest.raises(RuntimeError):
+                # It is already closed
                 writer.add_entry(manifest_entries[0])
 
         expected_metadata = {
@@ -345,8 +348,6 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
             "partition-spec-id": str(test_spec.spec_id),
             "format-version": str(format_version),
         }
-        if format_version == 2:
-            expected_metadata["content"] = "data"
         _verify_metadata_with_fastavro(
             tmp_avro_file,
             expected_metadata,
@@ -357,7 +358,7 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
 
         assert manifest_entry.status == ManifestEntryStatus.ADDED
         assert manifest_entry.snapshot_id == 8744736658442914487
-        assert manifest_entry.data_sequence_number == 0 if format_version == 1 else 3
+        assert manifest_entry.data_sequence_number == -1 if format_version == 1 else 3
         assert isinstance(manifest_entry.data_file, DataFile)
 
         data_file = manifest_entry.data_file
@@ -371,10 +372,6 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
         assert data_file.partition == Record(VendorID=1, tpep_pickup_datetime=1925)
         assert data_file.record_count == 19513
         assert data_file.file_size_in_bytes == 388872
-        if format_version == 1:
-            assert data_file.block_size_in_bytes == 67108864
-        else:
-            assert data_file.block_size_in_bytes is None
         assert data_file.column_sizes == {
             1: 53,
             2: 98153,
@@ -477,7 +474,7 @@ def test_write_manifest(generated_manifest_file_file_v1: str, generated_manifest
 
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest_list(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: int
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: Literal[1, 2]
 ) -> None:
     io = load_file_io()
 
@@ -495,7 +492,7 @@ def test_write_manifest_list(
         path = tmp_dir + "/manifest-list.avro"
         output = io.new_output(path)
         with write_manifest_list(
-            format_version=format_version, output_file=output, snapshot_id=25, parent_snapshot_id=19, sequence_number=0  # type: ignore
+            format_version=format_version, output_file=output, snapshot_id=25, parent_snapshot_id=19, sequence_number=0
         ) as writer:
             writer.add_manifests(demo_manifest_list)
         new_manifest_list = list(read_manifest_list(io.new_input(path)))

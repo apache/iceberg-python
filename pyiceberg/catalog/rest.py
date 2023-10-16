@@ -62,6 +62,7 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     Table,
+    TableIdentifier,
     TableMetadata,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -301,7 +302,10 @@ class RestCatalog(Catalog):
         # Update URI based on overrides
         self.uri = config[URI]
 
-    def _split_identifier_for_path(self, identifier: Union[str, Identifier]) -> Properties:
+    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
+        if isinstance(identifier, TableIdentifier):
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
             raise NoSuchTableError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
@@ -315,6 +319,10 @@ class RestCatalog(Catalog):
 
     def _handle_non_200_response(self, exc: HTTPError, error_handler: Dict[int, Type[Exception]]) -> None:
         exception: Type[Exception]
+
+        if exc.response is None:
+            raise ValueError("Did not receive a response")
+
         code = exc.response.status_code
         if code in error_handler:
             exception = error_handler[code]

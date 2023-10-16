@@ -41,7 +41,7 @@ from pyiceberg.avro.reader import (
 )
 from pyiceberg.avro.resolver import construct_reader
 from pyiceberg.io.pyarrow import PyArrowFileIO
-from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMA, DataFile, ManifestEntry
+from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS, DataFile, ManifestEntry
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -70,7 +70,7 @@ AVAILABLE_DECODERS = [StreamingBinaryDecoder, CythonBinaryDecoder]
 def test_read_header(generated_manifest_entry_file: str, iceberg_manifest_entry_schema: Schema) -> None:
     with AvroFile[ManifestEntry](
         PyArrowFileIO().new_input(generated_manifest_entry_file),
-        MANIFEST_ENTRY_SCHEMA,
+        MANIFEST_ENTRY_SCHEMAS[2],
         {-1: ManifestEntry, 2: DataFile},
     ) as reader:
         header = reader.header

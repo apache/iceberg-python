@@ -51,7 +51,7 @@ from pydantic import (
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
@@ -282,6 +282,7 @@ class NestedField(IcebergType):
     required: bool = Field(default=True)
     doc: Optional[str] = Field(default=None, repr=False)
     initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
+    write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
 
     def __init__(
         self,
@@ -291,6 +292,7 @@ class NestedField(IcebergType):
         required: bool = True,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
+        write_default: Optional[L] = None,
         **data: Any,
     ):
         # We need an init when we want to use positional arguments, but
@@ -301,6 +303,7 @@ class NestedField(IcebergType):
         data["required"] = required
         data["doc"] = doc
         data["initial-default"] = initial_default
+        data["write-default"] = write_default
         super().__init__(**data)
 
     def __str__(self) -> str:
