@@ -1774,7 +1774,7 @@ def _manifests_to_manifest_list(
         snapshot_id=snapshot_id,
         parent_snapshot_id=parent_snapshot_id,
         manifest_list=manifest_list_file_path,
-        sequence_number=table.next_sequence_number(),
+        sequence_number=table._next_sequence_number(),
         summary=summary,
         schema_id=table.schema().schema_id,
     )
