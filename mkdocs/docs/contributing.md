@@ -43,7 +43,7 @@ If you want to install the library on the host, you can simply run `pip3 install
 To set up IDEA with Poetry ([also on Loom](https://www.loom.com/share/6d36464d45f244729d91003e7f671fd2)):
 
 - Open up the Python project in IntelliJ
-- Make sure that you're on latest master (that includes Poetry)
+- Make sure that you're on latest main (that includes Poetry)
 - Go to File -> Project Structure (⌘;)
 - Go to Platform Settings -> SDKs
 - Click the + sign -> Add Python SDK
