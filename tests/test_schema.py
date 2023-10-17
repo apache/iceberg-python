@@ -28,7 +28,7 @@ from pyiceberg.schema import (
     build_position_accessors,
     promote,
     prune_columns,
-    sanitize_columns,
+    sanitize_column_names,
 )
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
@@ -448,8 +448,7 @@ def test_sanitize() -> None:
                 key_id=5,
                 key_type=StringType(),
                 value_id=6,
-                value_type=MapType(key_id=7, key_type=StringType(), value_id=10, value_type=IntegerType(),
-                                   value_required=True),
+                value_type=MapType(key_id=7, key_type=StringType(), value_id=10, value_type=IntegerType(), value_required=True),
                 value_required=True,
             ),
             required=True,
@@ -510,8 +509,7 @@ def test_sanitize() -> None:
                 key_id=5,
                 key_type=StringType(),
                 value_id=6,
-                value_type=MapType(key_id=7, key_type=StringType(), value_id=10, value_type=IntegerType(),
-                                   value_required=True),
+                value_type=MapType(key_id=7, key_type=StringType(), value_id=10, value_type=IntegerType(), value_required=True),
                 value_required=True,
             ),
             required=True,
@@ -557,7 +555,7 @@ def test_sanitize() -> None:
         schema_id=1,
         identifier_field_ids=[1],
     )
-    assert sanitize_columns(before_sanitized) == expected_schema
+    assert sanitize_column_names(before_sanitized) == expected_schema
 
 
 def test_prune_columns_string(table_schema_nested_with_struct_key_map: Schema) -> None:

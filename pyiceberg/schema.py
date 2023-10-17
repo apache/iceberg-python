@@ -1273,6 +1273,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         return primitive
 
 
+# Implementation copied from Apache Iceberg repo.
 def make_compatible_name(name: str) -> str:
     if not _valid_avro_name(name):
         return _sanitize_name(name)
@@ -1317,6 +1318,23 @@ def _sanitize_char(character: str) -> str:
     return "_x" + hex(ord(character))[2:].upper()
 
 
+def sanitize_column_names(schema: Schema) -> Schema:
+    """Sanitize column names to make them compatible with Avro.
+
+    Args:
+        schema: The schema to be sanitized.
+
+    Returns:
+        The sanitized schema.
+    """
+    result = visit(schema.as_struct(), _SanitizeColumnsVisitor())
+    return Schema(
+        *(result or StructType()).fields,
+        schema_id=schema.schema_id,
+        identifier_field_ids=schema.identifier_field_ids,
+    )
+
+
 class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
     def schema(self, schema: Schema, struct_result: Optional[IcebergType]) -> Optional[IcebergType]:
         return struct_result
@@ -1331,8 +1349,7 @@ class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
         )
 
     def struct(self, struct: StructType, field_results: List[Optional[IcebergType]]) -> Optional[IcebergType]:
-        # field_results = [field for field in field_results if field.get() is not None]
-        return StructType(*field_results)
+        return StructType(*[field.get() for field in field_results if field is not None])
 
     def list(self, list_type: ListType, element_result: Optional[IcebergType]) -> Optional[IcebergType]:
         return ListType(element_id=list_type.element_id, element_type=element_result, element_required=list_type.element_required)
@@ -1350,25 +1367,6 @@ class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
 
     def primitive(self, primitive: PrimitiveType) -> Optional[IcebergType]:
         return primitive
-
-
-def sanitize_columns(schema: Schema) -> Schema:
-    """Prunes a column by only selecting a set of field-ids.
-
-    Args:
-        schema: The schema to be pruned.
-        selected: The field-ids to be included.
-        select_full_types: Return the full struct when a subset is recorded
-
-    Returns:
-        The pruned schema.
-    """
-    result = visit(schema.as_struct(), _SanitizeColumnsVisitor())
-    return Schema(
-        *(result or StructType()).fields,
-        schema_id=schema.schema_id,
-        identifier_field_ids=schema.identifier_field_ids,
-    )
 
 
 def prune_columns(schema: Schema, selected: Set[int], select_full_types: bool = True) -> Schema:

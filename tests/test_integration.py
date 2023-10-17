@@ -87,10 +87,10 @@ def table_test_all_types(catalog: Catalog) -> Table:
 def table_test_table_version(catalog: Catalog) -> Table:
     return catalog.load_table("default.test_table_version")
 
+
 @pytest.fixture()
 def table_test_table_sanitized_character(catalog: Catalog) -> Table:
     return catalog.load_table("default.test_table_sanitized_character")
-
 
 
 TABLE_NAME = ("default", "t1")
