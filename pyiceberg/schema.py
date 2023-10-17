@@ -1273,6 +1273,104 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         return primitive
 
 
+def make_compatible_name(name: str) -> str:
+    if not _valid_avro_name(name):
+        return _sanitize_name(name)
+    return name
+
+
+def _valid_avro_name(name: str) -> bool:
+    length = len(name)
+    assert length > 0, "Empty name"
+    first = name[0]
+    if not (first.isalpha() or first == '_'):
+        return False
+
+    for i in range(1, length):
+        character = name[i]
+        if not (character.isalnum() or character == '_'):
+            return False
+    return True
+
+
+def _sanitize_name(name: str) -> str:
+    length = len(name)
+    sb = []
+    first = name[0]
+    if not (first.isalpha() or first == '_'):
+        sb.append(_sanitize_char(first))
+    else:
+        sb.append(first)
+
+    for i in range(1, length):
+        character = name[i]
+        if not (character.isalnum() or character == '_'):
+            sb.append(_sanitize_char(character))
+        else:
+            sb.append(character)
+    return ''.join(sb)
+
+
+def _sanitize_char(character: str) -> str:
+    if character.isdigit():
+        return "_" + character
+    return "_x" + hex(ord(character))[2:].upper()
+
+
+class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
+    def schema(self, schema: Schema, struct_result: Optional[IcebergType]) -> Optional[IcebergType]:
+        return struct_result
+
+    def field(self, field: NestedField, field_result: Optional[IcebergType]) -> Optional[IcebergType]:
+        return NestedField(
+            field_id=field.field_id,
+            name=make_compatible_name(field.name),
+            field_type=field_result,
+            doc=field.doc,
+            required=field.required,
+        )
+
+    def struct(self, struct: StructType, field_results: List[Optional[IcebergType]]) -> Optional[IcebergType]:
+        # field_results = [field for field in field_results if field.get() is not None]
+        return StructType(*field_results)
+
+    def list(self, list_type: ListType, element_result: Optional[IcebergType]) -> Optional[IcebergType]:
+        return ListType(element_id=list_type.element_id, element_type=element_result, element_required=list_type.element_required)
+
+    def map(
+        self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
+    ) -> Optional[IcebergType]:
+        return MapType(
+            key_id=map_type.key_id,
+            value_id=map_type.value_id,
+            key_type=key_result,
+            value_type=value_result,
+            value_required=map_type.value_required,
+        )
+
+    def primitive(self, primitive: PrimitiveType) -> Optional[IcebergType]:
+        return primitive
+
+
+def sanitize_columns(schema: Schema) -> Schema:
+    """Prunes a column by only selecting a set of field-ids.
+
+    Args:
+        schema: The schema to be pruned.
+        selected: The field-ids to be included.
+        select_full_types: Return the full struct when a subset is recorded
+
+    Returns:
+        The pruned schema.
+    """
+    result = visit(schema.as_struct(), _SanitizeColumnsVisitor())
+    return Schema(
+        *(result or StructType()).fields,
+        schema_id=schema.schema_id,
+        identifier_field_ids=schema.identifier_field_ids,
+    )
+
+
 def prune_columns(schema: Schema, selected: Set[int], select_full_types: bool = True) -> Schema:
     """Prunes a column by only selecting a set of field-ids.
 

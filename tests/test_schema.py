@@ -28,6 +28,7 @@ from pyiceberg.schema import (
     build_position_accessors,
     promote,
     prune_columns,
+    sanitize_columns,
 )
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
@@ -429,6 +430,134 @@ def test_deserialize_schema(table_schema_simple: Schema) -> None:
     )
     expected = table_schema_simple
     assert actual == expected
+
+
+def test_sanitize() -> None:
+    before_sanitized = Schema(
+        NestedField(field_id=1, name="foo_field/bar", field_type=StringType(), required=True),
+        NestedField(
+            field_id=2,
+            name="foo_list/bar",
+            field_type=ListType(element_id=3, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=4,
+            name="foo_map/bar",
+            field_type=MapType(
+                key_id=5,
+                key_type=StringType(),
+                value_id=6,
+                value_type=MapType(key_id=7, key_type=StringType(), value_id=10, value_type=IntegerType(),
+                                   value_required=True),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=8,
+            name="foo_struct/bar",
+            field_type=StructType(
+                NestedField(field_id=9, name="foo_struct_1/bar", field_type=StringType(), required=False),
+                NestedField(field_id=10, name="foo_struct_2/bar", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
+        NestedField(
+            field_id=11,
+            name="foo_list_2/bar",
+            field_type=ListType(
+                element_id=12,
+                element_type=StructType(
+                    NestedField(field_id=13, name="foo_list_2_1/bar", field_type=LongType(), required=True),
+                    NestedField(field_id=14, name="foo_list_2_2/bar", field_type=LongType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=False,
+        ),
+        NestedField(
+            field_id=15,
+            name="foo_map_2/bar",
+            field_type=MapType(
+                key_id=16,
+                value_id=17,
+                key_type=StructType(
+                    NestedField(field_id=18, name="foo_map_2_1/bar", field_type=StringType(), required=True),
+                ),
+                value_type=StructType(
+                    NestedField(field_id=19, name="foo_map_2_2/bar", field_type=FloatType(), required=True),
+                ),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        schema_id=1,
+        identifier_field_ids=[1],
+    )
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo_field_x2Fbar", field_type=StringType(), required=True),
+        NestedField(
+            field_id=2,
+            name="foo_list_x2Fbar",
+            field_type=ListType(element_id=3, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=4,
+            name="foo_map_x2Fbar",
+            field_type=MapType(
+                key_id=5,
+                key_type=StringType(),
+                value_id=6,
+                value_type=MapType(key_id=7, key_type=StringType(), value_id=10, value_type=IntegerType(),
+                                   value_required=True),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=8,
+            name="foo_struct_x2Fbar",
+            field_type=StructType(
+                NestedField(field_id=9, name="foo_struct_1_x2Fbar", field_type=StringType(), required=False),
+                NestedField(field_id=10, name="foo_struct_2_x2Fbar", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
+        NestedField(
+            field_id=11,
+            name="foo_list_2_x2Fbar",
+            field_type=ListType(
+                element_id=12,
+                element_type=StructType(
+                    NestedField(field_id=13, name="foo_list_2_1_x2Fbar", field_type=LongType(), required=True),
+                    NestedField(field_id=14, name="foo_list_2_2_x2Fbar", field_type=LongType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=False,
+        ),
+        NestedField(
+            field_id=15,
+            name="foo_map_2_x2Fbar",
+            field_type=MapType(
+                key_id=16,
+                value_id=17,
+                key_type=StructType(
+                    NestedField(field_id=18, name="foo_map_2_1_x2Fbar", field_type=StringType(), required=True),
+                ),
+                value_type=StructType(
+                    NestedField(field_id=19, name="foo_map_2_2_x2Fbar", field_type=FloatType(), required=True),
+                ),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        schema_id=1,
+        identifier_field_ids=[1],
+    )
+    assert sanitize_columns(before_sanitized) == expected_schema
 
 
 def test_prune_columns_string(table_schema_nested_with_struct_key_map: Schema) -> None:
