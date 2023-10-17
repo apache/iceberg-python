@@ -1349,7 +1349,7 @@ class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
         )
 
     def struct(self, struct: StructType, field_results: List[Optional[IcebergType]]) -> Optional[IcebergType]:
-        return StructType(*[field.get() for field in field_results if field is not None])
+        return StructType(*[field for field in field_results if field is not None])
 
     def list(self, list_type: ListType, element_result: Optional[IcebergType]) -> Optional[IcebergType]:
         return ListType(element_id=list_type.element_id, element_type=element_result, element_required=list_type.element_required)
