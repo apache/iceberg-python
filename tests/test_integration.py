@@ -396,3 +396,13 @@ def test_upgrade_table_version(table_test_table_version: Table) -> None:
         with table_test_table_version.transaction() as transaction:
             transaction.upgrade_table_version(format_version=3)
     assert "Unsupported table format version: 3" in str(e.value)
+
+
+@pytest.fixture()
+def table_test_table_sanitized_character(catalog: Catalog) -> Table:
+    return catalog.load_table("default.test_table_sanitized_character")
+
+
+@pytest.mark.integration
+def test_reproduce_issue(table_test_table_sanitized_character: Table) -> None:
+    table = table_test_table_sanitized_character.scan().to_arrow()
