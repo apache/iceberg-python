@@ -868,6 +868,11 @@ files = [
     {file = "fastavro-1.8.4-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:14d7cd3df019d41c66733b8bf5d983af9e1f601d4cb162853a49238a4087d6b0"},
     {file = "fastavro-1.8.4-cp311-cp311-win_amd64.whl", hash = "sha256:c8fb27001b7023910969f15bee2c9205c4e9f40713929d6c1dca8f470fc8fc80"},
     {file = "fastavro-1.8.4-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:e331229acef15f858d9863ced7b629ebef4bd5f80766d367255e51cbf44f8dab"},
+    {file = "fastavro-1.8.4-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:04e26b3ba288bd423f25630a3b9bd70cc61b46c6f6161de35e398a6fc8f260f0"},
+    {file = "fastavro-1.8.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6281f4555659ed658b195d1618a637504013e57b680d6cbad7c726e9a4e2cf0b"},
+    {file = "fastavro-1.8.4-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:3201880149e1fb807d616ab46b338a26788173a9f4e8a3396ae145e86af878a1"},
+    {file = "fastavro-1.8.4-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:39771719fa04b8321eeebfb0813eaa2723c20e5bf570bcca3f53f1169099a0d7"},
+    {file = "fastavro-1.8.4-cp312-cp312-win_amd64.whl", hash = "sha256:7095ae37a5c46dacb7ef430092e5f94650f576be281487b72050c1cf12e4ee20"},
     {file = "fastavro-1.8.4-cp38-cp38-macosx_11_0_x86_64.whl", hash = "sha256:eb76f5bfcde91cde240c93594dae47670cdf1a95d7e5d0dc3ccdef57c6c1c183"},
     {file = "fastavro-1.8.4-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:71ebe1cf090f800ca7d4c64d50c81c2a88c56e6ef6aa5eb61ec425e7ae723617"},
     {file = "fastavro-1.8.4-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e9f0ef601943ea11cd02a59c57f5588cea3e300ac67608f53c904ec7aeddd232"},
@@ -3267,13 +3272,13 @@ files = [
 
 [[package]]
 name = "urllib3"
-version = "1.26.17"
+version = "1.26.18"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*"
 files = [
-    {file = "urllib3-1.26.17-py2.py3-none-any.whl", hash = "sha256:94a757d178c9be92ef5539b8840d48dc9cf1b2709c9d6b588232a055c524458b"},
-    {file = "urllib3-1.26.17.tar.gz", hash = "sha256:24d6a242c28d29af46c3fae832c36db3bbebcc533dd1bb549172cd739c82df21"},
+    {file = "urllib3-1.26.18-py2.py3-none-any.whl", hash = "sha256:34b97092d7e0a3a8cf7cd10e386f401b3737364026c45e622aa02903dffe0f07"},
+    {file = "urllib3-1.26.18.tar.gz", hash = "sha256:f8ecc1bba5667413457c529ab955bf8c67b45db799d159066261719e328580a0"},
 ]
 
 [package.extras]
