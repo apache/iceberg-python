@@ -1282,20 +1282,18 @@ def make_compatible_name(name: str) -> str:
 
 def _valid_avro_name(name: str) -> bool:
     length = len(name)
-    assert length > 0, "Empty name"
+    assert length > 0, ValueError("Can not validate empty avro name")
     first = name[0]
     if not (first.isalpha() or first == '_'):
         return False
 
-    for i in range(1, length):
-        character = name[i]
+    for character in name[1:]:
         if not (character.isalnum() or character == '_'):
             return False
     return True
 
 
 def _sanitize_name(name: str) -> str:
-    length = len(name)
     sb = []
     first = name[0]
     if not (first.isalpha() or first == '_'):
@@ -1303,8 +1301,7 @@ def _sanitize_name(name: str) -> str:
     else:
         sb.append(first)
 
-    for i in range(1, length):
-        character = name[i]
+    for character in name[1:]:
         if not (character.isalnum() or character == '_'):
             sb.append(_sanitize_char(character))
         else:
@@ -1313,13 +1310,14 @@ def _sanitize_name(name: str) -> str:
 
 
 def _sanitize_char(character: str) -> str:
-    if character.isdigit():
-        return "_" + character
-    return "_x" + hex(ord(character))[2:].upper()
+    return "_" + character if character.isdigit() else "_x" + hex(ord(character))[2:].upper()
 
 
 def sanitize_column_names(schema: Schema) -> Schema:
     """Sanitize column names to make them compatible with Avro.
+
+    The column name should be starting with '_' or digit followed by a string only contains '_', digit or alphabet,
+    otherwise it will be sanitized to conform the avro naming convention.
 
     Args:
         schema: The schema to be sanitized.
