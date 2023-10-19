@@ -301,3 +301,23 @@ TBLPROPERTIES (
 );
 """
 )
+
+spark.sql(
+    """
+CREATE TABLE default.test_table_sanitized_character (
+    `letter/abc` string
+)
+USING iceberg
+TBLPROPERTIES (
+    'format-version'='1'
+);
+"""
+)
+
+spark.sql(
+    f"""
+INSERT INTO default.test_table_sanitized_character
+VALUES
+    ('123')
+"""
+)
