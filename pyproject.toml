@@ -300,6 +300,7 @@ select = [
     "B", # flake8-bugbear
     "C4", # flake8-comprehensions
     "I", # isort
+    "FURB", # refurb
     "UP", # pyupgrade
 ]
 ignore = ["E501","E203","B024","B028"]
