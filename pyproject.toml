@@ -298,6 +298,7 @@ select = [
     "W", # pycodestyle
     "F", # Pyflakes
     "B", # flake8-bugbear
+    "PIE", # flake8-pie
     "C4", # flake8-comprehensions
     "I", # isort
     "UP", # pyupgrade

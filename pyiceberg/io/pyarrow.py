@@ -1502,7 +1502,7 @@ def fill_parquet_file_metadata(
 
         invalidate_col: Set[int] = set()
 
-        for pos in range(0, parquet_metadata.num_columns):
+        for pos in range(parquet_metadata.num_columns):
             column = row_group.column(pos)
             field_id = parquet_column_mapping[column.path_in_schema]
 
