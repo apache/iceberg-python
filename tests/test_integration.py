@@ -224,9 +224,7 @@ def test_ray_all_types(table_test_all_types: Table) -> None:
 
 @pytest.mark.integration
 def test_pyarrow_to_iceberg_all_types(table_test_all_types: Table) -> None:
-    fs = S3FileSystem(
-        endpoint_override="http://localhost:9000", access_key="admin", secret_key="password"
-    )
+    fs = S3FileSystem(endpoint_override="http://localhost:9000", access_key="admin", secret_key="password")
     data_file_paths = [task.file.file_path for task in table_test_all_types.scan().plan_files()]
     for data_file_path in data_file_paths:
         uri = urlparse(data_file_path)
