@@ -163,4 +163,4 @@ Thanks to everyone for contributing!
 
 ## Release the docs
 
-A committer triggers the [`Python Docs` Github Actions](https://github.com/apache/iceberg/actions/workflows/python-ci-docs.yml) through the UI by selecting the branch that just has been released. This will publish the new docs.
+A committer triggers the [`Python Docs` Github Actions](https://github.com/apache/iceberg-python/actions/workflows/python-ci-docs.yml) through the UI by selecting the branch that just has been released. This will publish the new docs.
