@@ -74,3 +74,7 @@ repos:
     rev: 1.0.1
     hooks:
       - id: flynt
+        args:
+          # --line-length is set to a high value to deal with very long lines
+          - --line-length
+          - '99999'
