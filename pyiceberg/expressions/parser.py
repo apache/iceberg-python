@@ -223,7 +223,7 @@ def _(result: ParseResults) -> BooleanExpression:
 
     match = re.search(like_regex, literal_like.value)
 
-    if match and  match.groupdict()['invalid_wildcard']:
+    if match and match.groupdict()['invalid_wildcard']:
         raise ValueError("LIKE expression only supports wildcard, '%', at the end of a string")
     elif match and match.groupdict()['valid_wildcard']:
         return StartsWith(result.column, StringLiteral(literal_like.value[:-1].replace('\\%', '%')))
