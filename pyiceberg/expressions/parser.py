@@ -224,7 +224,7 @@ def _(result: ParseResults) -> BooleanExpression:
 
 @not_starts_with.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    return _evaluate_like_statement(result).__invert__()
+    return ~_evaluate_like_statement(result)
 
 
 def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
