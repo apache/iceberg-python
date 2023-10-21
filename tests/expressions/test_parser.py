@@ -186,11 +186,12 @@ def test_invalid_likes() -> None:
         with pytest.raises(ValueError) as exc_info:
             parser.parse(statement)
 
-        assert "LIKE expression only supports wildcard, '%', at the end of a string" in str(exc_info)
+        assert "LIKE expressions only supports wildcard, '%', at the end of a string" in str(exc_info)
 
 
 def test_not_starts_with() -> None:
-    assert NotStartsWith("foo", "data") == parser.parse("foo NOT LIKE 'data'")
+    assert NotEqualTo("foo", "data") == parser.parse("foo NOT LIKE 'data'")
+    assert NotStartsWith("foo", "data") == parser.parse("foo NOT LIKE 'data%'")
 
 
 def test_with_function() -> None:

@@ -52,7 +52,6 @@ from pyiceberg.expressions import (
     NotIn,
     NotNaN,
     NotNull,
-    NotStartsWith,
     Or,
     Reference,
     StartsWith,
@@ -220,21 +219,25 @@ starts_check = starts_with | not_starts_with
 
 @starts_with.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
+    return _evaluate_like_statement(result)
+
+
+@not_starts_with.set_parse_action
+def _(result: ParseResults) -> BooleanExpression:
+    return _evaluate_like_statement(result).__invert__()
+
+
+def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
     literal_like: StringLiteral = result.raw_quoted_string
 
     match = re.search(like_regex, literal_like.value)
 
     if match and match.groupdict()['invalid_wildcard']:
-        raise ValueError("LIKE expression only supports wildcard, '%', at the end of a string")
+        raise ValueError("LIKE expressions only supports wildcard, '%', at the end of a string")
     elif match and match.groupdict()['valid_wildcard']:
         return StartsWith(result.column, StringLiteral(literal_like.value[:-1].replace('\\%', '%')))
     else:
         return EqualTo(result.column, StringLiteral(literal_like.value.replace('\\%', '%')))
-
-
-@not_starts_with.set_parse_action
-def _(result: ParseResults) -> BooleanExpression:
-    return NotStartsWith(result.column, result.raw_quoted_string)
 
 
 predicate = (comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
