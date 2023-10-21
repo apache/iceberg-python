@@ -150,11 +150,13 @@ def _operator_to_expression(op: str, column: str, literal: L) -> BooleanExpressi
 
 @left_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
+    """Convert x > 5 to GreaterThan(x, 5)."""
     return _operator_to_expression(result.op, result.column, result.literal)
 
 
 @right_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
+    """Convert 5 < x to GreaterThan(x, 5)."""
     return ~_operator_to_expression(result.op, result.column, result.literal)
 
 
