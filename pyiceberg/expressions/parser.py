@@ -131,38 +131,31 @@ right_ref = literal + comparison_op + column
 comparison = left_ref | right_ref
 
 
+def _operator_to_expression(op: str, column: str, literal: L) -> BooleanExpression:
+    if op == "<":
+        return LessThan(column, literal)
+    elif op == "<=":
+        return LessThanOrEqual(column, literal)
+    elif op == ">":
+        return GreaterThan(column, literal)
+    elif op == ">=":
+        return GreaterThanOrEqual(column, literal)
+    elif op in ("=", "=="):
+        return EqualTo(column, literal)
+    elif op in ("!=", "<>"):
+        return NotEqualTo(column, literal)
+    else:
+        raise ValueError(f"Unsupported operation type: {op}")
+
+
 @left_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    if result.op == "<":
-        return LessThan(result.column, result.literal)
-    elif result.op == "<=":
-        return LessThanOrEqual(result.column, result.literal)
-    elif result.op == ">":
-        return GreaterThan(result.column, result.literal)
-    elif result.op == ">=":
-        return GreaterThanOrEqual(result.column, result.literal)
-    if result.op in ("=", "=="):
-        return EqualTo(result.column, result.literal)
-    if result.op in ("!=", "<>"):
-        return NotEqualTo(result.column, result.literal)
-    raise ValueError(f"Unsupported operation type: {result.op}")
+    return _operator_to_expression(result.op, result.column, result.literal)
 
 
 @right_ref.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    if result.op == "<":
-        return GreaterThan(result.column, result.literal)
-    elif result.op == "<=":
-        return GreaterThanOrEqual(result.column, result.literal)
-    elif result.op == ">":
-        return LessThan(result.column, result.literal)
-    elif result.op == ">=":
-        return LessThanOrEqual(result.column, result.literal)
-    elif result.op in ("=", "=="):
-        return EqualTo(result.column, result.literal)
-    elif result.op in ("!=", "<>"):
-        return NotEqualTo(result.column, result.literal)
-    raise ValueError(f"Unsupported operation type: {result.op}")
+    return ~_operator_to_expression(result.op, result.column, result.literal)
 
 
 is_null = column + IS + NULL
