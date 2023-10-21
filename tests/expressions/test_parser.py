@@ -168,12 +168,30 @@ def test_multiple_and_or() -> None:
     ) == parser.parse("foo is not null and foo < 5 or (foo > 10 and foo < 100 and bar is null)")
 
 
+def test_like_equality() -> None:
+    assert EqualTo("foo", "data") == parser.parse("foo LIKE 'data'")
+    assert EqualTo("foo", "data%") == parser.parse("foo LIKE 'data\\%'")
+
+
 def test_starts_with() -> None:
-    assert StartsWith("foo", "data") == parser.parse("foo LIKE 'data'")
+    assert StartsWith("foo", "data") == parser.parse("foo LIKE 'data%'")
+    assert StartsWith("foo", "some % data") == parser.parse("foo LIKE 'some \\% data%'")
+    assert StartsWith("foo", "some data%") == parser.parse("foo LIKE 'some data\\%%'")
+
+
+def test_invalid_likes() -> None:
+    invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'", "foo LIKE '%data'"]
+
+    for statement in invalid_statements:
+        with pytest.raises(ValueError) as exc_info:
+            parser.parse(statement)
+
+        assert "LIKE expressions only supports wildcard, '%', at the end of a string" in str(exc_info)
 
 
 def test_not_starts_with() -> None:
-    assert NotStartsWith("foo", "data") == parser.parse("foo NOT LIKE 'data'")
+    assert NotEqualTo("foo", "data") == parser.parse("foo NOT LIKE 'data'")
+    assert NotStartsWith("foo", "data") == parser.parse("foo NOT LIKE 'data%'")
 
 
 def test_with_function() -> None:

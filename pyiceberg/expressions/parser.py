@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import re
 from decimal import Decimal
 
 from pyparsing import (
@@ -51,7 +52,6 @@ from pyiceberg.expressions import (
     NotIn,
     NotNaN,
     NotNull,
-    NotStartsWith,
     Or,
     Reference,
     StartsWith,
@@ -77,6 +77,8 @@ LIKE = CaselessKeyword("like")
 
 identifier = Word(alphas, alphanums + "_$").set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
+
+like_regex = r'(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)'
 
 
 @column.set_parse_action
@@ -217,12 +219,25 @@ starts_check = starts_with | not_starts_with
 
 @starts_with.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    return StartsWith(result.column, result.raw_quoted_string)
+    return _evaluate_like_statement(result)
 
 
 @not_starts_with.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    return NotStartsWith(result.column, result.raw_quoted_string)
+    return ~_evaluate_like_statement(result)
+
+
+def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
+    literal_like: StringLiteral = result.raw_quoted_string
+
+    match = re.search(like_regex, literal_like.value)
+
+    if match and match.groupdict()['invalid_wildcard']:
+        raise ValueError("LIKE expressions only supports wildcard, '%', at the end of a string")
+    elif match and match.groupdict()['valid_wildcard']:
+        return StartsWith(result.column, StringLiteral(literal_like.value[:-1].replace('\\%', '%')))
+    else:
+        return EqualTo(result.column, StringLiteral(literal_like.value.replace('\\%', '%')))
 
 
 predicate = (comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
