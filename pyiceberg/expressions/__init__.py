@@ -890,9 +890,9 @@ class StartsWith(LiteralPredicate[L]):
 
 
 class NotStartsWith(LiteralPredicate[L]):
-    def __invert__(self) -> NotStartsWith[L]:
+    def __invert__(self) -> StartsWith[L]:
         """Transform the Expression into its negated version."""
-        return NotStartsWith[L](self.term, self.literal)
+        return StartsWith[L](self.term, self.literal)
 
     @property
     def as_bound(self) -> Type[BoundNotStartsWith[L]]:
