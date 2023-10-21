@@ -169,5 +169,7 @@ def test_not_starts_with() -> None:
 
 
 def test_with_function() -> None:
-    with pytest.raises(ParseException):
-        parser.parse("foo = 1 and lower(bar) = '2")
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("foo = 1 and lower(bar) = '2'")
+
+    assert "Expected end of text, found 'and'" in str(exc_info)
