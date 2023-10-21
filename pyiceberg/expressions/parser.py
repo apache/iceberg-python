@@ -81,6 +81,7 @@ column = DelimitedList(identifier, delim=".", combine=False).set_results_name("c
 
 like_regex = r'(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)'
 
+
 @column.set_parse_action
 def _(result: ParseResults) -> Reference:
     return Reference(result.column[-1])
