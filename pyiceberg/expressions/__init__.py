@@ -701,7 +701,7 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the LiteralPredicate class."""
-        if isinstance(other, LiteralPredicate):
+        if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
 
