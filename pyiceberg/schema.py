@@ -794,7 +794,7 @@ def visit(obj: Union[Schema, IcebergType], visitor: SchemaVisitor[T]) -> T:
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit.register(Schema)
@@ -862,7 +862,7 @@ def pre_order_visit(obj: Union[Schema, IcebergType], visitor: PreOrderSchemaVisi
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @pre_order_visit.register(Schema)
