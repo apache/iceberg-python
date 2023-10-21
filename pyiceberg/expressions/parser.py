@@ -252,4 +252,4 @@ boolean_expression = infix_notation(
 
 def parse(expr: str) -> BooleanExpression:
     """Parse a boolean expression."""
-    return boolean_expression.parse_string(expr)[0]
+    return boolean_expression.parse_string(expr, parse_all=True)[0]
