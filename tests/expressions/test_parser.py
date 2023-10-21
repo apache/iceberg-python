@@ -180,7 +180,7 @@ def test_starts_with() -> None:
 
 
 def test_invalid_likes() -> None:
-    invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'" "foo LIKE '%data'"]
+    invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'", "foo LIKE '%data'"]
 
     for statement in invalid_statements:
         with pytest.raises(ValueError) as exc_info:
