@@ -560,11 +560,6 @@ def test_datetime_transform_repr(transform: TimeTransform[Any], transform_repr: 
 
 
 @pytest.fixture
-def bound_reference_str() -> BoundReference[str]:
-    return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
-
-
-@pytest.fixture
 def bound_reference_date() -> BoundReference[int]:
     return BoundReference(field=NestedField(1, "field", DateType(), required=False), accessor=Accessor(position=0, inner=None))
 
