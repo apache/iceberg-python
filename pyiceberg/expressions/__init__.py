@@ -346,7 +346,7 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundPredicate class."""
-        if isinstance(other, BoundPredicate):
+        if isinstance(other, self.__class__):
             return self.term == other.term
         return False
 
@@ -567,7 +567,7 @@ class BoundSetPredicate(BoundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundSetPredicate class."""
-        return self.term == other.term and self.literals == other.literals if isinstance(other, BoundSetPredicate) else False
+        return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     def __getnewargs__(self) -> Tuple[BoundTerm[L], Set[Literal[L]]]:
         """Pickle the BoundSetPredicate class."""
@@ -595,7 +595,7 @@ class BoundIn(BoundSetPredicate[L]):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundIn class."""
-        return self.term == other.term and self.literals == other.literals if isinstance(other, BoundIn) else False
+        return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     @property
     def as_unbound(self) -> Type[In[L]]:
@@ -725,7 +725,7 @@ class BoundLiteralPredicate(BoundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundLiteralPredicate class."""
-        if isinstance(other, BoundLiteralPredicate):
+        if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
 
