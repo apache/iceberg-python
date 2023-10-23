@@ -287,6 +287,7 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
     assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
+@pytest.mark.integration
 def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_summaries"
 

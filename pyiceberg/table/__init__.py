@@ -78,6 +78,7 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
     SnapshotSummaryCollector,
+    Summary,
     merge_snapshot_summaries,
 )
 from pyiceberg.table.sorting import SortOrder
@@ -651,9 +652,12 @@ class Table:
 
         new_summary, manifests = merge.manifests()
         summary = merge_snapshot_summaries(
-            operation=operation,
-            previous_summary=None if parent_snapshot_id is None else self.snapshot_by_id(parent_snapshot_id).summary,
-            summary=new_summary,
+            summary=Summary(operation=operation, **new_summary),
+            previous_summary=None
+            if parent_snapshot_id is None
+            else snapshot.summary
+            if (snapshot := self.snapshot_by_id(parent_snapshot_id))
+            else None,
         )
         summary['operation'] = operation
 
@@ -1749,7 +1753,7 @@ def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
     return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
 
 
-def _dataframe_to_data_files(table: Table, snapshot_id: int, df: pa.Table) -> Iterable[ManifestEntry]:
+def _dataframe_to_data_files(table: Table, snapshot_id: int, df: pa.Table) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import write_file
 
     # This is an iter, so we don't have to materialize everything every time

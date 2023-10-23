@@ -67,13 +67,22 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
-    def __getitem__(self, __key) -> Optional[Any]:
+    def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
+        """Return a key as it is a map."""
         if __key == 'operation':
             return self.operation
         else:
             return self._additional_properties.get(__key)
 
-    def __len__(self):
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Set a key as it is a map."""
+        if key == 'operation':
+            self.operation = value
+        else:
+            self._additional_properties[key] = value
+
+    def __len__(self) -> int:
+        """Return the number of keys in the summary."""
         # Operation is required
         return 1 + len(self._additional_properties)
 
@@ -92,6 +101,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         """Return the string representation of the Summary class."""
         repr_properties = f", **{repr(self._additional_properties)}" if self._additional_properties else ""
         return f"Summary({repr(self.operation)}{repr_properties})"
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare if the summary is equal to another summary."""
+        return (
+            self.operation == other.operation and self.additional_properties == other.additional_properties
+            if isinstance(other, Summary)
+            else False
+        )
 
 
 class Snapshot(IcebergBaseModel):
@@ -199,13 +216,13 @@ class SnapshotSummaryCollector:
 
     def added_manifest(self, manifest: ManifestFile) -> None:
         if manifest.content == ManifestContent.DATA:
-            self.added_files += manifest.added_files_count
-            self.added_records += manifest.added_rows_count
-            self.removed_files += manifest.deleted_files_count
-            self.deleted_records += manifest.deleted_rows_count
+            self.added_files += manifest.added_files_count or 0
+            self.added_records += manifest.added_rows_count or 0
+            self.removed_files += manifest.deleted_files_count or 0
+            self.deleted_records += manifest.deleted_rows_count or 0
         elif manifest.content == ManifestContent.DELETES:
-            self.added_delete_files += manifest.added_files_count
-            self.removed_delete_files += manifest.deleted_files_count
+            self.added_delete_files += manifest.added_files_count or 0
+            self.removed_delete_files += manifest.deleted_files_count or 0
         else:
             raise ValueError(f"Unknown manifest file content: {manifest.content}")
 
@@ -238,38 +255,39 @@ class SnapshotSummaryCollector:
 properties = ['records', 'files-size', 'data-files', 'delete-files', 'position-deletes', 'equality-deletes']
 
 
-def truncate_table_summary(summary: Dict[str, str]) -> Dict[str, str]:
-    truncated_metrics = {
-        'total-data-files': '0',
-        'total-delete-files': '0',
-        'total-records': '0',
-        'total-files-size': '0',
-        'total-position-deletes': '0',
-        'total-equality-deletes': '0',
-    }
+def truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
+    for prop in {
+        'total-data-files',
+        'total-delete-files',
+        'total-records',
+        'total-files-size',
+        'total-position-deletes',
+        'total-equality-deletes',
+    }:
+        summary[prop] = '0'
 
-    def _cast_to_int(value: str) -> Optional[int]:
-        return int(value) if value is not None else None
+    if value := previous_summary.get('total-data-files'):
+        summary['deleted-data-files'] = value
+    if value := previous_summary.get('total-delete-files'):
+        summary['removed-delete-files'] = value
+    if value := previous_summary.get('total-records'):
+        summary['deleted-records'] = value
+    if value := previous_summary.get('total-files-size'):
+        summary['removed-files-size'] = value
+    if value := previous_summary.get('total-position-deletes'):
+        summary['removed-position-deletes'] = value
+    if value := previous_summary.get('total-equality-deletes'):
+        summary['removed-equality-deletes'] = value
 
-    if value := _cast_to_int(summary.get('total-data-files')):
-        truncated_metrics['deleted-data-files'] = str(value)
-    if value := _cast_to_int(summary.get('total-delete-files')):
-        truncated_metrics['removed-delete-files'] = str(value)
-    if value := _cast_to_int(summary.get('total-records')):
-        truncated_metrics['deleted-records'] = str(value)
-    if value := _cast_to_int(summary.get('total-files-size')):
-        truncated_metrics['removed-files-size'] = str(value)
-    if value := _cast_to_int(summary.get('total-position-deletes')):
-        truncated_metrics['removed-position-deletes'] = str(value)
-    if value := _cast_to_int(summary.get('total-equality-deletes')):
-        truncated_metrics['removed-equality-deletes'] = str(value)
-
-    return truncated_metrics
+    return summary
 
 
-def merge_snapshot_summaries(operation: Operation, previous_summary: Optional[Mapping], summary: Mapping) -> Dict[str, str]:
-    if operation == Operation.OVERWRITE:
-        summary.update(truncate_table_summary(previous_summary))
+def merge_snapshot_summaries(
+    summary: Summary,
+    previous_summary: Optional[Mapping[str, str]] = None,
+) -> Summary:
+    if summary.operation == Operation.OVERWRITE and previous_summary is not None:
+        summary = truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:
         previous_summary = {
@@ -281,9 +299,9 @@ def merge_snapshot_summaries(operation: Operation, previous_summary: Optional[Ma
             'total-equality-deletes': '0',
         }
 
-    def _update_totals(total_property: str, added_property: str, removed_property: str):
-        if new_total := previous_summary.get(total_property):
-            new_total = int(new_total)
+    def _update_totals(total_property: str, added_property: str, removed_property: str) -> None:
+        if new_total_str := previous_summary.get(total_property):
+            new_total = int(new_total_str)
             if new_total >= 0 and (added := summary.get(added_property)):
                 new_total += int(added)
             if new_total >= 0 and (removed := summary.get(removed_property)):

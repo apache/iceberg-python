@@ -157,72 +157,79 @@ def test_snapshot_summary_collector(manifest_file: ManifestFile, data_file: Data
 
     ssc.add_file(data_file)
 
-    assert ssc.build() == {'added-data-files': '2', 'added-records': '200', 'deleted-records': '120', 'removed-data-files': '3'}
-
-
-def test_merge_snapshot_summaries_empty():
-    assert merge_snapshot_summaries(None, {}) == {
-        'total-data-files': '0',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '0',
-        'total-position-deletes': '0',
-        'total-records': '0',
+    assert ssc.build() == {
+        'added-data-files': '2',
+        'added-files-size': '1234',
+        'added-records': '200',
+        'deleted-records': '120',
+        'removed-data-files': '3',
     }
 
 
-def test_merge_snapshot_summaries_new_summary():
-    actual = merge_snapshot_summaries(
-        None,
-        {
+def test_merge_snapshot_summaries_empty() -> None:
+    assert merge_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
+        operation=Operation.APPEND,
+        **{
             'total-data-files': '0',
-            'added-data-files': '2',
-            'removed-data-files': '1',
             'total-delete-files': '0',
-            'added-delete-files': '2',
-            'removed-delete-files': '1',
-            'total-equality-deletes': '0',
-            'added-equality-deletes': '2',
-            'removed-equality-deletes': '1',
-            'total-files-size': '0',
-            'added-files-size': '2',
-            'removed-files-size': '1',
-            'total-position-deletes': '0',
-            'added-position-deletes': '2',
-            'removed-position-deletes': '1',
             'total-records': '0',
-            'added-records': '2',
-            'removed-records': '1',
+            'total-files-size': '0',
+            'total-position-deletes': '0',
+            'total-equality-deletes': '0',
         },
     )
 
-    expected = {
-        'added-data-files': '2',
-        'added-delete-files': '2',
-        'added-equality-deletes': '2',
-        'added-files-size': '2',
-        'added-position-deletes': '2',
-        'added-records': '2',
-        'removed-data-files': '1',
-        'removed-delete-files': '1',
-        'removed-equality-deletes': '1',
-        'removed-files-size': '1',
-        'removed-position-deletes': '1',
-        'removed-records': '1',
-        'total-data-files': '2',
-        'total-delete-files': '2',
-        'total-equality-deletes': '2',
-        'total-files-size': '2',
-        'total-position-deletes': '2',
-        'total-records': '2',
-    }
+
+def test_merge_snapshot_summaries_new_summary() -> None:
+    actual = merge_snapshot_summaries(
+        summary=Summary(
+            operation=Operation.APPEND,
+            **{
+                'added-data-files': '1',
+                'added-delete-files': '2',
+                'added-equality-deletes': '3',
+                'added-files-size': '4',
+                'added-position-deletes': '5',
+                'added-records': '6',
+            },
+        )
+    )
+
+    expected = Summary(
+        operation=Operation.APPEND,
+        **{
+            'added-data-files': '1',
+            'added-delete-files': '2',
+            'added-equality-deletes': '3',
+            'added-files-size': '4',
+            'added-position-deletes': '5',
+            'added-records': '6',
+            'total-data-files': '1',
+            'total-delete-files': '2',
+            'total-records': '6',
+            'total-files-size': '4',
+            'total-position-deletes': '5',
+            'total-equality-deletes': '3',
+        },
+    )
 
     assert actual == expected
 
 
-def test_merge_snapshot_summaries_old_and_new_summary():
+def test_merge_snapshot_summaries_overwrite_summary() -> None:
     actual = merge_snapshot_summaries(
-        {
+        summary=Summary(
+            operation=Operation.OVERWRITE,
+            **{
+                'added-data-files': '1',
+                'added-delete-files': '2',
+                'added-equality-deletes': '3',
+                'added-files-size': '4',
+                'added-position-deletes': '5',
+                'added-records': '6',
+            },
+        ),
+        previous_summary={
             'total-data-files': '1',
             'total-delete-files': '1',
             'total-equality-deletes': '1',
@@ -230,47 +237,30 @@ def test_merge_snapshot_summaries_old_and_new_summary():
             'total-position-deletes': '1',
             'total-records': '1',
         },
-        {
-            'total-data-files': '0',
-            'added-data-files': '2',
-            'removed-data-files': '1',
-            'total-delete-files': '0',
+    )
+
+    expected = Summary(
+        operation=Operation.OVERWRITE,
+        **{
+            'added-data-files': '1',
             'added-delete-files': '2',
+            'added-equality-deletes': '3',
+            'added-files-size': '4',
+            'added-position-deletes': '5',
+            'added-records': '6',
+            'total-position-deletes': '5',
+            'total-files-size': '5',
+            'total-records': '6',
+            'total-delete-files': '2',
+            'total-data-files': '1',
+            'total-equality-deletes': '3',
+            'deleted-data-files': '1',
             'removed-delete-files': '1',
-            'total-equality-deletes': '0',
-            'added-equality-deletes': '2',
-            'removed-equality-deletes': '1',
-            'total-files-size': '0',
-            'added-files-size': '2',
+            'deleted-records': '1',
             'removed-files-size': '1',
-            'total-position-deletes': '0',
-            'added-position-deletes': '2',
             'removed-position-deletes': '1',
-            'total-records': '0',
-            'added-records': '2',
-            'removed-records': '1',
+            'removed-equality-deletes': '1',
         },
     )
 
-    expected = {
-        'added-data-files': '2',
-        'added-delete-files': '2',
-        'added-equality-deletes': '2',
-        'added-files-size': '2',
-        'added-position-deletes': '2',
-        'added-records': '2',
-        'removed-data-files': '1',
-        'removed-delete-files': '1',
-        'removed-equality-deletes': '1',
-        'removed-files-size': '1',
-        'removed-position-deletes': '1',
-        'removed-records': '1',
-        'total-data-files': '3',
-        'total-delete-files': '3',
-        'total-equality-deletes': '3',
-        'total-files-size': '3',
-        'total-position-deletes': '3',
-        'total-records': '3',
-    }
-
-    assert actual == expected
+    assert actual.additional_properties == expected.additional_properties
