@@ -633,7 +633,7 @@ def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisi
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit_pyarrow.register(pa.Schema)

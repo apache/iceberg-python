@@ -877,24 +877,21 @@ def test_identifier_fields_fails(table_schema_nested_with_struct_key_map: Schema
     with pytest.raises(ValueError) as exc_info:
         Schema(*table_schema_nested_with_struct_key_map.fields, schema_id=1, identifier_field_ids=[23])
     assert (
-        "Cannot add field zip as an identifier field: must not be nested in %s"
-        % table_schema_nested_with_struct_key_map.find_field("location")
+        f"Cannot add field zip as an identifier field: must not be nested in {table_schema_nested_with_struct_key_map.find_field('location')}"
         in str(exc_info.value)
     )
 
     with pytest.raises(ValueError) as exc_info:
         Schema(*table_schema_nested_with_struct_key_map.fields, schema_id=1, identifier_field_ids=[26])
     assert (
-        "Cannot add field x as an identifier field: must not be nested in %s"
-        % table_schema_nested_with_struct_key_map.find_field("points")
+        f"Cannot add field x as an identifier field: must not be nested in {table_schema_nested_with_struct_key_map.find_field('points')}"
         in str(exc_info.value)
     )
 
     with pytest.raises(ValueError) as exc_info:
         Schema(*table_schema_nested_with_struct_key_map.fields, schema_id=1, identifier_field_ids=[17])
     assert (
-        "Cannot add field age as an identifier field: must not be nested in an optional field %s"
-        % table_schema_nested_with_struct_key_map.find_field("person")
+        f"Cannot add field age as an identifier field: must not be nested in an optional field {table_schema_nested_with_struct_key_map.find_field('person')}"
         in str(exc_info.value)
     )
 
