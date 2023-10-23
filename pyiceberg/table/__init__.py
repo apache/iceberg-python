@@ -473,7 +473,6 @@ class Namespace(IcebergRootModel[List[str]]):
     root: List[str] = Field(
         ...,
         description='Reference to one or more levels of a namespace',
-        example=['accounting', 'tax'],
     )
 
 

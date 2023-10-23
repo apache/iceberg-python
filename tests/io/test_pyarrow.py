@@ -66,7 +66,7 @@ from pyiceberg.io.pyarrow import (
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionSpec
-from pyiceberg.schema import Schema, visit
+from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.types import (
@@ -1544,25 +1544,6 @@ def test_parse_location() -> None:
     check_results("/root/tmp/foo.txt", "file", "", "/root/tmp/foo.txt")
 
 
-# def test_write() -> None:
-#     import pyarrow as pa
-#
-#     df = pa.Table.from_pylist(
-#         [
-#             {"lat": 52.371807, "long": 4.896029},
-#             {"lat": 52.387386, "long": 4.646219},
-#             {"lat": 52.078663, "long": 4.288788},
-#         ],
-#     )
-#
-#     from pyiceberg.catalog import load_catalog
-#
-#     cat = load_catalog('local')
-#
-#     tbl = cat.load_table('default.coordinates')
-#
-#     tbl.write_arrow(df)
-#
-#     tbl = cat.load_table('default.coordinates')
-#
-#     print(tbl.scan().to_arrow())
+def test_make_compatible_name() -> None:
+    assert make_compatible_name("label/abc") == "label_x2Fabc"
+    assert make_compatible_name("label?abc") == "label_x3Fabc"
