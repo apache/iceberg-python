@@ -113,6 +113,7 @@ from pyiceberg.schema import (
     pre_order_visit,
     promote,
     prune_columns,
+    sanitize_column_names,
     visit,
     visit_with_partner,
 )
@@ -632,7 +633,7 @@ def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisi
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit_pyarrow.register(pa.Schema)
@@ -830,7 +831,7 @@ def _task_to_table(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
+        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
@@ -1120,7 +1121,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         raise ValueError(f"Expected primitive-type, got: {map_type}")
 
     def visit_fixed(self, fixed_type: FixedType) -> str:
-        return "BYTE_ARRAY"
+        return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
         return "FIXED_LEN_BYTE_ARRAY"

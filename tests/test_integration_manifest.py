@@ -26,11 +26,7 @@ from fastavro import reader
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
-from pyiceberg.manifest import (
-    DataFile,
-    ManifestEntry,
-    write_manifest,
-)
+from pyiceberg.manifest import DataFile, ManifestEntry, write_manifest
 from pyiceberg.table import Table
 from pyiceberg.utils.lazydict import LazyDict
 
@@ -101,9 +97,14 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
         split_offsets=entry.data_file.split_offsets,
         equality_ids=entry.data_file.equality_ids,
         sort_order_id=entry.data_file.sort_order_id,
+        spec_id=entry.data_file.spec_id,
     )
     wrapped_entry_v2 = ManifestEntry(*entry.record_fields())
     wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
+    wrapped_entry_v2_dict = todict(wrapped_entry_v2)
+    # This one should not be written
+    del wrapped_entry_v2_dict['data_file']['spec_id']
+
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
         output = PyArrowFileIO().new_output(tmp_avro_file)
@@ -122,4 +123,4 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
             it = iter(r)
             fa_entry = next(it)
 
-            assert fa_entry == todict(wrapped_entry_v2)
+            assert fa_entry == wrapped_entry_v2_dict

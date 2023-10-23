@@ -25,7 +25,7 @@ on:
       version:
         description: 'Version'
         type: string
-        default: 'master'
+        default: 'main'
 
 
 jobs:
@@ -50,15 +50,13 @@ jobs:
 
       - name: Set version
         run: python -m poetry version "${{ inputs.version }}"
-        working-directory: ./python
-        if: "${{ github.event.inputs.version != 'master' }}"
+        if: "${{ github.event.inputs.version != 'main' }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
         run: python3 -m poetry build --format=sdist
         if: startsWith(matrix.os, 'ubuntu')
-        working-directory: ./python
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16.2
@@ -71,7 +69,7 @@ jobs:
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.8,<3.12"
           CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==4.2.2"
           CIBW_TEST_EXTRAS: "s3fs,glue"
-          CIBW_TEST_COMMAND: "pytest -Werror {project}/tests/avro/test_decoder.py"
+          CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
           # There is an upstream issue with installing on MacOSX
           # https://github.com/pypa/cibuildwheel/issues/1603
           # Ignore tests for pypy since not all dependencies are compiled for it

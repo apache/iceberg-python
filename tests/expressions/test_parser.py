@@ -160,9 +160,42 @@ def test_and_or_with_parens() -> None:
     )
 
 
+def test_multiple_and_or() -> None:
+    assert And(EqualTo("foo", 1), EqualTo("bar", 2), EqualTo("baz", 3)) == parser.parse("foo = 1 and bar = 2 and baz = 3")
+    assert Or(EqualTo("foo", 1), EqualTo("foo", 2), EqualTo("foo", 3)) == parser.parse("foo = 1 or foo = 2 or foo = 3")
+    assert Or(
+        And(NotNull("foo"), LessThan("foo", 5)), And(GreaterThan("foo", 10), LessThan("foo", 100), IsNull("bar"))
+    ) == parser.parse("foo is not null and foo < 5 or (foo > 10 and foo < 100 and bar is null)")
+
+
+def test_like_equality() -> None:
+    assert EqualTo("foo", "data") == parser.parse("foo LIKE 'data'")
+    assert EqualTo("foo", "data%") == parser.parse("foo LIKE 'data\\%'")
+
+
 def test_starts_with() -> None:
-    assert StartsWith("foo", "data") == parser.parse("foo LIKE 'data'")
+    assert StartsWith("foo", "data") == parser.parse("foo LIKE 'data%'")
+    assert StartsWith("foo", "some % data") == parser.parse("foo LIKE 'some \\% data%'")
+    assert StartsWith("foo", "some data%") == parser.parse("foo LIKE 'some data\\%%'")
+
+
+def test_invalid_likes() -> None:
+    invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'", "foo LIKE '%data'"]
+
+    for statement in invalid_statements:
+        with pytest.raises(ValueError) as exc_info:
+            parser.parse(statement)
+
+        assert "LIKE expressions only supports wildcard, '%', at the end of a string" in str(exc_info)
 
 
 def test_not_starts_with() -> None:
-    assert NotStartsWith("foo", "data") == parser.parse("foo NOT LIKE 'data'")
+    assert NotEqualTo("foo", "data") == parser.parse("foo NOT LIKE 'data'")
+    assert NotStartsWith("foo", "data") == parser.parse("foo NOT LIKE 'data%'")
+
+
+def test_with_function() -> None:
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("foo = 1 and lower(bar) = '2'")
+
+    assert "Expected end of text, found 'and'" in str(exc_info)

@@ -256,6 +256,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
         split_offsets=[4, 133697593],
         equality_ids=[],
         sort_order_id=4,
+        spec_id=3,
     )
     if format_version == 1:
         data_file.block_size_in_bytes = DEFAULT_BLOCK_SIZE
@@ -357,5 +358,12 @@ def test_all_primitive_types(is_required: bool) -> None:
             it = iter(avro_reader)
             avro_entry = next(it)
 
+        # read with fastavro
+        with open(tmp_avro_file, "rb") as fo:
+            r = reader(fo=fo)
+            it_fastavro = iter(r)
+            avro_entry_read_with_fastavro = list(next(it_fastavro).values())
+
     for idx, field in enumerate(all_primitives_schema.as_struct()):
         assert record[idx] == avro_entry[idx], f"Invalid {field}"
+        assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"

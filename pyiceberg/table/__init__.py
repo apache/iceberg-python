@@ -418,7 +418,6 @@ class Namespace(IcebergRootModel[List[str]]):
     root: List[str] = Field(
         ...,
         description='Reference to one or more levels of a namespace',
-        example=['accounting', 'tax'],
     )
 
 
@@ -533,7 +532,7 @@ class Table:
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
 
-    def next_sequence_number(self) -> int:
+    def _next_sequence_number(self) -> int:
         return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
 
     def new_snapshot_id(self) -> int:
