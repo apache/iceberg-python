@@ -86,8 +86,8 @@ def test_greater_than() -> None:
 
 
 def test_greater_than_or_equal() -> None:
-    assert GreaterThanOrEqual("foo", 5) == parser.parse("foo <= 5")
-    assert GreaterThanOrEqual("foo", "a") == parser.parse("'a' >= foo")
+    assert GreaterThanOrEqual("foo", 5) == parser.parse("foo >= 5")
+    assert GreaterThanOrEqual("foo", "a") == parser.parse("'a' <= foo")
 
 
 def test_equal_to() -> None:
