@@ -364,7 +364,7 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the UnboundPredicate class."""
-        return self.term == other.term if isinstance(other, UnboundPredicate) else False
+        return self.term == other.term if isinstance(other, self.__class__) else False
 
     @abstractmethod
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BooleanExpression:
@@ -531,7 +531,7 @@ class SetPredicate(UnboundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the SetPredicate class."""
-        return self.term == other.term and self.literals == other.literals if isinstance(other, SetPredicate) else False
+        return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     def __getnewargs__(self) -> Tuple[UnboundTerm[L], Set[Literal[L]]]:
         """Pickle the SetPredicate class."""
@@ -663,12 +663,6 @@ class NotIn(SetPredicate[L], ABC):
     def __invert__(self) -> In[L]:
         """Transform the Expression into its negated version."""
         return In[L](self.term, self.literals)
-
-    def __eq__(self, other: Any) -> bool:
-        """Return the equality of two instances of the NotIn class."""
-        if isinstance(other, NotIn):
-            return self.term == other.term and self.literals == other.literals
-        return False
 
     @property
     def as_bound(self) -> Type[BoundNotIn[L]]:
