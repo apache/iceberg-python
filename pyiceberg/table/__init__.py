@@ -245,12 +245,9 @@ class Transaction:
             )
         )
 
-        if current_snapshot := self._table.current_snapshot():
-            self._append_requirements(AssertRefSnapshotId(snapshot_id=current_snapshot.snapshot_id))
-        else:
-            # Check how we can check for an empty snapshot 🤔🤔🤔
-            # self._append_requirements(AssertRefSnapshotId(snapshot_id=None))
-            pass
+        self._append_requirements(
+            AssertRefSnapshotId(snapshot_id=
+                                                      current_snapshot.snapshot_id if (current_snapshot := self._table.current_snapshot()) else None))
         return self
 
     def update_schema(self) -> UpdateSchema:
@@ -429,7 +426,7 @@ class AssertRefSnapshotId(TableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(default="main")
-    snapshot_id: int = Field(..., alias="snapshot-id")
+    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
 
 class AssertLastAssignedFieldId(TableRequirement):
