@@ -246,8 +246,10 @@ class Transaction:
         )
 
         self._append_requirements(
-            AssertRefSnapshotId(snapshot_id=
-                                                      current_snapshot.snapshot_id if (current_snapshot := self._table.current_snapshot()) else None))
+            AssertRefSnapshotId(
+                snapshot_id=current_snapshot.snapshot_id if (current_snapshot := self._table.current_snapshot()) else None
+            )
+        )
         return self
 
     def update_schema(self) -> UpdateSchema:
