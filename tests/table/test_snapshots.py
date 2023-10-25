@@ -264,3 +264,13 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
     )
 
     assert actual.additional_properties == expected.additional_properties
+
+
+def test_invalid_operation() -> None:
+    with pytest.raises(ValueError) as e:
+        merge_snapshot_summaries(summary=Summary(Operation.REPLACE))
+    assert "Operation not implemented: Operation.REPLACE" in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        merge_snapshot_summaries(summary=Summary(Operation.DELETE))
+    assert "Operation not implemented: Operation.DELETE" in str(e.value)

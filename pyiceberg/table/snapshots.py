@@ -183,10 +183,11 @@ class SnapshotSummaryCollector:
         self.removed_eq_deletes = 0
 
     def add_file(self, data_file: DataFile) -> None:
+        self.added_size += data_file.file_size_in_bytes
+
         if data_file.content == DataFileContent.DATA:
             self.added_files += 1
             self.added_records += data_file.record_count
-            self.added_size += data_file.file_size_in_bytes
         elif data_file.content == DataFileContent.POSITION_DELETES:
             self.added_delete_files += 1
             self.added_pos_delete_files += 1
@@ -199,6 +200,8 @@ class SnapshotSummaryCollector:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
     def removed_file(self, data_file: DataFile) -> None:
+        self.removed_size += data_file.file_size_in_bytes
+
         if data_file.content == DataFileContent.DATA:
             self.removed_files += 1
             self.deleted_records += data_file.record_count
@@ -251,9 +254,6 @@ class SnapshotSummaryCollector:
         return properties
 
 
-properties = ['records', 'files-size', 'data-files', 'delete-files', 'position-deletes', 'equality-deletes']
-
-
 def truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
     for prop in {
         'total-data-files',
@@ -285,6 +285,9 @@ def merge_snapshot_summaries(
     summary: Summary,
     previous_summary: Optional[Mapping[str, str]] = None,
 ) -> Summary:
+    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:
+        raise ValueError(f"Operation not implemented: {summary.operation}")
+
     if summary.operation == Operation.OVERWRITE and previous_summary is not None:
         summary = truncate_table_summary(summary, previous_summary)
 
