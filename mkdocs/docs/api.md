@@ -129,6 +129,7 @@ sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 catalog.create_table(
     identifier="docs_example.bids",
     schema=schema,
+    location="s3://pyiceberg",
     partition_spec=partition_spec,
     sort_order=sort_order,
 )
