@@ -53,6 +53,7 @@ catalog = load_catalog(
     }
 )
 ```
+
 If the catalog has not been initialized before, you need to run:
 
 ```python
