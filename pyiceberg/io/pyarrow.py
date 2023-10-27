@@ -1100,8 +1100,8 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
         return partner_map.items if isinstance(partner_map, pa.MapArray) else None
 
 
-def _primitive_to_phyisical(iceberg_type: PrimitiveType) -> str:
-    return visit(iceberg_type, _PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR)
+def _primitive_to_physical(iceberg_type: PrimitiveType) -> str:
+    return visit(iceberg_type, _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR)
 
 
 class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
@@ -1163,7 +1163,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "BYTE_ARRAY"
 
 
-_PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR = PrimitiveToPhysicalType()
+_PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
 
 
 class StatsAggregator:
@@ -1176,7 +1176,7 @@ class StatsAggregator:
         self.current_max = None
         self.trunc_length = trunc_length
 
-        expected_physical_type = _primitive_to_phyisical(iceberg_type)
+        expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
             raise ValueError(
                 f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
