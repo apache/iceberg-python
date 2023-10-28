@@ -798,28 +798,6 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
         raise TypeError(f"Unsupported type: {primitive}")
 
-# ToDo get guidance on where this should be and if we can find an exhaustive list of magic
-parquet_magic_columns = {
-    """
-    Apache Iceberg -> Parquet converts column names like
-    "foo:bar" to "foo_x3A" within the parquet file itself
-    """
-    ":": "_x3A"
-}
-
-# ToDo get guidance on where this should be, and how we want to flag it
-def _hack_names(column_name_list: list[str], enabled: bool):
-    if enabled:
-        o = []
-        # ToDo fix time and space complexity
-        for key in parquet_magic_columns.keys():
-            for column_name in column_name_list:
-                if key in column_name:
-                    o.append(column_name.replace(key, parquet_magic_columns[key]))
-                else:
-                    o.append(column_name)
-        return o
-    return column_name_list
 
 def _task_to_table(
     fs: FileSystem,
@@ -864,7 +842,7 @@ def _task_to_table(
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
-            columns=_hack_names([col.name for col in file_project_schema.columns], True),
+            columns=[col.name for col in file_project_schema.columns],
         )
 
         if positional_deletes:

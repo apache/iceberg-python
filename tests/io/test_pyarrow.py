@@ -1547,3 +1547,4 @@ def test_parse_location() -> None:
 def test_make_compatible_name() -> None:
     assert make_compatible_name("label/abc") == "label_x2Fabc"
     assert make_compatible_name("label?abc") == "label_x3Fabc"
+    assert make_compatible_name("label:abc") == "label_x3Fabc"
