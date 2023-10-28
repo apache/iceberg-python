@@ -1310,7 +1310,12 @@ def _sanitize_name(name: str) -> str:
 
 
 def _sanitize_char(character: str) -> str:
-    return "_" + character if character.isdigit() else "_x" + hex(ord(character))[2:].upper()
+    special_chars = {":": "_x3"}
+    def _static_or_magic_suffix(c : str, d : dict) -> str:
+        if c in d:
+            return d[c]
+        return "_x" + hex(ord(character))[2:].upper()
+    return "_" + character if character.isdigit() else _static_or_magic_suffix(character, special_chars)
 
 
 def sanitize_column_names(schema: Schema) -> Schema:
