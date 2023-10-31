@@ -912,3 +912,39 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
     else:
         with pytest.raises(ResolveError):
             promote(file_type, read_type)
+
+
+def test_schema_evolution() -> None:
+    dest = schema.Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True), schema_id=1)
+    assert (
+        schema.Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True), schema_id=1).is_compatible(
+            dest
+        )
+        == dest
+    )
+
+
+def test_schema_evolution_promote() -> None:
+    dest = schema.Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=True), schema_id=1)
+    schema.Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True), schema_id=1).is_compatible(dest)
+
+
+def test_schema_evolution_demote() -> None:
+    with pytest.raises(ResolveError) as exc_info:
+        schema.Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=True), schema_id=1).is_compatible(
+            schema.Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True), schema_id=1)
+        )
+    assert "Cannot promote long to int" in str(exc_info.value)
+
+
+def test_schema_evolution_read_required() -> None:
+    with pytest.raises(ResolveError) as exc_info:
+        schema.Schema(schema_id=1).is_compatible(
+            schema.Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True), schema_id=1)
+        )
+    assert "Field is required, and could not be found: 1: id: required int" in str(exc_info.value)
+
+
+def test_schema_evolution_read_optional() -> None:
+    dest = schema.Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=False), schema_id=1)
+    assert schema.Schema(schema_id=1).is_compatible(dest) == dest

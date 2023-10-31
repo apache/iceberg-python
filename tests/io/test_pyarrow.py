@@ -1015,7 +1015,12 @@ def test_projection_filter_renamed_column(file_int: str) -> None:
     )
     result_table = project(schema, [file_int], GreaterThan("other_id", 1))
     assert len(result_table.columns[0]) == 1
-    assert repr(result_table.schema) == "other_id: int32 not null"
+    assert (
+        repr(result_table.schema)
+        == """other_id: int32 not null
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_string: str) -> None:
@@ -1025,7 +1030,12 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
     for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None]):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
-    assert repr(result_table.schema) == "id: int32"
+    assert (
+        repr(result_table.schema)
+        == """id: int32
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_filter_add_column_promote(file_int: str) -> None:
@@ -1035,7 +1045,12 @@ def test_projection_filter_add_column_promote(file_int: str) -> None:
     for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "id: int64 not null"
+    assert (
+        repr(result_table.schema)
+        == """id: int64 not null
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_filter_add_column_demote(file_long: str) -> None:
@@ -1063,7 +1078,15 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "location: struct<lat: double not null> not null\n  child 0, lat: double not null"
+    assert (
+        repr(result_table.schema)
+        == """location: struct<lat: double not null> not null
+  child 0, lat: double not null
+    -- field metadata --
+    field_id: '41'
+  -- field metadata --
+  field_id: '4'"""
+    )
 
 
 def test_projection_nested_new_field(file_struct: str) -> None:
@@ -1200,7 +1223,7 @@ def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int
     ):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 1
-    assert repr(result_table.schema) == "id: int32 not null"
+    assert repr(result_table.schema) == "id: int32"
 
 
 def test_projection_filter_on_unknown_field(schema_int_str: Schema, file_int_str: str) -> None:
@@ -1260,7 +1283,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1303,7 +1326,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1339,7 +1362,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         str(projection)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","b","c"]]

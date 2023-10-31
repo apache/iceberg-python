@@ -71,9 +71,9 @@ from pyiceberg.avro.writer import (
 )
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.schema import (
-    PartnerAccessor,
     PrimitiveWithPartnerVisitor,
     Schema,
+    SchemaPartnerAccessor,
     SchemaVisitorPerPrimitiveType,
     promote,
     visit,
@@ -472,37 +472,3 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
     def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Reader:
         return BinaryReader()
-
-
-class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
-    def schema_partner(self, partner: Optional[IcebergType]) -> Optional[IcebergType]:
-        if isinstance(partner, Schema):
-            return partner.as_struct()
-
-        raise ResolveError(f"File/read schema are not aligned for schema, got {partner}")
-
-    def field_partner(self, partner: Optional[IcebergType], field_id: int, field_name: str) -> Optional[IcebergType]:
-        if isinstance(partner, StructType):
-            field = partner.field(field_id)
-        else:
-            raise ResolveError(f"File/read schema are not aligned for struct, got {partner}")
-
-        return field.field_type if field else None
-
-    def list_element_partner(self, partner_list: Optional[IcebergType]) -> Optional[IcebergType]:
-        if isinstance(partner_list, ListType):
-            return partner_list.element_type
-
-        raise ResolveError(f"File/read schema are not aligned for list, got {partner_list}")
-
-    def map_key_partner(self, partner_map: Optional[IcebergType]) -> Optional[IcebergType]:
-        if isinstance(partner_map, MapType):
-            return partner_map.key_type
-
-        raise ResolveError(f"File/read schema are not aligned for map, got {partner_map}")
-
-    def map_value_partner(self, partner_map: Optional[IcebergType]) -> Optional[IcebergType]:
-        if isinstance(partner_map, MapType):
-            return partner_map.value_type
-
-        raise ResolveError(f"File/read schema are not aligned for map, got {partner_map}")
