@@ -113,6 +113,7 @@ from pyiceberg.schema import (
     pre_order_visit,
     promote,
     prune_columns,
+    sanitize_column_names,
     visit,
     visit_with_partner,
 )
@@ -632,7 +633,7 @@ def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisi
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit_pyarrow.register(pa.Schema)
@@ -830,7 +831,7 @@ def _task_to_table(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
+        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
@@ -1099,8 +1100,8 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
         return partner_map.items if isinstance(partner_map, pa.MapArray) else None
 
 
-def _primitive_to_phyisical(iceberg_type: PrimitiveType) -> str:
-    return visit(iceberg_type, _PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR)
+def _primitive_to_physical(iceberg_type: PrimitiveType) -> str:
+    return visit(iceberg_type, _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR)
 
 
 class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
@@ -1162,7 +1163,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "BYTE_ARRAY"
 
 
-_PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR = PrimitiveToPhysicalType()
+_PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
 
 
 class StatsAggregator:
@@ -1175,7 +1176,7 @@ class StatsAggregator:
         self.current_max = None
         self.trunc_length = trunc_length
 
-        expected_physical_type = _primitive_to_phyisical(iceberg_type)
+        expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
             raise ValueError(
                 f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"

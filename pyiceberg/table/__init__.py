@@ -374,7 +374,7 @@ class AssertRefSnapshotId(TableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str
-    snapshot_id: int = Field(..., alias="snapshot-id")
+    snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
 
 class AssertLastAssignedFieldId(TableRequirement):

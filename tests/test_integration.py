@@ -88,6 +88,11 @@ def table_test_table_version(catalog: Catalog) -> Table:
     return catalog.load_table("default.test_table_version")
 
 
+@pytest.fixture()
+def table_test_table_sanitized_character(catalog: Catalog) -> Table:
+    return catalog.load_table("default.test_table_sanitized_character")
+
+
 TABLE_NAME = ("default", "t1")
 
 
@@ -397,3 +402,11 @@ def test_upgrade_table_version(table_test_table_version: Table) -> None:
         with table_test_table_version.transaction() as transaction:
             transaction.upgrade_table_version(format_version=3)
     assert "Unsupported table format version: 3" in str(e.value)
+
+
+@pytest.mark.integration
+def test_reproduce_issue(table_test_table_sanitized_character: Table) -> None:
+    arrow_table = table_test_table_sanitized_character.scan().to_arrow()
+    assert len(arrow_table.schema.names), 1
+    assert len(table_test_table_sanitized_character.schema().fields), 1
+    assert arrow_table.schema.names[0] == table_test_table_sanitized_character.schema().fields[0].name

@@ -560,11 +560,6 @@ def test_datetime_transform_repr(transform: TimeTransform[Any], transform_repr: 
 
 
 @pytest.fixture
-def bound_reference_str() -> BoundReference[str]:
-    return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
-
-
-@pytest.fixture
 def bound_reference_date() -> BoundReference[int]:
     return BoundReference(field=NestedField(1, "field", DateType(), required=False), accessor=Accessor(position=0, inner=None))
 
@@ -830,15 +825,27 @@ def test_projection_truncate_string_literal_eq(bound_reference_str: BoundReferen
 
 
 def test_projection_truncate_string_literal_gt(bound_reference_str: BoundReference[str]) -> None:
-    assert TruncateTransform(2).project("name", BoundGreaterThan(term=bound_reference_str, literal=literal("data"))) == EqualTo(
-        term="name", literal=literal("da")
-    )
+    assert TruncateTransform(2).project(
+        "name", BoundGreaterThan(term=bound_reference_str, literal=literal("data"))
+    ) == GreaterThanOrEqual(term="name", literal=literal("da"))
 
 
 def test_projection_truncate_string_literal_gte(bound_reference_str: BoundReference[str]) -> None:
     assert TruncateTransform(2).project(
         "name", BoundGreaterThanOrEqual(term=bound_reference_str, literal=literal("data"))
-    ) == EqualTo(term="name", literal=literal("da"))
+    ) == GreaterThanOrEqual(term="name", literal=literal("da"))
+
+
+def test_projection_truncate_string_literal_lt(bound_reference_str: BoundReference[str]) -> None:
+    assert TruncateTransform(2).project(
+        "name", BoundLessThan(term=bound_reference_str, literal=literal("data"))
+    ) == LessThanOrEqual(term="name", literal=literal("da"))
+
+
+def test_projection_truncate_string_literal_lte(bound_reference_str: BoundReference[str]) -> None:
+    assert TruncateTransform(2).project(
+        "name", BoundLessThanOrEqual(term=bound_reference_str, literal=literal("data"))
+    ) == LessThanOrEqual(term="name", literal=literal("da"))
 
 
 def test_projection_truncate_string_set_same_result(bound_reference_str: BoundReference[str]) -> None:

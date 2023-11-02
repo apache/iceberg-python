@@ -59,7 +59,7 @@ done
 
 ```sh
 cd  /tmp/pyiceberg/
-for name in $(ls /tmp/pyiceberg/pyiceberg-*.whl.asc.sha512 /tmp/pyiceberg/pyiceberg-*.tar.gz.asc.sha512)
+for name in $(ls /tmp/pyiceberg/pyiceberg-*.whl.sha512 /tmp/pyiceberg/pyiceberg-*.tar.gz.sha512)
 do
     shasum -a 512 --check ${name}
 done

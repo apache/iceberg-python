@@ -57,6 +57,7 @@ from moto import mock_dynamodb, mock_glue, mock_s3
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     GCS_ENDPOINT,
     GCS_PROJECT_ID,
@@ -69,7 +70,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV2
@@ -1660,3 +1661,8 @@ def table(example_table_metadata_v2: Dict[str, Any]) -> Table:
         io=load_file_io(),
         catalog=NoopCatalog("NoopCatalog"),
     )
+
+
+@pytest.fixture
+def bound_reference_str() -> BoundReference[str]:
+    return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
