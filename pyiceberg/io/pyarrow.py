@@ -430,13 +430,18 @@ class PyArrowFileIO(FileIO):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
 
 
-def schema_to_pyarrow(schema: Union[Schema, IcebergType]) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema())
+def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
+    return visit(schema, _ConvertToArrowSchema(metadata))
 
 
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType], Singleton):
+    _metadata: Dict[bytes, bytes]
+
+    def __init__(self, metadata: Dict[bytes, bytes]):
+        self._metadata = metadata
+
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
-        return pa.schema(list(struct_result))
+        return pa.schema(list(struct_result), metadata=self._metadata)
 
     def struct(self, _: StructType, field_results: List[pa.DataType]) -> pa.DataType:
         return pa.struct(field_results)
@@ -831,14 +836,11 @@ def _task_to_table(
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
 
-        columns = {
-                # Projecting nested fields doesn't work...
-                projected_schema.find_column_name(col.field_id): pc.field(col.name)
-                for col in file_project_schema.columns
-            }
-
-        if not columns:
-            return None
+        {
+            # Projecting nested fields doesn't work...
+            projected_schema.find_column_name(col.field_id): pc.field(col.name)
+            for col in file_project_schema.columns
+        }
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -846,7 +848,7 @@ def _task_to_table(
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
-            columns=columns,
+            # columns=columns,
         )
 
         if positional_deletes:
@@ -988,11 +990,12 @@ def project_table(
     tables = [f.result() for f in completed_futures if f.result()]
 
     projected_schema_arrow = schema_to_pyarrow(projected_schema)
+    empty_table = pa.Table.from_batches([], schema=projected_schema_arrow)
 
     if len(tables) < 1:
-        return pa.Table.from_batches([], schema=projected_schema_arrow)
+        return empty_table
 
-    result = pa.concat_tables(tables, promote_options="permissive")
+    result = pa.concat_tables([empty_table] + tables, promote_options="permissive")
 
     if limit is not None:
         return result.slice(0, limit)
