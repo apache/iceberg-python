@@ -828,8 +828,12 @@ class DataScan(TableScan):
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
 
-        evaluator = visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)
-        return lambda data_file: evaluator(data_file.partition)
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _EvaluatorExpression methods bound to a single
+        # shared instance across multiple threads.
+        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
+            data_file.partition
+        )
 
     def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
