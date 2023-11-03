@@ -118,7 +118,7 @@ class DynamoDbCatalog(Catalog):
             return False
         except self.dynamodb.exceptions.InternalServerError as e:
             raise GenericDynamoDbError(e.message) from e
-        print(response["Table"]["TableStatus"])
+
         if response["Table"]["TableStatus"] != ACTIVE:
             raise GenericDynamoDbError(f"DynamoDB table for catalog {self.dynamodb_table_name} is not {ACTIVE}")
         else:
