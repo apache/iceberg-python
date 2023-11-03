@@ -1331,9 +1331,10 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
         if col_mode:
             metrics_mode = match_metrics_mode(col_mode)
 
-        if not (
-            isinstance(primitive, StringType) or isinstance(primitive, BinaryType)
-        ) and metrics_mode.type == MetricModeTypes.TRUNCATE:
+        if (
+            not (isinstance(primitive, StringType) or isinstance(primitive, BinaryType))
+            and metrics_mode.type == MetricModeTypes.TRUNCATE
+        ):
             metrics_mode = MetricsMode(MetricModeTypes.FULL)
 
         is_nested = column_name.find(".") >= 0
