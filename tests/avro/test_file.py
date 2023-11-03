@@ -172,13 +172,13 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         v2_entry = todict(entry)
 
         # These are not written in V1
-        del v2_entry['data_sequence_number']
-        del v2_entry['file_sequence_number']
-        del v2_entry['data_file']['content']
-        del v2_entry['data_file']['equality_ids']
+        del v2_entry["data_sequence_number"]
+        del v2_entry["file_sequence_number"]
+        del v2_entry["data_file"]["content"]
+        del v2_entry["data_file"]["equality_ids"]
 
         # Required in V1
-        v2_entry['data_file']['block_size_in_bytes'] = DEFAULT_BLOCK_SIZE
+        v2_entry["data_file"]["block_size_in_bytes"] = DEFAULT_BLOCK_SIZE
 
         assert v2_entry == fa_entry
 

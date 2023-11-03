@@ -46,7 +46,7 @@ from pyiceberg.types import (
     TimestampType,
 )
 
-DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
+DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
 
 @pytest.fixture()

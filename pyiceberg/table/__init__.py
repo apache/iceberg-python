@@ -417,7 +417,7 @@ class Namespace(IcebergRootModel[List[str]]):
 
     root: List[str] = Field(
         ...,
-        description='Reference to one or more levels of a namespace',
+        description="Reference to one or more levels of a namespace",
     )
 
 
@@ -1628,7 +1628,7 @@ def _generate_snapshot_id() -> int:
     """
     rnd_uuid = uuid.uuid4()
     snapshot_id = int.from_bytes(
-        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder="little", signed=True
     )
     snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 

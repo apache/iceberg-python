@@ -406,7 +406,9 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
 
 
 def test_serialize_set_properties_updates() -> None:
-    assert SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
+    assert (
+        SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
+    )
 
 
 def test_add_column(table: Table) -> None:

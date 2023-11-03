@@ -213,7 +213,13 @@ def test_rename_table(
 
 
 @mock_glue
-def test_rename_table_no_params(_glue, _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:  # type: ignore
+def test_rename_table_no_params(  # type: ignore
+    _glue,
+    _bucket_initialize: None,
+    _patch_aiobotocore: None,
+    database_name: str,
+    table_name: str,
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
@@ -230,7 +236,13 @@ def test_rename_table_no_params(_glue, _bucket_initialize: None, _patch_aiobotoc
 
 
 @mock_glue
-def test_rename_non_iceberg_table(_glue, _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:  # type: ignore
+def test_rename_non_iceberg_table(  # type: ignore
+    _glue,
+    _bucket_initialize: None,
+    _patch_aiobotocore: None,
+    database_name: str,
+    table_name: str,
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)

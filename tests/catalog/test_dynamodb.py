@@ -263,7 +263,13 @@ def test_fail_on_rename_table_with_missing_required_params(
 
 
 @mock_dynamodb
-def test_fail_on_rename_non_iceberg_table(_dynamodb, _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:  # type: ignore
+def test_fail_on_rename_non_iceberg_table(  # type: ignore
+    _dynamodb,
+    _bucket_initialize: None,
+    _patch_aiobotocore: None,
+    database_name: str,
+    table_name: str,
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
