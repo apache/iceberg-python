@@ -18,6 +18,7 @@ from uuid import UUID
 
 from pyiceberg.avro import STRUCT_DOUBLE, STRUCT_FLOAT
 from pyiceberg.io import OutputStream
+from pyiceberg.typedef import UTF8
 
 
 class BinaryEncoder:
@@ -62,7 +63,7 @@ class BinaryEncoder:
 
     def write_utf8(self, s: str) -> None:
         """Encode a string as a long followed by that many bytes of UTF-8 encoded character data."""
-        self.write_bytes(s.encode("utf-8"))
+        self.write_bytes(s.encode(UTF8))
 
     def write_uuid(self, uuid: UUID) -> None:
         """Write UUID as a fixed[16].

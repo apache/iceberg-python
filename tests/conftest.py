@@ -74,6 +74,7 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1456,7 +1457,7 @@ class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
     @property
     def raw_headers(self) -> aiohttp.typedefs.RawHeaders:
         # Return the headers encoded the way that aiobotocore expects them
-        return {k.encode("utf-8"): str(v).encode("utf-8") for k, v in self.response.headers.items()}.items()
+        return {k.encode(UTF8): str(v).encode(UTF8) for k, v in self.response.headers.items()}.items()
 
 
 def patch_aiobotocore() -> None:

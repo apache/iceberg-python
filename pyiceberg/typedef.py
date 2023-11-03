@@ -51,6 +51,8 @@ class FrozenDict(Dict[Any, Any]):
         raise AttributeError("FrozenDict does not support .update()")
 
 
+UTF8 = 'utf-8'
+
 EMPTY_DICT = FrozenDict()
 
 K = TypeVar("K")

@@ -39,7 +39,7 @@ from typing import (
     Union,
 )
 
-from pyiceberg.typedef import L
+from pyiceberg.typedef import UTF8, L
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -143,7 +143,7 @@ def _(_: UUIDType, value_str: str) -> uuid.UUID:
 @partition_to_py.register(BinaryType)
 @handle_none
 def _(_: PrimitiveType, value_str: str) -> bytes:
-    return bytes(value_str, "UTF-8")
+    return bytes(value_str, UTF8)
 
 
 @partition_to_py.register(DecimalType)
@@ -223,7 +223,7 @@ def _(_: DoubleType, value: float) -> bytes:
 
 @to_bytes.register(StringType)
 def _(_: StringType, value: str) -> bytes:
-    return value.encode("UTF-8")
+    return value.encode(UTF8)
 
 
 @to_bytes.register(UUIDType)
@@ -308,7 +308,7 @@ def _(_: DoubleType, b: bytes) -> float:
 
 @from_bytes.register(StringType)
 def _(_: StringType, b: bytes) -> str:
-    return bytes(b).decode("utf-8")
+    return bytes(b).decode(UTF8)
 
 
 @from_bytes.register(BinaryType)
