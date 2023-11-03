@@ -58,6 +58,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import BucketTransform, IdentityTransform
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BooleanType,
     IntegerType,
@@ -253,7 +254,7 @@ def test_create_table(table_schema_simple: Schema, hive_database: HiveDatabase, 
         )
     )
 
-    with open(metadata_location, encoding="utf-8") as f:
+    with open(metadata_location, encoding=UTF8) as f:
         payload = f.read()
 
     metadata = TableMetadataUtil.parse_raw(payload)
