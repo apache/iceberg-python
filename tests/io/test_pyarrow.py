@@ -561,26 +561,26 @@ def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference[str]
 def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(BoundIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
-  "world",
-  "hello"
-], skip_nulls=false})>""",
-        """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
   "hello",
   "world"
-], skip_nulls=false})>""",
+], null_matching_behavior=MATCH})>""",
+        """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
+  "world",
+  "hello"
+], null_matching_behavior=MATCH})>""",
     )
 
 
 def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(BoundNotIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
-  "world",
-  "hello"
-], skip_nulls=false}))>""",
-        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
   "hello",
   "world"
-], skip_nulls=false}))>""",
+], null_matching_behavior=MATCH}))>""",
+        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
+  "world",
+  "hello"
+], null_matching_behavior=MATCH}))>""",
     )
 
 
