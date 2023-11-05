@@ -69,6 +69,8 @@ INITIAL_SEQUENCE_NUMBER = 0
 INITIAL_SPEC_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
+SUPPORTED_TABLE_FORMAT_VERSION = 2
+
 
 def cleanup_snapshot_id(data: Dict[str, Any]) -> Dict[str, Any]:
     """Run before validation."""

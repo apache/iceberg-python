@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, singledispatchmethod
 from itertools import chain
 from typing import (
     TYPE_CHECKING,
@@ -69,7 +69,14 @@ from pyiceberg.schema import (
     promote,
     visit,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.metadata import (
+    INITIAL_SEQUENCE_NUMBER,
+    SUPPORTED_TABLE_FORMAT_VERSION,
+    TableMetadata,
+    TableMetadataUtil,
+    TableMetadataV1,
+)
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
@@ -349,8 +356,194 @@ class RemovePropertiesUpdate(TableUpdate):
     removals: List[str]
 
 
+class TableMetadataUpdateBuilder:
+    _base_metadata: TableMetadata
+    _updates: List[TableUpdate]
+    _last_added_schema_id: Optional[int]
+
+    def __init__(self, base_metadata: TableMetadata) -> None:
+        self._base_metadata = TableMetadataUtil.parse_obj(copy(base_metadata.model_dump()))
+        self._updates = []
+        self._last_added_schema_id = None
+
+    def _reuse_or_create_new_schema_id(self, new_schema: Schema) -> Tuple[int, bool]:
+        # if the schema already exists, use its id; otherwise use the highest id + 1
+        new_schema_id = self._base_metadata.current_schema_id
+        for schema in self._base_metadata.schemas:
+            if schema == new_schema:
+                return schema.schema_id, False
+            elif schema.schema_id >= new_schema_id:
+                new_schema_id = schema.schema_id + 1
+        return new_schema_id, True
+
+    def _add_schema_internal(self, schema: Schema, last_column_id: int, update: TableUpdate) -> int:
+        if last_column_id < self._base_metadata.last_column_id:
+            raise ValueError(f"Invalid last column id {last_column_id}, must be >= {self._base_metadata.last_column_id}")
+        new_schema_id, schema_found = self._reuse_or_create_new_schema_id(schema)
+        if schema_found and last_column_id == self._base_metadata.last_column_id:
+            if self._last_added_schema_id is not None and any(
+                update.schema_.schema_id == new_schema_id for update in self._updates if isinstance(update, AddSchemaUpdate)
+            ):
+                self._last_added_schema_id = new_schema_id
+            return new_schema_id
+
+        self._base_metadata.last_column_id = last_column_id
+
+        new_schema = (
+            schema
+            if new_schema_id == schema.schema_id
+            # TODO: double check the parameter passing here, schema.fields may be interpreted as the **data fileds
+            else Schema(*schema.fields, schema_id=new_schema_id, identifier_field_ids=schema.identifier_field_ids)
+        )
+
+        if not schema_found:
+            self._base_metadata.schemas.append(new_schema)
+
+        self._updates.append(update)
+        self._last_added_schema_id = new_schema_id
+        return new_schema_id
+
+    def _set_current_schema(self, schema_id: int) -> None:
+        if schema_id == -1:
+            if self._last_added_schema_id is None:
+                raise ValueError("Cannot set current schema to last added schema when no schema has been added")
+            return self._set_current_schema(self._last_added_schema_id)
+
+        if schema_id == self._base_metadata.current_schema_id:
+            return
+
+        schema = next(schema for schema in self._base_metadata.schemas if schema.schema_id == schema_id)
+        if schema is None:
+            raise ValueError(f"Schema with id {schema_id} does not exist")
+
+        # TODO: rebuild sort_order and partition_spec
+        # So it seems the rebuild just refresh the inner field which hold the schema and some naming check for partition_spec
+        # Seems this is not necessary in pyiceberg case wince
+
+        self._base_metadata.current_schema_id = schema_id
+        if self._last_added_schema_id is not None and self._last_added_schema_id == schema_id:
+            self._updates.append(SetCurrentSchemaUpdate(schema_id=-1))
+        else:
+            self._updates.append(SetCurrentSchemaUpdate(schema_id=schema_id))
+
+    @singledispatchmethod
+    def update_table_metadata(self, update: TableUpdate) -> None:
+        raise TypeError(f"Unsupported update: {update}")
+
+    @update_table_metadata.register(UpgradeFormatVersionUpdate)
+    def _(self, update: UpgradeFormatVersionUpdate) -> None:
+        if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
+            raise ValueError(f"Unsupported table format version: {update.format_version}")
+        if update.format_version < self._base_metadata.format_version:
+            raise ValueError(f"Cannot downgrade v{self._base_metadata.format_version} table to v{update.format_version}")
+        if update.format_version == self._base_metadata.format_version:
+            return
+        # At this point, the base_metadata is guaranteed to be v1
+        if isinstance(self._base_metadata, TableMetadataV1):
+            self._base_metadata = self._base_metadata.to_v2()
+
+        raise ValueError(f"Cannot upgrade v{self._base_metadata.format_version} table to v{update.format_version}")
+
+    @update_table_metadata.register(AddSchemaUpdate)
+    def _(self, update: AddSchemaUpdate) -> None:
+        self._add_schema_internal(update.schema_, update.last_column_id, update)
+
+    @update_table_metadata.register(SetCurrentSchemaUpdate)
+    def _(self, update: SetCurrentSchemaUpdate) -> None:
+        self._set_current_schema(update.schema_id)
+
+    @update_table_metadata.register(AddSnapshotUpdate)
+    def _(self, update: AddSnapshotUpdate) -> None:
+        if len(self._base_metadata.schemas) == 0:
+            raise ValueError("Attempting to add a snapshot before a schema is added")
+        if len(self._base_metadata.partition_specs) == 0:
+            raise ValueError("Attempting to add a snapshot before a partition spec is added")
+        if len(self._base_metadata.sort_orders) == 0:
+            raise ValueError("Attempting to add a snapshot before a sort order is added")
+        if any(update.snapshot.snapshot_id == snapshot.snapshot_id for snapshot in self._base_metadata.snapshots):
+            raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
+        if (
+            self._base_metadata.format_version == 2
+            and update.snapshot.sequence_number is not None
+            and self._base_metadata.last_sequence_number is not None
+            and update.snapshot.sequence_number <= self._base_metadata.last_sequence_number
+            and update.snapshot.parent_snapshot_id is not None
+        ):
+            raise ValueError(
+                f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} older than last sequence number {self._base_metadata.last_sequence_number}"
+            )
+
+        self._base_metadata.last_updated_ms = update.snapshot.timestamp
+        self._base_metadata.last_sequence_number = update.snapshot.sequence_number
+        self._base_metadata.snapshots.append(update.snapshot)
+        self._updates.append(update)
+
+    @update_table_metadata.register(SetSnapshotRefUpdate)
+    def _(self, update: SetSnapshotRefUpdate) -> None:
+        ## TODO: may be some of the validation could be added to SnapshotRef class
+        ## TODO: may be we need to make some of the field in this update as optional or we can remove some of the checks
+        if update.type is None:
+            raise ValueError("Snapshot ref type must be set")
+        if update.min_snapshots_to_keep is not None and update.type == SnapshotRefType.TAG:
+            raise ValueError("Cannot set min snapshots to keep for branch refs")
+        if update.min_snapshots_to_keep is not None and update.min_snapshots_to_keep <= 0:
+            raise ValueError("Minimum snapshots to keep must be >= 0")
+        if update.max_snapshot_age_ms is not None and update.type == SnapshotRefType.TAG:
+            raise ValueError("Tags do not support setting maxSnapshotAgeMs")
+        if update.max_snapshot_age_ms is not None and update.max_snapshot_age_ms <= 0:
+            raise ValueError("Max snapshot age must be > 0 ms")
+        if update.max_age_ref_ms is not None and update.max_age_ref_ms <= 0:
+            raise ValueError("Max ref age must be > 0 ms")
+        snapshot_ref = SnapshotRef(
+            snapshot_id=update.snapshot_id,
+            snapshot_ref_type=update.type,
+            min_snapshots_to_keep=update.min_snapshots_to_keep,
+            max_snapshot_age_ms=update.max_snapshot_age_ms,
+            max_ref_age_ms=update.max_age_ref_ms,
+        )
+        existing_ref = self._base_metadata.refs.get(snapshot_ref.ref_name)
+        if existing_ref is not None and existing_ref == snapshot_ref:
+            return
+
+        snapshot = next(
+            snapshot for snapshot in self._base_metadata.snapshots if snapshot.snapshot_id == snapshot_ref.snapshot_id
+        )
+        if snapshot is None:
+            raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
+
+        if any(
+            snapshot_ref.snapshot_id == prev_update.snapshot.snapshot_id
+            for prev_update in self._updates
+            if isinstance(self._updates, AddSnapshotUpdate)
+        ):
+            self._base_metadata.last_updated_ms = snapshot.timestamp
+
+        if snapshot_ref.ref_name == MAIN_BRANCH:
+            self._base_metadata.current_snapshot_id = snapshot_ref.snapshot_id
+            # TODO: double-check if the default value of TableMetadata make the timestamp too early
+            # if self._base_metadata.last_updated_ms is None:
+            #   self._base_metadata.last_updated_ms = datetime_to_millis(datetime.datetime.now().astimezone())
+            self._base_metadata.snapshot_log.append(
+                SnapshotLogEntry(
+                    snapshot_id=snapshot_ref.snapshot_id,
+                    timestamp_ms=self._base_metadata.last_updated_ms,
+                )
+            )
+
+        self._base_metadata.refs[snapshot_ref.ref_name] = snapshot_ref
+        self._updates.append(update)
+
+    def build(self) -> TableMetadata:
+        return TableMetadataUtil.parse_obj(self._base_metadata.model_dump())
+
+
 class TableRequirement(IcebergBaseModel):
     type: str
+
+    @abstractmethod
+    def validate(self, base_metadata: TableMetadata) -> None:
+        """Validate the requirement against the base metadata."""
+        ...
 
 
 class AssertCreate(TableRequirement):
@@ -358,12 +551,20 @@ class AssertCreate(TableRequirement):
 
     type: Literal["assert-create"] = Field(default="assert-create")
 
+    def validate(self, base_metadata: TableMetadata) -> None:
+        if base_metadata is not None:
+            raise ValueError("Table already exists")
+
 
 class AssertTableUUID(TableRequirement):
     """The table UUID must match the requirement's `uuid`."""
 
     type: Literal["assert-table-uuid"] = Field(default="assert-table-uuid")
     uuid: str
+
+    def validate(self, base_metadata: TableMetadata) -> None:
+        if self.uuid != base_metadata.uuid:
+            raise ValueError(f"Table UUID does not match: {self.uuid} != {base_metadata.uuid}")
 
 
 class AssertRefSnapshotId(TableRequirement):
@@ -376,12 +577,28 @@ class AssertRefSnapshotId(TableRequirement):
     ref: str
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
+    def validate(self, base_metadata: TableMetadata) -> None:
+        snapshot_ref = base_metadata.refs.get(self.ref)
+        if snapshot_ref is not None:
+            ref_type = snapshot_ref.snapshot_ref_type
+            if self.snapshot_id is None:
+                raise ValueError(f"Requirement failed: {self.ref_tpe} {self.ref} was created concurrently")
+            elif self.snapshot_id != snapshot_ref.snapshot_id:
+                raise ValueError(
+                    f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
+                )
+        elif self.snapshot_id is not None:
+            raise ValueError(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
+
 
 class AssertLastAssignedFieldId(TableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""
 
     type: Literal["assert-last-assigned-field-id"] = Field(default="assert-last-assigned-field-id")
     last_assigned_field_id: int = Field(..., alias="last-assigned-field-id")
+
+    def validate(self, base_metadata: TableMetadata) -> None:
+        raise NotImplementedError("Not yet implemented")
 
 
 class AssertCurrentSchemaId(TableRequirement):
@@ -390,12 +607,18 @@ class AssertCurrentSchemaId(TableRequirement):
     type: Literal["assert-current-schema-id"] = Field(default="assert-current-schema-id")
     current_schema_id: int = Field(..., alias="current-schema-id")
 
+    def validate(self, base_metadata: TableMetadata) -> None:
+        raise NotImplementedError("Not yet implemented")
+
 
 class AssertLastAssignedPartitionId(TableRequirement):
     """The table's last assigned partition id must match the requirement's `last-assigned-partition-id`."""
 
     type: Literal["assert-last-assigned-partition-id"] = Field(default="assert-last-assigned-partition-id")
     last_assigned_partition_id: int = Field(..., alias="last-assigned-partition-id")
+
+    def validate(self, base_metadata: TableMetadata) -> None:
+        raise NotImplementedError("Not yet implemented")
 
 
 class AssertDefaultSpecId(TableRequirement):
@@ -404,12 +627,18 @@ class AssertDefaultSpecId(TableRequirement):
     type: Literal["assert-default-spec-id"] = Field(default="assert-default-spec-id")
     default_spec_id: int = Field(..., alias="default-spec-id")
 
+    def validate(self, base_metadata: TableMetadata) -> None:
+        raise NotImplementedError("Not yet implemented")
+
 
 class AssertDefaultSortOrderId(TableRequirement):
     """The table's default sort order id must match the requirement's `default-sort-order-id`."""
 
     type: Literal["assert-default-sort-order-id"] = Field(default="assert-default-sort-order-id")
     default_sort_order_id: int = Field(..., alias="default-sort-order-id")
+
+    def validate(self, base_metadata: TableMetadata) -> None:
+        raise NotImplementedError("Not yet implemented")
 
 
 class Namespace(IcebergRootModel[List[str]]):
@@ -437,6 +666,13 @@ class CommitTableRequest(IcebergBaseModel):
 class CommitTableResponse(IcebergBaseModel):
     metadata: TableMetadata
     metadata_location: str = Field(alias="metadata-location")
+
+
+def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+    builder = TableMetadataUpdateBuilder(base_metadata)
+    for update in updates:
+        builder.update_table_metadata(update)
+    return builder.build()
 
 
 class Table:

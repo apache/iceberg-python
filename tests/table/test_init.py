@@ -42,7 +42,7 @@ from pyiceberg.table import (
     Table,
     UpdateSchema,
     _generate_snapshot_id,
-    _match_deletes_to_datafile,
+    _match_deletes_to_datafile, update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
 from pyiceberg.table.snapshots import (
@@ -507,6 +507,15 @@ def test_add_nested_list_type_column(table: Table) -> None:
         element_required=False,
     )
     assert new_schema.highest_field_id == 7
+
+def test_update_metadata_table_schema(table: Table) -> None:
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+
+    new_metadata = update_table_metadata(table.metadata, transaction._updates)  # pylint: disable=W0212
+    print(new_metadata)
 
 
 def test_generate_snapshot_id(table: Table) -> None:
