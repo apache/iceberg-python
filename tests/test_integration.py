@@ -121,7 +121,7 @@ def test_table_properties(table: Table) -> None:
     with table.transaction() as transaction:
         transaction.set_properties(abc="🤪")
 
-    assert table.properties == dict(**{"abc": "🤪"}, **DEFAULT_PROPERTIES)
+    assert table.properties == dict(abc="🤪", **DEFAULT_PROPERTIES)
 
     with table.transaction() as transaction:
         transaction.remove_properties("abc")
@@ -130,7 +130,7 @@ def test_table_properties(table: Table) -> None:
 
     table = table.transaction().set_properties(abc="def").commit_transaction()
 
-    assert table.properties == dict(**{"abc": "def"}, **DEFAULT_PROPERTIES)
+    assert table.properties == dict(abc="def", **DEFAULT_PROPERTIES)
 
     table = table.transaction().remove_properties("abc").commit_transaction()
 
@@ -229,13 +229,7 @@ def test_ray_all_types(table_test_all_types: Table) -> None:
 
 @pytest.mark.integration
 def test_pyarrow_to_iceberg_all_types(table_test_all_types: Table) -> None:
-    fs = S3FileSystem(
-        **{
-            "endpoint_override": "http://localhost:9000",
-            "access_key": "admin",
-            "secret_key": "password",
-        }
-    )
+    fs = S3FileSystem(endpoint_override="http://localhost:9000", access_key="admin", secret_key="password")
     data_file_paths = [task.file.file_path for task in table_test_all_types.scan().plan_files()]
     for data_file_path in data_file_paths:
         uri = urlparse(data_file_path)
