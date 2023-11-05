@@ -37,12 +37,15 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
+    AddSnapshotUpdate,
     SetPropertiesUpdate,
+    SetSnapshotRefUpdate,
     StaticTable,
     Table,
     UpdateSchema,
     _generate_snapshot_id,
-    _match_deletes_to_datafile, update_table_metadata,
+    _match_deletes_to_datafile,
+    update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
 from pyiceberg.table.snapshots import (
@@ -508,14 +511,64 @@ def test_add_nested_list_type_column(table: Table) -> None:
     )
     assert new_schema.highest_field_id == 7
 
+
 def test_update_metadata_table_schema(table: Table) -> None:
     transaction = table.transaction()
     update = transaction.update_schema()
     update.add_column(path="b", field_type=IntegerType())
     update.commit()
-
     new_metadata = update_table_metadata(table.metadata, transaction._updates)  # pylint: disable=W0212
-    print(new_metadata)
+    apply_schema: Schema = next(schema for schema in new_metadata.schemas if schema.schema_id == 2)
+    assert len(apply_schema.fields) == 4
+
+    assert apply_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
+        NestedField(field_id=3, name="z", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="b", field_type=IntegerType(), required=False),
+        identifier_field_ids=[1, 2],
+    )
+    assert apply_schema.schema_id == 2
+    assert apply_schema.highest_field_id == 4
+
+    assert new_metadata.current_schema_id == 2
+
+
+def test_update_metadata_add_snapshot(table: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(table.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert len(new_metadata.snapshots) == 3
+    assert new_metadata.snapshots[2] == new_snapshot
+    assert new_metadata.last_sequence_number == new_snapshot.sequence_number
+    assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
+
+
+def test_update_metadata_set_snapshot_ref(table: Table) -> None:
+    update = SetSnapshotRefUpdate(
+        ref_name="main",
+        type="branch",
+        snapshot_id=3051729675574597004,
+        max_age_ref_ms=123123123,
+        max_snapshot_age_ms=12312312312,
+        min_snapshots_to_keep=1,
+    )
+
+    new_metadata = update_table_metadata(table.metadata, (update,))
+    assert len(new_metadata.snapshot_log) == 3
+    assert new_metadata.snapshot_log[2] == SnapshotLogEntry(
+        snapshot_id=3051729675574597004, timestamp_ms=table.metadata.last_updated_ms
+    )
+    assert new_metadata.current_snapshot_id == 3051729675574597004
+    assert new_metadata.last_updated_ms == table.metadata.last_updated_ms
 
 
 def test_generate_snapshot_id(table: Table) -> None:
