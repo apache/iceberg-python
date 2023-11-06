@@ -20,7 +20,7 @@ from unittest import mock
 import pytest
 from strictyaml import as_document
 
-from pyiceberg.typedef import RecursiveDict
+from pyiceberg.typedef import UTF8, RecursiveDict
 from pyiceberg.utils.config import Config, _lowercase_dictionary_keys, merge_config
 
 EXAMPLE_ENV = {"PYICEBERG_CATALOG__PRODUCTION__URI": "https://service.io/api"}
@@ -43,7 +43,7 @@ def test_from_environment_variables_uppercase() -> None:
 
 def test_from_configuration_files(tmp_path_factory: pytest.TempPathFactory) -> None:
     config_path = str(tmp_path_factory.mktemp("config"))
-    with open(f"{config_path}/.pyiceberg.yaml", "w", encoding="utf-8") as file:
+    with open(f"{config_path}/.pyiceberg.yaml", "w", encoding=UTF8) as file:
         yaml_str = as_document({"catalog": {"production": {"uri": "https://service.io/api"}}}).as_yaml()
         file.write(yaml_str)
 
