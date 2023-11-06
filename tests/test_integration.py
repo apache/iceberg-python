@@ -194,6 +194,7 @@ def test_pyarrow_limit(table_test_limit: Table) -> None:
     assert len(full_result) == 10
 
 
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.integration
 def test_ray_nan(table_test_null_nan_rewritten: Table) -> None:
     ray_dataset = table_test_null_nan_rewritten.scan().to_ray()

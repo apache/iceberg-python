@@ -1546,6 +1546,7 @@ def adlfs_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileI
     bbs.create_container("tests")
     yield fsspec.FsspecFileIO(properties=properties)
     bbs.delete_container("tests")
+    bbs.close()
 
 
 @pytest.fixture(scope="session")

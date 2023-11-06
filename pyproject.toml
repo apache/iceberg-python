@@ -122,6 +122,11 @@ markers = [
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)"
 ]
 
+# Turns a warning into an error
+filterwarnings = [
+    "error"
+]
+
 [tool.black]
 line-length = 130
 target-version = ['py38']
