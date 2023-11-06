@@ -26,8 +26,32 @@ from typing import (
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, read_manifest_list
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
 from pyiceberg.typedef import IcebergBaseModel
+
+ADDED_DATA_FILES = 'added-data-files'
+ADDED_DELETE_FILES = 'added-delete-files'
+ADDED_EQUALITY_DELETES = 'added-equality-deletes'
+ADDED_FILE_SIZE = 'added-files-size'
+ADDED_POSITION_DELETES = 'added-position-deletes'
+ADDED_POSITION_DELETE_FILES = f'{ADDED_POSITION_DELETES}-files'
+ADDED_RECORDS = 'added-records'
+DELETED_DATA_FILES = 'deleted-data-files'
+DELETED_RECORDS = 'deleted-records'
+EQUALITY_DELETE_FILES = 'added-equality-delete-files'
+REMOVED_DELETE_FILES = 'removed-delete-files'
+REMOVED_EQUALITY_DELETES = 'removed-equality-deletes'
+REMOVED_EQUALITY_DELETE_FILES = f'{REMOVED_EQUALITY_DELETES}-files'
+REMOVED_FILE_SIZE = 'removed-files-size'
+REMOVED_POSITION_DELETES = 'removed-position-deletes'
+REMOVED_POSITION_DELETE_FILES = f'{REMOVED_POSITION_DELETES}-files'
+TOTAL_EQUALITY_DELETES = 'total-equality-deletes'
+TOTAL_POSITION_DELETES = 'total-position-deletes'
+TOTAL_DATA_FILES = 'total-data-files'
+TOTAL_DELETE_FILES = 'total-delete-files'
+TOTAL_RECORDS = 'total-records'
+TOTAL_FILE_SIZE = 'total-files-size'
+
 
 OPERATION = "operation"
 
@@ -199,7 +223,7 @@ class SnapshotSummaryCollector:
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
-    def removed_file(self, data_file: DataFile) -> None:
+    def remove_file(self, data_file: DataFile) -> None:
         self.removed_size += data_file.file_size_in_bytes
 
         if data_file.content == DataFileContent.DATA:
@@ -216,130 +240,121 @@ class SnapshotSummaryCollector:
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
-    def added_manifest(self, manifest: ManifestFile) -> None:
-        if manifest.content == ManifestContent.DATA:
-            self.added_files += manifest.added_files_count or 0
-            self.added_records += manifest.added_rows_count or 0
-            self.removed_files += manifest.deleted_files_count or 0
-            self.deleted_records += manifest.deleted_rows_count or 0
-        elif manifest.content == ManifestContent.DELETES:
-            self.added_delete_files += manifest.added_files_count or 0
-            self.removed_delete_files += manifest.deleted_files_count or 0
-        else:
-            raise ValueError(f"Unknown manifest file content: {manifest.content}")
-
     def build(self) -> Dict[str, str]:
-        def set_non_zero(properties: Dict[str, str], num: int, property_name: str) -> None:
+        def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
             if num > 0:
                 properties[property_name] = str(num)
 
         properties: Dict[str, str] = {}
-        set_non_zero(properties, self.added_size, 'added-files-size')
-        set_non_zero(properties, self.removed_size, 'removed-files-size')
-        set_non_zero(properties, self.added_files, 'added-data-files')
-        set_non_zero(properties, self.removed_files, 'removed-data-files')
-        set_non_zero(properties, self.added_eq_delete_files, 'added-equality-delete-files')
-        set_non_zero(properties, self.removed_eq_delete_files, 'removed-equality-delete-files')
-        set_non_zero(properties, self.added_pos_delete_files, 'added-position-delete-files')
-        set_non_zero(properties, self.removed_pos_delete_files, 'removed-position-delete-files')
-        set_non_zero(properties, self.added_delete_files, 'added-delete-files')
-        set_non_zero(properties, self.removed_delete_files, 'removed-delete-files')
-        set_non_zero(properties, self.added_records, 'added-records')
-        set_non_zero(properties, self.deleted_records, 'deleted-records')
-        set_non_zero(properties, self.added_pos_deletes, 'added-position-deletes')
-        set_non_zero(properties, self.removed_pos_deletes, 'removed-position-deletes')
-        set_non_zero(properties, self.added_eq_deletes, 'added-equality-deletes')
-        set_non_zero(properties, self.removed_eq_deletes, 'removed-equality-deletes')
+        set_when_positive(properties, self.added_size, ADDED_FILE_SIZE)
+        set_when_positive(properties, self.removed_size, REMOVED_FILE_SIZE)
+        set_when_positive(properties, self.added_files, ADDED_DATA_FILES)
+        set_when_positive(properties, self.removed_files, DELETED_DATA_FILES)
+        set_when_positive(properties, self.added_eq_delete_files, EQUALITY_DELETE_FILES)
+        set_when_positive(properties, self.removed_eq_delete_files, REMOVED_EQUALITY_DELETE_FILES)
+        set_when_positive(properties, self.added_pos_delete_files, ADDED_POSITION_DELETE_FILES)
+        set_when_positive(properties, self.removed_pos_delete_files, REMOVED_POSITION_DELETE_FILES)
+        set_when_positive(properties, self.added_delete_files, ADDED_DELETE_FILES)
+        set_when_positive(properties, self.removed_delete_files, REMOVED_DELETE_FILES)
+        set_when_positive(properties, self.added_records, ADDED_RECORDS)
+        set_when_positive(properties, self.deleted_records, DELETED_RECORDS)
+        set_when_positive(properties, self.added_pos_deletes, ADDED_POSITION_DELETES)
+        set_when_positive(properties, self.removed_pos_deletes, REMOVED_POSITION_DELETES)
+        set_when_positive(properties, self.added_eq_deletes, ADDED_EQUALITY_DELETES)
+        set_when_positive(properties, self.removed_eq_deletes, REMOVED_EQUALITY_DELETES)
 
         return properties
 
 
-def truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
+def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
     for prop in {
-        'total-data-files',
-        'total-delete-files',
-        'total-records',
-        'total-files-size',
-        'total-position-deletes',
-        'total-equality-deletes',
+        TOTAL_DATA_FILES,
+        TOTAL_DELETE_FILES,
+        TOTAL_RECORDS,
+        TOTAL_FILE_SIZE,
+        TOTAL_POSITION_DELETES,
+        TOTAL_EQUALITY_DELETES,
     }:
         summary[prop] = '0'
 
-    if value := previous_summary.get('total-data-files'):
-        summary['deleted-data-files'] = value
-    if value := previous_summary.get('total-delete-files'):
-        summary['removed-delete-files'] = value
-    if value := previous_summary.get('total-records'):
-        summary['deleted-records'] = value
-    if value := previous_summary.get('total-files-size'):
-        summary['removed-files-size'] = value
-    if value := previous_summary.get('total-position-deletes'):
-        summary['removed-position-deletes'] = value
-    if value := previous_summary.get('total-equality-deletes'):
-        summary['removed-equality-deletes'] = value
+    if value := previous_summary.get(TOTAL_DATA_FILES):
+        summary[DELETED_DATA_FILES] = value
+    if value := previous_summary.get(TOTAL_DELETE_FILES):
+        summary[REMOVED_DELETE_FILES] = value
+    if value := previous_summary.get(TOTAL_RECORDS):
+        summary[DELETED_RECORDS] = value
+    if value := previous_summary.get(TOTAL_FILE_SIZE):
+        summary[REMOVED_FILE_SIZE] = value
+    if value := previous_summary.get(TOTAL_POSITION_DELETES):
+        summary[REMOVED_POSITION_DELETES] = value
+    if value := previous_summary.get(TOTAL_EQUALITY_DELETES):
+        summary[REMOVED_EQUALITY_DELETES] = value
 
     return summary
 
 
-def merge_snapshot_summaries(
-    summary: Summary,
-    previous_summary: Optional[Mapping[str, str]] = None,
+def _merge_snapshot_summaries(
+    summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
-    if summary.operation == Operation.OVERWRITE and previous_summary is not None:
-        summary = truncate_table_summary(summary, previous_summary)
+    if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
+        summary = _truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:
         previous_summary = {
-            'total-data-files': '0',
-            'total-delete-files': '0',
-            'total-records': '0',
-            'total-files-size': '0',
-            'total-position-deletes': '0',
-            'total-equality-deletes': '0',
+            TOTAL_DATA_FILES: '0',
+            TOTAL_DELETE_FILES: '0',
+            TOTAL_RECORDS: '0',
+            TOTAL_FILE_SIZE: '0',
+            TOTAL_POSITION_DELETES: '0',
+            TOTAL_EQUALITY_DELETES: '0',
         }
 
     def _update_totals(total_property: str, added_property: str, removed_property: str) -> None:
-        if new_total_str := previous_summary.get(total_property):
-            new_total = int(new_total_str)
-            if new_total >= 0 and (added := summary.get(added_property)):
-                new_total += int(added)
-            if new_total >= 0 and (removed := summary.get(removed_property)):
-                new_total -= int(removed)
+        if previous_total_str := previous_summary.get(total_property):
+            try:
+                new_total = int(previous_total_str)
+                if new_total >= 0 and (added := summary.get(added_property)):
+                    new_total += int(added)
+                if new_total >= 0 and (removed := summary.get(removed_property)):
+                    new_total -= int(removed)
+            except ValueError as e:
+                raise ValueError(f"Could not parse summary property {total_property} to an int: {previous_total_str}") from e
+
             if new_total >= 0:
                 summary[total_property] = str(new_total)
 
     _update_totals(
-        total_property='total-data-files',
-        added_property='added-data-files',
-        removed_property='deleted-data-files',
+        total_property=TOTAL_DATA_FILES,
+        added_property=ADDED_DATA_FILES,
+        removed_property=DELETED_DATA_FILES,
     )
     _update_totals(
-        total_property='total-delete-files',
-        added_property='added-delete-files',
-        removed_property='removed-delete-files',
+        total_property=TOTAL_DELETE_FILES,
+        added_property=ADDED_DELETE_FILES,
+        removed_property=REMOVED_DELETE_FILES,
     )
     _update_totals(
-        total_property='total-records',
-        added_property='added-records',
-        removed_property='deleted-records',
+        total_property=TOTAL_RECORDS,
+        added_property=ADDED_RECORDS,
+        removed_property=DELETED_RECORDS,
     )
     _update_totals(
-        total_property='total-files-size',
-        added_property='added-files-size',
-        removed_property='deleted-files-size',
+        total_property=TOTAL_FILE_SIZE,
+        added_property=ADDED_FILE_SIZE,
+        removed_property=REMOVED_FILE_SIZE,
     )
     _update_totals(
-        total_property='total-position-deletes',
-        added_property='added-position-deletes',
-        removed_property='removed-position-deletes',
+        total_property=TOTAL_POSITION_DELETES,
+        added_property=ADDED_POSITION_DELETES,
+        removed_property=REMOVED_POSITION_DELETES,
     )
     _update_totals(
-        total_property='total-equality-deletes',
-        added_property='added-equality-deletes',
-        removed_property='removed-equality-deletes',
+        total_property=TOTAL_EQUALITY_DELETES,
+        added_property=ADDED_EQUALITY_DELETES,
+        removed_property=REMOVED_EQUALITY_DELETES,
     )
 
     return summary
