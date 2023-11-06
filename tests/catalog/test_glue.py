@@ -31,6 +31,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType
 from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
 
 
@@ -45,6 +46,7 @@ def test_create_table_with_database_location(
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 @mock_glue
@@ -60,6 +62,7 @@ def test_create_table_with_default_warehouse(
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 @mock_glue
@@ -75,6 +78,7 @@ def test_create_table_with_given_location(
     )
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 @mock_glue
@@ -100,6 +104,7 @@ def test_create_table_with_strips(
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 @mock_glue
@@ -113,6 +118,7 @@ def test_create_table_with_strips_bucket_root(
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
     assert table_strip.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table_strip.metadata_location)
+    assert test_catalog._parse_metadata_version(table_strip.metadata_location) == 0
 
 
 @mock_glue
@@ -151,6 +157,7 @@ def test_load_table(
     table = test_catalog.load_table(identifier)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 @mock_glue
@@ -176,6 +183,7 @@ def test_drop_table(
     table = test_catalog.load_table(identifier)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
@@ -202,6 +210,7 @@ def test_rename_table(
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     test_catalog.rename_table(identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
     assert new_table.identifier == (catalog_name,) + new_identifier
@@ -457,3 +466,38 @@ def test_passing_profile_name() -> None:
 
     mock_session.assert_called_with(**session_properties)
     assert test_catalog.glue is mock_session().client()
+
+
+@mock_glue
+def test_commit_table_update_schema(
+    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(
+        catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO", "warehouse": f"s3://{BUCKET_NAME}"}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    original_table_metadata = table.metadata
+
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert original_table_metadata.current_schema_id == 0
+
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.current_schema_id == 1
+    assert len(updated_table_metadata.schemas) == 2
+    new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
+    assert new_schema
+    assert new_schema == update._apply()
+    assert new_schema.find_field("b").field_type == IntegerType()

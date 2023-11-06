@@ -620,7 +620,10 @@ class AssertCurrentSchemaId(TableRequirement):
     current_schema_id: int = Field(..., alias="current-schema-id")
 
     def validate(self, base_metadata: TableMetadata) -> None:
-        raise NotImplementedError("Not yet implemented")
+        if self.current_schema_id != base_metadata.current_schema_id:
+            raise ValueError(
+                f"Requirement failed: current schema id {base_metadata.current_schema_id} does not match {self.current_schema_id}"
+            )
 
 
 class AssertLastAssignedPartitionId(TableRequirement):

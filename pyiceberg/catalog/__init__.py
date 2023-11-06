@@ -572,8 +572,25 @@ class Catalog(ABC):
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
 
     @staticmethod
-    def _get_metadata_location(location: str) -> str:
-        return f"{location}/metadata/00000-{uuid.uuid4()}.metadata.json"
+    def _get_metadata_location(location: str, new_version: int = 0) -> str:
+        if new_version < 0:
+            raise ValueError(f"Table metadata version: {new_version} cannot be negative")
+        version_str = f"{new_version:05d}"
+        return f"{location}/metadata/{version_str}-{uuid.uuid4()}.metadata.json"
+
+    @staticmethod
+    def _parse_metadata_version(metadata_location: str) -> int:
+        try:
+            # Split the string by '/' and take the last part, then split by '-' and take the first part.
+            version_part = metadata_location.split('/')[-1].split('-')[0]
+            # Attempt to convert the version part to an integer.
+            return int(version_part)
+        except ValueError:
+            # Handle any ValueError that occurs if the conversion fails.
+            return -1
+        except IndexError:
+            # Handle the case where the splits don't produce the expected number of parts.
+            return -1
 
     def _get_updated_props_and_update_summary(
         self, current_properties: Properties, removals: Optional[Set[str]], updates: Properties

@@ -40,6 +40,7 @@ from pyiceberg.catalog import (
     ICEBERG,
     LOCATION,
     METADATA_LOCATION,
+    PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
     Catalog,
     Identifier,
@@ -47,6 +48,7 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -59,21 +61,33 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
 
 
-def _construct_parameters(metadata_location: str) -> Properties:
-    return {TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location}
+def _construct_parameters(
+    metadata_location: str, glue_table: Optional[TableTypeDef] = None, prev_metadata_location: Optional[str] = None
+) -> Properties:
+    new_parameters = glue_table.get("Parameters", {}) if glue_table else {}
+    new_parameters.update({TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location})
+    if prev_metadata_location:
+        new_parameters[PREVIOUS_METADATA_LOCATION] = prev_metadata_location
+    return new_parameters
 
 
-def _construct_create_table_input(table_name: str, metadata_location: str, properties: Properties) -> TableInputTypeDef:
+def _construct_table_input(
+    table_name: str,
+    metadata_location: str,
+    properties: Properties,
+    glue_table: Optional[TableTypeDef] = None,
+    prev_metadata_location: Optional[str] = None,
+) -> TableInputTypeDef:
     table_input: TableInputTypeDef = {
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
-        "Parameters": _construct_parameters(metadata_location),
+        "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
     }
 
     if "Description" in properties:
@@ -177,6 +191,23 @@ class GlueCatalog(Catalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database {database_name} does not exist") from e
 
+    def _update_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef, version_id: str) -> None:
+        try:
+            self.glue.update_table(DatabaseName=database_name, TableInput=table_input, VersionId=version_id)
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
+        except self.glue.exceptions.ConcurrentModificationException as e:
+            raise CommitFailedException(
+                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update"
+            ) from e
+
+    def _get_glue_table(self, database_name: str, table_name: str) -> TableTypeDef:
+        try:
+            load_table_response = self.glue.get_table(DatabaseName=database_name, Name=table_name)
+            return load_table_response["Table"]
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
+
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -215,7 +246,7 @@ class GlueCatalog(Catalog):
         io = load_file_io(properties=self.properties, location=metadata_location)
         self._write_metadata(metadata, io, metadata_location)
 
-        table_input = _construct_create_table_input(table_name, metadata_location, properties)
+        table_input = _construct_table_input(table_name, metadata_location, properties)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
@@ -248,7 +279,47 @@ class GlueCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
         """
-        raise NotImplementedError
+        # TODO: This is a workaround for issue: https://github.com/apache/iceberg-python/issues/123
+        database_name, table_name = self.identifier_to_database_and_table(
+            tuple(table_request.identifier.namespace.root[1:] + [table_request.identifier.name]), NoSuchTableError
+        )
+        current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
+        glue_table_version_id = current_glue_table.get("VersionId")
+        if glue_table_version_id is None:
+            raise ValueError(f"Cannot commit {database_name}.{table_name} because Glue table version id is missing")
+        current_table = self._convert_glue_to_iceberg(glue_table=current_glue_table)
+        base_metadata = current_table.metadata
+
+        # Validate the update requirements
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        update_table_input = _construct_table_input(
+            table_name=table_name,
+            metadata_location=new_metadata_location,
+            properties=current_table.properties,
+            glue_table=current_glue_table,
+            prev_metadata_location=current_table.metadata_location,
+        )
+
+        self._update_glue_table(
+            database_name=database_name,
+            table_name=table_name,
+            table_input=update_table_input,
+            version_id=glue_table_version_id,
+        )
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and returns the table instance.
@@ -266,12 +337,7 @@ class GlueCatalog(Catalog):
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
         database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
-        try:
-            load_table_response = self.glue.get_table(DatabaseName=database_name, Name=table_name)
-        except self.glue.exceptions.EntityNotFoundException as e:
-            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
-
-        return self._convert_glue_to_iceberg(load_table_response["Table"])
+        return self._convert_glue_to_iceberg(self._get_glue_table(database_name=database_name, table_name=table_name))
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
