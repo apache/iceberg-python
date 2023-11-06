@@ -434,10 +434,10 @@ def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, 
     return visit(schema, _ConvertToArrowSchema(metadata))
 
 
-class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType], Singleton):
+class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     _metadata: Dict[bytes, bytes]
 
-    def __init__(self, metadata: Dict[bytes, bytes]):
+    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT) -> None:
         self._metadata = metadata
 
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
@@ -1004,8 +1004,8 @@ def project_table(
     return result.cast(projected_schema_arrow)
 
 
-def _primitive_to_phyisical(iceberg_type: PrimitiveType) -> str:
-    return visit(iceberg_type, _PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR)
+def _primitive_to_physical(iceberg_type: PrimitiveType) -> str:
+    return visit(iceberg_type, _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR)
 
 
 class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
@@ -1067,7 +1067,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "BYTE_ARRAY"
 
 
-_PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR = PrimitiveToPhysicalType()
+_PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
 
 
 class StatsAggregator:
@@ -1080,7 +1080,7 @@ class StatsAggregator:
         self.current_max = None
         self.trunc_length = trunc_length
 
-        expected_physical_type = _primitive_to_phyisical(iceberg_type)
+        expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
             raise ValueError(
                 f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
@@ -1407,7 +1407,7 @@ def fill_parquet_file_metadata(
 
         invalidate_col: Set[int] = set()
 
-        for pos in range(0, parquet_metadata.num_columns):
+        for pos in range(parquet_metadata.num_columns):
             column = row_group.column(pos)
             field_id = parquet_column_mapping[column.path_in_schema]
 

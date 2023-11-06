@@ -496,7 +496,7 @@ def test_repr_nestedfield() -> None:
 def test_nestedfield_by_alias() -> None:
     # We should be able to initialize a NestedField by alias
     expected = NestedField(1, "required_field", StringType(), True, "this is a doc")
-    actual = NestedField(**{"id": 1, "name": "required_field", "type": "string", "required": True, "doc": "this is a doc"})  # type: ignore
+    actual = NestedField(id=1, name="required_field", type="string", required=True, doc="this is a doc")
     assert expected == actual
 
 

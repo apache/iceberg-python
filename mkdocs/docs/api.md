@@ -54,6 +54,12 @@ catalog = load_catalog(
 )
 ```
 
+If the catalog has not been initialized before, you need to run:
+
+```python
+catalog.create_tables()
+```
+
 Let's create a namespace:
 
 ```python
@@ -124,6 +130,7 @@ sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 catalog.create_table(
     identifier="docs_example.bids",
     schema=schema,
+    location="s3://pyiceberg",
     partition_spec=partition_spec,
     sort_order=sort_order,
 )
