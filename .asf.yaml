@@ -45,7 +45,7 @@ github:
   collaborators:  # Note: the number of collaborators is limited to 10
     - ajantha-bhat
   ghp_branch: gh-pages
-  ghp_path: ~
+  ghp_path: /
 
 notifications:
     commits:      commits@iceberg.apache.org
