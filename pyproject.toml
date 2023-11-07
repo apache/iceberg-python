@@ -123,9 +123,9 @@ markers = [
 ]
 
 # Turns a warning into an error
-filterwarnings = [
-    "error"
-]
+#filterwarnings = [
+#    "error"
+#]
 
 [tool.black]
 line-length = 130

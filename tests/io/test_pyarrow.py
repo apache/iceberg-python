@@ -946,9 +946,15 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     assert (
         repr(result_table.schema)
         == """properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string> not null
+  child 0, entries: struct<key: string not null, value: string not null> not null
       child 0, key: string not null
-      child 1, value: string"""
+      -- field metadata --
+      field_id: '51'
+      child 1, value: string not null
+      -- field metadata --
+      field_id: '52'
+  -- field metadata --
+  field_id: '5'"""
     )
 
 

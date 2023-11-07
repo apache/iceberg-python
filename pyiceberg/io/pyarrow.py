@@ -804,6 +804,7 @@ def _task_to_table(
     task: FileScanTask,
     bound_row_filter: BooleanExpression,
     projected_schema: Schema,
+    projected_arrow_schema: pa.schema,
     projected_field_ids: Set[int],
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
@@ -836,9 +837,11 @@ def _task_to_table(
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
 
-        {
+        columns = {
             # Projecting nested fields doesn't work...
-            projected_schema.find_column_name(col.field_id): pc.field(col.name)
+            projected_schema.find_column_name(col.field_id): pc.field(col.name).cast(
+                schema_to_pyarrow(col.field_type)
+            )
             for col in file_project_schema.columns
         }
 
@@ -848,7 +851,7 @@ def _task_to_table(
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
-            # columns=columns,
+            columns=columns,
         )
 
         if positional_deletes:
@@ -886,7 +889,8 @@ def _task_to_table(
 
         row_counts.append(len(arrow_table))
 
-        return arrow_table
+        # arrow_table.select(projected_arrow_schema)
+        return arrow_table.cast(projected_arrow_schema)
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -949,6 +953,7 @@ def project_table(
 
     # Will raise an exception
     _ = table.schema().is_compatible(projected_schema)
+    projected_schema_arrow = schema_to_pyarrow(projected_schema)
 
     projected_field_ids = {
         id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
@@ -964,6 +969,7 @@ def project_table(
             task,
             bound_row_filter,
             projected_schema,
+            projected_schema_arrow,
             projected_field_ids,
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
@@ -989,7 +995,6 @@ def project_table(
 
     tables = [f.result() for f in completed_futures if f.result()]
 
-    projected_schema_arrow = schema_to_pyarrow(projected_schema)
     empty_table = pa.Table.from_batches([], schema=projected_schema_arrow)
 
     if len(tables) < 1:
