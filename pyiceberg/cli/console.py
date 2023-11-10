@@ -393,7 +393,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
     if type:
         type = type.lower()
         if type not in {"branch", "tag"}:
-            raise ValueError("Type must be either branch or tag")
+            raise ValueError(f"Type must be either branch or tag, got: {type}")
 
     relevant_refs = [
         (ref_name, ref.snapshot_ref_type, _retention_properties(ref, table.properties))
