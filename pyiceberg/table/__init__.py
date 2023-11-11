@@ -325,7 +325,7 @@ class SetSnapshotRefUpdate(TableUpdate):
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
-    max_age_ref_ms: int = Field(alias="max-ref-age-ms")
+    max_ref_age_ms: int = Field(alias="max-ref-age-ms")
     max_snapshot_age_ms: int = Field(alias="max-snapshot-age-ms")
     min_snapshots_to_keep: int = Field(alias="min-snapshots-to-keep")
 
@@ -508,14 +508,14 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
         raise ValueError("Tags do not support setting maxSnapshotAgeMs")
     if update.max_snapshot_age_ms is not None and update.max_snapshot_age_ms <= 0:
         raise ValueError("Max snapshot age must be > 0 ms")
-    if update.max_age_ref_ms is not None and update.max_age_ref_ms <= 0:
+    if update.max_ref_age_ms is not None and update.max_ref_age_ms <= 0:
         raise ValueError("Max ref age must be > 0 ms")
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
         snapshot_ref_type=update.type,
         min_snapshots_to_keep=update.min_snapshots_to_keep,
         max_snapshot_age_ms=update.max_snapshot_age_ms,
-        max_ref_age_ms=update.max_age_ref_ms,
+        max_ref_age_ms=update.max_ref_age_ms,
     )
     existing_ref = base_metadata.refs.get(update.ref_name)
     if existing_ref is not None and existing_ref == snapshot_ref:

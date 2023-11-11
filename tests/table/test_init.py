@@ -45,7 +45,7 @@ from pyiceberg.table import (
     UpdateSchema,
     _generate_snapshot_id,
     _match_deletes_to_datafile,
-    update_table_metadata,
+    update_table_metadata, SnapshotRef,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
 from pyiceberg.table.snapshots import (
@@ -547,7 +547,7 @@ def test_update_metadata_add_snapshot(table: Table) -> None:
 
     new_metadata = update_table_metadata(table.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
     assert len(new_metadata.snapshots) == 3
-    assert new_metadata.snapshots[2] == new_snapshot
+    assert new_metadata.snapshots[-1] == new_snapshot
     assert new_metadata.last_sequence_number == new_snapshot.sequence_number
     assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
 
@@ -557,7 +557,7 @@ def test_update_metadata_set_snapshot_ref(table: Table) -> None:
         ref_name="main",
         type="branch",
         snapshot_id=3051729675574597004,
-        max_age_ref_ms=123123123,
+        max_ref_age_ms=123123123,
         max_snapshot_age_ms=12312312312,
         min_snapshots_to_keep=1,
     )
@@ -569,6 +569,13 @@ def test_update_metadata_set_snapshot_ref(table: Table) -> None:
     )
     assert new_metadata.current_snapshot_id == 3051729675574597004
     assert new_metadata.last_updated_ms == table.metadata.last_updated_ms
+    assert new_metadata.refs[update.ref_name] == SnapshotRef(
+        snapshot_id=3051729675574597004,
+        snapshot_ref_type="branch",
+        min_snapshots_to_keep=1,
+        max_snapshot_age_ms=12312312312,
+        max_ref_age_ms=123123123,
+    )
 
 
 def test_generate_snapshot_id(table: Table) -> None:
