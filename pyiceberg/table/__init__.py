@@ -406,13 +406,13 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
     def reuse_or_create_new_schema_id(new_schema: Schema) -> Tuple[int, bool]:
         # if the schema already exists, use its id; otherwise use the highest id + 1
-        new_schema_id = base_metadata.current_schema_id
+        result_schema_id = base_metadata.current_schema_id
         for schema in base_metadata.schemas:
             if schema == new_schema:
                 return schema.schema_id, True
-            elif schema.schema_id >= new_schema_id:
-                new_schema_id = schema.schema_id + 1
-        return new_schema_id, False
+            elif schema.schema_id >= result_schema_id:
+                result_schema_id = schema.schema_id + 1
+        return result_schema_id, False
 
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
