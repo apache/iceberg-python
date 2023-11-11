@@ -549,6 +549,14 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
     return TableMetadataUtil.parse_obj(update_metadata_data)
 
 
+def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+    context = TableMetadataUpdateContext()
+    new_metadata = base_metadata
+    for update in updates:
+        new_metadata = apply_table_update(update, new_metadata, context)
+    return new_metadata
+
+
 class TableRequirement(IcebergBaseModel):
     type: str
 
@@ -678,14 +686,6 @@ class CommitTableRequest(IcebergBaseModel):
 class CommitTableResponse(IcebergBaseModel):
     metadata: TableMetadata
     metadata_location: str = Field(alias="metadata-location")
-
-
-def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
-    context = TableMetadataUpdateContext()
-    new_metadata = base_metadata
-    for update in updates:
-        new_metadata = apply_table_update(update, new_metadata, context)
-    return new_metadata
 
 
 class Table:
