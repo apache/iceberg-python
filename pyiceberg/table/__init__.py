@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import datetime
 import itertools
 import uuid
 from abc import ABC, abstractmethod
@@ -95,6 +96,7 @@ from pyiceberg.types import (
     StructType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -381,7 +383,18 @@ class TableMetadataUpdateContext:
 
 @singledispatch
 def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
-    raise ValueError(f"Unsupported update: {update}")
+    """Apply a table update to the table metadata.
+
+    Args:
+        update: The update to be applied.
+        base_metadata: The base metadata to be updated.
+        context: Contains previous updates, last_added_snapshot_id and other change tracking information in the current transaction.
+
+    Returns:
+        The updated metadata.
+
+    """
+    raise NotImplementedError(f"Unsupported table update: {update}")
 
 
 @apply_table_update.register(UpgradeFormatVersionUpdate)
@@ -455,13 +468,9 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: Tab
     if update.schema_id == base_metadata.current_schema_id:
         return base_metadata
 
-    schema = base_metadata.schema_by_id(update.schema_id)
+    schema = base_metadata.schemas_by_id.get(update.schema_id)
     if schema is None:
         raise ValueError(f"Schema with id {update.schema_id} does not exist")
-
-    # TODO: rebuild sort_order and partition_spec
-    # So it seems the rebuild just refresh the inner field which hold the schema and some naming check for partition_spec
-    # Seems this is not necessary in pyiceberg case wince
 
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["current-schema-id"] = update.schema_id
@@ -485,7 +494,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: TableMet
     if len(base_metadata.sort_orders) == 0:
         raise ValueError("Attempting to add a snapshot before a sort order is added")
 
-    if base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
+    if base_metadata.snapshots_by_id.get(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
 
     if (
@@ -495,7 +504,8 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: TableMet
         and update.snapshot.parent_snapshot_id is not None
     ):
         raise ValueError(
-            f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} older than last sequence number {base_metadata.last_sequence_number}"
+            f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
+            f"older than last sequence number {base_metadata.last_sequence_number}"
         )
 
     updated_metadata_data = copy(base_metadata.model_dump())
@@ -538,19 +548,20 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
     if existing_ref is not None and existing_ref == snapshot_ref:
         return base_metadata
 
-    snapshot = base_metadata.snapshot_by_id(snapshot_ref.snapshot_id)
+    snapshot = base_metadata.snapshots_by_id.get(snapshot_ref.snapshot_id)
     if snapshot is None:
         raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
     update_metadata_data = copy(base_metadata.model_dump())
+    update_last_updated_ms = True
     if context.is_added_snapshot(snapshot_ref.snapshot_id):
         update_metadata_data["last-updated-ms"] = snapshot.timestamp
+        update_last_updated_ms = False
 
     if update.ref_name == MAIN_BRANCH:
         update_metadata_data["current-snapshot-id"] = snapshot_ref.snapshot_id
-        # TODO: double-check if the default value of TableMetadata make the timestamp too early
-        # if base_metadata.last_updated_ms is None:
-        #     update_metadata_data["last-updated-ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+        if update_last_updated_ms:
+            update_metadata_data["last-updated-ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
         update_metadata_data["snapshot-log"].append(
             SnapshotLogEntry(
                 snapshot_id=snapshot_ref.snapshot_id,
@@ -564,6 +575,15 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
 
 
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+    """Update the table metadata with the given updates in one transaction.
+
+    Args:
+        base_metadata: The base metadata to be updated.
+        updates: The updates in one transaction.
+
+    Returns:
+        The updated metadata.
+    """
     context = TableMetadataUpdateContext()
     new_metadata = base_metadata
 
@@ -816,7 +836,7 @@ class Table:
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
-        return self.metadata.snapshot_by_id(snapshot_id)  # pylint: disable=W0212
+        return self.metadata.snapshots_by_id.get(snapshot_id)
 
     def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
