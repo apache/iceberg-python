@@ -39,6 +39,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BooleanType,
     FloatType,
@@ -50,31 +51,6 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
-
-EXAMPLE_TABLE_METADATA_V1 = {
-    "format-version": 1,
-    "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
-    "location": "s3://bucket/test/location",
-    "last-updated-ms": 1602638573874,
-    "last-column-id": 3,
-    "schema": {
-        "type": "struct",
-        "fields": [
-            {"id": 1, "name": "x", "required": True, "type": "long"},
-            {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
-            {"id": 3, "name": "z", "required": True, "type": "long"},
-        ],
-    },
-    "partition-spec": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}],
-    "properties": {},
-    "current-snapshot-id": -1,
-    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
-}
-
-
-@pytest.fixture(scope="session")
-def example_table_metadata_v1() -> Dict[str, Any]:
-    return EXAMPLE_TABLE_METADATA_V1
 
 
 def test_from_dict_v1(example_table_metadata_v1: Dict[str, Any]) -> None:
@@ -99,7 +75,7 @@ def test_from_dict_v2_parse_raw(example_table_metadata_v2: Dict[str, Any]) -> No
 
 def test_from_byte_stream(example_table_metadata_v2: Dict[str, Any]) -> None:
     """Test generating a TableMetadata instance from a file-like byte stream"""
-    data = bytes(json.dumps(example_table_metadata_v2), encoding="utf-8")
+    data = bytes(json.dumps(example_table_metadata_v2), encoding=UTF8)
     byte_stream = io.BytesIO(data)
     FromByteStream.table_metadata(byte_stream=byte_stream)
 

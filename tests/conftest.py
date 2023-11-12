@@ -73,7 +73,8 @@ from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
-from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -351,6 +352,32 @@ def all_avro_types() -> Dict[str, Any]:
             },
         ],
     }
+
+
+EXAMPLE_TABLE_METADATA_V1 = {
+    "format-version": 1,
+    "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
+    "location": "s3://bucket/test/location",
+    "last-updated-ms": 1602638573874,
+    "last-column-id": 3,
+    "schema": {
+        "type": "struct",
+        "fields": [
+            {"id": 1, "name": "x", "required": True, "type": "long"},
+            {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+            {"id": 3, "name": "z", "required": True, "type": "long"},
+        ],
+    },
+    "partition-spec": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}],
+    "properties": {},
+    "current-snapshot-id": -1,
+    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
+}
+
+
+@pytest.fixture(scope="session")
+def example_table_metadata_v1() -> Dict[str, Any]:
+    return EXAMPLE_TABLE_METADATA_V1
 
 
 EXAMPLE_TABLE_METADATA_V2 = {
@@ -1456,7 +1483,7 @@ class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
     @property
     def raw_headers(self) -> aiohttp.typedefs.RawHeaders:
         # Return the headers encoded the way that aiobotocore expects them
-        return {k.encode("utf-8"): str(v).encode("utf-8") for k, v in self.response.headers.items()}.items()
+        return {k.encode(UTF8): str(v).encode(UTF8) for k, v in self.response.headers.items()}.items()
 
 
 def patch_aiobotocore() -> None:
@@ -1545,6 +1572,7 @@ def adlfs_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileI
     bbs.create_container("tests")
     yield fsspec.FsspecFileIO(properties=properties)
     bbs.delete_container("tests")
+    bbs.close()
 
 
 @pytest.fixture(scope="session")
@@ -1651,7 +1679,19 @@ def example_task(data_file: str) -> FileScanTask:
 
 
 @pytest.fixture
-def table(example_table_metadata_v2: Dict[str, Any]) -> Table:
+def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV1(**example_table_metadata_v1)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),

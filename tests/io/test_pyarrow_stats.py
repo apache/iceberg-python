@@ -76,6 +76,7 @@ from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_m
 
 @dataclass(frozen=True)
 class TestStruct:
+    __test__ = False
     x: Optional[int]
     y: Optional[float]
 
