@@ -40,12 +40,15 @@ from pyiceberg.table import (
     AddSnapshotUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
+    SnapshotRef,
     StaticTable,
     Table,
+    TableMetadataUpdateContext,
     UpdateSchema,
     _generate_snapshot_id,
     _match_deletes_to_datafile,
-    update_table_metadata, SnapshotRef,
+    apply_table_update,
+    update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
 from pyiceberg.table.snapshots import (
@@ -510,6 +513,33 @@ def test_add_nested_list_type_column(table: Table) -> None:
         element_required=False,
     )
     assert new_schema.highest_field_id == 7
+
+
+def test_apply_add_schema_update(table: Table) -> None:
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+
+    test_context = TableMetadataUpdateContext()
+
+    new_table_metadata = apply_table_update(
+        transaction._updates[0], base_metadata=table.metadata, context=test_context
+    )  # pylint: disable=W0212
+    assert len(new_table_metadata.schemas) == 3
+    assert new_table_metadata.current_schema_id == 1
+    assert len(test_context.updates) == 1
+    assert test_context.updates[0] == transaction._updates[0]  # pylint: disable=W0212
+    assert test_context.last_added_schema_id == 2
+
+    new_table_metadata = apply_table_update(
+        transaction._updates[1], base_metadata=new_table_metadata, context=test_context
+    )  # pylint: disable=W0212
+    assert len(new_table_metadata.schemas) == 3
+    assert new_table_metadata.current_schema_id == 2
+    assert len(test_context.updates) == 2
+    assert test_context.updates[1] == transaction._updates[1]  # pylint: disable=W0212
+    assert test_context.last_added_schema_id == 2
 
 
 def test_update_metadata_table_schema(table: Table) -> None:

@@ -218,6 +218,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
 
+    def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
+        """Get the snapshot by id."""
+        return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
+
+    def schema_by_id(self, schema_id: int) -> Optional[Schema]:
+        """Get the schema by id."""
+        return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
+
 
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """Represents version 1 of the Table Metadata.

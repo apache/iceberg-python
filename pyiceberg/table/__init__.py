@@ -386,26 +386,31 @@ def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, contex
 
 @apply_table_update.register(UpgradeFormatVersionUpdate)
 def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
-    current_format_version = base_metadata.format_version
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
-    if update.format_version < current_format_version:
-        raise ValueError(f"Cannot downgrade v{current_format_version} table to v{update.format_version}")
-    if update.format_version == current_format_version:
+
+    if update.format_version < base_metadata.format_version:
+        raise ValueError(f"Cannot downgrade v{base_metadata.format_version} table to v{update.format_version}")
+
+    if update.format_version == base_metadata.format_version:
         return base_metadata
 
-    if current_format_version == 1 and update.format_version == 2:
-        updated_metadata_data = copy(base_metadata.model_dump())
-        updated_metadata_data["format-version"] = update.format_version
-        return TableMetadataUtil.parse_obj(updated_metadata_data)
-
-    raise ValueError(f"Cannot upgrade v{current_format_version} table to v{update.format_version}")
+    updated_metadata_data = copy(base_metadata.model_dump())
+    updated_metadata_data["format-version"] = update.format_version
+    return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
 @apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
     def reuse_or_create_new_schema_id(new_schema: Schema) -> Tuple[int, bool]:
-        # if the schema already exists, use its id; otherwise use the highest id + 1
+        """Reuse schema id if schema already exists, otherwise create a new one.
+
+        Args:
+            new_schema: The new schema to be added.
+
+        Returns:
+            The new schema id and whether the schema already exists.
+        """
         result_schema_id = base_metadata.current_schema_id
         for schema in base_metadata.schemas:
             if schema == new_schema:
@@ -416,6 +421,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: TableMetad
 
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
+
     new_schema_id, schema_found = reuse_or_create_new_schema_id(update.schema_)
     if schema_found and update.last_column_id == base_metadata.last_column_id:
         if context.last_added_schema_id is not None and context.is_added_schema(new_schema_id):
@@ -428,7 +434,6 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: TableMetad
     new_schema = (
         update.schema_
         if new_schema_id == update.schema_.schema_id
-        # TODO: double check the parameter passing here, schema.fields may be interpreted as the **data fileds
         else Schema(*update.schema_.fields, schema_id=new_schema_id, identifier_field_ids=update.schema_.identifier_field_ids)
     )
 
@@ -450,7 +455,7 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: Tab
     if update.schema_id == base_metadata.current_schema_id:
         return base_metadata
 
-    schema = next((schema for schema in base_metadata.schemas if schema.schema_id == update.schema_id), None)
+    schema = base_metadata.schema_by_id(update.schema_id)
     if schema is None:
         raise ValueError(f"Schema with id {update.schema_id} does not exist")
 
@@ -460,6 +465,7 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: Tab
 
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["current-schema-id"] = update.schema_id
+
     if context.last_added_schema_id is not None and context.last_added_schema_id == update.schema_id:
         context.updates.append(SetCurrentSchemaUpdate(schema_id=-1))
     else:
@@ -472,12 +478,16 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: Tab
 def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
     if len(base_metadata.schemas) == 0:
         raise ValueError("Attempting to add a snapshot before a schema is added")
+
     if len(base_metadata.partition_specs) == 0:
         raise ValueError("Attempting to add a snapshot before a partition spec is added")
+
     if len(base_metadata.sort_orders) == 0:
         raise ValueError("Attempting to add a snapshot before a sort order is added")
-    if any(update.snapshot.snapshot_id == snapshot.snapshot_id for snapshot in base_metadata.snapshots):
+
+    if base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
+
     if (
         base_metadata.format_version == 2
         and update.snapshot.sequence_number is not None
@@ -500,16 +510,22 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: TableMet
 def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
     if update.type is None:
         raise ValueError("Snapshot ref type must be set")
+
     if update.min_snapshots_to_keep is not None and update.type == SnapshotRefType.TAG:
         raise ValueError("Cannot set min snapshots to keep for branch refs")
+
     if update.min_snapshots_to_keep is not None and update.min_snapshots_to_keep <= 0:
         raise ValueError("Minimum snapshots to keep must be >= 0")
+
     if update.max_snapshot_age_ms is not None and update.type == SnapshotRefType.TAG:
         raise ValueError("Tags do not support setting maxSnapshotAgeMs")
+
     if update.max_snapshot_age_ms is not None and update.max_snapshot_age_ms <= 0:
         raise ValueError("Max snapshot age must be > 0 ms")
+
     if update.max_ref_age_ms is not None and update.max_ref_age_ms <= 0:
         raise ValueError("Max ref age must be > 0 ms")
+
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
         snapshot_ref_type=update.type,
@@ -517,14 +533,12 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
         max_snapshot_age_ms=update.max_snapshot_age_ms,
         max_ref_age_ms=update.max_ref_age_ms,
     )
+
     existing_ref = base_metadata.refs.get(update.ref_name)
     if existing_ref is not None and existing_ref == snapshot_ref:
         return base_metadata
 
-    snapshot = next(
-        (snapshot for snapshot in base_metadata.snapshots if snapshot.snapshot_id == snapshot_ref.snapshot_id),
-        None,
-    )
+    snapshot = base_metadata.snapshot_by_id(snapshot_ref.snapshot_id)
     if snapshot is None:
         raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
@@ -552,8 +566,10 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
     context = TableMetadataUpdateContext()
     new_metadata = base_metadata
+
     for update in updates:
         new_metadata = apply_table_update(update, new_metadata, context)
+
     return new_metadata
 
 
@@ -800,10 +816,7 @@ class Table:
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
-        try:
-            return next(snapshot for snapshot in self.metadata.snapshots if snapshot.snapshot_id == snapshot_id)
-        except StopIteration:
-            return None
+        return self.metadata.snapshot_by_id(snapshot_id)  # pylint: disable=W0212
 
     def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
