@@ -51,31 +51,6 @@ from pyiceberg.types import (
     StructType,
 )
 
-EXAMPLE_TABLE_METADATA_V1 = {
-    "format-version": 1,
-    "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
-    "location": "s3://bucket/test/location",
-    "last-updated-ms": 1602638573874,
-    "last-column-id": 3,
-    "schema": {
-        "type": "struct",
-        "fields": [
-            {"id": 1, "name": "x", "required": True, "type": "long"},
-            {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
-            {"id": 3, "name": "z", "required": True, "type": "long"},
-        ],
-    },
-    "partition-spec": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}],
-    "properties": {},
-    "current-snapshot-id": -1,
-    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
-}
-
-
-@pytest.fixture(scope="session")
-def example_table_metadata_v1() -> Dict[str, Any]:
-    return EXAMPLE_TABLE_METADATA_V1
-
 
 def test_from_dict_v1(example_table_metadata_v1: Dict[str, Any]) -> None:
     """Test initialization of a TableMetadata instance from a dictionary"""

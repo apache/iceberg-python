@@ -365,9 +365,6 @@ class TableMetadataUpdateContext:
         self.updates = []
         self.last_added_schema_id = None
 
-    def get_updates_by_action(self, update_type: TableUpdateAction) -> List[TableUpdate]:
-        return [update for update in self.updates if update.action == update_type]
-
     def is_added_snapshot(self, snapshot_id: int) -> bool:
         return any(
             update.snapshot.snapshot_id == snapshot_id
@@ -410,6 +407,8 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
 
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["format-version"] = update.format_version
+
+    context.updates.append(update)
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
@@ -555,7 +554,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
     update_metadata_data = copy(base_metadata.model_dump())
     update_last_updated_ms = True
     if context.is_added_snapshot(snapshot_ref.snapshot_id):
-        update_metadata_data["last-updated-ms"] = snapshot.timestamp
+        update_metadata_data["last-updated-ms"] = snapshot.timestamp_ms
         update_last_updated_ms = False
 
     if update.ref_name == MAIN_BRANCH:
