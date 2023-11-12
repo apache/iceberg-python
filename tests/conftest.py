@@ -74,7 +74,6 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
-from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
