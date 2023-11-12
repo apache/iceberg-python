@@ -783,8 +783,8 @@ class ManifestWriterV1(ManifestWriter):
             output_file,
             snapshot_id,
             {
-                "schema": schema.json(),
-                "partition-spec": spec.json(),
+                "schema": schema.model_dump_json(),
+                "partition-spec": spec.model_dump_json(),
                 "partition-spec-id": str(spec.spec_id),
                 "format-version": "1",
             },
@@ -808,9 +808,9 @@ class ManifestWriterV2(ManifestWriter):
             schema,
             output_file,
             snapshot_id,
-            {
-                "schema": schema.json(),
-                "partition-spec": spec.json(),
+            meta={
+                "schema": schema.model_dump_json(),
+                "partition-spec": spec.model_dump_json(),
                 "partition-spec-id": str(spec.spec_id),
                 "format-version": "2",
                 "content": "data",

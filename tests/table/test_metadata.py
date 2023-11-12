@@ -39,6 +39,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BooleanType,
     FloatType,
@@ -74,7 +75,7 @@ def test_from_dict_v2_parse_raw(example_table_metadata_v2: Dict[str, Any]) -> No
 
 def test_from_byte_stream(example_table_metadata_v2: Dict[str, Any]) -> None:
     """Test generating a TableMetadata instance from a file-like byte stream"""
-    data = bytes(json.dumps(example_table_metadata_v2), encoding="utf-8")
+    data = bytes(json.dumps(example_table_metadata_v2), encoding=UTF8)
     byte_stream = io.BytesIO(data)
     FromByteStream.table_metadata(byte_stream=byte_stream)
 

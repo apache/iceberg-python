@@ -74,6 +74,7 @@ from pyiceberg.transforms import (
     YearTransform,
     parse_transform,
 )
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -187,7 +188,7 @@ def test_bucket_method(type_var: PrimitiveType) -> None:
 
 def test_string_with_surrogate_pair() -> None:
     string_with_surrogate_pair = "string with a surrogate pair: 💰"
-    as_bytes = bytes(string_with_surrogate_pair, "UTF-8")
+    as_bytes = bytes(string_with_surrogate_pair, UTF8)
     bucket_transform = BucketTransform(100).transform(StringType(), bucket=False)
     assert bucket_transform(string_with_surrogate_pair) == mmh3.hash(as_bytes)
 
@@ -392,7 +393,7 @@ def test_truncate_string(input_var: str, expected: str) -> None:
     "type_var,value,expected_human_str,expected",
     [
         (BinaryType(), b"\x00\x01\x02\x03", "AAECAw==", b"\x00"),
-        (BinaryType(), bytes("\u2603de", "utf-8"), "4piDZGU=", b"\xe2"),
+        (BinaryType(), bytes("\u2603de", UTF8), "4piDZGU=", b"\xe2"),
         (DecimalType(8, 5), Decimal("14.21"), "14.21", Decimal("14.21")),
         (IntegerType(), 123, "123", 123),
         (LongType(), 123, "123", 123),

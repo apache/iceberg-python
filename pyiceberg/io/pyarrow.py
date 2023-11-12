@@ -435,13 +435,18 @@ class PyArrowFileIO(FileIO):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
 
 
-def schema_to_pyarrow(schema: Union[Schema, IcebergType]) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema())
+def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
+    return visit(schema, _ConvertToArrowSchema(metadata))
 
 
-class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType], Singleton):
+class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
+    _metadata: Dict[bytes, bytes]
+
+    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT) -> None:
+        self._metadata = metadata
+
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
-        return pa.schema(list(struct_result))
+        return pa.schema(list(struct_result), metadata=self._metadata)
 
     def struct(self, _: StructType, field_results: List[pa.DataType]) -> pa.DataType:
         return pa.struct(field_results)
@@ -1503,7 +1508,7 @@ def fill_parquet_file_metadata(
 
         invalidate_col: Set[int] = set()
 
-        for pos in range(0, parquet_metadata.num_columns):
+        for pos in range(parquet_metadata.num_columns):
             column = row_group.column(pos)
             field_id = parquet_column_mapping[column.path_in_schema]
 

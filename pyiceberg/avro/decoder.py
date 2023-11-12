@@ -27,6 +27,7 @@ from typing import (
 
 from pyiceberg.avro import STRUCT_DOUBLE, STRUCT_FLOAT
 from pyiceberg.io import InputStream
+from pyiceberg.typedef import UTF8
 
 
 class BinaryDecoder(ABC):
@@ -107,7 +108,7 @@ class BinaryDecoder(ABC):
         A string is encoded as a long followed by
         that many bytes of UTF-8 encoded character data.
         """
-        return self.read_bytes().decode("utf-8")
+        return self.read_bytes().decode(UTF8)
 
     def skip_boolean(self) -> None:
         self.skip(1)

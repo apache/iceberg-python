@@ -16,7 +16,7 @@
 # under the License.
 [tool.poetry]
 name = "pyiceberg"
-version = "0.5.1"
+version = "0.6.0"
 readme = "README.md"
 homepage = "https://py.iceberg.apache.org/"
 repository = "https://github.com/apache/iceberg-python"
@@ -57,7 +57,7 @@ sortedcontainers = "2.4.0"
 fsspec = ">=2023.1.0,<2024.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
-pyarrow = { version = ">=9.0.0,<14.0.0", optional = true }
+pyarrow = { version = ">=9.0.0,<15.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<1.0.0", optional = true }
 ray = { version = ">=2.0.0,<3.0.0", optional = true }
@@ -72,16 +72,16 @@ psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
 
 [tool.poetry.dev-dependencies]
-pytest = "7.4.2"
+pytest = "7.4.3"
 pytest-checkdocs = "2.10.1"
-pre-commit = "3.4.0"
-fastavro = "1.8.4"
+pre-commit = "3.5.0"
+fastavro = "1.9.0"
 coverage = { version = "^7.3.2", extras = ["toml"] }
 requests-mock = "1.11.0"
-moto = "^4.2.6"
+moto = "^4.2.7"
 typing-extensions = "4.8.0"
 pytest-mock = "3.12.0"
-cython = "3.0.3"
+cython = "3.0.5"
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
@@ -120,6 +120,11 @@ markers = [
   "adlfs: marks a test as requiring access to adlfs compliant storage (use with --adlfs.account-name, --adlfs.account-key, and --adlfs.endpoint args)",
   "integration: marks integration tests against Apache Spark",
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)"
+]
+
+# Turns a warning into an error
+filterwarnings = [
+    "error"
 ]
 
 [tool.black]
@@ -298,6 +303,7 @@ select = [
     "W", # pycodestyle
     "F", # Pyflakes
     "B", # flake8-bugbear
+    "PIE", # flake8-pie
     "C4", # flake8-comprehensions
     "I", # isort
     "UP", # pyupgrade
