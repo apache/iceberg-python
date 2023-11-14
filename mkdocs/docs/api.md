@@ -355,7 +355,7 @@ This will only pull in the files that that might contain matching rows.
 
 <!-- prettier-ignore-end -->
 
-PyIceberg makes it easy to filter out data from a huge table and pull it into a Pandas dataframe locally. This will only fetch Parquet files that that might contain matching data. This will reduce IO and therefore improve performance and reduce cost.
+PyIceberg makes it easy to filter out data from a huge table and pull it into a Pandas dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
 
 ```python
 table.scan(
