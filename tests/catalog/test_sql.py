@@ -188,12 +188,40 @@ def test_load_table(test_catalog: SqlCatalog, table_schema_nested: Schema, rando
     assert table.metadata == loaded_table.metadata
 
 
+def test_load_table_from_self_identifier(
+    test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(random_identifier, table_schema_nested)
+    intermediate = test_catalog.load_table(random_identifier)
+    assert intermediate.identifier == (test_catalog.name,) + random_identifier
+    loaded_table = test_catalog.load_table(intermediate.identifier)
+    assert table.identifier == loaded_table.identifier
+    assert table.metadata_location == loaded_table.metadata_location
+    assert table.metadata == loaded_table.metadata
+
+
 def test_drop_table(test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
     database_name, _table_name = random_identifier
     test_catalog.create_namespace(database_name)
     table = test_catalog.create_table(random_identifier, table_schema_nested)
     assert table.identifier == (test_catalog.name,) + random_identifier
     test_catalog.drop_table(random_identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(random_identifier)
+
+
+def test_drop_table_from_self_identifier(
+    test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(random_identifier, table_schema_nested)
+    assert table.identifier == (test_catalog.name,) + random_identifier
+    test_catalog.drop_table(table.identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(table.identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(random_identifier)
 
@@ -216,6 +244,25 @@ def test_rename_table(
     new_table = test_catalog.load_table(another_random_identifier)
     assert new_table.identifier == (test_catalog.name,) + another_random_identifier
     assert new_table.metadata_location == table.metadata_location
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(random_identifier)
+
+
+def test_rename_table_from_self_identifier(
+    test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+) -> None:
+    from_database_name, _from_table_name = random_identifier
+    to_database_name, _to_table_name = another_random_identifier
+    test_catalog.create_namespace(from_database_name)
+    test_catalog.create_namespace(to_database_name)
+    table = test_catalog.create_table(random_identifier, table_schema_nested)
+    assert table.identifier == (test_catalog.name,) + random_identifier
+    test_catalog.rename_table(table.identifier, another_random_identifier)
+    new_table = test_catalog.load_table(another_random_identifier)
+    assert new_table.identifier == (test_catalog.name,) + another_random_identifier
+    assert new_table.metadata_location == table.metadata_location
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(table.identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(random_identifier)
 
