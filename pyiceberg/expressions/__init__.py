@@ -346,7 +346,7 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundPredicate class."""
-        if isinstance(other, BoundPredicate):
+        if isinstance(other, self.__class__):
             return self.term == other.term
         return False
 
@@ -364,7 +364,7 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the UnboundPredicate class."""
-        return self.term == other.term if isinstance(other, UnboundPredicate) else False
+        return self.term == other.term if isinstance(other, self.__class__) else False
 
     @abstractmethod
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BooleanExpression:
@@ -531,7 +531,7 @@ class SetPredicate(UnboundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the SetPredicate class."""
-        return self.term == other.term and self.literals == other.literals if isinstance(other, SetPredicate) else False
+        return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     def __getnewargs__(self) -> Tuple[UnboundTerm[L], Set[Literal[L]]]:
         """Pickle the SetPredicate class."""
@@ -567,7 +567,7 @@ class BoundSetPredicate(BoundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundSetPredicate class."""
-        return self.term == other.term and self.literals == other.literals if isinstance(other, BoundSetPredicate) else False
+        return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     def __getnewargs__(self) -> Tuple[BoundTerm[L], Set[Literal[L]]]:
         """Pickle the BoundSetPredicate class."""
@@ -595,7 +595,7 @@ class BoundIn(BoundSetPredicate[L]):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundIn class."""
-        return self.term == other.term and self.literals == other.literals if isinstance(other, BoundIn) else False
+        return self.term == other.term and self.literals == other.literals if isinstance(other, self.__class__) else False
 
     @property
     def as_unbound(self) -> Type[In[L]]:
@@ -664,12 +664,6 @@ class NotIn(SetPredicate[L], ABC):
         """Transform the Expression into its negated version."""
         return In[L](self.term, self.literals)
 
-    def __eq__(self, other: Any) -> bool:
-        """Return the equality of two instances of the NotIn class."""
-        if isinstance(other, NotIn):
-            return self.term == other.term and self.literals == other.literals
-        return False
-
     @property
     def as_bound(self) -> Type[BoundNotIn[L]]:
         return BoundNotIn[L]
@@ -701,7 +695,7 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the LiteralPredicate class."""
-        if isinstance(other, LiteralPredicate):
+        if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
 
@@ -725,7 +719,7 @@ class BoundLiteralPredicate(BoundPredicate[L], ABC):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundLiteralPredicate class."""
-        if isinstance(other, BoundLiteralPredicate):
+        if isinstance(other, self.__class__):
             return self.term == other.term and self.literal == other.literal
         return False
 
@@ -890,9 +884,9 @@ class StartsWith(LiteralPredicate[L]):
 
 
 class NotStartsWith(LiteralPredicate[L]):
-    def __invert__(self) -> NotStartsWith[L]:
+    def __invert__(self) -> StartsWith[L]:
         """Transform the Expression into its negated version."""
-        return NotStartsWith[L](self.term, self.literal)
+        return StartsWith[L](self.term, self.literal)
 
     @property
     def as_bound(self) -> Type[BoundNotStartsWith[L]]:

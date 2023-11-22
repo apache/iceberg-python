@@ -794,7 +794,7 @@ def visit(obj: Union[Schema, IcebergType], visitor: SchemaVisitor[T]) -> T:
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit.register(Schema)
@@ -862,7 +862,7 @@ def pre_order_visit(obj: Union[Schema, IcebergType], visitor: PreOrderSchemaVisi
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @pre_order_visit.register(Schema)
@@ -1270,6 +1270,100 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         )
 
     def primitive(self, primitive: PrimitiveType) -> PrimitiveType:
+        return primitive
+
+
+# Implementation copied from Apache Iceberg repo.
+def make_compatible_name(name: str) -> str:
+    if not _valid_avro_name(name):
+        return _sanitize_name(name)
+    return name
+
+
+def _valid_avro_name(name: str) -> bool:
+    length = len(name)
+    assert length > 0, ValueError("Can not validate empty avro name")
+    first = name[0]
+    if not (first.isalpha() or first == '_'):
+        return False
+
+    for character in name[1:]:
+        if not (character.isalnum() or character == '_'):
+            return False
+    return True
+
+
+def _sanitize_name(name: str) -> str:
+    sb = []
+    first = name[0]
+    if not (first.isalpha() or first == '_'):
+        sb.append(_sanitize_char(first))
+    else:
+        sb.append(first)
+
+    for character in name[1:]:
+        if not (character.isalnum() or character == '_'):
+            sb.append(_sanitize_char(character))
+        else:
+            sb.append(character)
+    return ''.join(sb)
+
+
+def _sanitize_char(character: str) -> str:
+    return "_" + character if character.isdigit() else "_x" + hex(ord(character))[2:].upper()
+
+
+def sanitize_column_names(schema: Schema) -> Schema:
+    """Sanitize column names to make them compatible with Avro.
+
+    The column name should be starting with '_' or digit followed by a string only contains '_', digit or alphabet,
+    otherwise it will be sanitized to conform the avro naming convention.
+
+    Args:
+        schema: The schema to be sanitized.
+
+    Returns:
+        The sanitized schema.
+    """
+    result = visit(schema.as_struct(), _SanitizeColumnsVisitor())
+    return Schema(
+        *(result or StructType()).fields,
+        schema_id=schema.schema_id,
+        identifier_field_ids=schema.identifier_field_ids,
+    )
+
+
+class _SanitizeColumnsVisitor(SchemaVisitor[Optional[IcebergType]]):
+    def schema(self, schema: Schema, struct_result: Optional[IcebergType]) -> Optional[IcebergType]:
+        return struct_result
+
+    def field(self, field: NestedField, field_result: Optional[IcebergType]) -> Optional[IcebergType]:
+        return NestedField(
+            field_id=field.field_id,
+            name=make_compatible_name(field.name),
+            field_type=field_result,
+            doc=field.doc,
+            required=field.required,
+        )
+
+    def struct(self, struct: StructType, field_results: List[Optional[IcebergType]]) -> Optional[IcebergType]:
+        return StructType(*[field for field in field_results if field is not None])
+
+    def list(self, list_type: ListType, element_result: Optional[IcebergType]) -> Optional[IcebergType]:
+        return ListType(element_id=list_type.element_id, element_type=element_result, element_required=list_type.element_required)
+
+    def map(
+        self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
+    ) -> Optional[IcebergType]:
+        return MapType(
+            key_id=map_type.key_id,
+            value_id=map_type.value_id,
+            key_type=key_result,
+            value_type=value_result,
+            value_required=map_type.value_required,
+        )
+
+    def primitive(self, primitive: PrimitiveType) -> Optional[IcebergType]:
         return primitive
 
 

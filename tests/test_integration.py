@@ -88,6 +88,11 @@ def table_test_table_version(catalog: Catalog) -> Table:
     return catalog.load_table("default.test_table_version")
 
 
+@pytest.fixture()
+def table_test_table_sanitized_character(catalog: Catalog) -> Table:
+    return catalog.load_table("default.test_table_sanitized_character")
+
+
 TABLE_NAME = ("default", "t1")
 
 
@@ -116,7 +121,7 @@ def test_table_properties(table: Table) -> None:
     with table.transaction() as transaction:
         transaction.set_properties(abc="🤪")
 
-    assert table.properties == dict(**{"abc": "🤪"}, **DEFAULT_PROPERTIES)
+    assert table.properties == dict(abc="🤪", **DEFAULT_PROPERTIES)
 
     with table.transaction() as transaction:
         transaction.remove_properties("abc")
@@ -125,7 +130,7 @@ def test_table_properties(table: Table) -> None:
 
     table = table.transaction().set_properties(abc="def").commit_transaction()
 
-    assert table.properties == dict(**{"abc": "def"}, **DEFAULT_PROPERTIES)
+    assert table.properties == dict(abc="def", **DEFAULT_PROPERTIES)
 
     table = table.transaction().remove_properties("abc").commit_transaction()
 
@@ -189,6 +194,7 @@ def test_pyarrow_limit(table_test_limit: Table) -> None:
     assert len(full_result) == 10
 
 
+@pytest.mark.filterwarnings("ignore")
 @pytest.mark.integration
 def test_ray_nan(table_test_null_nan_rewritten: Table) -> None:
     ray_dataset = table_test_null_nan_rewritten.scan().to_ray()
@@ -224,13 +230,7 @@ def test_ray_all_types(table_test_all_types: Table) -> None:
 
 @pytest.mark.integration
 def test_pyarrow_to_iceberg_all_types(table_test_all_types: Table) -> None:
-    fs = S3FileSystem(
-        **{
-            "endpoint_override": "http://localhost:9000",
-            "access_key": "admin",
-            "secret_key": "password",
-        }
-    )
+    fs = S3FileSystem(endpoint_override="http://localhost:9000", access_key="admin", secret_key="password")
     data_file_paths = [task.file.file_path for task in table_test_all_types.scan().plan_files()]
     for data_file_path in data_file_paths:
         uri = urlparse(data_file_path)
@@ -396,3 +396,11 @@ def test_upgrade_table_version(table_test_table_version: Table) -> None:
         with table_test_table_version.transaction() as transaction:
             transaction.upgrade_table_version(format_version=3)
     assert "Unsupported table format version: 3" in str(e.value)
+
+
+@pytest.mark.integration
+def test_reproduce_issue(table_test_table_sanitized_character: Table) -> None:
+    arrow_table = table_test_table_sanitized_character.scan().to_arrow()
+    assert len(arrow_table.schema.names), 1
+    assert len(table_test_table_sanitized_character.schema().fields), 1
+    assert arrow_table.schema.names[0] == table_test_table_sanitized_character.schema().fields[0].name

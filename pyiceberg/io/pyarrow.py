@@ -113,6 +113,7 @@ from pyiceberg.schema import (
     pre_order_visit,
     promote,
     prune_columns,
+    sanitize_column_names,
     visit,
     visit_with_partner,
 )
@@ -434,13 +435,18 @@ class PyArrowFileIO(FileIO):
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
 
 
-def schema_to_pyarrow(schema: Union[Schema, IcebergType]) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema())
+def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
+    return visit(schema, _ConvertToArrowSchema(metadata))
 
 
-class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType], Singleton):
+class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
+    _metadata: Dict[bytes, bytes]
+
+    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT) -> None:
+        self._metadata = metadata
+
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
-        return pa.schema(list(struct_result))
+        return pa.schema(list(struct_result), metadata=self._metadata)
 
     def struct(self, _: StructType, field_results: List[pa.DataType]) -> pa.DataType:
         return pa.struct(field_results)
@@ -632,7 +638,7 @@ def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisi
     Raises:
         NotImplementedError: If attempting to visit an unrecognized object type.
     """
-    raise NotImplementedError("Cannot visit non-type: %s" % obj)
+    raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit_pyarrow.register(pa.Schema)
@@ -830,7 +836,7 @@ def _task_to_table(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
+        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
@@ -1099,8 +1105,8 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
         return partner_map.items if isinstance(partner_map, pa.MapArray) else None
 
 
-def _primitive_to_phyisical(iceberg_type: PrimitiveType) -> str:
-    return visit(iceberg_type, _PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR)
+def _primitive_to_physical(iceberg_type: PrimitiveType) -> str:
+    return visit(iceberg_type, _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR)
 
 
 class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
@@ -1120,7 +1126,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         raise ValueError(f"Expected primitive-type, got: {map_type}")
 
     def visit_fixed(self, fixed_type: FixedType) -> str:
-        return "BYTE_ARRAY"
+        return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
         return "FIXED_LEN_BYTE_ARRAY"
@@ -1162,7 +1168,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "BYTE_ARRAY"
 
 
-_PRIMITIVE_TO_PHYISCAL_TYPE_VISITOR = PrimitiveToPhysicalType()
+_PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
 
 
 class StatsAggregator:
@@ -1175,7 +1181,7 @@ class StatsAggregator:
         self.current_max = None
         self.trunc_length = trunc_length
 
-        expected_physical_type = _primitive_to_phyisical(iceberg_type)
+        expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
             raise ValueError(
                 f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
@@ -1502,7 +1508,7 @@ def fill_parquet_file_metadata(
 
         invalidate_col: Set[int] = set()
 
-        for pos in range(0, parquet_metadata.num_columns):
+        for pos in range(parquet_metadata.num_columns):
             column = row_group.column(pos)
             field_id = parquet_column_mapping[column.path_in_schema]
 

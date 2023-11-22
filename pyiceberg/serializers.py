@@ -23,6 +23,7 @@ from typing import Callable
 
 from pyiceberg.io import InputFile, InputStream, OutputFile
 from pyiceberg.table.metadata import TableMetadata, TableMetadataUtil
+from pyiceberg.typedef import UTF8
 
 GZIP = "gzip"
 
@@ -76,7 +77,7 @@ class FromByteStream:
 
     @staticmethod
     def table_metadata(
-        byte_stream: InputStream, encoding: str = "utf-8", compression: Compressor = NOOP_COMPRESSOR
+        byte_stream: InputStream, encoding: str = UTF8, compression: Compressor = NOOP_COMPRESSOR
     ) -> TableMetadata:
         """Instantiate a TableMetadata object from a byte stream.
 
@@ -97,7 +98,7 @@ class FromInputFile:
     """A collection of methods that deserialize InputFiles into Iceberg objects."""
 
     @staticmethod
-    def table_metadata(input_file: InputFile, encoding: str = "utf-8") -> TableMetadata:
+    def table_metadata(input_file: InputFile, encoding: str = UTF8) -> TableMetadata:
         """Create a TableMetadata instance from an input file.
 
         Args:
@@ -126,6 +127,6 @@ class ToOutputFile:
             overwrite (bool): Where to overwrite the file if it already exists. Defaults to `False`.
         """
         with output_file.create(overwrite=overwrite) as output_stream:
-            json_bytes = metadata.model_dump_json().encode("utf-8")
+            json_bytes = metadata.model_dump_json().encode(UTF8)
             json_bytes = Compressor.get_compressor(output_file.location).bytes_compressor()(json_bytes)
             output_stream.write(json_bytes)

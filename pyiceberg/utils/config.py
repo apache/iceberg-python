@@ -20,7 +20,7 @@ from typing import List, Optional
 
 import strictyaml
 
-from pyiceberg.typedef import FrozenDict, RecursiveDict
+from pyiceberg.typedef import UTF8, FrozenDict, RecursiveDict
 
 PYICEBERG = "pyiceberg_"
 DEFAULT = "default"
@@ -76,7 +76,7 @@ class Config:
             if directory:
                 path = os.path.join(directory, PYICEBERG_YML)
                 if os.path.isfile(path):
-                    with open(path, encoding="utf-8") as f:
+                    with open(path, encoding=UTF8) as f:
                         yml_str = f.read()
                     file_config = strictyaml.load(yml_str).data
                     file_config_lowercase = _lowercase_dictionary_keys(file_config)

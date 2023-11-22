@@ -19,7 +19,7 @@ exclude: ^vendor/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -29,23 +29,23 @@ repos:
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version (Used for linting)
-    rev: v0.0.291
+    rev: v0.1.0
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix ]
   - repo: https://github.com/ambv/black
-    rev: 23.9.1
+    rev: 23.10.0
     hooks:
       - id: black
         args: [--skip-string-normalization]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.5.1
+    rev: v1.6.1
     hooks:
       - id: mypy
         args:
           [--install-types, --non-interactive, --config=pyproject.toml]
   - repo: https://github.com/hadialqattan/pycln
-    rev: v2.2.2
+    rev: v2.3.0
     hooks:
       - id: pycln
         args: [--config=pyproject.toml]
@@ -70,3 +70,11 @@ repos:
           ]
         additional_dependencies:
           - tomli==2.0.1
+  - repo: https://github.com/ikamensh/flynt
+    rev: 1.0.1
+    hooks:
+      - id: flynt
+        args:
+          # --line-length is set to a high value to deal with very long lines
+          - --line-length
+          - '99999'

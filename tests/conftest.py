@@ -57,6 +57,7 @@ from moto import mock_dynamodb, mock_glue, mock_s3
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     GCS_ENDPOINT,
     GCS_PROJECT_ID,
@@ -69,10 +70,11 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1455,7 +1457,7 @@ class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
     @property
     def raw_headers(self) -> aiohttp.typedefs.RawHeaders:
         # Return the headers encoded the way that aiobotocore expects them
-        return {k.encode("utf-8"): str(v).encode("utf-8") for k, v in self.response.headers.items()}.items()
+        return {k.encode(UTF8): str(v).encode(UTF8) for k, v in self.response.headers.items()}.items()
 
 
 def patch_aiobotocore() -> None:
@@ -1544,6 +1546,7 @@ def adlfs_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileI
     bbs.create_container("tests")
     yield fsspec.FsspecFileIO(properties=properties)
     bbs.delete_container("tests")
+    bbs.close()
 
 
 @pytest.fixture(scope="session")
@@ -1659,3 +1662,8 @@ def table(example_table_metadata_v2: Dict[str, Any]) -> Table:
         io=load_file_io(),
         catalog=NoopCatalog("NoopCatalog"),
     )
+
+
+@pytest.fixture
+def bound_reference_str() -> BoundReference[str]:
+    return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))

@@ -66,7 +66,7 @@ from pyiceberg.table import (
     TableMetadata,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT, IcebergBaseModel
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
 
 ICEBERG_REST_SPEC_VERSION = "0.14.1"
 
@@ -110,7 +110,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 
-NAMESPACE_SEPARATOR = b"\x1F".decode("UTF-8")
+NAMESPACE_SEPARATOR = b"\x1F".decode(UTF8)
 
 
 class TableResponse(IcebergBaseModel):
@@ -319,6 +319,10 @@ class RestCatalog(Catalog):
 
     def _handle_non_200_response(self, exc: HTTPError, error_handler: Dict[int, Type[Exception]]) -> None:
         exception: Type[Exception]
+
+        if exc.response is None:
+            raise ValueError("Did not receive a response")
+
         code = exc.response.status_code
         if code in error_handler:
             exception = error_handler[code]
@@ -440,7 +444,7 @@ class RestCatalog(Catalog):
             write_order=sort_order,
             properties=properties,
         )
-        serialized_json = request.model_dump_json().encode("utf-8")
+        serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
             self.url(Endpoints.create_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
@@ -471,7 +475,7 @@ class RestCatalog(Catalog):
             name=namespace_and_table["table"],
             metadata_location=metadata_location,
         )
-        serialized_json = request.model_dump_json().encode("utf-8")
+        serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
             self.url(Endpoints.register_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
@@ -548,7 +552,7 @@ class RestCatalog(Catalog):
         """
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=table_request.model_dump_json().encode("utf-8"),
+            data=table_request.model_dump_json().encode(UTF8),
         )
         try:
             response.raise_for_status()
