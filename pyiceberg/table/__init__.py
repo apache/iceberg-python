@@ -562,7 +562,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
         updates: The updates in one transaction.
 
     Returns:
-        The updated metadata.
+        The metadata with the updates applied.
     """
     context = _TableMetadataUpdateContext()
     new_metadata = base_metadata
