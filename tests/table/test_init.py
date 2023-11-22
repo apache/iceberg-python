@@ -43,7 +43,7 @@ from pyiceberg.table import (
     SnapshotRef,
     StaticTable,
     Table,
-    TableMetadataUpdateContext,
+    _TableMetadataUpdateContext,
     UpdateSchema,
     _generate_snapshot_id,
     _match_deletes_to_datafile,
@@ -521,15 +521,15 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     update.add_column(path="b", field_type=IntegerType())
     update.commit()
 
-    test_context = TableMetadataUpdateContext()
+    test_context = _TableMetadataUpdateContext()
 
     new_table_metadata = apply_table_update(
         transaction._updates[0], base_metadata=table_v2.metadata, context=test_context
     )  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
     assert new_table_metadata.current_schema_id == 1
-    assert len(test_context.updates) == 1
-    assert test_context.updates[0] == transaction._updates[0]  # pylint: disable=W0212
+    assert len(test_context._updates) == 1
+    assert test_context._updates[0] == transaction._updates[0]  # pylint: disable=W0212
     assert test_context.last_added_schema_id == 2
 
     new_table_metadata = apply_table_update(
@@ -537,8 +537,8 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     )  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
     assert new_table_metadata.current_schema_id == 2
-    assert len(test_context.updates) == 2
-    assert test_context.updates[1] == transaction._updates[1]  # pylint: disable=W0212
+    assert len(test_context._updates) == 2
+    assert test_context._updates[1] == transaction._updates[1]  # pylint: disable=W0212
     assert test_context.last_added_schema_id == 2
 
 

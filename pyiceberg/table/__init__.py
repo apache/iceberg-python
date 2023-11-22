@@ -357,29 +357,29 @@ class RemovePropertiesUpdate(TableUpdate):
     removals: List[str]
 
 
-class TableMetadataUpdateContext:
-    updates: List[TableUpdate]
+class _TableMetadataUpdateContext:
+    _updates: List[TableUpdate]
     last_added_schema_id: Optional[int]
 
     def __init__(self) -> None:
-        self.updates = []
+        self._updates = []
         self.last_added_schema_id = None
 
     def is_added_snapshot(self, snapshot_id: int) -> bool:
         return any(
             update.snapshot.snapshot_id == snapshot_id
-            for update in self.updates
+            for update in self._updates
             if update.action == TableUpdateAction.add_snapshot
         )
 
     def is_added_schema(self, schema_id: int) -> bool:
         return any(
-            update.schema_.schema_id == schema_id for update in self.updates if update.action == TableUpdateAction.add_schema
+            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
         )
 
 
 @singledispatch
-def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
+def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     """Apply a table update to the table metadata.
 
     Args:
@@ -395,7 +395,7 @@ def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, contex
 
 
 @apply_table_update.register(UpgradeFormatVersionUpdate)
-def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
+def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
 
@@ -408,12 +408,12 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["format-version"] = update.format_version
 
-    context.updates.append(update)
+    context._updates.append(update)
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
 @apply_table_update.register(AddSchemaUpdate)
-def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
+def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     def reuse_or_create_new_schema_id(new_schema: Schema) -> Tuple[int, bool]:
         """Reuse schema id if schema already exists, otherwise create a new one.
 
@@ -452,19 +452,18 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: TableMetad
     if not schema_found:
         updated_metadata_data["schemas"].append(new_schema.model_dump())
 
-    context.updates.append(update)
+    context._updates.append(update)
     context.last_added_schema_id = new_schema_id
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
 @apply_table_update.register(SetCurrentSchemaUpdate)
-def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
+def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.schema_id == -1:
         if context.last_added_schema_id is None:
             raise ValueError("Cannot set current schema to last added schema when no schema has been added")
         return apply_table_update(SetCurrentSchemaUpdate(schema_id=context.last_added_schema_id), base_metadata, context)
-
-    if update.schema_id == base_metadata.current_schema_id:
+    elif update.schema_id == base_metadata.current_schema_id:
         return base_metadata
 
     schema = base_metadata.schemas_by_id.get(update.schema_id)
@@ -475,28 +474,24 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: Tab
     updated_metadata_data["current-schema-id"] = update.schema_id
 
     if context.last_added_schema_id is not None and context.last_added_schema_id == update.schema_id:
-        context.updates.append(SetCurrentSchemaUpdate(schema_id=-1))
+        context._updates.append(SetCurrentSchemaUpdate(schema_id=-1))
     else:
-        context.updates.append(update)
+        context._updates.append(update)
 
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
 @apply_table_update.register(AddSnapshotUpdate)
-def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
+def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if len(base_metadata.schemas) == 0:
         raise ValueError("Attempting to add a snapshot before a schema is added")
-
-    if len(base_metadata.partition_specs) == 0:
+    elif len(base_metadata.partition_specs) == 0:
         raise ValueError("Attempting to add a snapshot before a partition spec is added")
-
-    if len(base_metadata.sort_orders) == 0:
+    elif len(base_metadata.sort_orders) == 0:
         raise ValueError("Attempting to add a snapshot before a sort order is added")
-
-    if base_metadata.snapshots_by_id.get(update.snapshot.snapshot_id) is not None:
+    elif base_metadata.snapshots_by_id.get(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
-
-    if (
+    elif (
         base_metadata.format_version == 2
         and update.snapshot.sequence_number is not None
         and update.snapshot.sequence_number <= base_metadata.last_sequence_number
@@ -511,28 +506,23 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: TableMet
     updated_metadata_data["last-updated-ms"] = update.snapshot.timestamp_ms
     updated_metadata_data["last-sequence-number"] = update.snapshot.sequence_number
     updated_metadata_data["snapshots"].append(update.snapshot.model_dump())
-    context.updates.append(update)
+    context._updates.append(update)
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
 @apply_table_update.register(SetSnapshotRefUpdate)
-def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: TableMetadataUpdateContext) -> TableMetadata:
+def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.type is None:
         raise ValueError("Snapshot ref type must be set")
-
-    if update.min_snapshots_to_keep is not None and update.type == SnapshotRefType.TAG:
+    elif update.min_snapshots_to_keep is not None and update.type == SnapshotRefType.TAG:
         raise ValueError("Cannot set min snapshots to keep for branch refs")
-
-    if update.min_snapshots_to_keep is not None and update.min_snapshots_to_keep <= 0:
+    elif update.min_snapshots_to_keep is not None and update.min_snapshots_to_keep <= 0:
         raise ValueError("Minimum snapshots to keep must be >= 0")
-
-    if update.max_snapshot_age_ms is not None and update.type == SnapshotRefType.TAG:
+    elif update.max_snapshot_age_ms is not None and update.type == SnapshotRefType.TAG:
         raise ValueError("Tags do not support setting maxSnapshotAgeMs")
-
-    if update.max_snapshot_age_ms is not None and update.max_snapshot_age_ms <= 0:
+    elif update.max_snapshot_age_ms is not None and update.max_snapshot_age_ms <= 0:
         raise ValueError("Max snapshot age must be > 0 ms")
-
-    if update.max_ref_age_ms is not None and update.max_ref_age_ms <= 0:
+    elif update.max_ref_age_ms is not None and update.max_ref_age_ms <= 0:
         raise ValueError("Max ref age must be > 0 ms")
 
     snapshot_ref = SnapshotRef(
@@ -569,7 +559,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: Table
         )
 
     update_metadata_data["refs"][update.ref_name] = snapshot_ref.model_dump()
-    context.updates.append(update)
+    context._updates.append(update)
     return TableMetadataUtil.parse_obj(update_metadata_data)
 
 
@@ -583,7 +573,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     Returns:
         The updated metadata.
     """
-    context = TableMetadataUpdateContext()
+    context = _TableMetadataUpdateContext()
     new_metadata = base_metadata
 
     for update in updates:
