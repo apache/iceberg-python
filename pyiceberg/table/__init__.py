@@ -397,11 +397,9 @@ def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, contex
 def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
-
-    if update.format_version < base_metadata.format_version:
+    elif update.format_version < base_metadata.format_version:
         raise ValueError(f"Cannot downgrade v{base_metadata.format_version} table to v{update.format_version}")
-
-    if update.format_version == base_metadata.format_version:
+    elif update.format_version == base_metadata.format_version:
         return base_metadata
 
     updated_metadata_data = copy(base_metadata.model_dump())
