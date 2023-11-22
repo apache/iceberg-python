@@ -42,6 +42,7 @@ from typing import (
 
 from pydantic import Field, SerializeAsAny
 from sortedcontainers import SortedList
+from typing_extensions import Annotated
 
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.expressions import (
@@ -76,7 +77,7 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
 )
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
@@ -327,9 +328,9 @@ class SetSnapshotRefUpdate(TableUpdate):
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
-    max_ref_age_ms: int = Field(alias="max-ref-age-ms")
-    max_snapshot_age_ms: int = Field(alias="max-snapshot-age-ms")
-    min_snapshots_to_keep: int = Field(alias="min-snapshots-to-keep")
+    max_ref_age_ms: Annotated[Optional[int], Field(alias="max-ref-age-ms", default=None)]
+    max_snapshot_age_ms: Annotated[Optional[int], Field(alias="max-snapshot-age-ms", default=None)]
+    min_snapshots_to_keep: Annotated[Optional[int], Field(alias="min-snapshots-to-keep", default=None)]
 
 
 class RemoveSnapshotsUpdate(TableUpdate):
@@ -515,19 +516,6 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
 
 @apply_table_update.register(SetSnapshotRefUpdate)
 def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.type is None:
-        raise ValueError("Snapshot ref type must be set")
-    elif update.min_snapshots_to_keep is not None and update.type == SnapshotRefType.TAG:
-        raise ValueError("Cannot set min snapshots to keep for branch refs")
-    elif update.min_snapshots_to_keep is not None and update.min_snapshots_to_keep <= 0:
-        raise ValueError("Minimum snapshots to keep must be >= 0")
-    elif update.max_snapshot_age_ms is not None and update.type == SnapshotRefType.TAG:
-        raise ValueError("Tags do not support setting maxSnapshotAgeMs")
-    elif update.max_snapshot_age_ms is not None and update.max_snapshot_age_ms <= 0:
-        raise ValueError("Max snapshot age must be > 0 ms")
-    elif update.max_ref_age_ms is not None and update.max_ref_age_ms <= 0:
-        raise ValueError("Max ref age must be > 0 ms")
-
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
         snapshot_ref_type=update.type,
