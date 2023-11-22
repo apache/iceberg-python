@@ -376,11 +376,6 @@ class _TableMetadataUpdateContext:
             if update.action == TableUpdateAction.add_snapshot
         )
 
-    def is_added_schema(self, schema_id: int) -> bool:
-        return any(
-            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
-        )
-
 
 @singledispatch
 def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
@@ -418,46 +413,15 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
 
 @apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    def reuse_or_create_new_schema_id(new_schema: Schema) -> Tuple[int, bool]:
-        """Reuse schema id if schema already exists, otherwise create a new one.
-
-        Args:
-            new_schema: The new schema to be added.
-
-        Returns:
-            The new schema id and whether the schema already exists.
-        """
-        result_schema_id = base_metadata.current_schema_id
-        for schema in base_metadata.schemas:
-            if schema == new_schema:
-                return schema.schema_id, True
-            elif schema.schema_id >= result_schema_id:
-                result_schema_id = schema.schema_id + 1
-        return result_schema_id, False
-
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
-    new_schema_id, schema_found = reuse_or_create_new_schema_id(update.schema_)
-    if schema_found and update.last_column_id == base_metadata.last_column_id:
-        if context.last_added_schema_id is not None and context.is_added_schema(new_schema_id):
-            context.last_added_schema_id = new_schema_id
-        return base_metadata
-
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["last-column-id"] = update.last_column_id
-
-    new_schema = (
-        update.schema_
-        if new_schema_id == update.schema_.schema_id
-        else Schema(*update.schema_.fields, schema_id=new_schema_id, identifier_field_ids=update.schema_.identifier_field_ids)
-    )
-
-    if not schema_found:
-        updated_metadata_data["schemas"].append(new_schema.model_dump())
+    updated_metadata_data["schemas"].append(update.schema_.model_dump())
 
     context.add_update(update)
-    context.last_added_schema_id = new_schema_id
+    context.last_added_schema_id = update.schema_.schema_id
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
