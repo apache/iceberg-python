@@ -365,6 +365,9 @@ class _TableMetadataUpdateContext:
         self._updates = []
         self.last_added_schema_id = None
 
+    def add_update(self, update: TableUpdate) -> None:
+        self._updates.append(update)
+
     def is_added_snapshot(self, snapshot_id: int) -> bool:
         return any(
             update.snapshot.snapshot_id == snapshot_id
@@ -408,7 +411,7 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["format-version"] = update.format_version
 
-    context._updates.append(update)
+    context.add_update(update)
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
@@ -452,7 +455,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     if not schema_found:
         updated_metadata_data["schemas"].append(new_schema.model_dump())
 
-    context._updates.append(update)
+    context.add_update(update)
     context.last_added_schema_id = new_schema_id
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
@@ -474,9 +477,9 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
     updated_metadata_data["current-schema-id"] = update.schema_id
 
     if context.last_added_schema_id is not None and context.last_added_schema_id == update.schema_id:
-        context._updates.append(SetCurrentSchemaUpdate(schema_id=-1))
+        context.add_update(SetCurrentSchemaUpdate(schema_id=-1))
     else:
-        context._updates.append(update)
+        context.add_update(update)
 
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
@@ -506,7 +509,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     updated_metadata_data["last-updated-ms"] = update.snapshot.timestamp_ms
     updated_metadata_data["last-sequence-number"] = update.snapshot.sequence_number
     updated_metadata_data["snapshots"].append(update.snapshot.model_dump())
-    context._updates.append(update)
+    context.add_update(update)
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
@@ -559,7 +562,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
         )
 
     update_metadata_data["refs"][update.ref_name] = snapshot_ref.model_dump()
-    context._updates.append(update)
+    context.add_update(update)
     return TableMetadataUtil.parse_obj(update_metadata_data)
 
 

@@ -43,10 +43,10 @@ from pyiceberg.table import (
     SnapshotRef,
     StaticTable,
     Table,
-    _TableMetadataUpdateContext,
     UpdateSchema,
     _generate_snapshot_id,
     _match_deletes_to_datafile,
+    _TableMetadataUpdateContext,
     apply_table_update,
     update_table_metadata,
 )
