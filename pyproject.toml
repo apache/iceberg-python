@@ -78,10 +78,10 @@ pre-commit = "3.5.0"
 fastavro = "1.9.0"
 coverage = { version = "^7.3.2", extras = ["toml"] }
 requests-mock = "1.11.0"
-moto = "^4.2.9"
+moto = "^4.2.10"
 typing-extensions = "4.8.0"
 pytest-mock = "3.12.0"
-cython = "3.0.5"
+cython = "3.0.6"
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
