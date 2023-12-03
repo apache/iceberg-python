@@ -1414,7 +1414,7 @@ class UpdateSchema:
 
         existing_schema_id: Optional[int] = None
         for schema in self._table.metadata.schemas:
-            if new_schema.fields == schema.fields:
+            if new_schema == schema:
                 existing_schema_id = schema.schema_id
 
         # Check if it is different current schema ID
