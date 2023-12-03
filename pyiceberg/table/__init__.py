@@ -1412,13 +1412,22 @@ class UpdateSchema:
         """Apply the pending changes and commit."""
         new_schema = self._apply()
 
-        if new_schema != self._schema:
-            last_column_id = max(self._table.metadata.last_column_id, new_schema.highest_field_id)
-            updates = (
-                AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
-                SetCurrentSchemaUpdate(schema_id=-1),
-            )
+        existing_schema_id: Optional[int] = None
+        for schema in self._table.metadata.schemas:
+            if new_schema.fields == schema.fields:
+                existing_schema_id = schema.schema_id
+
+        # Check if it is different current schema ID
+        if existing_schema_id != self._table.schema().schema_id:
             requirements = (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
+            if existing_schema_id is None:
+                last_column_id = max(self._table.metadata.last_column_id, new_schema.highest_field_id)
+                updates = (
+                    AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
+                    SetCurrentSchemaUpdate(schema_id=-1),
+                )
+            else:
+                updates = (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)  # type: ignore
 
             if self._transaction is not None:
                 self._transaction._append_updates(*updates)  # pylint: disable=W0212
