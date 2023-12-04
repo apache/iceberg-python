@@ -19,7 +19,6 @@ from __future__ import annotations
 import datetime
 import uuid
 from copy import copy
-from functools import cached_property
 from typing import (
     Any,
     Dict,
@@ -219,15 +218,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
 
-    @cached_property
-    def snapshots_by_id(self) -> Dict[int, Snapshot]:
-        """Index the snapshots by snapshot_id."""
-        return {snapshot.snapshot_id: snapshot for snapshot in self.snapshots}
+    def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
+        """Get the snapshot by snapshot_id."""
+        return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
 
-    @cached_property
-    def schemas_by_id(self) -> Dict[int, Schema]:
-        """Index the schemas by schema_id."""
-        return {schema.schema_id: schema for schema in self.schemas}
+    def schema_by_id(self, schema_id: int) -> Optional[Schema]:
+        """Get the schema by schema_id."""
+        return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
 
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):

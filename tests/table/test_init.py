@@ -647,7 +647,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     # UpdateSchema
     assert len(new_metadata.schemas) == 2
     assert new_metadata.current_schema_id == 1
-    assert new_metadata.schemas_by_id[new_metadata.current_schema_id].highest_field_id == 4
+    assert new_metadata.schema_by_id(new_metadata.current_schema_id).highest_field_id == 4  # type: ignore
 
     # AddSchemaUpdate
     assert len(new_metadata.snapshots) == 2

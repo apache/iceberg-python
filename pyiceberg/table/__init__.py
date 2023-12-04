@@ -376,6 +376,11 @@ class _TableMetadataUpdateContext:
             if update.action == TableUpdateAction.add_snapshot
         )
 
+    def is_added_schema(self, schema_id: int) -> bool:
+        return any(
+            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
+        )
+
 
 @singledispatch
 def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
@@ -425,25 +430,24 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
 
 @apply_table_update.register(SetCurrentSchemaUpdate)
 def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.schema_id == -1:
-        if context.last_added_schema_id is None:
+    new_schema_id = update.schema_id
+    if new_schema_id == -1:
+        # The last added schema should be in base_metadata.schemas at this point
+        new_schema_id = max(schema.schema_id for schema in base_metadata.schemas)
+        if not context.is_added_schema(new_schema_id):
             raise ValueError("Cannot set current schema to last added schema when no schema has been added")
-        return apply_table_update(SetCurrentSchemaUpdate(schema_id=context.last_added_schema_id), base_metadata, context)
-    elif update.schema_id == base_metadata.current_schema_id:
+
+    if update.schema_id == base_metadata.current_schema_id:
         return base_metadata
 
-    schema = base_metadata.schemas_by_id.get(update.schema_id)
+    schema = base_metadata.schema_by_id(new_schema_id)
     if schema is None:
-        raise ValueError(f"Schema with id {update.schema_id} does not exist")
+        raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
     updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["current-schema-id"] = update.schema_id
+    updated_metadata_data["current-schema-id"] = new_schema_id
 
-    if context.last_added_schema_id is not None and context.last_added_schema_id == update.schema_id:
-        context.add_update(SetCurrentSchemaUpdate(schema_id=-1))
-    else:
-        context.add_update(update)
-
+    context.add_update(update)
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
@@ -455,7 +459,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         raise ValueError("Attempting to add a snapshot before a partition spec is added")
     elif len(base_metadata.sort_orders) == 0:
         raise ValueError("Attempting to add a snapshot before a sort order is added")
-    elif base_metadata.snapshots_by_id.get(update.snapshot.snapshot_id) is not None:
+    elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
         base_metadata.format_version == 2
@@ -490,7 +494,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if existing_ref is not None and existing_ref == snapshot_ref:
         return base_metadata
 
-    snapshot = base_metadata.snapshots_by_id.get(snapshot_ref.snapshot_id)
+    snapshot = base_metadata.snapshot_by_id(snapshot_ref.snapshot_id)
     if snapshot is None:
         raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
@@ -737,7 +741,7 @@ class Table:
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
-        return self.metadata.snapshots_by_id.get(snapshot_id)
+        return self.metadata.snapshot_by_id(snapshot_id)
 
     def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
