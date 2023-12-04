@@ -265,7 +265,8 @@ class GlueCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         try:
             load_table_response = self.glue.get_table(DatabaseName=database_name, Name=table_name)
         except self.glue.exceptions.EntityNotFoundException as e:
@@ -282,7 +283,8 @@ class GlueCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         try:
             self.glue.delete_table(DatabaseName=database_name, Name=table_name)
         except self.glue.exceptions.EntityNotFoundException as e:
@@ -307,7 +309,8 @@ class GlueCatalog(Catalog):
             NoSuchPropertyException: When from table miss some required properties.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
+        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
             get_table_response = self.glue.get_table(DatabaseName=from_database_name, Name=from_table_name)

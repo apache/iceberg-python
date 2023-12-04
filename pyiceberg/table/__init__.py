@@ -376,9 +376,14 @@ class _TableMetadataUpdateContext:
             if update.action == TableUpdateAction.add_snapshot
         )
 
+    def is_added_schema(self, schema_id: int) -> bool:
+        return any(
+            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
+        )
+
 
 @singledispatch
-def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     """Apply a table update to the table metadata.
 
     Args:
@@ -393,7 +398,7 @@ def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, contex
     raise NotImplementedError(f"Unsupported table update: {update}")
 
 
-@apply_table_update.register(UpgradeFormatVersionUpdate)
+@_apply_table_update.register(UpgradeFormatVersionUpdate)
 def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
@@ -409,7 +414,7 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
-@apply_table_update.register(AddSchemaUpdate)
+@_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
@@ -425,28 +430,27 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     )
 
 
-@apply_table_update.register(SetCurrentSchemaUpdate)
+@_apply_table_update.register(SetCurrentSchemaUpdate)
 def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.schema_id == -1:
-        if context.last_added_schema_id is None:
+    new_schema_id = update.schema_id
+    if new_schema_id == -1:
+        # The last added schema should be in base_metadata.schemas at this point
+        new_schema_id = max(schema.schema_id for schema in base_metadata.schemas)
+        if not context.is_added_schema(new_schema_id):
             raise ValueError("Cannot set current schema to last added schema when no schema has been added")
-        return apply_table_update(SetCurrentSchemaUpdate(schema_id=context.last_added_schema_id), base_metadata, context)
-    elif update.schema_id == base_metadata.current_schema_id:
+
+    if update.schema_id == base_metadata.current_schema_id:
         return base_metadata
 
-    schema = base_metadata.schema_by_id(update.schema_id)
+    schema = base_metadata.schema_by_id(new_schema_id)
     if schema is None:
-        raise ValueError(f"Schema with id {update.schema_id} does not exist")
+        raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
-    if context.last_added_schema_id is not None and context.last_added_schema_id == update.schema_id:
-        context.add_update(SetCurrentSchemaUpdate(schema_id=-1))
-    else:
-        context.add_update(update)
-
+    context.add_update(update)
     return base_metadata.model_copy(update={"current_schema_id": update.schema_id}, deep=True)
 
 
-@apply_table_update.register(AddSnapshotUpdate)
+@_apply_table_update.register(AddSnapshotUpdate)
 def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if len(base_metadata.schemas) == 0:
         raise ValueError("Attempting to add a snapshot before a schema is added")
@@ -468,7 +472,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         )
 
     context.add_update(update)
-    updated_metadata = base_metadata.model_copy(
+    return base_metadata.model_copy(
         update={
             "last_updated_ms": update.snapshot.timestamp_ms,
             "last_sequence_number": update.snapshot.sequence_number,
@@ -476,10 +480,9 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         },
         deep=True,
     )
-    return updated_metadata.model_copy()
 
 
-@apply_table_update.register(SetSnapshotRefUpdate)
+@_apply_table_update.register(SetSnapshotRefUpdate)
 def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
@@ -535,7 +538,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     new_metadata = base_metadata
 
     for update in updates:
-        new_metadata = apply_table_update(update, new_metadata, context)
+        new_metadata = _apply_table_update(update, new_metadata, context)
 
     return new_metadata
 
@@ -1599,13 +1602,19 @@ class UpdateSchema:
         """Apply the pending changes and commit."""
         new_schema = self._apply()
 
-        if new_schema != self._schema:
-            last_column_id = max(self._table.metadata.last_column_id, new_schema.highest_field_id)
-            updates = (
-                AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
-                SetCurrentSchemaUpdate(schema_id=-1),
-            )
+        existing_schema_id = next((schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema), None)
+
+        # Check if it is different current schema ID
+        if existing_schema_id != self._table.schema().schema_id:
             requirements = (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
+            if existing_schema_id is None:
+                last_column_id = max(self._table.metadata.last_column_id, new_schema.highest_field_id)
+                updates = (
+                    AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
+                    SetCurrentSchemaUpdate(schema_id=-1),
+                )
+            else:
+                updates = (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)  # type: ignore
 
             if self._transaction is not None:
                 self._transaction._append_updates(*updates)  # pylint: disable=W0212

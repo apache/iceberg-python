@@ -44,10 +44,10 @@ from pyiceberg.table import (
     StaticTable,
     Table,
     UpdateSchema,
+    _apply_table_update,
     _generate_snapshot_id,
     _match_deletes_to_datafile,
     _TableMetadataUpdateContext,
-    apply_table_update,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
@@ -523,7 +523,7 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
 
     test_context = _TableMetadataUpdateContext()
 
-    new_table_metadata = apply_table_update(
+    new_table_metadata = _apply_table_update(
         transaction._updates[0], base_metadata=table_v2.metadata, context=test_context
     )  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
@@ -532,7 +532,7 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     assert test_context._updates[0] == transaction._updates[0]  # pylint: disable=W0212
     assert test_context.last_added_schema_id == 2
 
-    new_table_metadata = apply_table_update(
+    new_table_metadata = _apply_table_update(
         transaction._updates[1], base_metadata=new_table_metadata, context=test_context
     )  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
