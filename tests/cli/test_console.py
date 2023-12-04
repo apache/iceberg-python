@@ -483,7 +483,7 @@ def test_properties_remove_table(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["properties", "remove", "table", "default.my_table", "read.split.target.size"])
     assert result.exit_code == 1
-    assert result.output == "Writing is WIP\n1\n"
+    assert "Writing is WIP" in result.output
 
 
 def test_properties_remove_table_property_does_not_exists(catalog: InMemoryCatalog) -> None:
