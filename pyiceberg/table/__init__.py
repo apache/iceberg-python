@@ -414,13 +414,15 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["last-column-id"] = update.last_column_id
-    updated_metadata_data["schemas"].append(update.schema_.model_dump())
-
     context.add_update(update)
     context.last_added_schema_id = update.schema_.schema_id
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    return base_metadata.model_copy(
+        update={
+            "last_column_id": update.last_column_id,
+            "schemas": base_metadata.schemas + [update.schema_],
+        },
+        deep=True,
+    )
 
 
 @apply_table_update.register(SetCurrentSchemaUpdate)
@@ -432,19 +434,16 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
     elif update.schema_id == base_metadata.current_schema_id:
         return base_metadata
 
-    schema = base_metadata.schemas_by_id.get(update.schema_id)
+    schema = base_metadata.schema_by_id(update.schema_id)
     if schema is None:
         raise ValueError(f"Schema with id {update.schema_id} does not exist")
-
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["current-schema-id"] = update.schema_id
 
     if context.last_added_schema_id is not None and context.last_added_schema_id == update.schema_id:
         context.add_update(SetCurrentSchemaUpdate(schema_id=-1))
     else:
         context.add_update(update)
 
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    return base_metadata.model_copy(update={"current_schema_id": update.schema_id}, deep=True)
 
 
 @apply_table_update.register(AddSnapshotUpdate)
@@ -455,7 +454,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         raise ValueError("Attempting to add a snapshot before a partition spec is added")
     elif len(base_metadata.sort_orders) == 0:
         raise ValueError("Attempting to add a snapshot before a sort order is added")
-    elif base_metadata.snapshots_by_id.get(update.snapshot.snapshot_id) is not None:
+    elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
         base_metadata.format_version == 2
@@ -468,12 +467,16 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             f"older than last sequence number {base_metadata.last_sequence_number}"
         )
 
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["last-updated-ms"] = update.snapshot.timestamp_ms
-    updated_metadata_data["last-sequence-number"] = update.snapshot.sequence_number
-    updated_metadata_data["snapshots"].append(update.snapshot.model_dump())
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    updated_metadata = base_metadata.model_copy(
+        update={
+            "last_updated_ms": update.snapshot.timestamp_ms,
+            "last_sequence_number": update.snapshot.sequence_number,
+            "snapshots": base_metadata.snapshots + [update.snapshot],
+        },
+        deep=True,
+    )
+    return updated_metadata.model_copy()
 
 
 @apply_table_update.register(SetSnapshotRefUpdate)
@@ -490,30 +493,32 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if existing_ref is not None and existing_ref == snapshot_ref:
         return base_metadata
 
-    snapshot = base_metadata.snapshots_by_id.get(snapshot_ref.snapshot_id)
+    snapshot = base_metadata.snapshot_by_id(update.snapshot_id)
     if snapshot is None:
-        raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
+        raise ValueError(f"Cannot set {update.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
-    update_metadata_data = copy(base_metadata.model_dump())
+    metadata_updates: Dict[str, Any] = {}
+
     update_last_updated_ms = True
     if context.is_added_snapshot(snapshot_ref.snapshot_id):
-        update_metadata_data["last-updated-ms"] = snapshot.timestamp_ms
+        metadata_updates["last_updated_ms"] = snapshot.timestamp_ms
         update_last_updated_ms = False
 
     if update.ref_name == MAIN_BRANCH:
-        update_metadata_data["current-snapshot-id"] = snapshot_ref.snapshot_id
+        metadata_updates["current_snapshot_id"] = snapshot_ref.snapshot_id
         if update_last_updated_ms:
-            update_metadata_data["last-updated-ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
-        update_metadata_data["snapshot-log"].append(
+            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+
+        metadata_updates["snapshot_log"] = base_metadata.snapshot_log + [
             SnapshotLogEntry(
                 snapshot_id=snapshot_ref.snapshot_id,
-                timestamp_ms=update_metadata_data["last-updated-ms"],
-            ).model_dump()
-        )
+                timestamp_ms=metadata_updates["last_updated_ms"],
+            )
+        ]
 
-    update_metadata_data["refs"][update.ref_name] = snapshot_ref.model_dump()
+    metadata_updates["refs"] = {**base_metadata.refs, update.ref_name: snapshot_ref}
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(update_metadata_data)
+    return base_metadata.model_copy(update=metadata_updates, deep=True)
 
 
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
@@ -737,7 +742,7 @@ class Table:
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
-        return self.metadata.snapshots_by_id.get(snapshot_id)
+        return self.metadata.snapshot_by_id(snapshot_id)
 
     def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
         """Return the snapshot referenced by the given name or null if no such reference exists."""

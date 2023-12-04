@@ -547,6 +547,8 @@ def test_update_metadata_table_schema(table_v2: Table) -> None:
     update = transaction.update_schema()
     update.add_column(path="b", field_type=IntegerType())
     update.commit()
+
+    base_metadata = table_v2.metadata
     new_metadata = update_table_metadata(table_v2.metadata, transaction._updates)  # pylint: disable=W0212
     apply_schema: Schema = next(schema for schema in new_metadata.schemas if schema.schema_id == 2)
     assert len(apply_schema.fields) == 4
@@ -562,6 +564,9 @@ def test_update_metadata_table_schema(table_v2: Table) -> None:
     assert apply_schema.highest_field_id == 4
 
     assert new_metadata.current_schema_id == 2
+    assert new_metadata.last_column_id == 4
+
+    assert len(base_metadata.schemas) == 2
 
 
 def test_update_metadata_add_snapshot(table_v2: Table) -> None:
@@ -647,7 +652,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     # UpdateSchema
     assert len(new_metadata.schemas) == 2
     assert new_metadata.current_schema_id == 1
-    assert new_metadata.schemas_by_id[new_metadata.current_schema_id].highest_field_id == 4
+    assert new_metadata.schema_by_id(new_metadata.current_schema_id).highest_field_id == 4  # type: ignore
 
     # AddSchemaUpdate
     assert len(new_metadata.snapshots) == 2
