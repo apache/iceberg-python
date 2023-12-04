@@ -369,10 +369,6 @@ def table(ctx: Context, identifier: str, property_name: str) -> None:  # noqa: F
     catalog, output = _catalog_and_output(ctx)
     table = catalog.load_table(identifier)
     if property_name in table.metadata.properties:
-        # We should think of the process here
-        # Do we want something similar as in Java:
-        # https://github.com/apache/iceberg/blob/master/api/src/main/java/org/apache/iceberg/Table.java#L178
-        del table.metadata.properties
         output.exception(NotImplementedError("Writing is WIP"))
         ctx.exit(1)
     else:
