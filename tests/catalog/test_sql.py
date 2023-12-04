@@ -67,7 +67,7 @@ def fixture_another_random_identifier(warehouse: Path, database_name: str, table
 def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
         "uri": "sqlite+pysqlite:///:memory:",
-        "warehouse": f"file://{warehouse}/memory",
+        "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
     catalog.create_tables()
@@ -79,7 +79,7 @@ def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
 def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
         "uri": "sqlite:////tmp/sql-catalog.db",
-        "warehouse": f"file://{warehouse}/sqlite",
+        "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
     catalog.create_tables()
@@ -398,6 +398,13 @@ def test_rename_table_from_self_identifier(
         catalog.load_table(random_identifier)
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_rename_table_to_existing_one(
     catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
 ) -> None:
