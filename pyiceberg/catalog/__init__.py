@@ -153,7 +153,7 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> Optional
                 return CatalogType.REST
             elif uri.startswith("thrift"):
                 return CatalogType.HIVE
-            elif uri.startswith("postgresql"):
+            elif uri.startswith("postgresql") or uri.startswith("sqlite"):
                 return CatalogType.SQL
             else:
                 raise ValueError(f"Could not infer the catalog type from the uri: {uri}")
