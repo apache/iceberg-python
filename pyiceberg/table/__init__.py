@@ -540,6 +540,8 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
 
+    # Rebuild metadata to trigger validation
+    new_metadata = TableMetadataUtil.parse_obj(new_metadata.model_dump())
     return new_metadata
 
 
