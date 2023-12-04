@@ -439,7 +439,7 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
         if not context.is_added_schema(new_schema_id):
             raise ValueError("Cannot set current schema to last added schema when no schema has been added")
 
-    if update.schema_id == base_metadata.current_schema_id:
+    if new_schema_id == base_metadata.current_schema_id:
         return base_metadata
 
     schema = base_metadata.schema_by_id(new_schema_id)
@@ -447,7 +447,7 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
         raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
     context.add_update(update)
-    return base_metadata.model_copy(update={"current_schema_id": update.schema_id}, deep=True)
+    return base_metadata.model_copy(update={"current_schema_id": new_schema_id}, deep=True)
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
