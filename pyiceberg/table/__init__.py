@@ -1412,9 +1412,7 @@ class UpdateSchema:
         """Apply the pending changes and commit."""
         new_schema = self._apply()
 
-        existing_schema_id = existing_schema_id = next(
-            (schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema), None
-        )
+        existing_schema_id = next((schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema), None)
 
         # Check if it is different current schema ID
         if existing_schema_id != self._table.schema().schema_id:
