@@ -530,7 +530,7 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     assert new_table_metadata.current_schema_id == 1
     assert len(test_context._updates) == 1
     assert test_context._updates[0] == transaction._updates[0]  # pylint: disable=W0212
-    assert test_context.last_added_schema_id == 2
+    assert test_context.is_added_schema(2)
 
     new_table_metadata = _apply_table_update(
         transaction._updates[1], base_metadata=new_table_metadata, context=test_context
@@ -539,7 +539,7 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     assert new_table_metadata.current_schema_id == 2
     assert len(test_context._updates) == 2
     assert test_context._updates[1] == transaction._updates[1]  # pylint: disable=W0212
-    assert test_context.last_added_schema_id == 2
+    assert test_context.is_added_schema(2)
 
 
 def test_update_metadata_table_schema(table_v2: Table) -> None:

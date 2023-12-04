@@ -360,11 +360,9 @@ class RemovePropertiesUpdate(TableUpdate):
 
 class _TableMetadataUpdateContext:
     _updates: List[TableUpdate]
-    last_added_schema_id: Optional[int]
 
     def __init__(self) -> None:
         self._updates = []
-        self.last_added_schema_id = None
 
     def add_update(self, update: TableUpdate) -> None:
         self._updates.append(update)
@@ -389,7 +387,7 @@ def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, conte
     Args:
         update: The update to be applied.
         base_metadata: The base metadata to be updated.
-        context: Contains previous updates, last_added_snapshot_id and other change tracking information in the current transaction.
+        context: Contains previous updates and other change tracking information in the current transaction.
 
     Returns:
         The updated metadata.
@@ -424,7 +422,6 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     updated_metadata_data["schemas"].append(update.schema_.model_dump())
 
     context.add_update(update)
-    context.last_added_schema_id = update.schema_.schema_id
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
