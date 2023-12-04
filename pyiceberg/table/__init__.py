@@ -383,7 +383,7 @@ class _TableMetadataUpdateContext:
 
 
 @singledispatch
-def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     """Apply a table update to the table metadata.
 
     Args:
@@ -398,7 +398,7 @@ def apply_table_update(update: TableUpdate, base_metadata: TableMetadata, contex
     raise NotImplementedError(f"Unsupported table update: {update}")
 
 
-@apply_table_update.register(UpgradeFormatVersionUpdate)
+@_apply_table_update.register(UpgradeFormatVersionUpdate)
 def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
@@ -414,7 +414,7 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
-@apply_table_update.register(AddSchemaUpdate)
+@_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
@@ -428,7 +428,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
-@apply_table_update.register(SetCurrentSchemaUpdate)
+@_apply_table_update.register(SetCurrentSchemaUpdate)
 def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     new_schema_id = update.schema_id
     if new_schema_id == -1:
@@ -451,7 +451,7 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
-@apply_table_update.register(AddSnapshotUpdate)
+@_apply_table_update.register(AddSnapshotUpdate)
 def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if len(base_metadata.schemas) == 0:
         raise ValueError("Attempting to add a snapshot before a schema is added")
@@ -480,7 +480,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
-@apply_table_update.register(SetSnapshotRefUpdate)
+@_apply_table_update.register(SetSnapshotRefUpdate)
 def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
@@ -534,7 +534,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     new_metadata = base_metadata
 
     for update in updates:
-        new_metadata = apply_table_update(update, new_metadata, context)
+        new_metadata = _apply_table_update(update, new_metadata, context)
 
     return new_metadata
 
