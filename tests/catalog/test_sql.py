@@ -281,6 +281,7 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
     assert table.metadata == loaded_table.metadata
 
 
+<<<<<<< HEAD
 @pytest.mark.parametrize(
     'catalog',
     [
@@ -289,6 +290,23 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
     ],
 )
 def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+=======
+def test_load_table_from_self_identifier(
+    test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(random_identifier, table_schema_nested)
+    intermediate = test_catalog.load_table(random_identifier)
+    assert intermediate.identifier == (test_catalog.name,) + random_identifier
+    loaded_table = test_catalog.load_table(intermediate.identifier)
+    assert table.identifier == loaded_table.identifier
+    assert table.metadata_location == loaded_table.metadata_location
+    assert table.metadata == loaded_table.metadata
+
+
+def test_drop_table(test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+>>>>>>> 2ca2bb04ee636c6a12879bb6b3f2e96995a0c7b2
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -298,6 +316,7 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
         catalog.load_table(random_identifier)
 
 
+<<<<<<< HEAD
 @pytest.mark.parametrize(
     'catalog',
     [
@@ -306,6 +325,23 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
     ],
 )
 def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: Identifier) -> None:
+=======
+def test_drop_table_from_self_identifier(
+    test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    test_catalog.create_namespace(database_name)
+    table = test_catalog.create_table(random_identifier, table_schema_nested)
+    assert table.identifier == (test_catalog.name,) + random_identifier
+    test_catalog.drop_table(table.identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(table.identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(random_identifier)
+
+
+def test_drop_table_that_does_not_exist(test_catalog: SqlCatalog, random_identifier: Identifier) -> None:
+>>>>>>> 2ca2bb04ee636c6a12879bb6b3f2e96995a0c7b2
     with pytest.raises(NoSuchTableError):
         catalog.drop_table(random_identifier)
 
@@ -334,6 +370,7 @@ def test_rename_table(
         catalog.load_table(random_identifier)
 
 
+<<<<<<< HEAD
 @pytest.mark.parametrize(
     'catalog',
     [
@@ -341,6 +378,27 @@ def test_rename_table(
         lazy_fixture('catalog_sqlite'),
     ],
 )
+=======
+def test_rename_table_from_self_identifier(
+    test_catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+) -> None:
+    from_database_name, _from_table_name = random_identifier
+    to_database_name, _to_table_name = another_random_identifier
+    test_catalog.create_namespace(from_database_name)
+    test_catalog.create_namespace(to_database_name)
+    table = test_catalog.create_table(random_identifier, table_schema_nested)
+    assert table.identifier == (test_catalog.name,) + random_identifier
+    test_catalog.rename_table(table.identifier, another_random_identifier)
+    new_table = test_catalog.load_table(another_random_identifier)
+    assert new_table.identifier == (test_catalog.name,) + another_random_identifier
+    assert new_table.metadata_location == table.metadata_location
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(table.identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(random_identifier)
+
+
+>>>>>>> 2ca2bb04ee636c6a12879bb6b3f2e96995a0c7b2
 def test_rename_table_to_existing_one(
     catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
 ) -> None:
