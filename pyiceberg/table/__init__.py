@@ -496,15 +496,12 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
         raise ValueError(f"Cannot set {update.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
     metadata_updates: Dict[str, Any] = {}
-
-    update_last_updated_ms = True
     if context.is_added_snapshot(snapshot_ref.snapshot_id):
         metadata_updates["last_updated_ms"] = snapshot.timestamp_ms
-        update_last_updated_ms = False
 
     if update.ref_name == MAIN_BRANCH:
         metadata_updates["current_snapshot_id"] = snapshot_ref.snapshot_id
-        if update_last_updated_ms:
+        if "last_updated_ms" not in metadata_updates:
             metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
 
         metadata_updates["snapshot_log"] = base_metadata.snapshot_log + [
