@@ -156,7 +156,7 @@ In the case of SQLite:
 <!-- prettier-ignore-start -->
 
 !!! warning inline end "Development only"
-    SQLite is not built for concurrency, and should only be used for exploratory or development purposes.
+    SQLite is not built for concurrency, you should use this catalog for exploratory or development purposes.
 
 <!-- prettier-ignore-end -->
 
