@@ -16,13 +16,14 @@
 # under the License.
 from __future__ import annotations
 
+import datetime
 import itertools
 import uuid
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, singledispatch
 from itertools import chain
 from typing import (
     TYPE_CHECKING,
@@ -41,6 +42,7 @@ from typing import (
 
 from pydantic import Field, SerializeAsAny
 from sortedcontainers import SortedList
+from typing_extensions import Annotated
 
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.expressions import (
@@ -69,8 +71,13 @@ from pyiceberg.schema import (
     promote,
     visit,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.metadata import (
+    INITIAL_SEQUENCE_NUMBER,
+    SUPPORTED_TABLE_FORMAT_VERSION,
+    TableMetadata,
+    TableMetadataUtil,
+)
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
@@ -90,6 +97,7 @@ from pyiceberg.types import (
     StructType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -320,9 +328,9 @@ class SetSnapshotRefUpdate(TableUpdate):
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
-    max_age_ref_ms: int = Field(alias="max-ref-age-ms")
-    max_snapshot_age_ms: int = Field(alias="max-snapshot-age-ms")
-    min_snapshots_to_keep: int = Field(alias="min-snapshots-to-keep")
+    max_ref_age_ms: Annotated[Optional[int], Field(alias="max-ref-age-ms", default=None)]
+    max_snapshot_age_ms: Annotated[Optional[int], Field(alias="max-snapshot-age-ms", default=None)]
+    min_snapshots_to_keep: Annotated[Optional[int], Field(alias="min-snapshots-to-keep", default=None)]
 
 
 class RemoveSnapshotsUpdate(TableUpdate):
@@ -348,6 +356,184 @@ class SetPropertiesUpdate(TableUpdate):
 class RemovePropertiesUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.remove_properties
     removals: List[str]
+
+
+class _TableMetadataUpdateContext:
+    _updates: List[TableUpdate]
+
+    def __init__(self) -> None:
+        self._updates = []
+
+    def add_update(self, update: TableUpdate) -> None:
+        self._updates.append(update)
+
+    def is_added_snapshot(self, snapshot_id: int) -> bool:
+        return any(
+            update.snapshot.snapshot_id == snapshot_id
+            for update in self._updates
+            if update.action == TableUpdateAction.add_snapshot
+        )
+
+    def is_added_schema(self, schema_id: int) -> bool:
+        return any(
+            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
+        )
+
+
+@singledispatch
+def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    """Apply a table update to the table metadata.
+
+    Args:
+        update: The update to be applied.
+        base_metadata: The base metadata to be updated.
+        context: Contains previous updates and other change tracking information in the current transaction.
+
+    Returns:
+        The updated metadata.
+
+    """
+    raise NotImplementedError(f"Unsupported table update: {update}")
+
+
+@_apply_table_update.register(UpgradeFormatVersionUpdate)
+def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
+        raise ValueError(f"Unsupported table format version: {update.format_version}")
+    elif update.format_version < base_metadata.format_version:
+        raise ValueError(f"Cannot downgrade v{base_metadata.format_version} table to v{update.format_version}")
+    elif update.format_version == base_metadata.format_version:
+        return base_metadata
+
+    updated_metadata_data = copy(base_metadata.model_dump())
+    updated_metadata_data["format-version"] = update.format_version
+
+    context.add_update(update)
+    return TableMetadataUtil.parse_obj(updated_metadata_data)
+
+
+@_apply_table_update.register(AddSchemaUpdate)
+def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.last_column_id < base_metadata.last_column_id:
+        raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
+
+    updated_metadata_data = copy(base_metadata.model_dump())
+    updated_metadata_data["last-column-id"] = update.last_column_id
+    updated_metadata_data["schemas"].append(update.schema_.model_dump())
+
+    context.add_update(update)
+    return TableMetadataUtil.parse_obj(updated_metadata_data)
+
+
+@_apply_table_update.register(SetCurrentSchemaUpdate)
+def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    new_schema_id = update.schema_id
+    if new_schema_id == -1:
+        # The last added schema should be in base_metadata.schemas at this point
+        new_schema_id = max(schema.schema_id for schema in base_metadata.schemas)
+        if not context.is_added_schema(new_schema_id):
+            raise ValueError("Cannot set current schema to last added schema when no schema has been added")
+
+    if new_schema_id == base_metadata.current_schema_id:
+        return base_metadata
+
+    schema = base_metadata.schema_by_id(new_schema_id)
+    if schema is None:
+        raise ValueError(f"Schema with id {new_schema_id} does not exist")
+
+    updated_metadata_data = copy(base_metadata.model_dump())
+    updated_metadata_data["current-schema-id"] = new_schema_id
+
+    context.add_update(update)
+    return TableMetadataUtil.parse_obj(updated_metadata_data)
+
+
+@_apply_table_update.register(AddSnapshotUpdate)
+def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(base_metadata.schemas) == 0:
+        raise ValueError("Attempting to add a snapshot before a schema is added")
+    elif len(base_metadata.partition_specs) == 0:
+        raise ValueError("Attempting to add a snapshot before a partition spec is added")
+    elif len(base_metadata.sort_orders) == 0:
+        raise ValueError("Attempting to add a snapshot before a sort order is added")
+    elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
+        raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
+    elif (
+        base_metadata.format_version == 2
+        and update.snapshot.sequence_number is not None
+        and update.snapshot.sequence_number <= base_metadata.last_sequence_number
+        and update.snapshot.parent_snapshot_id is not None
+    ):
+        raise ValueError(
+            f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
+            f"older than last sequence number {base_metadata.last_sequence_number}"
+        )
+
+    updated_metadata_data = copy(base_metadata.model_dump())
+    updated_metadata_data["last-updated-ms"] = update.snapshot.timestamp_ms
+    updated_metadata_data["last-sequence-number"] = update.snapshot.sequence_number
+    updated_metadata_data["snapshots"].append(update.snapshot.model_dump())
+    context.add_update(update)
+    return TableMetadataUtil.parse_obj(updated_metadata_data)
+
+
+@_apply_table_update.register(SetSnapshotRefUpdate)
+def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    snapshot_ref = SnapshotRef(
+        snapshot_id=update.snapshot_id,
+        snapshot_ref_type=update.type,
+        min_snapshots_to_keep=update.min_snapshots_to_keep,
+        max_snapshot_age_ms=update.max_snapshot_age_ms,
+        max_ref_age_ms=update.max_ref_age_ms,
+    )
+
+    existing_ref = base_metadata.refs.get(update.ref_name)
+    if existing_ref is not None and existing_ref == snapshot_ref:
+        return base_metadata
+
+    snapshot = base_metadata.snapshot_by_id(snapshot_ref.snapshot_id)
+    if snapshot is None:
+        raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
+
+    update_metadata_data = copy(base_metadata.model_dump())
+    update_last_updated_ms = True
+    if context.is_added_snapshot(snapshot_ref.snapshot_id):
+        update_metadata_data["last-updated-ms"] = snapshot.timestamp_ms
+        update_last_updated_ms = False
+
+    if update.ref_name == MAIN_BRANCH:
+        update_metadata_data["current-snapshot-id"] = snapshot_ref.snapshot_id
+        if update_last_updated_ms:
+            update_metadata_data["last-updated-ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+        update_metadata_data["snapshot-log"].append(
+            SnapshotLogEntry(
+                snapshot_id=snapshot_ref.snapshot_id,
+                timestamp_ms=update_metadata_data["last-updated-ms"],
+            ).model_dump()
+        )
+
+    update_metadata_data["refs"][update.ref_name] = snapshot_ref.model_dump()
+    context.add_update(update)
+    return TableMetadataUtil.parse_obj(update_metadata_data)
+
+
+def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+    """Update the table metadata with the given updates in one transaction.
+
+    Args:
+        base_metadata: The base metadata to be updated.
+        updates: The updates in one transaction.
+
+    Returns:
+        The metadata with the updates applied.
+    """
+    context = _TableMetadataUpdateContext()
+    new_metadata = base_metadata
+
+    for update in updates:
+        new_metadata = _apply_table_update(update, new_metadata, context)
+
+    return new_metadata
 
 
 class TableRequirement(IcebergBaseModel):
@@ -552,10 +738,7 @@ class Table:
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
-        try:
-            return next(snapshot for snapshot in self.metadata.snapshots if snapshot.snapshot_id == snapshot_id)
-        except StopIteration:
-            return None
+        return self.metadata.snapshot_by_id(snapshot_id)
 
     def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
         """Return the snapshot referenced by the given name or null if no such reference exists."""

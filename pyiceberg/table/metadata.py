@@ -69,6 +69,8 @@ INITIAL_SEQUENCE_NUMBER = 0
 INITIAL_SPEC_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
+SUPPORTED_TABLE_FORMAT_VERSION = 2
+
 
 def cleanup_snapshot_id(data: Dict[str, Any]) -> Dict[str, Any]:
     """Run before validation."""
@@ -215,6 +217,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
     and the map values are snapshot reference objects.
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
+
+    def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
+        """Get the snapshot by snapshot_id."""
+        return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
+
+    def schema_by_id(self, schema_id: int) -> Optional[Schema]:
+        """Get the schema by schema_id."""
+        return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
 
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
