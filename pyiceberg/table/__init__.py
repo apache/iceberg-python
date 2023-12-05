@@ -387,7 +387,7 @@ def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, conte
     Args:
         update: The update to be applied.
         base_metadata: The base metadata to be updated.
-        context: Contains previous updates, last_added_snapshot_id and other change tracking information in the current transaction.
+        context: Contains previous updates and other change tracking information in the current transaction.
 
     Returns:
         The updated metadata.
@@ -491,7 +491,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if existing_ref is not None and existing_ref == snapshot_ref:
         return base_metadata
 
-    snapshot = base_metadata.snapshot_by_id(update.snapshot_id)
+    snapshot = base_metadata.snapshot_by_id(snapshot_ref.snapshot_id)
     if snapshot is None:
         raise ValueError(f"Cannot set {update.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
