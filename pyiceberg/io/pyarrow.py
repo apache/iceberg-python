@@ -29,12 +29,13 @@ import concurrent.futures
 import logging
 import os
 import re
+import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
-from itertools import chain
+from itertools import chain, count
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -765,14 +766,6 @@ def _get_field_id(field: pa.Field) -> Optional[int]:
     return None
 
 
-def _get_field_doc(field: pa.Field) -> Optional[str]:
-    if field.metadata:
-        for pyarrow_doc_key in PYARROW_FIELD_DOC_KEYS:
-            if doc_str := field.metadata.get(pyarrow_doc_key):
-                return doc_str.decode()
-    return None
-
-
 class _HasIds(PyArrowSchemaVisitor[bool]):
     def schema(self, schema: pa.Schema, struct_result: bool) -> bool:
         return struct_result
@@ -790,7 +783,7 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
 
     def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:
         key_field = map_type.key_field
-        key_id = _get_field_id(key_field)
+        key_id = self._get_field_id(key_field)
         value_field = map_type.item_field
         value_id = _get_field_id(value_field)
         return all([key_id is not None, value_id is not None, key_result, value_result])
