@@ -360,11 +360,9 @@ class RemovePropertiesUpdate(TableUpdate):
 
 class _TableMetadataUpdateContext:
     _updates: List[TableUpdate]
-    last_added_schema_id: Optional[int]
 
     def __init__(self) -> None:
         self._updates = []
-        self.last_added_schema_id = None
 
     def add_update(self, update: TableUpdate) -> None:
         self._updates.append(update)
@@ -420,7 +418,6 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
     context.add_update(update)
-    context.last_added_schema_id = update.schema_.schema_id
     return base_metadata.model_copy(
         update={
             "last_column_id": update.last_column_id,
