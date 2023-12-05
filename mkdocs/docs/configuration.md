@@ -140,7 +140,7 @@ catalog:
 
 ## SQL Catalog
 
-The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property (see SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls)):
+The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
 
 For PostgreSQL:
 
@@ -156,7 +156,7 @@ In the case of SQLite:
 <!-- prettier-ignore-start -->
 
 !!! warning inline end "Development only"
-    SQLite is not built for concurrency, and should only be used for exploratory or development purposes.
+    SQLite is not built for concurrency, you should use this catalog for exploratory or development purposes.
 
 <!-- prettier-ignore-end -->
 
