@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import re
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
@@ -269,3 +270,32 @@ def test_round_schema_conversion_nested(table_schema_nested: Schema) -> None:
   15: person: optional struct<16: name: optional string, 17: age: required int>
 }"""
     assert actual == expected
+
+
+@patch("warnings.warn")
+def test_schema_to_pyarrow_schema_missing_ids(warn: Mock) -> None:
+    schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
+    actual = pyarrow_to_schema(schema)
+
+    expected = Schema(
+        NestedField(field_id=0, name="some_int", field_type=IntegerType(), required=False),
+        NestedField(field_id=1, name="some_string", field_type=StringType(), required=True),
+    )
+
+    assert actual == expected
+    assert warn.called
+
+
+@patch("warnings.warn")
+def test_schema_to_pyarrow_schema_missing_id(warn: Mock) -> None:
+    schema = pa.schema(
+        [
+            pa.field('some_int', pa.int32(), nullable=True),
+            pa.field('some_string', pa.string(), nullable=False, metadata={b"field_id": "22"}),
+        ]
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        _ = pyarrow_to_schema(schema)
+    assert "Parquet file contains partial field-ids" in str(exc_info.value)
+    assert warn.called
