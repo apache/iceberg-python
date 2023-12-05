@@ -422,8 +422,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
         update={
             "last_column_id": update.last_column_id,
             "schemas": base_metadata.schemas + [update.schema_],
-        },
-        deep=True,
+        }
     )
 
 
@@ -444,7 +443,7 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
         raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
     context.add_update(update)
-    return base_metadata.model_copy(update={"current_schema_id": new_schema_id}, deep=True)
+    return base_metadata.model_copy(update={"current_schema_id": new_schema_id})
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
@@ -474,8 +473,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             "last_updated_ms": update.snapshot.timestamp_ms,
             "last_sequence_number": update.snapshot.sequence_number,
             "snapshots": base_metadata.snapshots + [update.snapshot],
-        },
-        deep=True,
+        }
     )
 
 
@@ -518,7 +516,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 
     metadata_updates["refs"] = {**base_metadata.refs, update.ref_name: snapshot_ref}
     context.add_update(update)
-    return base_metadata.model_copy(update=metadata_updates, deep=True)
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
@@ -538,7 +536,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
         new_metadata = _apply_table_update(update, new_metadata, context)
 
     # Rebuild metadata to trigger validation
-    new_metadata = TableMetadataUtil.parse_obj(new_metadata.model_dump())
+    new_metadata = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
     return new_metadata
 
 

@@ -50,7 +50,7 @@ from pyiceberg.table import (
     _TableMetadataUpdateContext,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataV2
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -643,6 +643,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
 
     # UpgradeFormatVersionUpdate
     assert new_metadata.format_version == 2
+    assert isinstance(new_metadata, TableMetadataV2)
 
     # UpdateSchema
     assert len(new_metadata.schemas) == 2
@@ -667,6 +668,51 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
         max_snapshot_age_ms=12312312312,
         max_ref_age_ms=123123123,
     )
+
+
+def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
+    base_metadata = table_v1.metadata
+    base_metadata_backup = base_metadata.model_copy(deep=True)
+
+    # Apply legal updates on the table metadata
+    transaction = table_v1.transaction()
+    schema_update_1 = transaction.update_schema()
+    schema_update_1.add_column(path="b", field_type=IntegerType())
+    schema_update_1.commit()
+    test_updates = transaction._updates  # pylint: disable=W0212
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    test_updates += (
+        AddSnapshotUpdate(snapshot=new_snapshot),
+        SetSnapshotRefUpdate(
+            ref_name="main",
+            type="branch",
+            snapshot_id=25,
+            max_ref_age_ms=123123123,
+            max_snapshot_age_ms=12312312312,
+            min_snapshots_to_keep=1,
+        ),
+    )
+    new_metadata = update_table_metadata(base_metadata, test_updates)
+
+    # Check that the original metadata is not modified
+    assert base_metadata == base_metadata_backup
+
+    # Perform illegal update on the new metadata:
+    # TableMetadata should be immutable, but the pydantic's frozen config cannot prevent
+    # operations such as list append.
+    new_metadata.partition_specs.append(PartitionSpec(spec_id=0))
+    assert len(new_metadata.partition_specs) == 2
+
+    # The original metadata should not be affected by the illegal update on the new metadata
+    assert len(base_metadata.partition_specs) == 1
 
 
 def test_generate_snapshot_id(table_v2: Table) -> None:
