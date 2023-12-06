@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from copy import copy
 from typing import Dict
 
 import pytest
@@ -50,7 +51,7 @@ from pyiceberg.table import (
     _TableMetadataUpdateContext,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataV2
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -640,6 +641,8 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     )
 
     new_metadata = update_table_metadata(base_metadata, test_updates)
+    # rebuild the metadata to trigger validation
+    new_metadata = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
 
     # UpgradeFormatVersionUpdate
     assert new_metadata.format_version == 2
