@@ -337,7 +337,7 @@ class YearTransform(TimeTransform[S]):
             def year_func(v: Any) -> int:
                 return datetime.days_to_years(v)
 
-        if isinstance(source, (TimestampType, TimestamptzType)):
+        elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def year_func(v: Any) -> int:
                 return datetime.micros_to_years(v)
@@ -379,7 +379,7 @@ class MonthTransform(TimeTransform[S]):
             def month_func(v: Any) -> int:
                 return datetime.days_to_months(v)
 
-        if isinstance(source, (TimestampType, TimestamptzType)):
+        elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def month_func(v: Any) -> int:
                 return datetime.micros_to_months(v)
@@ -421,7 +421,7 @@ class DayTransform(TimeTransform[S]):
             def day_func(v: Any) -> int:
                 return v
 
-        if isinstance(source, (TimestampType, TimestamptzType)):
+        elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def day_func(v: Any) -> int:
                 return datetime.micros_to_days(v)
