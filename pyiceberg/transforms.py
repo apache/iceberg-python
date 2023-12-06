@@ -600,18 +600,17 @@ class TruncateTransform(Transform[S, S]):
         return self._width
 
     def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[S]]:
-        source_type = type(source)
         if isinstance(source, (IntegerType, LongType)):
 
             def truncate_func(v: Any) -> Any:
                 return v - v % self._width
 
-        elif source_type in {StringType, BinaryType}:
+        elif isinstance(source, (StringType, BinaryType)):
 
             def truncate_func(v: Any) -> Any:
                 return v[0 : min(self._width, len(v))]
 
-        elif source_type == DecimalType:
+        elif isinstance(source, DecimalType):
 
             def truncate_func(v: Any) -> Any:
                 return truncate_decimal(v, self._width)
