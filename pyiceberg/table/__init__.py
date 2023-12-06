@@ -417,12 +417,13 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["last-column-id"] = update.last_column_id
-    updated_metadata_data["schemas"].append(update.schema_.model_dump())
-
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    return base_metadata.model_copy(
+        update={
+            "last_column_id": update.last_column_id,
+            "schemas": base_metadata.schemas + [update.schema_],
+        }
+    )
 
 
 @_apply_table_update.register(SetCurrentSchemaUpdate)
@@ -441,11 +442,8 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
     if schema is None:
         raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["current-schema-id"] = new_schema_id
-
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    return base_metadata.model_copy(update={"current_schema_id": new_schema_id})
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
@@ -469,12 +467,14 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             f"older than last sequence number {base_metadata.last_sequence_number}"
         )
 
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["last-updated-ms"] = update.snapshot.timestamp_ms
-    updated_metadata_data["last-sequence-number"] = update.snapshot.sequence_number
-    updated_metadata_data["snapshots"].append(update.snapshot.model_dump())
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    return base_metadata.model_copy(
+        update={
+            "last_updated_ms": update.snapshot.timestamp_ms,
+            "last_sequence_number": update.snapshot.sequence_number,
+            "snapshots": base_metadata.snapshots + [update.snapshot],
+        }
+    )
 
 
 @_apply_table_update.register(SetSnapshotRefUpdate)
@@ -493,28 +493,27 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 
     snapshot = base_metadata.snapshot_by_id(snapshot_ref.snapshot_id)
     if snapshot is None:
-        raise ValueError(f"Cannot set {snapshot_ref.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
+        raise ValueError(f"Cannot set {update.ref_name} to unknown snapshot {snapshot_ref.snapshot_id}")
 
-    update_metadata_data = copy(base_metadata.model_dump())
-    update_last_updated_ms = True
+    metadata_updates: Dict[str, Any] = {}
     if context.is_added_snapshot(snapshot_ref.snapshot_id):
-        update_metadata_data["last-updated-ms"] = snapshot.timestamp_ms
-        update_last_updated_ms = False
+        metadata_updates["last_updated_ms"] = snapshot.timestamp_ms
 
     if update.ref_name == MAIN_BRANCH:
-        update_metadata_data["current-snapshot-id"] = snapshot_ref.snapshot_id
-        if update_last_updated_ms:
-            update_metadata_data["last-updated-ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
-        update_metadata_data["snapshot-log"].append(
+        metadata_updates["current_snapshot_id"] = snapshot_ref.snapshot_id
+        if "last_updated_ms" not in metadata_updates:
+            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+
+        metadata_updates["snapshot_log"] = base_metadata.snapshot_log + [
             SnapshotLogEntry(
                 snapshot_id=snapshot_ref.snapshot_id,
-                timestamp_ms=update_metadata_data["last-updated-ms"],
-            ).model_dump()
-        )
+                timestamp_ms=metadata_updates["last_updated_ms"],
+            )
+        ]
 
-    update_metadata_data["refs"][update.ref_name] = snapshot_ref.model_dump()
+    metadata_updates["refs"] = {**base_metadata.refs, update.ref_name: snapshot_ref}
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(update_metadata_data)
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
@@ -533,7 +532,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
 
-    return new_metadata
+    return new_metadata.model_copy(deep=True)
 
 
 class TableRequirement(IcebergBaseModel):
