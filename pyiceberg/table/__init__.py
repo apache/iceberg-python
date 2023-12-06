@@ -150,8 +150,9 @@ class Transaction:
             Transaction object with the new updates appended.
         """
         for new_update in new_updates:
+            # explicitly get type of new_update as it is an instantiated class
             type_new_update = type(new_update)
-            if any(type(update) == type_new_update for update in self._updates):
+            if any(isinstance(update, type_new_update) for update in self._updates):
                 raise ValueError(f"Updates in a single commit need to be unique, duplicate: {type_new_update}")
         self._updates = self._updates + new_updates
         return self
