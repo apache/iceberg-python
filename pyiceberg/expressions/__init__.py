@@ -459,7 +459,7 @@ class NotNull(UnaryPredicate):
 class BoundIsNaN(BoundUnaryPredicate[L]):
     def __new__(cls, term: BoundTerm[L]) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
         bound_type = term.ref().field.field_type
-        if type(bound_type) in {FloatType, DoubleType}:
+        if isinstance(bound_type, (FloatType, DoubleType)):
             return super().__new__(cls)
         return AlwaysFalse()
 
@@ -475,7 +475,7 @@ class BoundIsNaN(BoundUnaryPredicate[L]):
 class BoundNotNaN(BoundUnaryPredicate[L]):
     def __new__(cls, term: BoundTerm[L]) -> BooleanExpression:  # type: ignore  # pylint: disable=W0221
         bound_type = term.ref().field.field_type
-        if type(bound_type) in {FloatType, DoubleType}:
+        if isinstance(bound_type, (FloatType, DoubleType)):
             return super().__new__(cls)
         return AlwaysTrue()
 

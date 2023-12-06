@@ -114,7 +114,7 @@ class SortField(IcebergBaseModel):
 
     def __str__(self) -> str:
         """Return the string representation of the SortField class."""
-        if type(self.transform) == IdentityTransform:
+        if isinstance(self.transform, IdentityTransform):
             # In the case of an identity transform, we can omit the transform
             return f"{self.source_id} {self.direction} {self.null_order}"
         else:
