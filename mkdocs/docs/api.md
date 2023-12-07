@@ -54,12 +54,6 @@ catalog = load_catalog(
 )
 ```
 
-If the catalog has not been initialized before, you need to run:
-
-```python
-catalog.create_tables()
-```
-
 Let's create a namespace:
 
 ```python
