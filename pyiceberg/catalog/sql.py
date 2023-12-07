@@ -101,9 +101,9 @@ class SqlCatalog(Catalog):
             raise NoSuchPropertyException("SQL connection URI is required")
         self.engine = create_engine(uri_prop, echo=True)
 
-        self.ensure_tables_exist()
+        self._ensure_tables_exist()
 
-    def ensure_tables_exist(self) -> None:
+    def _ensure_tables_exist(self) -> None:
         with Session(self.engine) as session:
             for table in [IcebergTables, IcebergNamespaceProperties]:
                 stmt = select(1).select_from(table)
