@@ -31,10 +31,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import (
-    IntegrityError,
-    OperationalError
-)
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
