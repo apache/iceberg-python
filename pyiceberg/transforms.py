@@ -220,7 +220,8 @@ class BucketTransform(Transform[S, int]):
             return None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source,
+        return isinstance(
+            source,
             (
                 IntegerType,
                 DateType,
@@ -233,7 +234,7 @@ class BucketTransform(Transform[S, int]):
                 FixedType,
                 BinaryType,
                 UUIDType,
-            )
+            ),
         )
 
     def transform(self, source: IcebergType, bucket: bool = True) -> Callable[[Optional[Any]], Optional[int]]:
@@ -317,7 +318,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
     @property
     def preserves_order(self) -> bool:
         return True
-
 
 
 class YearTransform(TimeTransform[S]):
