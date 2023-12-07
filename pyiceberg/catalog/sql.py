@@ -31,7 +31,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -97,6 +97,18 @@ class SqlCatalog(Catalog):
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
         self.engine = create_engine(uri_prop, echo=True)
+
+        self._ensure_tables_exist()
+
+    def _ensure_tables_exist(self) -> None:
+        with Session(self.engine) as session:
+            for table in [IcebergTables, IcebergNamespaceProperties]:
+                stmt = select(1).select_from(table)
+                try:
+                    session.scalar(stmt)
+                except OperationalError:
+                    self.create_tables()
+                    return
 
     def create_tables(self) -> None:
         SqlCatalogBaseTable.metadata.create_all(self.engine)
