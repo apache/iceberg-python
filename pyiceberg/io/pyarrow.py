@@ -25,6 +25,7 @@ with the pyarrow library.
 from __future__ import annotations
 
 import concurrent.futures
+import itertools
 import logging
 import os
 import re
@@ -34,7 +35,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
-from itertools import chain, count
+from itertools import chain
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -111,6 +112,7 @@ from pyiceberg.schema import (
     Schema,
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
+    assign_fresh_schema_ids,
     pre_order_visit,
     promote,
     prune_columns,
@@ -617,7 +619,12 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], rows:
 
 def pyarrow_to_schema(schema: pa.Schema) -> Schema:
     visitor = _ConvertToIceberg()
-    return visit_pyarrow(schema, visitor)
+    schema = visit_pyarrow(schema, visitor)
+
+    if visitor.missing_id_metadata:
+        return assign_fresh_schema_ids(schema)
+    else:
+        return schema
 
 
 @singledispatch
@@ -715,12 +722,12 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
-    counter: count[int]
-    missing_is_metadata: Optional[bool]
+    counter: itertools.count[int]
+    missing_id_metadata: Optional[bool]
 
     def __init__(self) -> None:
-        self.counter = count()
-        self.missing_is_metadata = None
+        self.counter = itertools.count(1)
+        self.missing_id_metadata = None
 
     def _get_field_id(self, field: pa.Field) -> int:
         field_id: Optional[int] = None
@@ -730,18 +737,17 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                 field_id = int(field_id_str.decode())
 
         if field_id is None:
-            if self.missing_is_metadata is None:
-                warnings.warn("Field-ids are missing, generating new IDs")
-
+            if self.missing_id_metadata is None:
+                warnings.warn("Field-ids are missing, new IDs will be set")
             field_id = next(self.counter)
             missing_is_metadata = True
         else:
             missing_is_metadata = False
 
-        if self.missing_is_metadata is not None and self.missing_is_metadata != missing_is_metadata:
+        if self.missing_id_metadata is not None and self.missing_id_metadata != missing_is_metadata:
             raise ValueError("Parquet file contains partial field-ids")
         else:
-            self.missing_is_metadata = missing_is_metadata
+            self.missing_id_metadata = missing_is_metadata
 
         return field_id
 

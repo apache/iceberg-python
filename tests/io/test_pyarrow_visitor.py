@@ -278,8 +278,8 @@ def test_schema_to_pyarrow_schema_missing_ids(warn: Mock) -> None:
     actual = pyarrow_to_schema(schema)
 
     expected = Schema(
-        NestedField(field_id=0, name="some_int", field_type=IntegerType(), required=False),
-        NestedField(field_id=1, name="some_string", field_type=StringType(), required=True),
+        NestedField(field_id=1, name="some_int", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="some_string", field_type=StringType(), required=True),
     )
 
     assert actual == expected
