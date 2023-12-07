@@ -220,38 +220,40 @@ class BucketTransform(Transform[S, int]):
             return None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return type(source) in {
-            IntegerType,
-            DateType,
-            LongType,
-            TimeType,
-            TimestampType,
-            TimestamptzType,
-            DecimalType,
-            StringType,
-            FixedType,
-            BinaryType,
-            UUIDType,
-        }
+        return isinstance(
+            source,
+            (
+                IntegerType,
+                DateType,
+                LongType,
+                TimeType,
+                TimestampType,
+                TimestamptzType,
+                DecimalType,
+                StringType,
+                FixedType,
+                BinaryType,
+                UUIDType,
+            ),
+        )
 
     def transform(self, source: IcebergType, bucket: bool = True) -> Callable[[Optional[Any]], Optional[int]]:
-        source_type = type(source)
-        if source_type in {IntegerType, LongType, DateType, TimeType, TimestampType, TimestamptzType}:
+        if isinstance(source, (IntegerType, LongType, DateType, TimeType, TimestampType, TimestamptzType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(struct.pack("<q", v))
 
-        elif source_type == DecimalType:
+        elif isinstance(source, DecimalType):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(decimal_to_bytes(v))
 
-        elif source_type in {StringType, FixedType, BinaryType}:
+        elif isinstance(source, (StringType, FixedType, BinaryType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(v)
 
-        elif source_type == UUIDType:
+        elif isinstance(source, UUIDType):
 
             def hash_func(v: Any) -> int:
                 if isinstance(v, UUID):
@@ -330,13 +332,12 @@ class YearTransform(TimeTransform[S]):
     root: LiteralType["year"] = Field(default="year")  # noqa: F821
 
     def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[int]]:
-        source_type = type(source)
-        if source_type == DateType:
+        if isinstance(source, DateType):
 
             def year_func(v: Any) -> int:
                 return datetime.days_to_years(v)
 
-        elif source_type in {TimestampType, TimestamptzType}:
+        elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def year_func(v: Any) -> int:
                 return datetime.micros_to_years(v)
@@ -347,11 +348,7 @@ class YearTransform(TimeTransform[S]):
         return lambda v: year_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return type(source) in {
-            DateType,
-            TimestampType,
-            TimestamptzType,
-        }
+        return isinstance(source, (DateType, TimestampType, TimestamptzType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -377,13 +374,12 @@ class MonthTransform(TimeTransform[S]):
     root: LiteralType["month"] = Field(default="month")  # noqa: F821
 
     def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[int]]:
-        source_type = type(source)
-        if source_type == DateType:
+        if isinstance(source, DateType):
 
             def month_func(v: Any) -> int:
                 return datetime.days_to_months(v)
 
-        elif source_type in {TimestampType, TimestamptzType}:
+        elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def month_func(v: Any) -> int:
                 return datetime.micros_to_months(v)
@@ -394,11 +390,7 @@ class MonthTransform(TimeTransform[S]):
         return lambda v: month_func(v) if v else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return type(source) in {
-            DateType,
-            TimestampType,
-            TimestamptzType,
-        }
+        return isinstance(source, (DateType, TimestampType, TimestamptzType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -424,13 +416,12 @@ class DayTransform(TimeTransform[S]):
     root: LiteralType["day"] = Field(default="day")  # noqa: F821
 
     def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[int]]:
-        source_type = type(source)
-        if source_type == DateType:
+        if isinstance(source, DateType):
 
             def day_func(v: Any) -> int:
                 return v
 
-        elif source_type in {TimestampType, TimestamptzType}:
+        elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def day_func(v: Any) -> int:
                 return datetime.micros_to_days(v)
@@ -441,11 +432,7 @@ class DayTransform(TimeTransform[S]):
         return lambda v: day_func(v) if v else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return type(source) in {
-            DateType,
-            TimestampType,
-            TimestamptzType,
-        }
+        return isinstance(source, (DateType, TimestampType, TimestamptzType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         return DateType()
@@ -474,7 +461,7 @@ class HourTransform(TimeTransform[S]):
     root: LiteralType["hour"] = Field(default="hour")  # noqa: F821
 
     def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[int]]:
-        if type(source) in {TimestampType, TimestamptzType}:
+        if isinstance(source, (TimestampType, TimestamptzType)):
 
             def hour_func(v: Any) -> int:
                 return datetime.micros_to_hours(v)
@@ -485,10 +472,7 @@ class HourTransform(TimeTransform[S]):
         return lambda v: hour_func(v) if v else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return type(source) in {
-            TimestampType,
-            TimestamptzType,
-        }
+        return isinstance(source, (TimestampType, TimestamptzType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -580,7 +564,7 @@ class TruncateTransform(Transform[S, S]):
         self._width = width
 
     def can_transform(self, source: IcebergType) -> bool:
-        return type(source) in {IntegerType, LongType, StringType, BinaryType, DecimalType}
+        return isinstance(source, (IntegerType, LongType, StringType, BinaryType, DecimalType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         return source
@@ -616,18 +600,17 @@ class TruncateTransform(Transform[S, S]):
         return self._width
 
     def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[S]]:
-        source_type = type(source)
-        if source_type in {IntegerType, LongType}:
+        if isinstance(source, (IntegerType, LongType)):
 
             def truncate_func(v: Any) -> Any:
                 return v - v % self._width
 
-        elif source_type in {StringType, BinaryType}:
+        elif isinstance(source, (StringType, BinaryType)):
 
             def truncate_func(v: Any) -> Any:
                 return v[0 : min(self._width, len(v))]
 
-        elif source_type == DecimalType:
+        elif isinstance(source, DecimalType):
 
             def truncate_func(v: Any) -> Any:
                 return truncate_decimal(v, self._width)
@@ -788,9 +771,9 @@ def _truncate_array(
 ) -> Optional[UnboundPredicate[Any]]:
     boundary = pred.literal
 
-    if type(pred) in {BoundLessThan, BoundLessThanOrEqual}:
+    if isinstance(pred, (BoundLessThan, BoundLessThanOrEqual)):
         return LessThanOrEqual(Reference(name), _transform_literal(transform, boundary))
-    elif type(pred) in {BoundGreaterThan, BoundGreaterThanOrEqual}:
+    elif isinstance(pred, (BoundGreaterThan, BoundGreaterThanOrEqual)):
         return GreaterThanOrEqual(Reference(name), _transform_literal(transform, boundary))
     if isinstance(pred, BoundEqualTo):
         return EqualTo(Reference(name), _transform_literal(transform, boundary))
