@@ -34,17 +34,17 @@ ADDED_DELETE_FILES = 'added-delete-files'
 ADDED_EQUALITY_DELETES = 'added-equality-deletes'
 ADDED_FILE_SIZE = 'added-files-size'
 ADDED_POSITION_DELETES = 'added-position-deletes'
-ADDED_POSITION_DELETE_FILES = f'{ADDED_POSITION_DELETES}-files'
+ADDED_POSITION_DELETE_FILES = 'added-position-delete-files'
 ADDED_RECORDS = 'added-records'
 DELETED_DATA_FILES = 'deleted-data-files'
 DELETED_RECORDS = 'deleted-records'
-EQUALITY_DELETE_FILES = 'added-equality-delete-files'
+ADDED_EQUALITY_DELETE_FILES = 'added-equality-delete-files'
 REMOVED_DELETE_FILES = 'removed-delete-files'
 REMOVED_EQUALITY_DELETES = 'removed-equality-deletes'
-REMOVED_EQUALITY_DELETE_FILES = f'{REMOVED_EQUALITY_DELETES}-files'
+REMOVED_EQUALITY_DELETE_FILES = 'removed-equality-delete-files'
 REMOVED_FILE_SIZE = 'removed-files-size'
 REMOVED_POSITION_DELETES = 'removed-position-deletes'
-REMOVED_POSITION_DELETE_FILES = f'{REMOVED_POSITION_DELETES}-files'
+REMOVED_POSITION_DELETE_FILES = 'removed-position-delete-files'
 TOTAL_EQUALITY_DELETES = 'total-equality-deletes'
 TOTAL_POSITION_DELETES = 'total-position-deletes'
 TOTAL_DATA_FILES = 'total-data-files'
@@ -92,14 +92,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
     def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
         """Return a key as it is a map."""
-        if __key == 'operation':
+        if __key.lower() == 'operation':
             return self.operation
         else:
             return self._additional_properties.get(__key)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set a key as it is a map."""
-        if key == 'operation':
+        if key.lower() == 'operation':
             self.operation = value
         else:
             self._additional_properties[key] = value
@@ -171,10 +171,10 @@ class SnapshotLogEntry(IcebergBaseModel):
 
 
 class SnapshotSummaryCollector:
-    added_size: int
-    removed_size: int
-    added_files: int
-    removed_files: int
+    added_file_size: int
+    removed_file_size: int
+    added_data_files: int
+    removed_data_files: int
     added_eq_delete_files: int
     removed_eq_delete_files: int
     added_pos_delete_files: int
@@ -189,10 +189,10 @@ class SnapshotSummaryCollector:
     removed_eq_deletes: int
 
     def __init__(self) -> None:
-        self.added_size = 0
-        self.removed_size = 0
-        self.added_files = 0
-        self.removed_files = 0
+        self.added_file_size = 0
+        self.removed_file_size = 0
+        self.added_data_files = 0
+        self.removed_data_files = 0
         self.added_eq_delete_files = 0
         self.removed_eq_delete_files = 0
         self.added_pos_delete_files = 0
@@ -207,10 +207,10 @@ class SnapshotSummaryCollector:
         self.removed_eq_deletes = 0
 
     def add_file(self, data_file: DataFile) -> None:
-        self.added_size += data_file.file_size_in_bytes
+        self.added_file_size += data_file.file_size_in_bytes
 
         if data_file.content == DataFileContent.DATA:
-            self.added_files += 1
+            self.added_data_files += 1
             self.added_records += data_file.record_count
         elif data_file.content == DataFileContent.POSITION_DELETES:
             self.added_delete_files += 1
@@ -224,10 +224,10 @@ class SnapshotSummaryCollector:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
     def remove_file(self, data_file: DataFile) -> None:
-        self.removed_size += data_file.file_size_in_bytes
+        self.removed_file_size += data_file.file_size_in_bytes
 
         if data_file.content == DataFileContent.DATA:
-            self.removed_files += 1
+            self.removed_data_files += 1
             self.deleted_records += data_file.record_count
         elif data_file.content == DataFileContent.POSITION_DELETES:
             self.removed_delete_files += 1
@@ -246,11 +246,11 @@ class SnapshotSummaryCollector:
                 properties[property_name] = str(num)
 
         properties: Dict[str, str] = {}
-        set_when_positive(properties, self.added_size, ADDED_FILE_SIZE)
-        set_when_positive(properties, self.removed_size, REMOVED_FILE_SIZE)
-        set_when_positive(properties, self.added_files, ADDED_DATA_FILES)
-        set_when_positive(properties, self.removed_files, DELETED_DATA_FILES)
-        set_when_positive(properties, self.added_eq_delete_files, EQUALITY_DELETE_FILES)
+        set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
+        set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
+        set_when_positive(properties, self.added_data_files, ADDED_DATA_FILES)
+        set_when_positive(properties, self.removed_data_files, DELETED_DATA_FILES)
+        set_when_positive(properties, self.added_eq_delete_files, ADDED_EQUALITY_DELETE_FILES)
         set_when_positive(properties, self.removed_eq_delete_files, REMOVED_EQUALITY_DELETE_FILES)
         set_when_positive(properties, self.added_pos_delete_files, ADDED_POSITION_DELETE_FILES)
         set_when_positive(properties, self.removed_pos_delete_files, REMOVED_POSITION_DELETE_FILES)
@@ -293,7 +293,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
     return summary
 
 
-def _merge_snapshot_summaries(
+def _update_snapshot_summaries(
     summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:

@@ -18,7 +18,7 @@
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
-from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, _merge_snapshot_summaries
+from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, _update_snapshot_summaries
 
 
 @pytest.fixture
@@ -161,7 +161,7 @@ def test_snapshot_summary_collector(data_file: DataFile) -> None:
 
 
 def test_merge_snapshot_summaries_empty() -> None:
-    assert _merge_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
+    assert _update_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
         operation=Operation.APPEND,
         **{
             'total-data-files': '0',
@@ -175,7 +175,7 @@ def test_merge_snapshot_summaries_empty() -> None:
 
 
 def test_merge_snapshot_summaries_new_summary() -> None:
-    actual = _merge_snapshot_summaries(
+    actual = _update_snapshot_summaries(
         summary=Summary(
             operation=Operation.APPEND,
             **{
@@ -211,7 +211,7 @@ def test_merge_snapshot_summaries_new_summary() -> None:
 
 
 def test_merge_snapshot_summaries_overwrite_summary() -> None:
-    actual = _merge_snapshot_summaries(
+    actual = _update_snapshot_summaries(
         summary=Summary(
             operation=Operation.OVERWRITE,
             **{
@@ -260,17 +260,17 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
 
 def test_invalid_operation() -> None:
     with pytest.raises(ValueError) as e:
-        _merge_snapshot_summaries(summary=Summary(Operation.REPLACE))
+        _update_snapshot_summaries(summary=Summary(Operation.REPLACE))
     assert "Operation not implemented: Operation.REPLACE" in str(e.value)
 
     with pytest.raises(ValueError) as e:
-        _merge_snapshot_summaries(summary=Summary(Operation.DELETE))
+        _update_snapshot_summaries(summary=Summary(Operation.DELETE))
     assert "Operation not implemented: Operation.DELETE" in str(e.value)
 
 
 def test_invalid_type() -> None:
     with pytest.raises(ValueError) as e:
-        _merge_snapshot_summaries(
+        _update_snapshot_summaries(
             summary=Summary(
                 operation=Operation.OVERWRITE,
                 **{
