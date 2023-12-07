@@ -149,14 +149,14 @@ class InMemoryCatalog(Catalog):
         )
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier = Catalog.identifier_to_tuple(identifier)
+        identifier = self.identifier_to_tuple_without_catalog(identifier)
         try:
             return self.__tables[identifier]
         except KeyError as error:
             raise NoSuchTableError(f"Table does not exist: {identifier}") from error
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier = Catalog.identifier_to_tuple(identifier)
+        identifier = self.identifier_to_tuple_without_catalog(identifier)
         try:
             self.__tables.pop(identifier)
         except KeyError as error:
@@ -166,7 +166,7 @@ class InMemoryCatalog(Catalog):
         self.drop_table(identifier)
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        from_identifier = Catalog.identifier_to_tuple(from_identifier)
+        from_identifier = self.identifier_to_tuple_without_catalog(from_identifier)
         try:
             table = self.__tables.pop(from_identifier)
         except KeyError as error:
@@ -352,6 +352,16 @@ def test_load_table(catalog: InMemoryCatalog) -> None:
     assert table == given_table
 
 
+def test_load_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
+    # Given
+    given_table = given_catalog_has_a_table(catalog)
+    # When
+    intermediate = catalog.load_table(TEST_TABLE_IDENTIFIER)
+    table = catalog.load_table(intermediate.identifier)
+    # Then
+    assert table == given_table
+
+
 def test_table_raises_error_on_table_not_found(catalog: InMemoryCatalog) -> None:
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
         catalog.load_table(TEST_TABLE_IDENTIFIER)
@@ -363,6 +373,18 @@ def test_drop_table(catalog: InMemoryCatalog) -> None:
     # When
     catalog.drop_table(TEST_TABLE_IDENTIFIER)
     # Then
+    with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
+        catalog.load_table(TEST_TABLE_IDENTIFIER)
+
+
+def test_drop_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
+    # Given
+    table = given_catalog_has_a_table(catalog)
+    # When
+    catalog.drop_table(table.identifier)
+    # Then
+    with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
+        catalog.load_table(table.identifier)
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
         catalog.load_table(TEST_TABLE_IDENTIFIER)
 
@@ -401,6 +423,31 @@ def test_rename_table(catalog: InMemoryCatalog) -> None:
     assert ("new", "namespace") in catalog.list_namespaces()
 
     # And
+    with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
+        catalog.load_table(TEST_TABLE_IDENTIFIER)
+
+
+def test_rename_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
+    # Given
+    table = given_catalog_has_a_table(catalog)
+
+    # When
+    new_table_name = "new.namespace.new_table"
+    new_table = catalog.rename_table(table.identifier, new_table_name)
+
+    # Then
+    assert new_table.identifier == Catalog.identifier_to_tuple(new_table_name)
+
+    # And
+    new_table = catalog.load_table(new_table.identifier)
+    assert new_table.identifier == Catalog.identifier_to_tuple(new_table_name)
+
+    # And
+    assert ("new", "namespace") in catalog.list_namespaces()
+
+    # And
+    with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
+        catalog.load_table(table.identifier)
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
         catalog.load_table(TEST_TABLE_IDENTIFIER)
 

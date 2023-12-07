@@ -75,13 +75,13 @@ sqlalchemy = { version = "^2.0.18", optional = true }
 pytest = "7.4.3"
 pytest-checkdocs = "2.10.1"
 pre-commit = "3.5.0"
-fastavro = "1.9.0"
+fastavro = "1.9.1"
 coverage = { version = "^7.3.2", extras = ["toml"] }
 requests-mock = "1.11.0"
-moto = "^4.2.7"
+moto = "^4.2.11"
 typing-extensions = "4.8.0"
 pytest-mock = "3.12.0"
-cython = "3.0.5"
+cython = "3.0.6"
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"

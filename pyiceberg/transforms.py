@@ -262,7 +262,7 @@ class BucketTransform(Transform[S, int]):
             raise ValueError(f"Unknown type {source}")
 
         if bucket:
-            return lambda v: (hash_func(v) & IntegerType.max) % self._num_buckets if v else None
+            return lambda v: (hash_func(v) & IntegerType.max) % self._num_buckets if v is not None else None
         return hash_func
 
     def __repr__(self) -> str:

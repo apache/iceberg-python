@@ -73,7 +73,7 @@ from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
-from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
@@ -352,6 +352,159 @@ def all_avro_types() -> Dict[str, Any]:
             },
         ],
     }
+
+
+EXAMPLE_TABLE_METADATA_V1 = {
+    "format-version": 1,
+    "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
+    "location": "s3://bucket/test/location",
+    "last-updated-ms": 1602638573874,
+    "last-column-id": 3,
+    "schema": {
+        "type": "struct",
+        "fields": [
+            {"id": 1, "name": "x", "required": True, "type": "long"},
+            {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+            {"id": 3, "name": "z", "required": True, "type": "long"},
+        ],
+    },
+    "partition-spec": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}],
+    "properties": {},
+    "current-snapshot-id": -1,
+    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
+}
+
+
+@pytest.fixture(scope="session")
+def example_table_metadata_v1() -> Dict[str, Any]:
+    return EXAMPLE_TABLE_METADATA_V1
+
+
+EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1 = {
+    "format-version": 1,
+    "table-uuid": "b55d9dda-6561-423a-8bfc-787980ce421f",
+    "location": "s3://warehouse/database/table",
+    "last-updated-ms": 1646787054459,
+    "last-column-id": 2,
+    "schema": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+            {"id": 1, "name": "id", "required": False, "type": "int"},
+            {"id": 2, "name": "data", "required": False, "type": "string"},
+        ],
+    },
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {"id": 1, "name": "id", "required": False, "type": "int"},
+                {"id": 2, "name": "data", "required": False, "type": "string"},
+            ],
+        }
+    ],
+    "partition-spec": [],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": []}],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [{"order-id": 0, "fields": []}],
+    "properties": {
+        "owner": "bryan",
+        "write.metadata.compression-codec": "gzip",
+    },
+    "current-snapshot-id": 3497810964824022504,
+    "refs": {"main": {"snapshot-id": 3497810964824022504, "type": "branch"}},
+    "snapshots": [
+        {
+            "snapshot-id": 3497810964824022504,
+            "timestamp-ms": 1646787054459,
+            "summary": {
+                "operation": "append",
+                "spark.app.id": "local-1646787004168",
+                "added-data-files": "1",
+                "added-records": "1",
+                "added-files-size": "697",
+                "changed-partition-count": "1",
+                "total-records": "1",
+                "total-files-size": "697",
+                "total-data-files": "1",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+            },
+            "manifest-list": "s3://warehouse/database/table/metadata/snap-3497810964824022504-1-c4f68204-666b-4e50-a9df-b10c34bf6b82.avro",
+            "schema-id": 0,
+        }
+    ],
+    "snapshot-log": [{"timestamp-ms": 1646787054459, "snapshot-id": 3497810964824022504}],
+    "metadata-log": [
+        {
+            "timestamp-ms": 1646787031514,
+            "metadata-file": "s3://warehouse/database/table/metadata/00000-88484a1c-00e5-4a07-a787-c0e7aeffa805.gz.metadata.json",
+        }
+    ],
+}
+
+
+@pytest.fixture
+def example_table_metadata_with_snapshot_v1() -> Dict[str, Any]:
+    return EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1
+
+
+EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
+    "format-version": 1,
+    "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
+    "location": "s3://warehouse/database/table",
+    "last-updated-ms": 1657810967051,
+    "last-column-id": 3,
+    "schema": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [2],
+        "fields": [
+            {"id": 1, "name": "foo", "required": False, "type": "string"},
+            {"id": 2, "name": "bar", "required": True, "type": "int"},
+            {"id": 3, "name": "baz", "required": False, "type": "boolean"},
+        ],
+    },
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "identifier-field-ids": [2],
+            "fields": [
+                {"id": 1, "name": "foo", "required": False, "type": "string"},
+                {"id": 2, "name": "bar", "required": True, "type": "int"},
+                {"id": 3, "name": "baz", "required": False, "type": "boolean"},
+            ],
+        }
+    ],
+    "partition-spec": [],
+    "default-spec-id": 0,
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [{"order-id": 0, "fields": []}],
+    "properties": {
+        "write.delete.parquet.compression-codec": "zstd",
+        "write.metadata.compression-codec": "gzip",
+        "write.summary.partition-limit": "100",
+        "write.parquet.compression-codec": "zstd",
+    },
+    "current-snapshot-id": -1,
+    "refs": {},
+    "snapshots": [],
+    "snapshot-log": [],
+    "metadata-log": [],
+}
+
+
+@pytest.fixture
+def example_table_metadata_no_snapshot_v1() -> Dict[str, Any]:
+    return EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1
 
 
 EXAMPLE_TABLE_METADATA_V2 = {
@@ -1653,7 +1806,19 @@ def example_task(data_file: str) -> FileScanTask:
 
 
 @pytest.fixture
-def table(example_table_metadata_v2: Dict[str, Any]) -> Table:
+def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV1(**example_table_metadata_v1)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     return Table(
         identifier=("database", "table"),
