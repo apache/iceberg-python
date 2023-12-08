@@ -16,9 +16,8 @@
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
 import os
-from typing import cast
+from typing import Any, Dict, cast
 from unittest import mock
-from uuid import UUID
 
 import pytest
 from requests_mock import Mocker
@@ -37,17 +36,9 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.metadata import TableMetadataV1
-from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
-from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
-from pyiceberg.types import (
-    BooleanType,
-    IntegerType,
-    NestedField,
-    StringType,
-)
 from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
@@ -62,6 +53,30 @@ TEST_HEADERS = {
 OAUTH_TEST_HEADERS = {
     "Content-type": "application/x-www-form-urlencoded",
 }
+
+
+@pytest.fixture
+def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_with_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
+        "metadata": example_table_metadata_with_snapshot_v1,
+        "config": {
+            "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
+            "region": "us-west-2",
+        },
+    }
+
+
+@pytest.fixture
+def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "metadata-location": "s3://warehouse/database/table/metadata.json",
+        "metadata": example_table_metadata_no_snapshot_v1,
+        "config": {
+            "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
+            "region": "us-west-2",
+        },
+    }
 
 
 @pytest.fixture
@@ -339,77 +354,10 @@ def test_update_namespace_properties_404(rest_mock: Mocker) -> None:
     assert "Namespace does not exist" in str(e.value)
 
 
-def test_load_table_200(rest_mock: Mocker) -> None:
+def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
-        json={
-            "metadata-location": "s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
-            "metadata": {
-                "format-version": 1,
-                "table-uuid": "b55d9dda-6561-423a-8bfc-787980ce421f",
-                "location": "s3://warehouse/database/table",
-                "last-updated-ms": 1646787054459,
-                "last-column-id": 2,
-                "schema": {
-                    "type": "struct",
-                    "schema-id": 0,
-                    "fields": [
-                        {"id": 1, "name": "id", "required": False, "type": "int"},
-                        {"id": 2, "name": "data", "required": False, "type": "string"},
-                    ],
-                },
-                "current-schema-id": 0,
-                "schemas": [
-                    {
-                        "type": "struct",
-                        "schema-id": 0,
-                        "fields": [
-                            {"id": 1, "name": "id", "required": False, "type": "int"},
-                            {"id": 2, "name": "data", "required": False, "type": "string"},
-                        ],
-                    }
-                ],
-                "partition-spec": [],
-                "default-spec-id": 0,
-                "partition-specs": [{"spec-id": 0, "fields": []}],
-                "last-partition-id": 999,
-                "default-sort-order-id": 0,
-                "sort-orders": [{"order-id": 0, "fields": []}],
-                "properties": {"owner": "bryan", "write.metadata.compression-codec": "gzip"},
-                "current-snapshot-id": 3497810964824022504,
-                "refs": {"main": {"snapshot-id": 3497810964824022504, "type": "branch"}},
-                "snapshots": [
-                    {
-                        "snapshot-id": 3497810964824022504,
-                        "timestamp-ms": 1646787054459,
-                        "summary": {
-                            "operation": "append",
-                            "spark.app.id": "local-1646787004168",
-                            "added-data-files": "1",
-                            "added-records": "1",
-                            "added-files-size": "697",
-                            "changed-partition-count": "1",
-                            "total-records": "1",
-                            "total-files-size": "697",
-                            "total-data-files": "1",
-                            "total-delete-files": "0",
-                            "total-position-deletes": "0",
-                            "total-equality-deletes": "0",
-                        },
-                        "manifest-list": "s3://warehouse/database/table/metadata/snap-3497810964824022504-1-c4f68204-666b-4e50-a9df-b10c34bf6b82.avro",
-                        "schema-id": 0,
-                    }
-                ],
-                "snapshot-log": [{"timestamp-ms": 1646787054459, "snapshot-id": 3497810964824022504}],
-                "metadata-log": [
-                    {
-                        "timestamp-ms": 1646787031514,
-                        "metadata-file": "s3://warehouse/database/table/metadata/00000-88484a1c-00e5-4a07-a787-c0e7aeffa805.gz.metadata.json",
-                    }
-                ],
-            },
-            "config": {"client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory", "region": "us-west-2"},
-        },
+        json=example_table_metadata_with_snapshot_v1_rest_json,
         status_code=200,
         request_headers=TEST_HEADERS,
     )
@@ -417,82 +365,35 @@ def test_load_table_200(rest_mock: Mocker) -> None:
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
         identifier=("rest", "fokko", "table"),
-        metadata_location="s3://warehouse/database/table/metadata/00001-5f2f8166-244c-4eae-ac36-384ecdec81fc.gz.metadata.json",
-        metadata=TableMetadataV1(
-            location="s3://warehouse/database/table",
-            table_uuid=UUID("b55d9dda-6561-423a-8bfc-787980ce421f"),
-            last_updated_ms=1646787054459,
-            last_column_id=2,
-            schemas=[
-                Schema(
-                    NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
-                    NestedField(field_id=2, name="data", field_type=StringType(), required=False),
-                    schema_id=0,
-                    identifier_field_ids=[],
-                )
-            ],
-            current_schema_id=0,
-            default_spec_id=0,
-            last_partition_id=999,
-            properties={"owner": "bryan", "write.metadata.compression-codec": "gzip"},
-            current_snapshot_id=3497810964824022504,
-            snapshots=[
-                Snapshot(
-                    snapshot_id=3497810964824022504,
-                    parent_snapshot_id=None,
-                    sequence_number=None,
-                    timestamp_ms=1646787054459,
-                    manifest_list="s3://warehouse/database/table/metadata/snap-3497810964824022504-1-c4f68204-666b-4e50-a9df-b10c34bf6b82.avro",
-                    summary=Summary(
-                        operation=Operation.APPEND,
-                        **{
-                            "spark.app.id": "local-1646787004168",
-                            "added-data-files": "1",
-                            "added-records": "1",
-                            "added-files-size": "697",
-                            "changed-partition-count": "1",
-                            "total-records": "1",
-                            "total-files-size": "697",
-                            "total-data-files": "1",
-                            "total-delete-files": "0",
-                            "total-position-deletes": "0",
-                            "total-equality-deletes": "0",
-                        },
-                    ),
-                    schema_id=0,
-                )
-            ],
-            snapshot_log=[{"timestamp-ms": 1646787054459, "snapshot-id": 3497810964824022504}],
-            metadata_log=[
-                {
-                    "timestamp-ms": 1646787031514,
-                    "metadata-file": "s3://warehouse/database/table/metadata/00000-88484a1c-00e5-4a07-a787-c0e7aeffa805.gz.metadata.json",
-                }
-            ],
-            sort_orders=[SortOrder(order_id=0)],
-            default_sort_order_id=0,
-            refs={
-                "main": SnapshotRef(
-                    snapshot_id=3497810964824022504,
-                    snapshot_ref_type=SnapshotRefType.BRANCH,
-                    min_snapshots_to_keep=None,
-                    max_snapshot_age_ms=None,
-                    max_ref_age_ms=None,
-                )
-            },
-            format_version=1,
-            schema_=Schema(
-                NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
-                NestedField(field_id=2, name="data", field_type=StringType(), required=False),
-                schema_id=0,
-                identifier_field_ids=[],
-            ),
-            partition_spec=[],
-        ),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
         catalog=catalog,
     )
     # First compare the dicts
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_load_table_from_self_identifier_200(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("pdames", "table"))
+    actual = catalog.load_table(table.identifier)
+    expected = Table(
+        identifier=("rest", "pdames", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
 
@@ -535,62 +436,12 @@ def test_drop_table_404(rest_mock: Mocker) -> None:
     assert "Table does not exist" in str(e.value)
 
 
-def test_create_table_200(rest_mock: Mocker, table_schema_simple: Schema) -> None:
+def test_create_table_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
-        json={
-            "metadata-location": "s3://warehouse/database/table/metadata.json",
-            "metadata": {
-                "format-version": 1,
-                "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
-                "location": "s3://warehouse/database/table",
-                "last-updated-ms": 1657810967051,
-                "last-column-id": 3,
-                "schema": {
-                    "type": "struct",
-                    "schema-id": 0,
-                    "identifier-field-ids": [2],
-                    "fields": [
-                        {"id": 1, "name": "foo", "required": False, "type": "string"},
-                        {"id": 2, "name": "bar", "required": True, "type": "int"},
-                        {"id": 3, "name": "baz", "required": False, "type": "boolean"},
-                    ],
-                },
-                "current-schema-id": 0,
-                "schemas": [
-                    {
-                        "type": "struct",
-                        "schema-id": 0,
-                        "identifier-field-ids": [2],
-                        "fields": [
-                            {"id": 1, "name": "foo", "required": False, "type": "string"},
-                            {"id": 2, "name": "bar", "required": True, "type": "int"},
-                            {"id": 3, "name": "baz", "required": False, "type": "boolean"},
-                        ],
-                    }
-                ],
-                "partition-spec": [],
-                "default-spec-id": 0,
-                "last-partition-id": 999,
-                "default-sort-order-id": 0,
-                "sort-orders": [{"order-id": 0, "fields": []}],
-                "properties": {
-                    "write.delete.parquet.compression-codec": "zstd",
-                    "write.metadata.compression-codec": "gzip",
-                    "write.summary.partition-limit": "100",
-                    "write.parquet.compression-codec": "zstd",
-                },
-                "current-snapshot-id": -1,
-                "refs": {},
-                "snapshots": [],
-                "snapshot-log": [],
-                "metadata-log": [],
-            },
-            "config": {
-                "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
-                "region": "us-west-2",
-            },
-        },
+        json=example_table_metadata_no_snapshot_v1_rest_json,
         status_code=200,
         request_headers=TEST_HEADERS,
     )
@@ -607,47 +458,8 @@ def test_create_table_200(rest_mock: Mocker, table_schema_simple: Schema) -> Non
     )
     expected = Table(
         identifier=("rest", "fokko", "fokko2"),
-        metadata_location="s3://warehouse/database/table/metadata.json",
-        metadata=TableMetadataV1(
-            location="s3://warehouse/database/table",
-            table_uuid=UUID("bf289591-dcc0-4234-ad4f-5c3eed811a29"),
-            last_updated_ms=1657810967051,
-            last_column_id=3,
-            schemas=[
-                Schema(
-                    NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                    NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-                    NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-                    schema_id=0,
-                    identifier_field_ids=[2],
-                )
-            ],
-            current_schema_id=0,
-            default_spec_id=0,
-            last_partition_id=999,
-            properties={
-                "write.delete.parquet.compression-codec": "zstd",
-                "write.metadata.compression-codec": "gzip",
-                "write.summary.partition-limit": "100",
-                "write.parquet.compression-codec": "zstd",
-            },
-            current_snapshot_id=None,
-            snapshots=[],
-            snapshot_log=[],
-            metadata_log=[],
-            sort_orders=[SortOrder(order_id=0)],
-            default_sort_order_id=0,
-            refs={},
-            format_version=1,
-            schema_=Schema(
-                NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-                NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-                schema_id=0,
-                identifier_field_ids=[2],
-            ),
-            partition_spec=[],
-        ),
+        metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
         catalog=catalog,
     )
@@ -682,62 +494,12 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
     assert "Table already exists" in str(e.value)
 
 
-def test_register_table_200(rest_mock: Mocker, table_schema_simple: Schema) -> None:
+def test_register_table_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/default/register",
-        json={
-            "metadata-location": "s3://warehouse/database/table/metadata.json",
-            "metadata": {
-                "format-version": 1,
-                "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
-                "location": "s3://warehouse/database/table",
-                "last-updated-ms": 1657810967051,
-                "last-column-id": 3,
-                "schema": {
-                    "type": "struct",
-                    "schema-id": 0,
-                    "identifier-field-ids": [2],
-                    "fields": [
-                        {"id": 1, "name": "foo", "required": False, "type": "string"},
-                        {"id": 2, "name": "bar", "required": True, "type": "int"},
-                        {"id": 3, "name": "baz", "required": False, "type": "boolean"},
-                    ],
-                },
-                "current-schema-id": 0,
-                "schemas": [
-                    {
-                        "type": "struct",
-                        "schema-id": 0,
-                        "identifier-field-ids": [2],
-                        "fields": [
-                            {"id": 1, "name": "foo", "required": False, "type": "string"},
-                            {"id": 2, "name": "bar", "required": True, "type": "int"},
-                            {"id": 3, "name": "baz", "required": False, "type": "boolean"},
-                        ],
-                    }
-                ],
-                "partition-spec": [],
-                "default-spec-id": 0,
-                "last-partition-id": 999,
-                "default-sort-order-id": 0,
-                "sort-orders": [{"order-id": 0, "fields": []}],
-                "properties": {
-                    "write.delete.parquet.compression-codec": "zstd",
-                    "write.metadata.compression-codec": "gzip",
-                    "write.summary.partition-limit": "100",
-                    "write.parquet.compression-codec": "zstd",
-                },
-                "current-snapshot-id": -1,
-                "refs": {},
-                "snapshots": [],
-                "snapshot-log": [],
-                "metadata-log": [],
-            },
-            "config": {
-                "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
-                "region": "us-west-2",
-            },
-        },
+        json=example_table_metadata_no_snapshot_v1_rest_json,
         status_code=200,
         request_headers=TEST_HEADERS,
     )
@@ -747,47 +509,8 @@ def test_register_table_200(rest_mock: Mocker, table_schema_simple: Schema) -> N
     )
     expected = Table(
         identifier=("rest", "default", "registered_table"),
-        metadata_location="s3://warehouse/database/table/metadata.json",
-        metadata=TableMetadataV1(
-            location="s3://warehouse/database/table",
-            table_uuid=UUID("bf289591-dcc0-4234-ad4f-5c3eed811a29"),
-            last_updated_ms=1657810967051,
-            last_column_id=3,
-            schemas=[
-                Schema(
-                    NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                    NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-                    NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-                    schema_id=0,
-                    identifier_field_ids=[2],
-                )
-            ],
-            current_schema_id=0,
-            default_spec_id=0,
-            last_partition_id=999,
-            properties={
-                "write.delete.parquet.compression-codec": "zstd",
-                "write.metadata.compression-codec": "gzip",
-                "write.summary.partition-limit": "100",
-                "write.parquet.compression-codec": "zstd",
-            },
-            current_snapshot_id=None,
-            snapshots=[],
-            snapshot_log=[],
-            metadata_log=[],
-            sort_orders=[SortOrder(order_id=0)],
-            default_sort_order_id=0,
-            refs={},
-            format_version=1,
-            schema_=Schema(
-                NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-                NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-                schema_id=0,
-                identifier_field_ids=[2],
-            ),
-            partition_spec=[],
-        ),
+        metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
         catalog=catalog,
     )
@@ -837,6 +560,97 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"))
+
+
+def test_delete_table_from_self_identifier_204(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("pdames", "table"))
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/pdames/tables/table",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog.drop_table(table.identifier)
+
+
+def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/tables/rename",
+        json={
+            "source": {"namespace": ("pdames",), "name": "source"},
+            "destination": {"namespace": ("pdames",), "name": "destination"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/tables/destination",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("pdames", "destination")
+    actual = catalog.rename_table(from_identifier, to_identifier)
+    expected = Table(
+        identifier=("rest", "pdames", "destination"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_rename_table_from_self_identifier_200(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/tables/source",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("pdames", "destination")
+    table = catalog.load_table(from_identifier)
+    rest_mock.post(
+        f"{TEST_URI}v1/tables/rename",
+        json={
+            "source": {"namespace": ("pdames",), "name": "source"},
+            "destination": {"namespace": ("pdames",), "name": "destination"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/tables/destination",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    actual = catalog.rename_table(table.identifier, to_identifier)
+    expected = Table(
+        identifier=("rest", "pdames", "destination"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
 
 
 def test_delete_table_404(rest_mock: Mocker) -> None:
