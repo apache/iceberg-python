@@ -78,13 +78,6 @@ from pyiceberg.table.metadata import (
     TableMetadataUtil,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.metadata import (
-    INITIAL_SEQUENCE_NUMBER,
-    SUPPORTED_TABLE_FORMAT_VERSION,
-    TableMetadata,
-    TableMetadataUtil,
-)
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (

@@ -279,10 +279,11 @@ class GlueCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
         """
-        # TODO: This is a workaround for issue: https://github.com/apache/iceberg-python/issues/123
-        database_name, table_name = self.identifier_to_database_and_table(
-            tuple(table_request.identifier.namespace.root[1:] + [table_request.identifier.name]), NoSuchTableError
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple)
+
         current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
         glue_table_version_id = current_glue_table.get("VersionId")
         if glue_table_version_id is None:
