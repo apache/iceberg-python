@@ -15,8 +15,9 @@
 #  specific language governing permissions and limitations
 #  under the License.
 # pylint: disable=protected-access,redefined-outer-name
+import copy
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from hive_metastore.ttypes import (
@@ -58,6 +59,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import BucketTransform, IdentityTransform
+from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BooleanType,
     IntegerType,
@@ -253,7 +255,7 @@ def test_create_table(table_schema_simple: Schema, hive_database: HiveDatabase, 
         )
     )
 
-    with open(metadata_location, encoding="utf-8") as f:
+    with open(metadata_location, encoding=UTF8) as f:
         payload = f.read()
 
     metadata = TableMetadataUtil.parse_raw(payload)
@@ -393,6 +395,155 @@ def test_load_table(hive_table: HiveTable) -> None:
     assert expected == table.metadata
 
 
+def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_table.return_value = hive_table
+    intermediate = catalog.load_table(("default", "new_tabl2e"))
+    table = catalog.load_table(intermediate.identifier)
+
+    catalog._client.__enter__().get_table.assert_called_with(dbname="default", tbl_name="new_tabl2e")
+
+    expected = TableMetadataV2(
+        location="s3://bucket/test/location",
+        table_uuid=uuid.UUID("9c12d441-03fe-4693-9a96-a0705ddf69c1"),
+        last_updated_ms=1602638573590,
+        last_column_id=3,
+        schemas=[
+            Schema(
+                NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+                schema_id=0,
+                identifier_field_ids=[],
+            ),
+            Schema(
+                NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+                NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
+                NestedField(field_id=3, name="z", field_type=LongType(), required=True),
+                schema_id=1,
+                identifier_field_ids=[1, 2],
+            ),
+        ],
+        current_schema_id=1,
+        partition_specs=[
+            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"), spec_id=0)
+        ],
+        default_spec_id=0,
+        last_partition_id=1000,
+        properties={"read.split.target.size": "134217728"},
+        current_snapshot_id=3055729675574597004,
+        snapshots=[
+            Snapshot(
+                snapshot_id=3051729675574597004,
+                parent_snapshot_id=None,
+                sequence_number=0,
+                timestamp_ms=1515100955770,
+                manifest_list="s3://a/b/1.avro",
+                summary=Summary(operation=Operation.APPEND),
+                schema_id=None,
+            ),
+            Snapshot(
+                snapshot_id=3055729675574597004,
+                parent_snapshot_id=3051729675574597004,
+                sequence_number=1,
+                timestamp_ms=1555100955770,
+                manifest_list="s3://a/b/2.avro",
+                summary=Summary(operation=Operation.APPEND),
+                schema_id=1,
+            ),
+        ],
+        snapshot_log=[
+            SnapshotLogEntry(snapshot_id=3051729675574597004, timestamp_ms=1515100955770),
+            SnapshotLogEntry(snapshot_id=3055729675574597004, timestamp_ms=1555100955770),
+        ],
+        metadata_log=[MetadataLogEntry(metadata_file="s3://bucket/.../v1.json", timestamp_ms=1515100)],
+        sort_orders=[
+            SortOrder(
+                SortField(
+                    source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST
+                ),
+                SortField(
+                    source_id=3,
+                    transform=BucketTransform(num_buckets=4),
+                    direction=SortDirection.DESC,
+                    null_order=NullOrder.NULLS_LAST,
+                ),
+                order_id=3,
+            )
+        ],
+        default_sort_order_id=3,
+        refs={
+            "test": SnapshotRef(
+                snapshot_id=3051729675574597004,
+                snapshot_ref_type=SnapshotRefType.TAG,
+                min_snapshots_to_keep=None,
+                max_snapshot_age_ms=None,
+                max_ref_age_ms=10000000,
+            ),
+            "main": SnapshotRef(
+                snapshot_id=3055729675574597004,
+                snapshot_ref_type=SnapshotRefType.BRANCH,
+                min_snapshots_to_keep=None,
+                max_snapshot_age_ms=None,
+                max_ref_age_ms=None,
+            ),
+        },
+        format_version=2,
+        last_sequence_number=34,
+    )
+
+    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert expected == table.metadata
+
+
+def test_rename_table(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    renamed_table = copy.deepcopy(hive_table)
+    renamed_table.dbName = "default"
+    renamed_table.tableName = "new_tabl3e"
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
+    catalog._client.__enter__().alter_table.return_value = None
+
+    from_identifier = ("default", "new_tabl2e")
+    to_identifier = ("default", "new_tabl3e")
+    table = catalog.rename_table(from_identifier, to_identifier)
+
+    assert table.identifier == ("hive",) + to_identifier
+
+    calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
+    catalog._client.__enter__().get_table.assert_has_calls(calls)
+    catalog._client.__enter__().alter_table.assert_called_with(dbname="default", tbl_name="new_tabl2e", new_tbl=renamed_table)
+
+
+def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_table.return_value = hive_table
+
+    from_identifier = ("default", "new_tabl2e")
+    from_table = catalog.load_table(from_identifier)
+    catalog._client.__enter__().get_table.assert_called_with(dbname="default", tbl_name="new_tabl2e")
+
+    renamed_table = copy.deepcopy(hive_table)
+    renamed_table.dbName = "default"
+    renamed_table.tableName = "new_tabl3e"
+
+    catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
+    catalog._client.__enter__().alter_table.return_value = None
+    to_identifier = ("default", "new_tabl3e")
+    table = catalog.rename_table(from_table.identifier, to_identifier)
+
+    assert table.identifier == ("hive",) + to_identifier
+
+    calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
+    catalog._client.__enter__().get_table.assert_has_calls(calls)
+    catalog._client.__enter__().alter_table.assert_called_with(dbname="default", tbl_name="new_tabl2e", new_tbl=renamed_table)
+
+
 def test_rename_table_from_does_not_exists() -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
@@ -486,6 +637,19 @@ def test_drop_table() -> None:
     catalog.drop_table(("default", "table"))
 
     catalog._client.__enter__().drop_table.assert_called_with(dbname="default", name="table", deleteData=False)
+
+
+def test_drop_table_from_self_identifier(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_table.return_value = hive_table
+    table = catalog.load_table(("default", "new_tabl2e"))
+
+    catalog._client.__enter__().get_all_databases.return_value = ["namespace1", "namespace2"]
+    catalog.drop_table(table.identifier)
+
+    catalog._client.__enter__().drop_table.assert_called_with(dbname="default", name="new_tabl2e", deleteData=False)
 
 
 def test_drop_table_does_not_exists() -> None:

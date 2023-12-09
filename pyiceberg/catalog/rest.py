@@ -66,7 +66,7 @@ from pyiceberg.table import (
     TableMetadata,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT, IcebergBaseModel
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
 
 ICEBERG_REST_SPEC_VERSION = "0.14.1"
 
@@ -110,7 +110,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 
-NAMESPACE_SEPARATOR = b"\x1F".decode("UTF-8")
+NAMESPACE_SEPARATOR = b"\x1F".decode(UTF8)
 
 
 class TableResponse(IcebergBaseModel):
@@ -302,19 +302,20 @@ class RestCatalog(Catalog):
         # Update URI based on overrides
         self.uri = config[URI]
 
-    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
-        if isinstance(identifier, TableIdentifier):
-            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
-
+    def _identifier_to_validated_tuple(self, identifier: Union[str, Identifier]) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
             raise NoSuchTableError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
+        return identifier_tuple
+
+    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
+        if isinstance(identifier, TableIdentifier):
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+        identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), "table": identifier_tuple[-1]}
 
     def _split_identifier_for_json(self, identifier: Union[str, Identifier]) -> Dict[str, Union[Identifier, str]]:
-        identifier_tuple = self.identifier_to_tuple(identifier)
-        if len(identifier_tuple) <= 1:
-            raise NoSuchTableError(f"Missing namespace or invalid identifier: {identifier_tuple}")
+        identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": identifier_tuple[:-1], "name": identifier_tuple[-1]}
 
     def _handle_non_200_response(self, exc: HTTPError, error_handler: Dict[int, Type[Exception]]) -> None:
@@ -444,7 +445,7 @@ class RestCatalog(Catalog):
             write_order=sort_order,
             properties=properties,
         )
-        serialized_json = request.model_dump_json().encode("utf-8")
+        serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
             self.url(Endpoints.create_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
@@ -475,7 +476,7 @@ class RestCatalog(Catalog):
             name=namespace_and_table["table"],
             metadata_location=metadata_location,
         )
-        serialized_json = request.model_dump_json().encode("utf-8")
+        serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
             self.url(Endpoints.register_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
@@ -499,12 +500,10 @@ class RestCatalog(Catalog):
         return [(*table.namespace, table.name) for table in ListTablesResponse(**response.json()).identifiers]
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self.identifier_to_tuple(identifier)
-
-        if len(identifier_tuple) <= 1:
-            raise NoSuchTableError(f"Missing namespace or invalid identifier: {identifier}")
-
-        response = self._session.get(self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)))
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        response = self._session.get(
+            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
+        )
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -514,8 +513,11 @@ class RestCatalog(Catalog):
         return self._response_to_table(identifier_tuple, table_response)
 
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
-            self.url(Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier)),
+            self.url(
+                Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier_tuple)
+            ),
         )
         try:
             response.raise_for_status()
@@ -526,8 +528,9 @@ class RestCatalog(Catalog):
         self.drop_table(identifier=identifier, purge_requested=True)
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
         payload = {
-            "source": self._split_identifier_for_json(from_identifier),
+            "source": self._split_identifier_for_json(from_identifier_tuple),
             "destination": self._split_identifier_for_json(to_identifier),
         }
         response = self._session.post(self.url(Endpoints.rename_table), json=payload)
@@ -552,7 +555,7 @@ class RestCatalog(Catalog):
         """
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=table_request.model_dump_json().encode("utf-8"),
+            data=table_request.model_dump_json().encode(UTF8),
         )
         try:
             response.raise_for_status()

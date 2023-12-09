@@ -124,6 +124,7 @@ sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 catalog.create_table(
     identifier="docs_example.bids",
     schema=schema,
+    location="s3://pyiceberg",
     partition_spec=partition_spec,
     sort_order=sort_order,
 )
@@ -311,7 +312,7 @@ In this case it is up to the engine itself to filter the file itself. Below, `to
 <!-- prettier-ignore-start -->
 
 !!! note "Requirements"
-    This requires [PyArrow to be installed](index.md).
+    This requires [`pyarrow` to be installed](index.md).
 
 <!-- prettier-ignore-end -->
 
@@ -338,6 +339,45 @@ tpep_dropoff_datetime: [[2021-04-01 00:47:59.000000,...,2021-05-01 00:14:47.0000
 ```
 
 This will only pull in the files that that might contain matching rows.
+
+### Pandas
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [`pandas` to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+PyIceberg makes it easy to filter out data from a huge table and pull it into a Pandas dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
+
+```python
+table.scan(
+    row_filter="trip_distance >= 10.0",
+    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
+).to_pandas()
+```
+
+This will return a Pandas dataframe:
+
+```
+        VendorID      tpep_pickup_datetime     tpep_dropoff_datetime
+0              2 2021-04-01 00:28:05+00:00 2021-04-01 00:47:59+00:00
+1              1 2021-04-01 00:39:01+00:00 2021-04-01 00:57:39+00:00
+2              2 2021-04-01 00:14:42+00:00 2021-04-01 00:42:59+00:00
+3              1 2021-04-01 00:17:17+00:00 2021-04-01 00:43:38+00:00
+4              1 2021-04-01 00:24:04+00:00 2021-04-01 00:56:20+00:00
+...          ...                       ...                       ...
+116976         2 2021-04-30 23:56:18+00:00 2021-05-01 00:29:13+00:00
+116977         2 2021-04-30 23:07:41+00:00 2021-04-30 23:37:18+00:00
+116978         2 2021-04-30 23:38:28+00:00 2021-05-01 00:12:04+00:00
+116979         2 2021-04-30 23:33:00+00:00 2021-04-30 23:59:00+00:00
+116980         2 2021-04-30 23:44:25+00:00 2021-05-01 00:14:47+00:00
+
+[116981 rows x 3 columns]
+```
+
+It is recommended to use Pandas 2 or later, because it stores the data in an [Apache Arrow backend](https://datapythonista.me/blog/pandas-20-and-the-arrow-revolution-part-i) which avoids copies of data.
 
 ### DuckDB
 

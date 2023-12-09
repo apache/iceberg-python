@@ -18,7 +18,7 @@
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
-from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, merge_snapshot_summaries
+from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, update_snapshot_summaries
 
 
 @pytest.fixture
@@ -146,28 +146,22 @@ def data_file() -> DataFile:
     )
 
 
-def test_snapshot_summary_collector(manifest_file: ManifestFile, data_file: DataFile) -> None:
+def test_snapshot_summary_collector(data_file: DataFile) -> None:
     ssc = SnapshotSummaryCollector()
 
     assert ssc.build() == {}
 
-    ssc.added_manifest(manifest_file)
-
-    assert ssc.build() == {'added-data-files': '1', 'added-records': '100', 'deleted-records': '120', 'removed-data-files': '3'}
-
     ssc.add_file(data_file)
 
     assert ssc.build() == {
-        'added-data-files': '2',
+        'added-data-files': '1',
         'added-files-size': '1234',
-        'added-records': '200',
-        'deleted-records': '120',
-        'removed-data-files': '3',
+        'added-records': '100',
     }
 
 
 def test_merge_snapshot_summaries_empty() -> None:
-    assert merge_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
+    assert update_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
         operation=Operation.APPEND,
         **{
             'total-data-files': '0',
@@ -181,7 +175,7 @@ def test_merge_snapshot_summaries_empty() -> None:
 
 
 def test_merge_snapshot_summaries_new_summary() -> None:
-    actual = merge_snapshot_summaries(
+    actual = update_snapshot_summaries(
         summary=Summary(
             operation=Operation.APPEND,
             **{
@@ -217,7 +211,7 @@ def test_merge_snapshot_summaries_new_summary() -> None:
 
 
 def test_merge_snapshot_summaries_overwrite_summary() -> None:
-    actual = merge_snapshot_summaries(
+    actual = update_snapshot_summaries(
         summary=Summary(
             operation=Operation.OVERWRITE,
             **{
@@ -237,40 +231,59 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
             'total-position-deletes': '1',
             'total-records': '1',
         },
+        truncate_full_table=True,
     )
 
-    expected = Summary(
-        operation=Operation.OVERWRITE,
-        **{
-            'added-data-files': '1',
-            'added-delete-files': '2',
-            'added-equality-deletes': '3',
-            'added-files-size': '4',
-            'added-position-deletes': '5',
-            'added-records': '6',
-            'total-position-deletes': '5',
-            'total-files-size': '5',
-            'total-records': '6',
-            'total-delete-files': '2',
-            'total-data-files': '1',
-            'total-equality-deletes': '3',
-            'deleted-data-files': '1',
-            'removed-delete-files': '1',
-            'deleted-records': '1',
-            'removed-files-size': '1',
-            'removed-position-deletes': '1',
-            'removed-equality-deletes': '1',
-        },
-    )
+    expected = {
+        'added-data-files': '1',
+        'added-delete-files': '2',
+        'added-equality-deletes': '3',
+        'added-files-size': '4',
+        'added-position-deletes': '5',
+        'added-records': '6',
+        'total-data-files': '1',
+        'total-records': '6',
+        'total-delete-files': '2',
+        'total-equality-deletes': '3',
+        'total-files-size': '4',
+        'total-position-deletes': '5',
+        'deleted-data-files': '1',
+        'removed-delete-files': '1',
+        'deleted-records': '1',
+        'removed-files-size': '1',
+        'removed-position-deletes': '1',
+        'removed-equality-deletes': '1',
+    }
 
-    assert actual.additional_properties == expected.additional_properties
+    assert actual.additional_properties == expected
 
 
 def test_invalid_operation() -> None:
     with pytest.raises(ValueError) as e:
-        merge_snapshot_summaries(summary=Summary(Operation.REPLACE))
+        update_snapshot_summaries(summary=Summary(Operation.REPLACE))
     assert "Operation not implemented: Operation.REPLACE" in str(e.value)
 
     with pytest.raises(ValueError) as e:
-        merge_snapshot_summaries(summary=Summary(Operation.DELETE))
+        update_snapshot_summaries(summary=Summary(Operation.DELETE))
     assert "Operation not implemented: Operation.DELETE" in str(e.value)
+
+
+def test_invalid_type() -> None:
+    with pytest.raises(ValueError) as e:
+        update_snapshot_summaries(
+            summary=Summary(
+                operation=Operation.OVERWRITE,
+                **{
+                    'added-data-files': '1',
+                    'added-delete-files': '2',
+                    'added-equality-deletes': '3',
+                    'added-files-size': '4',
+                    'added-position-deletes': '5',
+                    'added-records': '6',
+                },
+            ),
+            previous_summary={'total-data-files': 'abc'},  # should be a number
+            truncate_full_table=True,
+        )
+
+    assert "Could not parse summary property total-data-files to an int: abc" in str(e.value)

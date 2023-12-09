@@ -620,7 +620,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
         # lowerBound is null if all partition values are null
         all_null = self.partition_fields[pos].contains_null is True and self.partition_fields[pos].lower_bound is None
 
-        if all_null and type(term.ref().field.field_type) in {DoubleType, FloatType}:
+        if all_null and isinstance(term.ref().field.field_type, (DoubleType, FloatType)):
             # floating point types may include NaN values, which we check separately.
             # In case bounds don't include NaN value, contains_nan needs to be checked against.
             all_null = self.partition_fields[pos].contains_nan is False

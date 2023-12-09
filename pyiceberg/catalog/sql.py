@@ -31,7 +31,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -97,6 +97,18 @@ class SqlCatalog(Catalog):
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
         self.engine = create_engine(uri_prop, echo=True)
+
+        self._ensure_tables_exist()
+
+    def _ensure_tables_exist(self) -> None:
+        with Session(self.engine) as session:
+            for table in [IcebergTables, IcebergNamespaceProperties]:
+                stmt = select(1).select_from(table)
+                try:
+                    session.scalar(stmt)
+                except OperationalError:
+                    self.create_tables()
+                    return
 
     def create_tables(self) -> None:
         SqlCatalogBaseTable.metadata.create_all(self.engine)
@@ -231,7 +243,8 @@ class SqlCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         with Session(self.engine) as session:
             stmt = select(IcebergTables).where(
                 IcebergTables.catalog_name == self.name,
@@ -252,7 +265,8 @@ class SqlCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         with Session(self.engine) as session:
             res = session.execute(
                 delete(IcebergTables).where(
@@ -280,7 +294,8 @@ class SqlCatalog(Catalog):
             TableAlreadyExistsError: If a table with the new name already exist.
             NoSuchNamespaceError: If the target namespace does not exist.
         """
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
+        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         if not self._namespace_exists(to_database_name):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_database_name}")
