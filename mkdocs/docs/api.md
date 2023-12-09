@@ -45,7 +45,8 @@ catalog:
     uri: https://rest-server:8181/
     warehouse: my-warehouse
 ```
-and loaded in python by calling `load_catalog`. See below for an example.
+and loaded in python by calling `load_catalog(name="hive")` and `load_catalog(name="rest")`.
+
 
 This information must be placed inside a file called `.pyiceberg.yaml` located either in the `$HOME` or `%USERPROFILE%` directory (depending on whether the operating system is Unix-based or Windows-based, respectively) or in the `$PYICEBERG_HOME` directory (if the corresponding environment variable is set).
 
