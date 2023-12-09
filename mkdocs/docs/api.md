@@ -34,19 +34,20 @@ catalog:
 ```
 
 Note that multiple catalogs can be defined in the same `.pyiceberg.yaml`:
+
 ```yaml
 catalog:
   hive:
-      uri: thrift://127.0.0.1:9083
-      s3.endpoint: http://127.0.0.1:9000
-      s3.access-key-id: admin
-      s3.secret-access-key: password
+    uri: thrift://127.0.0.1:9083
+    s3.endpoint: http://127.0.0.1:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
   rest:
     uri: https://rest-server:8181/
     warehouse: my-warehouse
 ```
-and loaded in python by calling `load_catalog(name="hive")` and `load_catalog(name="rest")`.
 
+and loaded in python by calling `load_catalog(name="hive")` and `load_catalog(name="rest")`.
 
 This information must be placed inside a file called `.pyiceberg.yaml` located either in the `$HOME` or `%USERPROFILE%` directory (depending on whether the operating system is Unix-based or Windows-based, respectively) or in the `$PYICEBERG_HOME` directory (if the corresponding environment variable is set).
 
