@@ -738,7 +738,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
         if field_id is None:
             if self.missing_id_metadata is None:
-                warnings.warn("Field-ids are missing, new IDs will be set")
+                warnings.warn("Missing field-IDs will be auto-assigned, possibly leading to inconsistencies between the file schema and the schema stored in table metadata.")
             field_id = next(self.counter)
             missing_is_metadata = True
         else:
