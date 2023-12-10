@@ -542,7 +542,14 @@ class TableRequirement(IcebergBaseModel):
 
     @abstractmethod
     def validate(self, base_metadata: TableMetadata) -> None:
-        """Validate the requirement against the base metadata."""
+        """Validate the requirement against the base metadata.
+
+        Args:
+            base_metadata: The base metadata to be validated against.
+
+        Raises:
+            CommitFailedException: When the requirement is not met.
+        """
         ...
 
 
