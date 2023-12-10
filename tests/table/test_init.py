@@ -22,6 +22,7 @@ from typing import Dict
 import pytest
 from sortedcontainers import SortedList
 
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysTrue,
     And,
@@ -735,7 +736,7 @@ def test_generate_snapshot_id(table_v2: Table) -> None:
 def test_assert_create(table_v2: Table) -> None:
     AssertCreate().validate(None)
 
-    with pytest.raises(ValueError, match="Table already exists"):
+    with pytest.raises(CommitFailedException, match="Table already exists"):
         AssertCreate().validate(table_v2.metadata)
 
 
@@ -744,7 +745,7 @@ def test_assert_table_uuid(table_v2: Table) -> None:
     AssertTableUUID(uuid=base_metadata.table_uuid).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Table UUID does not match: 9c12d441-03fe-4693-9a96-a0705ddf69c2 != 9c12d441-03fe-4693-9a96-a0705ddf69c1",
     ):
         AssertTableUUID(uuid=uuid.UUID("9c12d441-03fe-4693-9a96-a0705ddf69c2")).validate(base_metadata)
@@ -755,19 +756,19 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: SnapshotRefType.BRANCH main was created concurrently",
     ):
         AssertRefSnapshotId(ref="main", snapshot_id=None).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: SnapshotRefType.BRANCH main has changed: expected id 1, found 3055729675574597004",
     ):
         AssertRefSnapshotId(ref="main", snapshot_id=1).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: branch or tag not_exist is missing, expected 1",
     ):
         AssertRefSnapshotId(ref="not_exist", snapshot_id=1).validate(base_metadata)
@@ -778,7 +779,7 @@ def test_assert_last_assigned_field_id(table_v2: Table) -> None:
     AssertLastAssignedFieldId(last_assigned_field_id=base_metadata.last_column_id).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: last assigned field id has changed: expected 1, found 3",
     ):
         AssertLastAssignedFieldId(last_assigned_field_id=1).validate(base_metadata)
@@ -789,7 +790,7 @@ def test_assert_current_schema_id(table_v2: Table) -> None:
     AssertCurrentSchemaId(current_schema_id=base_metadata.current_schema_id).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: current schema id has changed: expected 2, found 1",
     ):
         AssertCurrentSchemaId(current_schema_id=2).validate(base_metadata)
@@ -800,7 +801,7 @@ def test_last_assigned_partition_id(table_v2: Table) -> None:
     AssertLastAssignedPartitionId(last_assigned_partition_id=base_metadata.last_partition_id).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: last assigned partition id has changed: expected 1, found 1000",
     ):
         AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(base_metadata)
@@ -811,7 +812,7 @@ def test_assert_default_spec_id(table_v2: Table) -> None:
     AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: default spec id has changed: expected 1, found 0",
     ):
         AssertDefaultSpecId(default_spec_id=1).validate(base_metadata)
@@ -822,7 +823,7 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
     AssertDefaultSortOrderId(default_sort_order_id=base_metadata.default_sort_order_id).validate(base_metadata)
 
     with pytest.raises(
-        ValueError,
+        CommitFailedException,
         match="Requirement failed: default sort order id has changed: expected 1, found 3",
     ):
         AssertDefaultSortOrderId(default_sort_order_id=1).validate(base_metadata)
