@@ -744,6 +744,9 @@ def test_assert_table_uuid(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertTableUUID(uuid=base_metadata.table_uuid).validate(base_metadata)
 
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertTableUUID(uuid=uuid.UUID("9c12d441-03fe-4693-9a96-a0705ddf69c2")).validate(None)
+
     with pytest.raises(
         CommitFailedException,
         match="Table UUID does not match: 9c12d441-03fe-4693-9a96-a0705ddf69c2 != 9c12d441-03fe-4693-9a96-a0705ddf69c1",
@@ -754,6 +757,9 @@ def test_assert_table_uuid(table_v2: Table) -> None:
 def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(None)
 
     with pytest.raises(
         CommitFailedException,
@@ -778,6 +784,9 @@ def test_assert_last_assigned_field_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertLastAssignedFieldId(last_assigned_field_id=base_metadata.last_column_id).validate(base_metadata)
 
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertLastAssignedFieldId(last_assigned_field_id=1).validate(None)
+
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: last assigned field id has changed: expected 1, found 3",
@@ -788,6 +797,9 @@ def test_assert_last_assigned_field_id(table_v2: Table) -> None:
 def test_assert_current_schema_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertCurrentSchemaId(current_schema_id=base_metadata.current_schema_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertCurrentSchemaId(current_schema_id=1).validate(None)
 
     with pytest.raises(
         CommitFailedException,
@@ -800,6 +812,9 @@ def test_last_assigned_partition_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertLastAssignedPartitionId(last_assigned_partition_id=base_metadata.last_partition_id).validate(base_metadata)
 
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(None)
+
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: last assigned partition id has changed: expected 1, found 1000",
@@ -811,6 +826,9 @@ def test_assert_default_spec_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
 
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertDefaultSpecId(default_spec_id=1).validate(None)
+
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: default spec id has changed: expected 1, found 0",
@@ -821,6 +839,9 @@ def test_assert_default_spec_id(table_v2: Table) -> None:
 def test_assert_default_sort_order_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertDefaultSortOrderId(default_sort_order_id=base_metadata.default_sort_order_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertDefaultSortOrderId(default_sort_order_id=1).validate(None)
 
     with pytest.raises(
         CommitFailedException,
