@@ -104,7 +104,7 @@ class GenericDynamoDbError(DynamoDbError):
     pass
 
 
-class CommitFailedException(RESTError):
+class CommitFailedException(Exception):
     """Commit failed, refresh and try again."""
 
 
