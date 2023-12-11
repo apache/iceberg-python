@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -73,6 +74,8 @@ METADATA = "metadata"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
+
+TABLE_METADATA_FILE_NAME_REGEX = re.compile(r"""\d*-.*\.json""", re.X)
 
 
 class CatalogType(Enum):
@@ -595,16 +598,23 @@ class Catalog(ABC):
 
     @staticmethod
     def _parse_metadata_version(metadata_location: str) -> int:
-        try:
-            # Split the string by '/' and take the last part, then split by '-' and take the first part.
-            version_part = metadata_location.split('/')[-1].split('-')[0]
-            # Attempt to convert the version part to an integer.
-            return int(version_part)
-        except ValueError:
-            # Handle any ValueError that occurs if the conversion fails.
-            return -1
-        except IndexError:
-            # Handle the case where the splits don't produce the expected number of parts.
+        """Parse the version from the metadata location.
+
+        The version is the first part of the file name, before the first dash.
+        For example, the version of the metadata file
+        `s3://bucket/db/tb/metadata/00001-6c97e413-d51b-4538-ac70-12fe2a85cb83.metadata.json`
+        is 1.
+
+        Args:
+            metadata_location (str): The location of the metadata file.
+
+        Returns:
+            int: The version of the metadata file. -1 if the file name does not have valid version string
+        """
+        file_name = metadata_location.split("/")[-1]
+        if TABLE_METADATA_FILE_NAME_REGEX.fullmatch(file_name):
+            return int(file_name.split("-")[0])
+        else:
             return -1
 
     def _get_updated_props_and_update_summary(

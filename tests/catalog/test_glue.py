@@ -554,7 +554,6 @@ def test_commit_table_update_schema(
     transaction.commit_transaction()
 
     updated_table_metadata = table.metadata
-    print(table.metadata_location)
 
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
