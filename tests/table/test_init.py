@@ -757,13 +757,13 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: SnapshotRefType.BRANCH main was created concurrently",
+        match="Requirement failed: branch main was created concurrently",
     ):
         AssertRefSnapshotId(ref="main", snapshot_id=None).validate(base_metadata)
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: SnapshotRefType.BRANCH main has changed: expected id 1, found 3055729675574597004",
+        match="Requirement failed: branch main has changed: expected id 1, found 3055729675574597004",
     ):
         AssertRefSnapshotId(ref="main", snapshot_id=1).validate(base_metadata)
 

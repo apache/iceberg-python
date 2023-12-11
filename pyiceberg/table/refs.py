@@ -34,6 +34,10 @@ class SnapshotRefType(str, Enum):
         """Return the string representation of the SnapshotRefType class."""
         return f"SnapshotRefType.{self.name}"
 
+    def __str__(self) -> str:
+        """Return the string representation of the SnapshotRefType class."""
+        return self.value
+
 
 class SnapshotRef(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
