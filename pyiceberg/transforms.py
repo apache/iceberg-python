@@ -49,6 +49,7 @@ from pyiceberg.expressions import (
     Reference,
     StartsWith,
     UnboundPredicate,
+    UnboundTerm,
 )
 from pyiceberg.expressions.literals import (
     DateLiteral,
@@ -58,7 +59,8 @@ from pyiceberg.expressions.literals import (
     TimestampLiteral,
     literal,
 )
-from pyiceberg.typedef import IcebergRootModel, L
+from pyiceberg.schema import Schema
+from pyiceberg.typedef import IcebergRootModel, L, StructProtocol
 from pyiceberg.types import (
     BinaryType,
     DateType,
@@ -821,3 +823,26 @@ class BoundTransform(BoundTerm[L]):
     def __init__(self, term: BoundTerm[L], transform: Transform[L, Any]):
         self.term: BoundTerm[L] = term
         self.transform = transform
+
+    def eval(self, struct: StructProtocol) -> L:
+        """Return the value at the referenced field's position in an object that abides by the StructProtocol."""
+        return self.term.eval(struct)
+
+
+class UnboundTransform(UnboundTerm[L]):
+    """An unbound transform expression."""
+
+    transform: Transform[L, Any]
+
+    def __init__(self, term: UnboundTerm[L], transform: Transform[L, Any]):
+        self.term: UnboundTerm[L] = term
+        self.transform = transform
+
+    def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundTransform[L]:
+        bound_term = self.term.bind(schema, case_sensitive)
+
+        if not self.transform.can_transform(bound_term.ref().field.field_type):
+            raise ValueError("some better error message")
+
+        else:
+            return BoundTransform(bound_term, self.transform)

@@ -62,6 +62,7 @@ from pyiceberg.expressions.literals import (
     LongLiteral,
     StringLiteral,
 )
+from pyiceberg.transforms import UnboundTransform
 from pyiceberg.typedef import L
 
 ParserElement.enablePackrat()
@@ -74,6 +75,7 @@ IN = CaselessKeyword("in")
 NULL = CaselessKeyword("null")
 NAN = CaselessKeyword("nan")
 LIKE = CaselessKeyword("like")
+CAST = CaselessKeyword("cast")
 
 identifier = Word(alphas, alphanums + "_$").set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
@@ -240,7 +242,17 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
         return EqualTo(result.column, StringLiteral(literal_like.value.replace('\\%', '%')))
 
 
-predicate = (comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
+cast_expression = (CAST + "(" + column + "as" + identifier + Suppress(")")).set_results_name("cast")
+
+
+@cast_expression.set_parse_action
+def _(result: ParseResults) -> UnboundTransform[L]:
+    return UnboundTransform(Reference(result.column), result[-1])
+
+
+predicate = (cast_expression | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name(
+    "predicate"
+)
 
 
 def handle_not(result: ParseResults) -> Not:
