@@ -38,6 +38,7 @@ from pyiceberg.expressions import (
     BoundNotIn,
     BoundNotStartsWith,
     BoundPredicate,
+    BoundReference,
     BoundSetPredicate,
     BoundStartsWith,
     BoundTerm,
@@ -827,6 +828,10 @@ class BoundTransform(BoundTerm[L]):
     def eval(self, struct: StructProtocol) -> L:
         """Return the value at the referenced field's position in an object that abides by the StructProtocol."""
         return self.term.eval(struct)
+
+    def ref(self) -> BoundReference[L]:
+        """Return the bound reference."""
+        return self.term.ref()
 
 
 class UnboundTransform(UnboundTerm[L]):
