@@ -18,6 +18,7 @@
 
 import math
 import uuid
+from typing import Dict
 from urllib.parse import urlparse
 
 import pyarrow.parquet as pq
@@ -46,7 +47,7 @@ from pyiceberg.types import (
     TimestampType,
 )
 
-DEFAULT_PROPERTIES = {}
+DEFAULT_PROPERTIES: Dict[str, str] = {}
 
 
 @pytest.fixture()

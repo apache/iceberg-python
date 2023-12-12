@@ -24,25 +24,28 @@ from pyiceberg.types import FixedType, NestedField, UUIDType
 
 spark = SparkSession.builder.getOrCreate()
 
-catalogs = {'rest': load_catalog(
-    "rest",
-    **{
-        "type": "rest",
-        "uri": "http://rest:8181",
-        "s3.endpoint": "http://minio:9000",
-        "s3.access-key-id": "admin",
-        "s3.secret-access-key": "password",
-    },
-), 'hive': load_catalog(
-    "hive",
-    **{
-        "type": "hive",
-        "uri": "http://hive:9083",
-        "s3.endpoint": "http://minio:9000",
-        "s3.access-key-id": "admin",
-        "s3.secret-access-key": "password",
-    },
-)}
+catalogs = {
+    'rest': load_catalog(
+        "rest",
+        **{
+            "type": "rest",
+            "uri": "http://rest:8181",
+            "s3.endpoint": "http://minio:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    ),
+    'hive': load_catalog(
+        "hive",
+        **{
+            "type": "hive",
+            "uri": "http://hive:9083",
+            "s3.endpoint": "http://minio:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    ),
+}
 
 for catalog_name, catalog in catalogs.items():
     spark.sql(
@@ -119,9 +122,7 @@ for catalog_name, catalog in catalogs.items():
 
     # Partitioning is not really needed, but there is a bug:
     # https://github.com/apache/iceberg/pull/7685
-    spark.sql(
-        f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes ADD PARTITION FIELD years(dt) AS dt_years"
-    )
+    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes ADD PARTITION FIELD years(dt) AS dt_years")
 
     spark.sql(
         f"""
@@ -142,21 +143,13 @@ for catalog_name, catalog in catalogs.items():
     """
     )
 
-    spark.sql(
-        f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes CREATE TAG tag_12"
-    )
+    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes CREATE TAG tag_12")
 
-    spark.sql(
-        f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes CREATE BRANCH without_5"
-    )
+    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes CREATE BRANCH without_5")
 
-    spark.sql(
-        f"DELETE FROM {catalog_name}.default.test_positional_mor_deletes.branch_without_5 WHERE number = 5"
-    )
+    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_deletes.branch_without_5 WHERE number = 5")
 
-    spark.sql(
-        f"DELETE FROM {catalog_name}.default.test_positional_mor_deletes WHERE number = 9"
-    )
+    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_deletes WHERE number = 9")
 
     spark.sql(
         f"""
@@ -177,9 +170,7 @@ for catalog_name, catalog in catalogs.items():
 
     # Partitioning is not really needed, but there is a bug:
     # https://github.com/apache/iceberg/pull/7685
-    spark.sql(
-        f"ALTER TABLE {catalog_name}.default.test_positional_mor_double_deletes ADD PARTITION FIELD years(dt) AS dt_years"
-    )
+    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_double_deletes ADD PARTITION FIELD years(dt) AS dt_years")
 
     spark.sql(
         f"""
@@ -200,13 +191,9 @@ for catalog_name, catalog in catalogs.items():
     """
     )
 
-    spark.sql(
-        f"DELETE FROM {catalog_name}.default.test_positional_mor_double_deletes WHERE number = 9"
-    )
+    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_double_deletes WHERE number = 9")
 
-    spark.sql(
-        f"DELETE FROM {catalog_name}.default.test_positional_mor_double_deletes WHERE letter == 'f'"
-    )
+    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_double_deletes WHERE letter == 'f'")
 
     all_types_dataframe = (
         spark.range(0, 5, 1, 5)
@@ -275,9 +262,7 @@ for catalog_name, catalog in catalogs.items():
 
     # There is an issue with CREATE OR REPLACE
     # https://github.com/apache/iceberg/issues/8756
-    spark.sql(
-        f"DROP TABLE IF EXISTS {catalog_name}.default.test_table_version"
-    )
+    spark.sql(f"DROP TABLE IF EXISTS {catalog_name}.default.test_table_version")
 
     spark.sql(
         f"""
