@@ -20,7 +20,7 @@ import struct
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from functools import singledispatch
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, Optional, Type, TypeVar
 from typing import Literal as LiteralType
 from uuid import UUID
 
@@ -846,3 +846,7 @@ class UnboundTransform(UnboundTerm[L]):
 
         else:
             return BoundTransform(bound_term, self.transform)
+
+    @property
+    def as_bound(self) -> Type[BoundTerm[L]]:
+        return BoundTerm[L]
