@@ -918,7 +918,6 @@ class Table:
             if (snapshot := self.snapshot_by_id(parent_snapshot_id))
             else None,
         )
-        summary['operation'] = operation
 
         snapshot = _manifests_to_manifest_list(
             self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=manifests, summary=summary

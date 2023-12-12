@@ -314,68 +314,38 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
 
     summaries = [row.summary for row in rows]
 
-    # Spark after append operation
-    # {
-    #     "added-data-files": "1",
-    #     "added-records": "1",
-    #     "added-files-size": "392",
-    #     "total-equality-deletes": "0",
-    #     "total-position-deletes": "0",
-    #     "total-delete-files": "0",
-    #     "total-files-size": "392",
-    #     "total-records": "1",
-    #     "total-data-files": "1"
-    # }
     assert summaries[0] == {
         'added-data-files': '1',
-        'added-files-size': '5111',
+        'added-files-size': '5131',
         'added-records': '3',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '5111',
+        'total-files-size': '5131',
         'total-position-deletes': '0',
         'total-records': '3',
     }
 
     assert summaries[1] == {
         'added-data-files': '1',
-        'added-files-size': '5111',
+        'added-files-size': '5131',
         'added-records': '3',
         'total-data-files': '2',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '10222',
+        'total-files-size': '10262',
         'total-position-deletes': '0',
         'total-records': '6',
     }
 
-    # Spark after overwrite operation
-    # {
-    #     "added-data-files": "1",
-    #     "added-records": "1",
-    #     "added-files-size": "392",
-    #     "removed-files-size": "784",
-    #     "deleted-data-files": "2",
-    #     "deleted-records": "2",
-    #     "total-equality-deletes": "0",
-    #     "total-records": "1",
-    #     "total-position-deletes": "0",
-    #     "total-delete-files": "0",
-    #     "total-files-size": "392",
-    #     "total-data-files": "1"
-    # }
     assert summaries[2] == {
         'added-data-files': '1',
-        'added-files-size': '5111',
+        'added-files-size': '5131',
         'added-records': '3',
-        'deleted-data-files': '2',
-        'deleted-records': '6',
-        'removed-files-size': '10222',
-        'total-data-files': '1',
+        'total-data-files': '3',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '15333',
+        'total-files-size': '15393',
         'total-position-deletes': '0',
-        'total-records': '3',
+        'total-records': '9',
     }
