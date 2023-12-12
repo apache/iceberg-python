@@ -39,6 +39,7 @@ from pyiceberg.expressions import (
     StartsWith,
     parser,
 )
+from pyiceberg.transforms import UnboundTransform, Reference
 
 
 def test_true() -> None:
@@ -202,4 +203,5 @@ def test_with_function() -> None:
 
 
 def test_cast() -> None:
-    parser.parse("CAST(created_at as date)")
+    cast = parser.parse("CAST(created_at as date)")
+    assert cast.term == Reference("created_at")

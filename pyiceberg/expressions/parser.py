@@ -247,7 +247,7 @@ cast_expression = (CAST + "(" + column + "as" + identifier + Suppress(")")).set_
 
 @cast_expression.set_parse_action
 def _(result: ParseResults) -> UnboundTransform[L]:
-    return UnboundTransform(Reference(result.column), result[-1])
+    return UnboundTransform(result.column, result[-1])
 
 
 predicate = (cast_expression | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name(
