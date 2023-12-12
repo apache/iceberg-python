@@ -1580,7 +1580,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     try:
         _ = next(tasks)
         # If there are more tasks, raise an exception
-        raise ValueError("Only partitioned writes are supported")
+        raise ValueError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
     except StopIteration:
         pass
 
