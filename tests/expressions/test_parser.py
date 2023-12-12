@@ -39,7 +39,7 @@ from pyiceberg.expressions import (
     StartsWith,
     parser,
 )
-from pyiceberg.transforms import UnboundTransform, Reference
+from pyiceberg.transforms import Reference
 
 
 def test_true() -> None:
