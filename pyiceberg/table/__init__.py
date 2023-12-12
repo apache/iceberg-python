@@ -44,7 +44,7 @@ from pydantic import Field, SerializeAsAny
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
-from pyiceberg.exceptions import ResolveError, ValidationError
+from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysTrue,
     And,
@@ -594,18 +594,40 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
 class TableRequirement(IcebergBaseModel):
     type: str
 
+    @abstractmethod
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        """Validate the requirement against the base metadata.
+
+        Args:
+            base_metadata: The base metadata to be validated against.
+
+        Raises:
+            CommitFailedException: When the requirement is not met.
+        """
+        ...
+
 
 class AssertCreate(TableRequirement):
     """The table must not already exist; used for create transactions."""
 
     type: Literal["assert-create"] = Field(default="assert-create")
 
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is not None:
+            raise CommitFailedException("Table already exists")
+
 
 class AssertTableUUID(TableRequirement):
     """The table UUID must match the requirement's `uuid`."""
 
     type: Literal["assert-table-uuid"] = Field(default="assert-table-uuid")
-    uuid: str
+    uuid: uuid.UUID
+
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif self.uuid != base_metadata.table_uuid:
+            raise CommitFailedException(f"Table UUID does not match: {self.uuid} != {base_metadata.table_uuid}")
 
 
 class AssertRefSnapshotId(TableRequirement):
@@ -618,12 +640,34 @@ class AssertRefSnapshotId(TableRequirement):
     ref: str = Field(default="main")
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif snapshot_ref := base_metadata.refs.get(self.ref):
+            ref_type = snapshot_ref.snapshot_ref_type
+            if self.snapshot_id is None:
+                raise CommitFailedException(f"Requirement failed: {ref_type} {self.ref} was created concurrently")
+            elif self.snapshot_id != snapshot_ref.snapshot_id:
+                raise CommitFailedException(
+                    f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
+                )
+        elif self.snapshot_id is not None:
+            raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
+
 
 class AssertLastAssignedFieldId(TableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""
 
     type: Literal["assert-last-assigned-field-id"] = Field(default="assert-last-assigned-field-id")
     last_assigned_field_id: int = Field(..., alias="last-assigned-field-id")
+
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif base_metadata.last_column_id != self.last_assigned_field_id:
+            raise CommitFailedException(
+                f"Requirement failed: last assigned field id has changed: expected {self.last_assigned_field_id}, found {base_metadata.last_column_id}"
+            )
 
 
 class AssertCurrentSchemaId(TableRequirement):
@@ -632,12 +676,28 @@ class AssertCurrentSchemaId(TableRequirement):
     type: Literal["assert-current-schema-id"] = Field(default="assert-current-schema-id")
     current_schema_id: int = Field(..., alias="current-schema-id")
 
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif self.current_schema_id != base_metadata.current_schema_id:
+            raise CommitFailedException(
+                f"Requirement failed: current schema id has changed: expected {self.current_schema_id}, found {base_metadata.current_schema_id}"
+            )
+
 
 class AssertLastAssignedPartitionId(TableRequirement):
     """The table's last assigned partition id must match the requirement's `last-assigned-partition-id`."""
 
     type: Literal["assert-last-assigned-partition-id"] = Field(default="assert-last-assigned-partition-id")
     last_assigned_partition_id: int = Field(..., alias="last-assigned-partition-id")
+
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif base_metadata.last_partition_id != self.last_assigned_partition_id:
+            raise CommitFailedException(
+                f"Requirement failed: last assigned partition id has changed: expected {self.last_assigned_partition_id}, found {base_metadata.last_partition_id}"
+            )
 
 
 class AssertDefaultSpecId(TableRequirement):
@@ -646,12 +706,28 @@ class AssertDefaultSpecId(TableRequirement):
     type: Literal["assert-default-spec-id"] = Field(default="assert-default-spec-id")
     default_spec_id: int = Field(..., alias="default-spec-id")
 
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif self.default_spec_id != base_metadata.default_spec_id:
+            raise CommitFailedException(
+                f"Requirement failed: default spec id has changed: expected {self.default_spec_id}, found {base_metadata.default_spec_id}"
+            )
+
 
 class AssertDefaultSortOrderId(TableRequirement):
     """The table's default sort order id must match the requirement's `default-sort-order-id`."""
 
     type: Literal["assert-default-sort-order-id"] = Field(default="assert-default-sort-order-id")
     default_sort_order_id: int = Field(..., alias="default-sort-order-id")
+
+    def validate(self, base_metadata: Optional[TableMetadata]) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current table metadata is missing")
+        elif self.default_sort_order_id != base_metadata.default_sort_order_id:
+            raise CommitFailedException(
+                f"Requirement failed: default sort order id has changed: expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
+            )
 
 
 class Namespace(IcebergRootModel[List[str]]):
