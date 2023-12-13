@@ -944,8 +944,8 @@ class TableScan(ABC):
     def projection(self) -> Schema:
         snapshot_schema = self.table.schema()
         if snapshot := self.snapshot():
-            if snapshot_schema_id := snapshot.schema_id:
-                snapshot_schema = self.table.schemas()[snapshot_schema_id]
+            if snapshot.schema_id is not None:
+                snapshot_schema = self.table.schemas()[snapshot.schema_id]
 
         if "*" in self.selected_fields:
             return snapshot_schema
