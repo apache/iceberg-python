@@ -89,41 +89,41 @@ def test_json_mapped_field_deserialization() -> None:
 def test_json_name_mapping_deserialization() -> None:
     name_mapping = """
 [
-    {
+    [
         "field-id": 1,
         "names": [
             "id",
             "record_id"
         ]
-    },
-    {
+    ],
+    [
         "field-id": 2,
         "names": [
             "data"
         ]
-    },
-    {
+    ],
+    [
         "field-id": 3,
         "names": [
             "location"
         ],
         "fields": [
-            {
+            [
                 "field-id": 4,
                 "names": [
                     "latitude",
                     "lat"
                 ]
-            },
-            {
+            ],
+            [
                 "field-id": 5,
                 "names": [
                     "longitude",
                     "long"
                 ]
-            }
+            ]
         ]
-    }
+    ]
 ]
     """
 
@@ -146,7 +146,7 @@ def test_json_name_mapping_deserialization() -> None:
 def test_json_serialization(table_name_mapping_nested: NameMapping) -> None:
     assert (
         table_name_mapping_nested.model_dump_json()
-        == """[{"field-id":1,"names":["foo"]},{"field-id":2,"names":["bar"]},{"field-id":3,"names":["baz"]},{"field-id":4,"names":["qux"],"fields":[{"field-id":5,"names":["element"]}]},{"field-id":6,"names":["quux"],"fields":[{"field-id":7,"names":["key"]},{"field-id":8,"names":["value"],"fields":[{"field-id":9,"names":["key"]},{"field-id":10,"names":["value"]}]}]},{"field-id":11,"names":["location"],"fields":[{"field-id":12,"names":["element"],"fields":[{"field-id":13,"names":["latitude"]},{"field-id":14,"names":["longitude"]}]}]},{"field-id":15,"names":["person"],"fields":[{"field-id":16,"names":["name"]},{"field-id":17,"names":["age"]}]}]"""
+        == """[["field-id":1,"names":["foo"]],["field-id":2,"names":["bar"]],["field-id":3,"names":["baz"]],["field-id":4,"names":["qux"],"fields":[["field-id":5,"names":["element"]]]],["field-id":6,"names":["quux"],"fields":[["field-id":7,"names":["key"]],["field-id":8,"names":["value"],"fields":[["field-id":9,"names":["key"]],["field-id":10,"names":["value"]]]]]],["field-id":11,"names":["location"],"fields":[["field-id":12,"names":["element"],"fields":[["field-id":13,"names":["latitude"]],["field-id":14,"names":["longitude"]]]]]],["field-id":15,"names":["person"],"fields":[["field-id":16,"names":["name"]],["field-id":17,"names":["age"]]]]]"""
     )
 
 
