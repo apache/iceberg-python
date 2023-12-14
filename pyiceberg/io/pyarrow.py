@@ -330,6 +330,9 @@ class PyArrowFileIO(FileIO):
             if proxy_uri := self.properties.get(S3_PROXY_URI):
                 client_kwargs["proxy_options"] = proxy_uri
 
+            if connect_timeout := self.properties.get("connect_timeout"):
+                client_kwargs["connect_timeout"] = connect_timeout
+
             return S3FileSystem(**client_kwargs)
         elif scheme == "hdfs":
             from pyarrow.fs import HadoopFileSystem

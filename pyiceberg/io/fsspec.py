@@ -127,6 +127,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if proxy_uri := properties.get(S3_PROXY_URI):
         config_kwargs["proxies"] = {"http": proxy_uri, "https": proxy_uri}
 
+    if connect_timeout := properties.get("connect_timeout"):
+        config_kwargs["connect_timeout"] = connect_timeout
+
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
