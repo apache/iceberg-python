@@ -54,6 +54,7 @@ from pyiceberg.io import (
     S3_REGION,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_CONNECT_TIMEOUT,
     FileIO,
     InputFile,
     InputStream,
@@ -127,7 +128,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if proxy_uri := properties.get(S3_PROXY_URI):
         config_kwargs["proxies"] = {"http": proxy_uri, "https": proxy_uri}
 
-    if connect_timeout := properties.get("connect_timeout"):
+    if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
         config_kwargs["connect_timeout"] = connect_timeout
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)

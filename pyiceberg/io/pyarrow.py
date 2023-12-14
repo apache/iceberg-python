@@ -97,6 +97,7 @@ from pyiceberg.io import (
     S3_REGION,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_CONNECT_TIMEOUT,
     FileIO,
     InputFile,
     InputStream,
@@ -330,7 +331,7 @@ class PyArrowFileIO(FileIO):
             if proxy_uri := self.properties.get(S3_PROXY_URI):
                 client_kwargs["proxy_options"] = proxy_uri
 
-            if connect_timeout := self.properties.get("connect_timeout"):
+            if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
                 client_kwargs["connect_timeout"] = connect_timeout
 
             return S3FileSystem(**client_kwargs)
