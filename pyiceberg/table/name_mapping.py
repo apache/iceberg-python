@@ -25,7 +25,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import ChainMap
 from functools import cached_property, singledispatch
-from typing import Any, Dict, Generic, List, Set, TypeVar, Union
+from typing import Any, Dict, Generic, List, TypeVar, Union
 
 from pydantic import Field, conlist, model_serializer
 
@@ -36,7 +36,7 @@ from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, Struc
 
 class MappedField(IcebergBaseModel):
     field_id: int = Field(alias="field-id")
-    names: Set[str] = conlist(str, min_length=1)
+    names: List[str] = conlist(str, min_length=1)
     fields: List[MappedField] = Field(default_factory=list)
 
     @model_serializer
