@@ -27,7 +27,7 @@ from collections import ChainMap
 from functools import cached_property, singledispatch
 from typing import Any, Dict, Generic, List, Set, TypeVar, Union
 
-from pydantic import Field, conset, model_serializer
+from pydantic import Field, conlist, model_serializer
 
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
@@ -36,7 +36,7 @@ from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, Struc
 
 class MappedField(IcebergBaseModel):
     field_id: int = Field(alias="field-id")
-    names: Set[str] = conset(str, min_length=1)
+    names: Set[str] = conlist(str, min_length=1)
     fields: List[MappedField] = Field(default_factory=list)
 
     @model_serializer
@@ -45,8 +45,7 @@ class MappedField(IcebergBaseModel):
         fields = {'fields': self.fields} if len(self.fields) > 0 else {}
         return {
             'field-id': self.field_id,
-            # Sort the names to give a consistent output in json
-            'names': sorted([self.names]),
+            'names': self.names,
             **fields,
         }
 
@@ -59,7 +58,7 @@ class MappedField(IcebergBaseModel):
         # Otherwise the UTs fail because the order of the set can change
         fields_str = ", ".join([str(e) for e in self.fields]) or ""
         fields_str = " " + fields_str if fields_str else ""
-        return "([" + ", ".join(sorted(self.names)) + "] -> " + (str(self.field_id) or "?") + fields_str + ")"
+        return "([" + ", ".join(self.names) + "] -> " + (str(self.field_id) or "?") + fields_str + ")"
 
 
 class NameMapping(IcebergRootModel[List[MappedField]]):
