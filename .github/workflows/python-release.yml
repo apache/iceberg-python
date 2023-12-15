@@ -80,7 +80,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: "release-${{ github.event.inputs.version }}"
           path: ./wheelhouse/*
