@@ -66,6 +66,13 @@ from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
 
+# If Glue should skip archiving an old table version when creating a new version in a commit. By
+# default, Glue archives all old table versions after an UpdateTable call, but Glue has a default
+# max number of archived table versions (can be increased). So for streaming use case with lots
+# of commits, it is recommended to set this value to true.
+GLUE_SKIP_ARCHIVE = "glue.skip-archive"
+GLUE_SKIP_ARCHIVE_DEFAULT = True
+
 
 def _construct_parameters(
     metadata_location: str, glue_table: Optional[TableTypeDef] = None, prev_metadata_location: Optional[str] = None
@@ -193,7 +200,12 @@ class GlueCatalog(Catalog):
 
     def _update_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef, version_id: str) -> None:
         try:
-            self.glue.update_table(DatabaseName=database_name, TableInput=table_input, VersionId=version_id)
+            self.glue.update_table(
+                DatabaseName=database_name,
+                TableInput=table_input,
+                SkipArchive=self.properties.get(GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
+                VersionId=version_id,
+            )
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
         except self.glue.exceptions.ConcurrentModificationException as e:
@@ -314,6 +326,8 @@ class GlueCatalog(Catalog):
             prev_metadata_location=current_table.metadata_location,
         )
 
+        # Pass `version_id` to implement optimistic locking: it ensures updates are rejected if concurrent
+        # modifications occur. See more details at https://iceberg.apache.org/docs/latest/aws/#optimistic-locking
         self._update_glue_table(
             database_name=database_name,
             table_name=table_name,
