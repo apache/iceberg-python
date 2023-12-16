@@ -199,7 +199,6 @@ def test_drop_table(
     table = test_catalog.load_table(identifier)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)

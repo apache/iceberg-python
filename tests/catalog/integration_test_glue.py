@@ -62,6 +62,7 @@ def test_create_table(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_create_table_with_invalid_location(table_schema_nested: Schema, table_name: str, database_name: str) -> None:
@@ -83,6 +84,7 @@ def test_create_table_with_default_location(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_nested: Schema, table_name: str) -> None:
@@ -106,6 +108,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     assert table.identifier == loaded_table.identifier
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
@@ -127,6 +130,7 @@ def test_rename_table(
     new_table_name = f"rename-{table_name}"
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     assert table.identifier == (CATALOG_NAME,) + identifier
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
