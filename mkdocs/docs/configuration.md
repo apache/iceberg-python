@@ -32,13 +32,19 @@ There are three ways to pass in configuration:
 - Through environment variables
 - By passing in credentials through the CLI or the Python API
 
-The configuration file is recommended since that's the most transparent way. If you prefer environment configuration:
+The configuration file is recommended since that's the easiest way to manage the credentials.
+
+Another option is through environment variables:
 
 ```sh
 export PYICEBERG_CATALOG__DEFAULT__URI=thrift://localhost:9083
+export PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID=username
+export PYICEBERG_CATALOG__DEFAULT__S3__SECRET_ACCESS_KEY=password
 ```
 
-The environment variable picked up by Iceberg starts with `PYICEBERG_` and then follows the yaml structure below, where a double underscore `__` represents a nested field.
+The environment variable picked up by Iceberg starts with `PYICEBERG_` and then follows the yaml structure below, where a double underscore `__` represents a nested field, and the underscore `_` is converted into a dash `-`.
+
+For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
 
 ## FileIO
 
@@ -77,8 +83,6 @@ For the FileIO there are several configuration options available:
 | hdfs.port            | 9000                | Configure the HDFS port to connect to.           |
 | hdfs.user            | user                | Configure the HDFS username used for connection. |
 | hdfs.kerberos_ticket | kerberos_ticket     | Configure the path to the Kerberos ticket cache. |
-
-### Azure Data lake
 
 ### Azure Data lake
 
@@ -136,14 +140,31 @@ catalog:
 
 ## SQL Catalog
 
-The SQL catalog requires a database for its backend. As of now, pyiceberg only supports PostgreSQL through psycopg2.
-The database connection has to be configured using the `uri` property (see SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls)):
+The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
+
+For PostgreSQL:
 
 ```yaml
 catalog:
   default:
     type: sql
     uri: postgresql+psycopg2://username:password@localhost/mydatabase
+```
+
+In the case of SQLite:
+
+<!-- prettier-ignore-start -->
+
+!!! warning inline end "Development only"
+    SQLite is not built for concurrency, you should use this catalog for exploratory or development purposes.
+
+<!-- prettier-ignore-end -->
+
+```yaml
+catalog:
+  default:
+    type: sql
+    uri: sqlite:////tmp/pyiceberg.db
 ```
 
 ## Hive Catalog
