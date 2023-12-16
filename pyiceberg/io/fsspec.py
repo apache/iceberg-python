@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 """FileIO implementation for reading and writing table files that uses fsspec compatible filesystems."""
+
 import errno
 import json
 import logging

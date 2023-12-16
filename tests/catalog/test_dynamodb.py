@@ -16,6 +16,7 @@
 #  under the License.
 from typing import List
 
+import boto3
 import pytest
 from moto import mock_dynamodb
 
@@ -176,6 +177,23 @@ def test_load_table(
 
 
 @mock_dynamodb
+def test_load_table_from_self_identifier(
+    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(
+        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.create_table(identifier, table_schema_nested)
+    intermediate = test_catalog.load_table(identifier)
+    table = test_catalog.load_table(intermediate.identifier)
+    assert table.identifier == (catalog_name,) + identifier
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+
+
+@mock_dynamodb
 def test_load_non_exist_table(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", warehouse=f"s3://{BUCKET_NAME}")
@@ -201,6 +219,27 @@ def test_drop_table(
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
+
+
+@mock_dynamodb
+def test_drop_table_from_self_identifier(
+    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(
+        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.create_table(identifier, table_schema_nested)
+    table = test_catalog.load_table(identifier)
+    assert table.identifier == (catalog_name,) + identifier
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    test_catalog.drop_table(table.identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(table.identifier)
 
 
 @mock_dynamodb
@@ -237,6 +276,33 @@ def test_rename_table(
 
 
 @mock_dynamodb
+def test_rename_table_from_self_identifier(
+    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    new_table_name = f"{table_name}_new"
+    identifier = (database_name, table_name)
+    new_identifier = (database_name, new_table_name)
+    test_catalog = DynamoDbCatalog(
+        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    assert table.identifier == (catalog_name,) + identifier
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    test_catalog.rename_table(table.identifier, new_identifier)
+    new_table = test_catalog.load_table(new_identifier)
+    assert new_table.identifier == (catalog_name,) + new_identifier
+    # the metadata_location should not change
+    assert new_table.metadata_location == table.metadata_location
+    # old table should be dropped
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(identifier)
+    with pytest.raises(NoSuchTableError):
+        test_catalog.load_table(table.identifier)
+
+
+@mock_dynamodb
 def test_fail_on_rename_table_with_missing_required_params(
     _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str
 ) -> None:
@@ -263,12 +329,8 @@ def test_fail_on_rename_table_with_missing_required_params(
 
 
 @mock_dynamodb
-def test_fail_on_rename_non_iceberg_table(  # type: ignore
-    _dynamodb,
-    _bucket_initialize: None,
-    _patch_aiobotocore: None,
-    database_name: str,
-    table_name: str,
+def test_fail_on_rename_non_iceberg_table(
+    _dynamodb: boto3.client, _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str
 ) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"

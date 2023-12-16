@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import uuid
+from copy import copy
 from typing import Dict
 
 import pytest
 from sortedcontainers import SortedList
 
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysTrue,
     And,
@@ -37,14 +40,28 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
+    AddSnapshotUpdate,
+    AssertCreate,
+    AssertCurrentSchemaId,
+    AssertDefaultSortOrderId,
+    AssertDefaultSpecId,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
+    AssertRefSnapshotId,
+    AssertTableUUID,
     SetPropertiesUpdate,
+    SetSnapshotRefUpdate,
+    SnapshotRef,
     StaticTable,
     Table,
     UpdateSchema,
+    _apply_table_update,
     _generate_snapshot_id,
     _match_deletes_to_datafile,
+    _TableMetadataUpdateContext,
+    update_table_metadata,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -79,8 +96,8 @@ from pyiceberg.types import (
 )
 
 
-def test_schema(table: Table) -> None:
-    assert table.schema() == Schema(
+def test_schema(table_v2: Table) -> None:
+    assert table_v2.schema() == Schema(
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
@@ -89,8 +106,8 @@ def test_schema(table: Table) -> None:
     )
 
 
-def test_schemas(table: Table) -> None:
-    assert table.schemas() == {
+def test_schemas(table_v2: Table) -> None:
+    assert table_v2.schemas() == {
         0: Schema(
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
             schema_id=0,
@@ -106,20 +123,20 @@ def test_schemas(table: Table) -> None:
     }
 
 
-def test_spec(table: Table) -> None:
-    assert table.spec() == PartitionSpec(
+def test_spec(table_v2: Table) -> None:
+    assert table_v2.spec() == PartitionSpec(
         PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"), spec_id=0
     )
 
 
-def test_specs(table: Table) -> None:
-    assert table.specs() == {
+def test_specs(table_v2: Table) -> None:
+    assert table_v2.specs() == {
         0: PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"), spec_id=0)
     }
 
 
-def test_sort_order(table: Table) -> None:
-    assert table.sort_order() == SortOrder(
+def test_sort_order(table_v2: Table) -> None:
+    assert table_v2.sort_order() == SortOrder(
         SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
         SortField(
             source_id=3,
@@ -131,8 +148,8 @@ def test_sort_order(table: Table) -> None:
     )
 
 
-def test_sort_orders(table: Table) -> None:
-    assert table.sort_orders() == {
+def test_sort_orders(table_v2: Table) -> None:
+    assert table_v2.sort_orders() == {
         3: SortOrder(
             SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
             SortField(
@@ -146,12 +163,12 @@ def test_sort_orders(table: Table) -> None:
     }
 
 
-def test_location(table: Table) -> None:
-    assert table.location() == "s3://bucket/test/location"
+def test_location(table_v2: Table) -> None:
+    assert table_v2.location() == "s3://bucket/test/location"
 
 
-def test_current_snapshot(table: Table) -> None:
-    assert table.current_snapshot() == Snapshot(
+def test_current_snapshot(table_v2: Table) -> None:
+    assert table_v2.current_snapshot() == Snapshot(
         snapshot_id=3055729675574597004,
         parent_snapshot_id=3051729675574597004,
         sequence_number=1,
@@ -162,8 +179,8 @@ def test_current_snapshot(table: Table) -> None:
     )
 
 
-def test_snapshot_by_id(table: Table) -> None:
-    assert table.snapshot_by_id(3055729675574597004) == Snapshot(
+def test_snapshot_by_id(table_v2: Table) -> None:
+    assert table_v2.snapshot_by_id(3055729675574597004) == Snapshot(
         snapshot_id=3055729675574597004,
         parent_snapshot_id=3051729675574597004,
         sequence_number=1,
@@ -174,12 +191,12 @@ def test_snapshot_by_id(table: Table) -> None:
     )
 
 
-def test_snapshot_by_id_does_not_exist(table: Table) -> None:
-    assert table.snapshot_by_id(-1) is None
+def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
+    assert table_v2.snapshot_by_id(-1) is None
 
 
-def test_snapshot_by_name(table: Table) -> None:
-    assert table.snapshot_by_name("test") == Snapshot(
+def test_snapshot_by_name(table_v2: Table) -> None:
+    assert table_v2.snapshot_by_name("test") == Snapshot(
         snapshot_id=3051729675574597004,
         parent_snapshot_id=None,
         sequence_number=0,
@@ -190,11 +207,11 @@ def test_snapshot_by_name(table: Table) -> None:
     )
 
 
-def test_snapshot_by_name_does_not_exist(table: Table) -> None:
-    assert table.snapshot_by_name("doesnotexist") is None
+def test_snapshot_by_name_does_not_exist(table_v2: Table) -> None:
+    assert table_v2.snapshot_by_name("doesnotexist") is None
 
 
-def test_repr(table: Table) -> None:
+def test_repr(table_v2: Table) -> None:
     expected = """table(
   1: x: required long,
   2: y: required long (comment),
@@ -203,37 +220,37 @@ def test_repr(table: Table) -> None:
 partition by: [x],
 sort order: [2 ASC NULLS FIRST, bucket[4](3) DESC NULLS LAST],
 snapshot: Operation.APPEND: id=3055729675574597004, parent_id=3051729675574597004, schema_id=1"""
-    assert repr(table) == expected
+    assert repr(table_v2) == expected
 
 
-def test_history(table: Table) -> None:
-    assert table.history() == [
+def test_history(table_v2: Table) -> None:
+    assert table_v2.history() == [
         SnapshotLogEntry(snapshot_id=3051729675574597004, timestamp_ms=1515100955770),
         SnapshotLogEntry(snapshot_id=3055729675574597004, timestamp_ms=1555100955770),
     ]
 
 
-def test_table_scan_select(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_select(table_v2: Table) -> None:
+    scan = table_v2.scan()
     assert scan.selected_fields == ("*",)
     assert scan.select("a", "b").selected_fields == ("a", "b")
     assert scan.select("a", "c").select("a").selected_fields == ("a",)
 
 
-def test_table_scan_row_filter(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_row_filter(table_v2: Table) -> None:
+    scan = table_v2.scan()
     assert scan.row_filter == AlwaysTrue()
     assert scan.filter(EqualTo("x", 10)).row_filter == EqualTo("x", 10)
     assert scan.filter(EqualTo("x", 10)).filter(In("y", (10, 11))).row_filter == And(EqualTo("x", 10), In("y", (10, 11)))
 
 
-def test_table_scan_ref(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_ref(table_v2: Table) -> None:
+    scan = table_v2.scan()
     assert scan.use_ref("test").snapshot_id == 3051729675574597004
 
 
-def test_table_scan_ref_does_not_exists(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
+    scan = table_v2.scan()
 
     with pytest.raises(ValueError) as exc_info:
         _ = scan.use_ref("boom")
@@ -241,8 +258,8 @@ def test_table_scan_ref_does_not_exists(table: Table) -> None:
     assert "Cannot scan unknown ref=boom" in str(exc_info.value)
 
 
-def test_table_scan_projection_full_schema(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_projection_full_schema(table_v2: Table) -> None:
+    scan = table_v2.scan()
     assert scan.select("x", "y", "z").projection() == Schema(
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
@@ -252,8 +269,8 @@ def test_table_scan_projection_full_schema(table: Table) -> None:
     )
 
 
-def test_table_scan_projection_single_column(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_projection_single_column(table_v2: Table) -> None:
+    scan = table_v2.scan()
     assert scan.select("y").projection() == Schema(
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         schema_id=1,
@@ -261,8 +278,8 @@ def test_table_scan_projection_single_column(table: Table) -> None:
     )
 
 
-def test_table_scan_projection_single_column_case_sensitive(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> None:
+    scan = table_v2.scan()
     assert scan.with_case_sensitive(False).select("Y").projection() == Schema(
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         schema_id=1,
@@ -270,8 +287,8 @@ def test_table_scan_projection_single_column_case_sensitive(table: Table) -> Non
     )
 
 
-def test_table_scan_projection_unknown_column(table: Table) -> None:
-    scan = table.scan()
+def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
+    scan = table_v2.scan()
 
     with pytest.raises(ValueError) as exc_info:
         _ = scan.select("a").projection()
@@ -279,16 +296,16 @@ def test_table_scan_projection_unknown_column(table: Table) -> None:
     assert "Could not find column: 'a'" in str(exc_info.value)
 
 
-def test_static_table_same_as_table(table: Table, metadata_location: str) -> None:
+def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
     static_table = StaticTable.from_metadata(metadata_location)
     assert isinstance(static_table, Table)
-    assert static_table.metadata == table.metadata
+    assert static_table.metadata == table_v2.metadata
 
 
-def test_static_table_gz_same_as_table(table: Table, metadata_location_gz: str) -> None:
+def test_static_table_gz_same_as_table(table_v2: Table, metadata_location_gz: str) -> None:
     static_table = StaticTable.from_metadata(metadata_location_gz)
     assert isinstance(static_table, Table)
-    assert static_table.metadata == table.metadata
+    assert static_table.metadata == table_v2.metadata
 
 
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
@@ -411,8 +428,8 @@ def test_serialize_set_properties_updates() -> None:
     )
 
 
-def test_add_column(table: Table) -> None:
-    update = UpdateSchema(table)
+def test_add_column(table_v2: Table) -> None:
+    update = UpdateSchema(table_v2)
     update.add_column(path="b", field_type=IntegerType())
     apply_schema: Schema = update._apply()  # pylint: disable=W0212
     assert len(apply_schema.fields) == 4
@@ -428,7 +445,7 @@ def test_add_column(table: Table) -> None:
     assert apply_schema.highest_field_id == 4
 
 
-def test_add_primitive_type_column(table: Table) -> None:
+def test_add_primitive_type_column(table_v2: Table) -> None:
     primitive_type: Dict[str, PrimitiveType] = {
         "boolean": BooleanType(),
         "int": IntegerType(),
@@ -446,7 +463,7 @@ def test_add_primitive_type_column(table: Table) -> None:
 
     for name, type_ in primitive_type.items():
         field_name = f"new_column_{name}"
-        update = UpdateSchema(table)
+        update = UpdateSchema(table_v2)
         update.add_column(path=field_name, field_type=type_, doc=f"new_column_{name}")
         new_schema = update._apply()  # pylint: disable=W0212
 
@@ -455,10 +472,10 @@ def test_add_primitive_type_column(table: Table) -> None:
         assert field.doc == f"new_column_{name}"
 
 
-def test_add_nested_type_column(table: Table) -> None:
+def test_add_nested_type_column(table_v2: Table) -> None:
     # add struct type column
     field_name = "new_column_struct"
-    update = UpdateSchema(table)
+    update = UpdateSchema(table_v2)
     struct_ = StructType(
         NestedField(1, "lat", DoubleType()),
         NestedField(2, "long", DoubleType()),
@@ -473,10 +490,10 @@ def test_add_nested_type_column(table: Table) -> None:
     assert schema_.highest_field_id == 6
 
 
-def test_add_nested_map_type_column(table: Table) -> None:
+def test_add_nested_map_type_column(table_v2: Table) -> None:
     # add map type column
     field_name = "new_column_map"
-    update = UpdateSchema(table)
+    update = UpdateSchema(table_v2)
     map_ = MapType(1, StringType(), 2, IntegerType(), False)
     update.add_column(path=field_name, field_type=map_)
     new_schema = update._apply()  # pylint: disable=W0212
@@ -485,10 +502,10 @@ def test_add_nested_map_type_column(table: Table) -> None:
     assert new_schema.highest_field_id == 6
 
 
-def test_add_nested_list_type_column(table: Table) -> None:
+def test_add_nested_list_type_column(table_v2: Table) -> None:
     # add list type column
     field_name = "new_column_list"
-    update = UpdateSchema(table)
+    update = UpdateSchema(table_v2)
     list_ = ListType(
         element_id=101,
         element_type=StructType(
@@ -511,6 +528,321 @@ def test_add_nested_list_type_column(table: Table) -> None:
     assert new_schema.highest_field_id == 7
 
 
-def test_generate_snapshot_id(table: Table) -> None:
+def test_apply_add_schema_update(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+
+    test_context = _TableMetadataUpdateContext()
+
+    new_table_metadata = _apply_table_update(transaction._updates[0], base_metadata=table_v2.metadata, context=test_context)  # pylint: disable=W0212
+    assert len(new_table_metadata.schemas) == 3
+    assert new_table_metadata.current_schema_id == 1
+    assert len(test_context._updates) == 1
+    assert test_context._updates[0] == transaction._updates[0]  # pylint: disable=W0212
+    assert test_context.is_added_schema(2)
+
+    new_table_metadata = _apply_table_update(transaction._updates[1], base_metadata=new_table_metadata, context=test_context)  # pylint: disable=W0212
+    assert len(new_table_metadata.schemas) == 3
+    assert new_table_metadata.current_schema_id == 2
+    assert len(test_context._updates) == 2
+    assert test_context._updates[1] == transaction._updates[1]  # pylint: disable=W0212
+    assert test_context.is_added_schema(2)
+
+
+def test_update_metadata_table_schema(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    new_metadata = update_table_metadata(table_v2.metadata, transaction._updates)  # pylint: disable=W0212
+    apply_schema: Schema = next(schema for schema in new_metadata.schemas if schema.schema_id == 2)
+    assert len(apply_schema.fields) == 4
+
+    assert apply_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
+        NestedField(field_id=3, name="z", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="b", field_type=IntegerType(), required=False),
+        identifier_field_ids=[1, 2],
+    )
+    assert apply_schema.schema_id == 2
+    assert apply_schema.highest_field_id == 4
+
+    assert new_metadata.current_schema_id == 2
+
+
+def test_update_metadata_add_snapshot(table_v2: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert len(new_metadata.snapshots) == 3
+    assert new_metadata.snapshots[-1] == new_snapshot
+    assert new_metadata.last_sequence_number == new_snapshot.sequence_number
+    assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
+
+
+def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
+    update = SetSnapshotRefUpdate(
+        ref_name="main",
+        type="branch",
+        snapshot_id=3051729675574597004,
+        max_ref_age_ms=123123123,
+        max_snapshot_age_ms=12312312312,
+        min_snapshots_to_keep=1,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, (update,))
+    assert len(new_metadata.snapshot_log) == 3
+    assert new_metadata.snapshot_log[2].snapshot_id == 3051729675574597004
+    assert new_metadata.current_snapshot_id == 3051729675574597004
+    assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
+    assert new_metadata.refs[update.ref_name] == SnapshotRef(
+        snapshot_id=3051729675574597004,
+        snapshot_ref_type="branch",
+        min_snapshots_to_keep=1,
+        max_snapshot_age_ms=12312312312,
+        max_ref_age_ms=123123123,
+    )
+
+
+def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
+    base_metadata = table_v1.metadata
+    transaction = table_v1.transaction()
+    transaction.upgrade_table_version(format_version=2)
+
+    schema_update_1 = transaction.update_schema()
+    schema_update_1.add_column(path="b", field_type=IntegerType())
+    schema_update_1.commit()
+
+    test_updates = transaction._updates  # pylint: disable=W0212
+
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    test_updates += (
+        AddSnapshotUpdate(snapshot=new_snapshot),
+        SetSnapshotRefUpdate(
+            ref_name="main",
+            type="branch",
+            snapshot_id=25,
+            max_ref_age_ms=123123123,
+            max_snapshot_age_ms=12312312312,
+            min_snapshots_to_keep=1,
+        ),
+    )
+
+    new_metadata = update_table_metadata(base_metadata, test_updates)
+    # rebuild the metadata to trigger validation
+    new_metadata = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
+
+    # UpgradeFormatVersionUpdate
+    assert new_metadata.format_version == 2
+    assert isinstance(new_metadata, TableMetadataV2)
+
+    # UpdateSchema
+    assert len(new_metadata.schemas) == 2
+    assert new_metadata.current_schema_id == 1
+    assert new_metadata.schema_by_id(new_metadata.current_schema_id).highest_field_id == 4  # type: ignore
+
+    # AddSchemaUpdate
+    assert len(new_metadata.snapshots) == 2
+    assert new_metadata.snapshots[-1] == new_snapshot
+    assert new_metadata.last_sequence_number == new_snapshot.sequence_number
+    assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
+
+    # SetSnapshotRefUpdate
+    assert len(new_metadata.snapshot_log) == 1
+    assert new_metadata.snapshot_log[0].snapshot_id == 25
+    assert new_metadata.current_snapshot_id == 25
+    assert new_metadata.last_updated_ms == 1602638573590
+    assert new_metadata.refs["main"] == SnapshotRef(
+        snapshot_id=25,
+        snapshot_ref_type="branch",
+        min_snapshots_to_keep=1,
+        max_snapshot_age_ms=12312312312,
+        max_ref_age_ms=123123123,
+    )
+
+
+def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
+    base_metadata = table_v1.metadata
+    base_metadata_backup = base_metadata.model_copy(deep=True)
+
+    # Apply legal updates on the table metadata
+    transaction = table_v1.transaction()
+    schema_update_1 = transaction.update_schema()
+    schema_update_1.add_column(path="b", field_type=IntegerType())
+    schema_update_1.commit()
+    test_updates = transaction._updates  # pylint: disable=W0212
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    test_updates += (
+        AddSnapshotUpdate(snapshot=new_snapshot),
+        SetSnapshotRefUpdate(
+            ref_name="main",
+            type="branch",
+            snapshot_id=25,
+            max_ref_age_ms=123123123,
+            max_snapshot_age_ms=12312312312,
+            min_snapshots_to_keep=1,
+        ),
+    )
+    new_metadata = update_table_metadata(base_metadata, test_updates)
+
+    # Check that the original metadata is not modified
+    assert base_metadata == base_metadata_backup
+
+    # Perform illegal update on the new metadata:
+    # TableMetadata should be immutable, but the pydantic's frozen config cannot prevent
+    # operations such as list append.
+    new_metadata.partition_specs.append(PartitionSpec(spec_id=0))
+    assert len(new_metadata.partition_specs) == 2
+
+    # The original metadata should not be affected by the illegal update on the new metadata
+    assert len(base_metadata.partition_specs) == 1
+
+
+def test_generate_snapshot_id(table_v2: Table) -> None:
     assert isinstance(_generate_snapshot_id(), int)
-    assert isinstance(table.new_snapshot_id(), int)
+    assert isinstance(table_v2.new_snapshot_id(), int)
+
+
+def test_assert_create(table_v2: Table) -> None:
+    AssertCreate().validate(None)
+
+    with pytest.raises(CommitFailedException, match="Table already exists"):
+        AssertCreate().validate(table_v2.metadata)
+
+
+def test_assert_table_uuid(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertTableUUID(uuid=base_metadata.table_uuid).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertTableUUID(uuid=uuid.UUID("9c12d441-03fe-4693-9a96-a0705ddf69c2")).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Table UUID does not match: 9c12d441-03fe-4693-9a96-a0705ddf69c2 != 9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    ):
+        AssertTableUUID(uuid=uuid.UUID("9c12d441-03fe-4693-9a96-a0705ddf69c2")).validate(base_metadata)
+
+
+def test_assert_ref_snapshot_id(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: branch main was created concurrently",
+    ):
+        AssertRefSnapshotId(ref="main", snapshot_id=None).validate(base_metadata)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: branch main has changed: expected id 1, found 3055729675574597004",
+    ):
+        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(base_metadata)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: branch or tag not_exist is missing, expected 1",
+    ):
+        AssertRefSnapshotId(ref="not_exist", snapshot_id=1).validate(base_metadata)
+
+
+def test_assert_last_assigned_field_id(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertLastAssignedFieldId(last_assigned_field_id=base_metadata.last_column_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertLastAssignedFieldId(last_assigned_field_id=1).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: last assigned field id has changed: expected 1, found 3",
+    ):
+        AssertLastAssignedFieldId(last_assigned_field_id=1).validate(base_metadata)
+
+
+def test_assert_current_schema_id(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertCurrentSchemaId(current_schema_id=base_metadata.current_schema_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertCurrentSchemaId(current_schema_id=1).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: current schema id has changed: expected 2, found 1",
+    ):
+        AssertCurrentSchemaId(current_schema_id=2).validate(base_metadata)
+
+
+def test_last_assigned_partition_id(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertLastAssignedPartitionId(last_assigned_partition_id=base_metadata.last_partition_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: last assigned partition id has changed: expected 1, found 1000",
+    ):
+        AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(base_metadata)
+
+
+def test_assert_default_spec_id(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertDefaultSpecId(default_spec_id=1).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: default spec id has changed: expected 1, found 0",
+    ):
+        AssertDefaultSpecId(default_spec_id=1).validate(base_metadata)
+
+
+def test_assert_default_sort_order_id(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    AssertDefaultSortOrderId(default_sort_order_id=base_metadata.default_sort_order_id).validate(base_metadata)
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
+        AssertDefaultSortOrderId(default_sort_order_id=1).validate(None)
+
+    with pytest.raises(
+        CommitFailedException,
+        match="Requirement failed: default sort order id has changed: expected 1, found 3",
+    ):
+        AssertDefaultSortOrderId(default_sort_order_id=1).validate(base_metadata)

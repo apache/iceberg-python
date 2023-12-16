@@ -78,8 +78,7 @@ class Literal(Generic[L], ABC):
 
     @singledispatchmethod
     @abstractmethod
-    def to(self, type_var: IcebergType) -> Literal[L]:
-        ...  # pragma: no cover
+    def to(self, type_var: IcebergType) -> Literal[L]: ...  # pragma: no cover
 
     def __repr__(self) -> str:
         """Return the string representation of the Literal class."""

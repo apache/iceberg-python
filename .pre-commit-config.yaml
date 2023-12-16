@@ -29,11 +29,12 @@ repos:
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version (Used for linting)
-    rev: v0.1.4
+    rev: v0.1.8
     hooks:
       - id: ruff
-        args: [ --fix, --exit-non-zero-on-fix ]
+        args: [ --fix, --exit-non-zero-on-fix, --preview ]
       - id: ruff-format
+        args: [ --preview ]
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.5.1
     hooks:

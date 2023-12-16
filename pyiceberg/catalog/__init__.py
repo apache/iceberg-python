@@ -153,7 +153,7 @@ def infer_catalog_type(name: str, catalog_properties: RecursiveDict) -> Optional
                 return CatalogType.REST
             elif uri.startswith("thrift"):
                 return CatalogType.HIVE
-            elif uri.startswith("postgresql"):
+            elif uri.startswith(("sqlite", "postgresql")):
                 return CatalogType.SQL
             else:
                 raise ValueError(f"Could not infer the catalog type from the uri: {uri}")
@@ -536,6 +536,20 @@ class Catalog(ABC):
 
         return tuple_identifier[0], tuple_identifier[1]
 
+    def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
+        """Convert an identifier to a tuple and drop this catalog's name from the first element.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            Identifier: a tuple of strings with this catalog's name removed
+        """
+        identifier_tuple = Catalog.identifier_to_tuple(identifier)
+        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            identifier_tuple = identifier_tuple[1:]
+        return identifier_tuple
+
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table and purge all data and metadata files.
 
@@ -547,8 +561,9 @@ class Catalog(ABC):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        table = self.load_table(identifier)
-        self.drop_table(identifier)
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        table = self.load_table(identifier_tuple)
+        self.drop_table(identifier_tuple)
         io = load_file_io(self.properties, table.metadata_location)
         metadata = table.metadata
         manifest_lists_to_delete = set()

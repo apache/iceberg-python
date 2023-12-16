@@ -135,6 +135,7 @@ def test_bucket_hash_values(test_input: Any, test_type: PrimitiveType, expected:
 @pytest.mark.parametrize(
     "transform,value,expected",
     [
+        (BucketTransform(2).transform(IntegerType()), 0, 0),
         (BucketTransform(100).transform(IntegerType()), 34, 79),
         (BucketTransform(100).transform(LongType()), 34, 79),
         (BucketTransform(100).transform(DateType()), 17486, 26),
