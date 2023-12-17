@@ -179,7 +179,7 @@ class _CreateMapping(SchemaVisitor[List[MappedField]]):
 
     def struct(self, struct: StructType, field_results: List[List[MappedField]]) -> List[MappedField]:
         return [
-            MappedField(field_id=field.field_id, names={field.name}, fields=result)
+            MappedField(field_id=field.field_id, names=[field.name], fields=result)
             for field, result in zip(struct.fields, field_results)
         ]
 
@@ -187,12 +187,12 @@ class _CreateMapping(SchemaVisitor[List[MappedField]]):
         return field_result
 
     def list(self, list_type: ListType, element_result: List[MappedField]) -> List[MappedField]:
-        return [MappedField(field_id=list_type.element_id, names={"element"}, fields=element_result)]
+        return [MappedField(field_id=list_type.element_id, names=["element"], fields=element_result)]
 
     def map(self, map_type: MapType, key_result: List[MappedField], value_result: List[MappedField]) -> List[MappedField]:
         return [
-            MappedField(field_id=map_type.key_id, names={"key"}, fields=key_result),
-            MappedField(field_id=map_type.value_id, names={"value"}, fields=value_result),
+            MappedField(field_id=map_type.key_id, names=["key"], fields=key_result),
+            MappedField(field_id=map_type.value_id, names=["value"], fields=value_result),
         ]
 
     def primitive(self, primitive: PrimitiveType) -> List[MappedField]:
