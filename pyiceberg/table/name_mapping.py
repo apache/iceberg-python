@@ -31,7 +31,11 @@ from pydantic import Field, conlist, field_validator, model_serializer
 
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
-from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, StructType
+from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
+
+LIST_ELEMENT_NAME = "element"
+MAP_KEY_NAME = "key"
+MAP_VALUE_NAME = "value"
 
 
 class MappedField(IcebergBaseModel):
