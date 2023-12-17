@@ -29,6 +29,7 @@ from pyiceberg.io.pyarrow import (
     visit_pyarrow,
 )
 from pyiceberg.schema import Schema, visit
+from pyiceberg.table.name_mapping import MappedField, NameMapping
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -299,3 +300,158 @@ def test_schema_to_pyarrow_schema_missing_id(warn: Mock) -> None:
         _ = pyarrow_to_schema(schema)
     assert "Parquet file contains partial field-ids" in str(exc_info.value)
     assert warn.called
+
+
+def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
+    schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
+    name_mapping = NameMapping(
+        [
+            MappedField(field_id=1, names=['some_string']),
+            MappedField(field_id=2, names=['some_int']),
+        ]
+    )
+    actual = pyarrow_to_schema(schema, name_mapping)
+
+    expected = Schema(
+        NestedField(field_id=2, name="some_int", field_type=IntegerType(), required=False),
+        NestedField(field_id=1, name="some_string", field_type=StringType(), required=True),
+    )
+
+    assert actual == expected
+
+
+def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_nested() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False),
+            pa.field('bar', pa.int32(), nullable=False),
+            pa.field('baz', pa.bool_(), nullable=True),
+            pa.field('qux', pa.list_(pa.string()), nullable=False),
+            pa.field(
+                'quux',
+                pa.map_(
+                    pa.string(),
+                    pa.map_(pa.string(), pa.int32()),
+                ),
+                nullable=False,
+            ),
+            pa.field(
+                'location',
+                pa.list_(
+                    pa.struct(
+                        [
+                            pa.field('latitude', pa.float32(), nullable=False),
+                            pa.field('longitude', pa.float32(), nullable=False),
+                        ]
+                    ),
+                ),
+                nullable=False,
+            ),
+            pa.field(
+                'person',
+                pa.struct(
+                    [
+                        pa.field('name', pa.string(), nullable=True),
+                        pa.field('age', pa.int32(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    name_mapping = NameMapping(
+        [
+            MappedField(field_id=1, names=['foo']),
+            MappedField(field_id=2, names=['bar']),
+            MappedField(field_id=3, names=['baz']),
+            MappedField(field_id=4, names=['qux'], fields=[MappedField(field_id=5, names=['element'])]),
+            MappedField(
+                field_id=6,
+                names=['quux'],
+                fields=[
+                    MappedField(field_id=7, names=['key']),
+                    MappedField(
+                        field_id=8,
+                        names=['value'],
+                        fields=[
+                            MappedField(field_id=9, names=['key']),
+                            MappedField(field_id=10, names=['value']),
+                        ],
+                    ),
+                ],
+            ),
+            MappedField(
+                field_id=11,
+                names=['location'],
+                fields=[
+                    MappedField(
+                        field_id=12,
+                        names=['element'],
+                        fields=[
+                            MappedField(field_id=13, names=['latitude']),
+                            MappedField(field_id=14, names=['longitude']),
+                        ],
+                    )
+                ],
+            ),
+            MappedField(
+                field_id=15,
+                names=['person'],
+                fields=[
+                    MappedField(field_id=16, names=['name']),
+                    MappedField(field_id=17, names=['age']),
+                ],
+            ),
+        ]
+    )
+    actual = pyarrow_to_schema(schema, name_mapping)
+
+    expected = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=4,
+            name="qux",
+            field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
+            required=True,
+        ),
+        NestedField(
+            field_id=6,
+            name="quux",
+            field_type=MapType(
+                key_id=7,
+                key_type=StringType(),
+                value_id=8,
+                value_type=MapType(key_id=9, key_type=StringType(), value_id=10, value_type=IntegerType(), value_required=False),
+                value_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=11,
+            name="location",
+            field_type=ListType(
+                element_id=12,
+                element_type=StructType(
+                    NestedField(field_id=13, name="latitude", field_type=FloatType(), required=True),
+                    NestedField(field_id=14, name="longitude", field_type=FloatType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=15,
+            name="person",
+            field_type=StructType(
+                NestedField(field_id=16, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=17, name="age", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
+    )
+
+    print(name_mapping)
+    assert actual == expected

@@ -120,6 +120,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
+from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
@@ -623,14 +624,16 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], rows:
     return np.setdiff1d(np.arange(rows), all_chunks, assume_unique=False)
 
 
-def pyarrow_to_schema(schema: pa.Schema) -> Schema:
+def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = None) -> Schema:
     visitor = _ConvertToIceberg()
     schema = visit_pyarrow(schema, visitor)
 
-    if visitor.missing_id_metadata:
-        return assign_fresh_schema_ids(schema)
-    else:
+    if not visitor.missing_id_metadata:
         return schema
+    elif name_mapping is not None:
+        return apply_name_mapping(schema, name_mapping)
+    else:
+        return assign_fresh_schema_ids(schema)
 
 
 @singledispatch

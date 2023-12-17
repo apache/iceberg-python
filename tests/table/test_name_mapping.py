@@ -279,7 +279,8 @@ def test_mapping_by_name(table_name_mapping_nested: NameMapping) -> None:
 
 def test_mapping_lookup_by_name(table_name_mapping_nested: NameMapping) -> None:
     assert table_name_mapping_nested.id("foo") == 1
-
+    assert table_name_mapping_nested.id("location.element.latitude") == 13
+    assert table_name_mapping_nested.id("quux.key") == 7
     with pytest.raises(ValueError, match="Could not find field with name: boom"):
         table_name_mapping_nested.id("boom")
 

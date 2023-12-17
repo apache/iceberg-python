@@ -31,7 +31,11 @@ from pydantic import Field, conlist, model_serializer
 
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
-from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, StructType
+from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
+
+LIST_ELEMENT_NAME = "element"
+MAP_KEY_NAME = "key"
+MAP_VALUE_NAME = "value"
 
 
 class MappedField(IcebergBaseModel):
@@ -201,3 +205,73 @@ class _CreateMapping(SchemaVisitor[List[MappedField]]):
 
 def create_mapping_from_schema(schema: Schema) -> NameMapping:
     return NameMapping(visit(schema, _CreateMapping()))
+
+
+def apply_name_mapping(schema_or_type: Union[Schema, IcebergType], name_mapping: NameMapping) -> Schema:
+    """Traverses the schema, and sets new IDs."""
+    return visit(schema_or_type, _ApplyNameMapping(name_mapping=name_mapping))
+
+
+class _ApplyNameMapping(SchemaVisitor[IcebergType]):
+    """Traverses the schema and applies the IDs from provided name_mapping."""
+
+    field_names: List[str]
+
+    def __init__(self, name_mapping: NameMapping) -> None:
+        self.field_names = []
+        self.name_mapping = name_mapping
+
+    def _current_path(self) -> str:
+        return ".".join(self.field_names)
+
+    def _path(self, name: str) -> str:
+        return ".".join(self.field_names + [name])
+
+    def schema(self, schema: Schema, struct_result: StructType) -> Schema:
+        return Schema(*struct_result.fields)
+
+    def struct(self, struct: StructType, field_results: List[IcebergType]) -> StructType:
+        return StructType(*field_results)
+
+    def field(self, field: NestedField, field_result: IcebergType | None) -> NestedField:
+        return NestedField(
+            field_id=self.name_mapping.id(self._path(field.name)),
+            name=field.name,
+            field_type=field_result,
+            required=field.required,
+            doc=field.doc,
+        )
+
+    def list(self, list_type: ListType, element_result: IcebergType | None) -> ListType:
+        return ListType(
+            element_id=self.name_mapping.id(self._current_path() + "." + LIST_ELEMENT_NAME),
+            element=element_result,
+            element_required=list_type.element_required,
+        )
+
+    def map(self, map_type: MapType, key_result: IcebergType | None, value_result: IcebergType | None) -> MapType:
+        return MapType(
+            key_id=self.name_mapping.id(self._current_path() + "." + MAP_KEY_NAME),
+            key_type=key_result,
+            value_id=self.name_mapping.id(self._current_path() + "." + MAP_VALUE_NAME),
+            value_type=value_result,
+            value_required=map_type.value_required,
+        )
+
+    def primitive(self, primitive: PrimitiveType) -> PrimitiveType:
+        return primitive
+
+    def before_field(self, field: NestedField) -> None:
+        self.field_names.append(field.name)
+
+    def after_field(self, field: NestedField) -> None:
+        self.field_names.pop()
+
+    def before_list_element(self, element: NestedField) -> None:
+        self.field_names.append(LIST_ELEMENT_NAME)
+
+    def before_map_key(self, key: NestedField) -> None:
+        self.field_names.append(MAP_KEY_NAME)
+
+    def before_map_value(self, value: NestedField) -> None:
+        self.field_names.append(MAP_VALUE_NAME)
