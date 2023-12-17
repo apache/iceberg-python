@@ -49,6 +49,7 @@ from pyiceberg.table import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemovePropertiesUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SnapshotRef,
@@ -526,6 +527,51 @@ def test_add_nested_list_type_column(table_v2: Table) -> None:
     assert new_schema.highest_field_id == 7
 
 
+def test_apply_set_properties_update(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+
+    new_metadata_no_update = update_table_metadata(base_metadata, (SetPropertiesUpdate(updates={}),))
+    assert new_metadata_no_update == base_metadata
+
+    new_metadata = update_table_metadata(
+        base_metadata, (SetPropertiesUpdate(updates={"read.split.target.size": "123", "test_a": "test_a", "test_b": "test_b"}),)
+    )
+
+    assert base_metadata.properties == {"read.split.target.size": "134217728"}
+    assert new_metadata.properties == {"read.split.target.size": "123", "test_a": "test_a", "test_b": "test_b"}
+
+    new_metadata_add_only = update_table_metadata(new_metadata, (SetPropertiesUpdate(updates={"test_c": "test_c"}),))
+
+    assert new_metadata_add_only.properties == {
+        "read.split.target.size": "123",
+        "test_a": "test_a",
+        "test_b": "test_b",
+        "test_c": "test_c",
+    }
+
+
+def test_apply_remove_properties_update(table_v2: Table) -> None:
+    base_metadata = update_table_metadata(
+        table_v2.metadata,
+        (SetPropertiesUpdate(updates={"test_a": "test_a", "test_b": "test_b", "test_c": "test_c", "test_d": "test_d"}),),
+    )
+
+    new_metadata_no_removal = update_table_metadata(base_metadata, (RemovePropertiesUpdate(removals=[]),))
+
+    assert base_metadata == new_metadata_no_removal
+
+    new_metadata = update_table_metadata(base_metadata, (RemovePropertiesUpdate(removals=["test_a", "test_c"]),))
+
+    assert base_metadata.properties == {
+        "read.split.target.size": "134217728",
+        "test_a": "test_a",
+        "test_b": "test_b",
+        "test_c": "test_c",
+        "test_d": "test_d",
+    }
+    assert new_metadata.properties == {"read.split.target.size": "134217728", "test_b": "test_b", "test_d": "test_d"}
+
+
 def test_apply_add_schema_update(table_v2: Table) -> None:
     transaction = table_v2.transaction()
     update = transaction.update_schema()
@@ -626,6 +672,8 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     schema_update_1.add_column(path="b", field_type=IntegerType())
     schema_update_1.commit()
 
+    transaction.set_properties(owner="test", test_a="test_a", test_b="test_b", test_c="test_c")
+
     test_updates = transaction._updates  # pylint: disable=W0212
 
     new_snapshot = Snapshot(
@@ -640,6 +688,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
 
     test_updates += (
         AddSnapshotUpdate(snapshot=new_snapshot),
+        SetPropertiesUpdate(updates={"test_a": "test_a1"}),
         SetSnapshotRefUpdate(
             ref_name="main",
             type="branch",
@@ -648,6 +697,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
             max_snapshot_age_ms=12312312312,
             min_snapshots_to_keep=1,
         ),
+        RemovePropertiesUpdate(removals=["test_c", "test_b"]),
     )
 
     new_metadata = update_table_metadata(base_metadata, test_updates)
@@ -681,6 +731,9 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
         max_snapshot_age_ms=12312312312,
         max_ref_age_ms=123123123,
     )
+
+    # Set/RemovePropertiesUpdate
+    assert new_metadata.properties == {"owner": "test", "test_a": "test_a1"}
 
 
 def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
