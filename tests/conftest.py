@@ -34,25 +34,16 @@ from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Dict,
     Generator,
     List,
     Optional,
 )
-from unittest.mock import MagicMock
 from urllib.parse import urlparse
 
-import aiobotocore.awsrequest
-import aiobotocore.endpoint
-import aiohttp
-import aiohttp.client_reqrep
-import aiohttp.typedefs
 import boto3
-import botocore.awsrequest
-import botocore.model
 import pytest
-from moto import mock_dynamodb, mock_glue, mock_s3
+from moto.server import ThreadedMotoServer
 
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
@@ -74,7 +65,6 @@ from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
-from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1573,113 +1563,42 @@ def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
     return PyArrowFileIO(properties=properties)
 
 
-class MockAWSResponse(aiobotocore.awsrequest.AioAWSResponse):
-    """A mocked aws response implementation (for test use only).
-
-    See https://github.com/aio-libs/aiobotocore/issues/755.
-    """
-
-    def __init__(self, response: botocore.awsrequest.AWSResponse) -> None:
-        self._moto_response = response
-        self.status_code = response.status_code
-        self.raw = MockHttpClientResponse(response)
-
-    # adapt async methods to use moto's response
-    async def _content_prop(self) -> bytes:
-        return self._moto_response.content
-
-    async def _text_prop(self) -> str:
-        return self._moto_response.text
+MOTO_SERVER = ThreadedMotoServer(port=5456)
 
 
-class MockHttpClientResponse(aiohttp.client_reqrep.ClientResponse):
-    """A mocked http client response implementation (for test use only).
-
-    See https://github.com/aio-libs/aiobotocore/issues/755.
-    """
-
-    def __init__(self, response: botocore.awsrequest.AWSResponse) -> None:
-        async def read(*_: Any) -> bytes:
-            # streaming/range requests. used by s3fs
-            return response.content
-
-        self.content = MagicMock(aiohttp.StreamReader)
-        self.content.read = read
-        self.response = response
-
-    @property
-    def raw_headers(self) -> aiohttp.typedefs.RawHeaders:
-        # Return the headers encoded the way that aiobotocore expects them
-        return {k.encode(UTF8): str(v).encode(UTF8) for k, v in self.response.headers.items()}.items()
+def pytest_sessionfinish(session, exitstatus):
+    if MOTO_SERVER._server_ready:
+        MOTO_SERVER.stop()
 
 
-def patch_aiobotocore() -> None:
-    """Patch aiobotocore to work with moto.
-
-    See https://github.com/aio-libs/aiobotocore/issues/755.
-    """
-
-    def factory(original: Callable) -> Callable:  # type: ignore
-        def patched_convert_to_response_dict(  # type: ignore
-            http_response: botocore.awsrequest.AWSResponse, operation_model: botocore.model.OperationModel
-        ):
-            return original(MockAWSResponse(http_response), operation_model)
-
-        return patched_convert_to_response_dict
-
-    aiobotocore.endpoint.convert_to_response_dict = factory(aiobotocore.endpoint.convert_to_response_dict)
+@pytest.fixture(scope="session")
+def moto_server():
+    MOTO_SERVER.start()
+    return MOTO_SERVER
 
 
-@pytest.fixture(name="_patch_aiobotocore")
-def fixture_aiobotocore():  # type: ignore
-    """Patch aiobotocore to work with moto.
-
-    pending close of this issue: https://github.com/aio-libs/aiobotocore/issues/755.
-    """
-    stored_method = aiobotocore.endpoint.convert_to_response_dict
-    yield patch_aiobotocore()
-    # restore the changed method after the fixture is destroyed
-    aiobotocore.endpoint.convert_to_response_dict = stored_method
-
-
-def aws_credentials() -> None:
-    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-    os.environ["AWS_SECURITY_TOKEN"] = "testing"
-    os.environ["AWS_SESSION_TOKEN"] = "testing"
-    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-
-
-@pytest.fixture(name="_aws_credentials")
-def fixture_aws_credentials() -> Generator[None, None, None]:
-    """Yield a mocked AWS Credentials for moto."""
-    yield aws_credentials()  # type: ignore
-    os.environ.pop("AWS_ACCESS_KEY_ID")
-    os.environ.pop("AWS_SECRET_ACCESS_KEY")
-    os.environ.pop("AWS_SECURITY_TOKEN")
-    os.environ.pop("AWS_SESSION_TOKEN")
-    os.environ.pop("AWS_DEFAULT_REGION")
+@pytest.fixture(scope="session")
+def moto_endpoint_url(moto_server):
+    _url = f"http://{moto_server._ip_address}:{moto_server._port}"
+    return _url
 
 
 @pytest.fixture(name="_s3")
-def fixture_s3(_aws_credentials: None) -> Generator[boto3.client, None, None]:
+def fixture_s3(moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
     """Yield a mocked S3 client."""
-    with mock_s3():
-        yield boto3.client("s3", region_name="us-east-1")
+    yield boto3.client("s3", region_name="us-east-1", endpoint_url=moto_endpoint_url)
 
 
 @pytest.fixture(name="_glue")
-def fixture_glue(_aws_credentials: None) -> Generator[boto3.client, None, None]:
+def fixture_glue(moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
     """Yield a mocked glue client."""
-    with mock_glue():
-        yield boto3.client("glue", region_name="us-east-1")
+    yield boto3.client("glue", region_name="us-east-1", endpoint_url=moto_endpoint_url)
 
 
 @pytest.fixture(name="_dynamodb")
-def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, None]:
+def fixture_dynamodb(moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
     """Yield a mocked DynamoDB client."""
-    with mock_dynamodb():
-        yield boto3.client("dynamodb", region_name="us-east-1")
+    yield boto3.client("dynamodb", region_name="us-east-1", endpoint_url=moto_endpoint_url)
 
 
 @pytest.fixture
