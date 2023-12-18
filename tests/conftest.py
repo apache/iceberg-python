@@ -1610,7 +1610,7 @@ def moto_endpoint_url(moto_server: ThreadedMotoServer) -> str:
 
 
 @pytest.fixture(name="_s3")
-def fixture_s3(moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
+def fixture_s3(_aws_credentials: None, moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
     """Yield a mocked S3 client."""
     yield boto3.client("s3", region_name="us-east-1", endpoint_url=moto_endpoint_url)
 
