@@ -74,7 +74,7 @@ For the FileIO there are several configuration options available:
 | s3.signer            | bearer                   | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
 | s3.region            | us-west-2                | Sets the region of the bucket                                                                                                                                                                                                                             |
 | s3.proxy-uri         | http://my.proxy.com:8080 | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
-| s3.connect-timeout   | 60                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
+| s3.connect-timeout   | 60.0                     | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
 
 ### HDFS
 
