@@ -27,7 +27,7 @@ from collections import ChainMap
 from functools import cached_property, singledispatch
 from typing import Any, Dict, Generic, List, TypeVar, Union
 
-from pydantic import Field, conlist, model_serializer
+from pydantic import Field, conlist, field_validator, model_serializer
 
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
@@ -38,6 +38,11 @@ class MappedField(IcebergBaseModel):
     field_id: int = Field(alias="field-id")
     names: List[str] = conlist(str, min_length=1)
     fields: List[MappedField] = Field(default_factory=list)
+
+    @field_validator('fields', mode='before')
+    @classmethod
+    def convert_null_to_empty_List(cls, v: Any) -> Any:
+        return v or []
 
     @model_serializer
     def ser_model(self) -> Dict[str, Any]:
@@ -65,24 +70,15 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
     root: List[MappedField]
 
     @cached_property
-    def _field_by_id(self) -> Dict[int, MappedField]:
-        return visit_name_mapping(self, _IndexById())
-
-    @cached_property
     def _field_by_name(self) -> Dict[str, MappedField]:
         return visit_name_mapping(self, _IndexByName())
 
-    def id(self, name: str) -> int:
+    def find(self, *names: str) -> MappedField:
+        name = '.'.join(names)
         try:
-            return self._field_by_name[name].field_id
+            return self._field_by_name[name]
         except KeyError as e:
             raise ValueError(f"Could not find field with name: {name}") from e
-
-    def field(self, field_id: int) -> MappedField:
-        try:
-            return self._field_by_id[field_id]
-        except KeyError as e:
-            raise ValueError(f"Could not find field-id: {field_id}") from e
 
     def __len__(self) -> int:
         """Return the number of mappings."""
@@ -111,27 +107,6 @@ class NameMappingVisitor(Generic[T], ABC):
     @abstractmethod
     def field(self, field: MappedField, field_result: T) -> T:
         """Visit a MappedField."""
-
-
-class _IndexById(NameMappingVisitor[Dict[int, MappedField]]):
-    result: Dict[int, MappedField]
-
-    def __init__(self) -> None:
-        self.result = {}
-
-    def mapping(self, nm: NameMapping, field_results: Dict[int, MappedField]) -> Dict[int, MappedField]:
-        return field_results
-
-    def fields(self, struct: List[MappedField], field_results: List[Dict[int, MappedField]]) -> Dict[int, MappedField]:
-        return self.result
-
-    def field(self, field: MappedField, field_result: Dict[int, MappedField]) -> Dict[int, MappedField]:
-        if field.field_id in self.result:
-            raise ValueError(f"Invalid mapping: ID {field.field_id} is not unique")
-
-        self.result[field.field_id] = field
-
-        return self.result
 
 
 class _IndexByName(NameMappingVisitor[Dict[str, MappedField]]):
@@ -169,7 +144,7 @@ def _(fields: List[MappedField], visitor: NameMappingVisitor[T]) -> T:
     return visitor.fields(fields, results)
 
 
-def load_mapping_from_json(mapping: str) -> NameMapping:
+def parse_mapping_from_json(mapping: str) -> NameMapping:
     return NameMapping.model_validate_json(mapping)
 
 
