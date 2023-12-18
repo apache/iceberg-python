@@ -902,11 +902,9 @@ class ManifestListWriterV1(ManifestListWriter):
 
 class ManifestListWriterV2(ManifestListWriter):
     _commit_snapshot_id: int
-    _sequence_number: Optional[int]
+    _sequence_number: int
 
-    def __init__(
-        self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int], sequence_number: Optional[int]
-    ):
+    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int], sequence_number: int):
         super().__init__(
             output_file,
             {
@@ -929,7 +927,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 raise ValueError(
                     f"Found unassigned sequence number for a manifest from snapshot: {self._commit_snapshot_id} != {wrapped_manifest_file.added_snapshot_id}"
                 )
-            wrapped_manifest_file.sequence_number = self._sequence_number or INITIAL_SEQUENCE_NUMBER
+            wrapped_manifest_file.sequence_number = self._sequence_number
 
         if wrapped_manifest_file.min_sequence_number == UNASSIGNED_SEQ:
             if self._commit_snapshot_id != wrapped_manifest_file.added_snapshot_id:
@@ -938,7 +936,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 )
             # if the min sequence number is not determined, then there was no assigned sequence number for any file
             # written to the wrapped manifest. Replace the unassigned sequence number with the one for this commit
-            wrapped_manifest_file.min_sequence_number = self._sequence_number or INITIAL_SEQUENCE_NUMBER
+            wrapped_manifest_file.min_sequence_number = self._sequence_number
         return wrapped_manifest_file
 
 
@@ -952,6 +950,8 @@ def write_manifest_list(
     if format_version == 1:
         return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id)
     elif format_version == 2:
+        if sequence_number is None:
+            raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
         return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")

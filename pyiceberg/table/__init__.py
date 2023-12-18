@@ -129,10 +129,10 @@ class Transaction:
     _requirements: Tuple[TableRequirement, ...]
 
     def __init__(
-        self,
-        table: Table,
-        actions: Optional[Tuple[TableUpdate, ...]] = None,
-        requirements: Optional[Tuple[TableRequirement, ...]] = None,
+            self,
+            table: Table,
+            actions: Optional[Tuple[TableUpdate, ...]] = None,
+            requirements: Optional[Tuple[TableRequirement, ...]] = None,
     ):
         self._table = table
         self._updates = actions or ()
@@ -185,7 +185,8 @@ class Transaction:
             # explicitly get type of new_update as requirement is an instantiated class
             type_new_requirement = type(new_requirement)
             if any(isinstance(requirement, type_new_requirement) for requirement in self._requirements):
-                raise ValueError(f"Requirements in a single commit need to be unique, duplicate: {type_new_requirement}")
+                raise ValueError(
+                    f"Requirements in a single commit need to be unique, duplicate: {type_new_requirement}")
         self._requirements = self._requirements + new_requirements
         return self
 
@@ -225,25 +226,27 @@ class Transaction:
         """Add a new snapshot to the table.
 
         Returns:
-            A new UpdateSchema.
+            The transaction with the add-snapshot staged.
         """
         self._append_updates(AddSnapshotUpdate(snapshot=snapshot))
+        self._append_requirements(AssertTableUUID(uuid=self._table.metadata.table_uuid))
 
         return self
 
     def set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        ref_name: str = "main",
-        type: str = "branch",
-        max_age_ref_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
+            self,
+            snapshot_id: int,
+            parent_snapshot_id: Optional[int],
+            ref_name: str,
+            type: str,
+            max_age_ref_ms: Optional[int] = None,
+            max_snapshot_age_ms: Optional[int] = None,
+            min_snapshots_to_keep: Optional[int] = None,
     ) -> Transaction:
         """Update a ref to a snapshot.
 
         Returns:
-            A new UpdateSchema.
+            The transaction with the set-snapshot-ref staged
         """
         self._append_updates(
             SetSnapshotRefUpdate(
@@ -256,11 +259,7 @@ class Transaction:
             )
         )
 
-        self._append_requirements(
-            AssertRefSnapshotId(
-                snapshot_id=current_snapshot.snapshot_id if (current_snapshot := self._table.current_snapshot()) else None
-            )
-        )
+        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"))
         return self
 
     def update_schema(self) -> UpdateSchema:
@@ -370,7 +369,8 @@ class AddSortOrderUpdate(TableUpdate):
 class SetDefaultSortOrderUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.set_default_sort_order
     sort_order_id: int = Field(
-        alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order", default=-1
+        alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order",
+        default=-1
     )
 
 
@@ -432,12 +432,14 @@ class _TableMetadataUpdateContext:
 
     def is_added_schema(self, schema_id: int) -> bool:
         return any(
-            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
+            update.schema_.schema_id == schema_id for update in self._updates if
+            update.action == TableUpdateAction.add_schema
         )
 
 
 @singledispatch
-def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata,
+                        context: _TableMetadataUpdateContext) -> TableMetadata:
     """Apply a table update to the table metadata.
 
     Args:
@@ -453,7 +455,8 @@ def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, conte
 
 
 @_apply_table_update.register(UpgradeFormatVersionUpdate)
-def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata,
+      context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
     elif update.format_version < base_metadata.format_version:
@@ -483,7 +486,8 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
 
 
 @_apply_table_update.register(SetCurrentSchemaUpdate)
-def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata,
+      context: _TableMetadataUpdateContext) -> TableMetadata:
     new_schema_id = update.schema_id
     if new_schema_id == -1:
         # The last added schema should be in base_metadata.schemas at this point
@@ -513,10 +517,10 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
-        base_metadata.format_version == 2
-        and update.snapshot.sequence_number is not None
-        and update.snapshot.sequence_number <= base_metadata.last_sequence_number
-        and update.snapshot.parent_snapshot_id is not None
+            base_metadata.format_version == 2
+            and update.snapshot.sequence_number is not None
+            and update.snapshot.sequence_number <= base_metadata.last_sequence_number
+            and update.snapshot.parent_snapshot_id is not None
     ):
         raise ValueError(
             f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
@@ -534,7 +538,8 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
 
 
 @_apply_table_update.register(SetSnapshotRefUpdate)
-def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata,
+      context: _TableMetadataUpdateContext) -> TableMetadata:
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
         snapshot_ref_type=update.type,
@@ -637,7 +642,7 @@ class AssertRefSnapshotId(TableRequirement):
     """
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
-    ref: str = Field(default="main")
+    ref: str = Field(...)
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
@@ -652,7 +657,8 @@ class AssertRefSnapshotId(TableRequirement):
                     f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
                 )
         elif self.snapshot_id is not None:
-            raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
+            raise CommitFailedException(
+                f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 
 
 class AssertLastAssignedFieldId(TableRequirement):
@@ -765,7 +771,7 @@ class Table:
     catalog: Catalog
 
     def __init__(
-        self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
+            self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
     ) -> None:
         self.identifier = identifier
         self.metadata = metadata
@@ -789,13 +795,13 @@ class Table:
         return self.identifier
 
     def scan(
-        self,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+            self,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+            selected_fields: Tuple[str, ...] = ("*",),
+            case_sensitive: bool = True,
+            snapshot_id: Optional[int] = None,
+            options: Properties = EMPTY_DICT,
+            limit: Optional[int] = None,
     ) -> DataScan:
         return DataScan(
             table=self,
@@ -830,7 +836,8 @@ class Table:
     def sort_order(self) -> SortOrder:
         """Return the sort order of this table."""
         return next(
-            sort_order for sort_order in self.metadata.sort_orders if sort_order.order_id == self.metadata.default_sort_order_id
+            sort_order for sort_order in self.metadata.sort_orders if
+            sort_order.order_id == self.metadata.default_sort_order_id
         )
 
     def sort_orders(self) -> Dict[int, SortOrder]:
@@ -849,6 +856,9 @@ class Table:
     @property
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
+
+    def next_sequence_number(self) -> int:
+        return self.last_sequence_number + 1 if self.metadata.format_version > 1 else INITIAL_SEQUENCE_NUMBER
 
     def _next_sequence_number(self) -> int:
         return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
@@ -884,48 +894,50 @@ class Table:
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
 
-    def write_arrow(self, df: pa.Table, mode: Literal['append', 'overwrite'] = 'overwrite') -> None:
+    def append(self, df: pa.Table) -> None:
         if len(self.spec().fields) > 0:
-            raise ValueError("Currently only unpartitioned tables are supported")
+            raise ValueError("Cannot write to partitioned tables")
 
         snapshot_id = self.new_snapshot_id()
         parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
 
-        data_files = _dataframe_to_data_files(self, snapshot_id=snapshot_id, df=df)
-        merge = _MergeAppend(table=self, snapshot_id=snapshot_id)
+        data_files = _dataframe_to_data_files(self, df=df)
+        merge = _MergeAppend(
+            operation=Operation.APPEND, table=self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id
+        )
         for data_file in data_files:
             merge.append_datafile(data_file)
 
-        if mode == "overwrite":
-            if _ := self.current_snapshot():
-                operation = Operation.OVERWRITE
-            else:
-                operation = Operation.APPEND
-        elif mode == "append":
-            if current_snapshot := self.current_snapshot():
-                for manifest in current_snapshot.manifests(self.io):
-                    merge.append_manifest(manifest)
-            operation = Operation.APPEND
+        if current_snapshot := self.current_snapshot():
+            for manifest in current_snapshot.manifests(io=self.io):
+                for entry in manifest.fetch_manifest_entry(io=self.io):
+                    merge.append_datafile(entry.data_file)
+
+        merge.commit()
+
+    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+        if overwrite_filter != AlwaysTrue():
+            raise NotImplementedError("Cannot overwrite a subset of a table")
+
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned tables")
+
+        snapshot_id = self.new_snapshot_id()
+        parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
+
+        data_files = _dataframe_to_data_files(self, df=df)
+
+        if _ := self.current_snapshot():
+            operation = Operation.OVERWRITE
         else:
-            raise ValueError(f"Unknown write mode: {mode}")
+            operation = Operation.APPEND
 
-        new_summary, manifests = merge.manifests()
-        summary = update_snapshot_summaries(
-            summary=Summary(operation=operation, **new_summary),
-            previous_summary=None
-            if parent_snapshot_id is None
-            else snapshot.summary
-            if (snapshot := self.snapshot_by_id(parent_snapshot_id))
-            else None,
-        )
+        merge = _MergeAppend(operation=operation, table=self, snapshot_id=snapshot_id,
+                             parent_snapshot_id=parent_snapshot_id)
+        for data_file in data_files:
+            merge.append_datafile(data_file)
 
-        snapshot = _manifests_to_manifest_list(
-            self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id, manifests=manifests, summary=summary
-        )
-
-        with self.transaction() as tx:
-            tx.add_snapshot(snapshot=snapshot)
-            tx.set_ref_snapshot(snapshot_id=snapshot.snapshot_id)
+        merge.commit()
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -1016,14 +1028,14 @@ class TableScan(ABC):
     limit: Optional[int]
 
     def __init__(
-        self,
-        table: Table,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+            self,
+            table: Table,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+            selected_fields: Tuple[str, ...] = ("*",),
+            case_sensitive: bool = True,
+            snapshot_id: Optional[int] = None,
+            options: Properties = EMPTY_DICT,
+            limit: Optional[int] = None,
     ):
         self.table = table
         self.row_filter = _parse_row_filter(row_filter)
@@ -1097,11 +1109,11 @@ class FileScanTask(ScanTask):
     length: int
 
     def __init__(
-        self,
-        data_file: DataFile,
-        delete_files: Optional[Set[DataFile]] = None,
-        start: Optional[int] = None,
-        length: Optional[int] = None,
+            self,
+            data_file: DataFile,
+            delete_files: Optional[Set[DataFile]] = None,
+            start: Optional[int] = None,
+            length: Optional[int] = None,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
@@ -1110,10 +1122,10 @@ class FileScanTask(ScanTask):
 
 
 def _open_manifest(
-    io: FileIO,
-    manifest: ManifestFile,
-    partition_filter: Callable[[DataFile], bool],
-    metrics_evaluator: Callable[[DataFile], bool],
+        io: FileIO,
+        manifest: ManifestFile,
+        partition_filter: Callable[[DataFile], bool],
+        metrics_evaluator: Callable[[DataFile], bool],
 ) -> List[ManifestEntry]:
     return [
         manifest_entry
@@ -1134,7 +1146,8 @@ def _min_data_file_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[
+    DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -1146,10 +1159,11 @@ def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entr
     Returns:
         A set of files that are relevant for the data file.
     """
-    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
+    relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry):]
 
     if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
+        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA,
+                                               EqualTo("file_path", data_entry.data_file.file_path))
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -1161,14 +1175,14 @@ def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entr
 
 class DataScan(TableScan):
     def __init__(
-        self,
-        table: Table,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
+            self,
+            table: Table,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+            selected_fields: Tuple[str, ...] = ("*",),
+            case_sensitive: bool = True,
+            snapshot_id: Optional[int] = None,
+            options: Properties = EMPTY_DICT,
+            limit: Optional[int] = None,
     ):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
@@ -1182,7 +1196,8 @@ class DataScan(TableScan):
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id],
+                                           self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table.specs()[spec_id]
@@ -1209,8 +1224,8 @@ class DataScan(TableScan):
         """
         return manifest.content == ManifestContent.DATA or (
             # Not interested in deletes that are older than the data
-            manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
+                manifest.content == ManifestContent.DELETES
+                and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
         )
 
     def plan_files(self) -> Iterable[FileScanTask]:
@@ -1251,19 +1266,19 @@ class DataScan(TableScan):
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(
-            *executor.map(
-                lambda args: _open_manifest(*args),
-                [
-                    (
-                        io,
-                        manifest,
-                        partition_evaluators[manifest.partition_spec_id],
-                        metrics_evaluator,
-                    )
-                    for manifest in manifests
-                    if self._check_sequence_number(min_data_sequence_number, manifest)
-                ],
-            )
+                *executor.map(
+                    lambda args: _open_manifest(*args),
+                    [
+                        (
+                                io,
+                                manifest,
+                                partition_evaluators[manifest.partition_spec_id],
+                                metrics_evaluator,
+                        )
+                        for manifest in manifests
+                        if self._check_sequence_number(min_data_sequence_number, manifest)
+                    ],
+                )
         ):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
@@ -1271,7 +1286,8 @@ class DataScan(TableScan):
             elif data_file.content == DataFileContent.POSITION_DELETES:
                 positional_delete_entries.add(manifest_entry)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+                raise ValueError(
+                    "PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
@@ -1348,11 +1364,11 @@ class UpdateSchema:
     _transaction: Optional[Transaction]
 
     def __init__(
-        self,
-        table: Table,
-        transaction: Optional[Transaction] = None,
-        allow_incompatible_changes: bool = False,
-        case_sensitive: bool = True,
+            self,
+            table: Table,
+            transaction: Optional[Transaction] = None,
+            allow_incompatible_changes: bool = False,
+            case_sensitive: bool = True,
     ) -> None:
         self._table = table
         self._schema = table.schema()
@@ -1373,7 +1389,8 @@ class UpdateSchema:
             return column_name
 
         self._id_to_parent = {
-            field_id: get_column_name(parent_field_id) for field_id, parent_field_id in self._schema._lazy_id_to_parent.items()
+            field_id: get_column_name(parent_field_id) for field_id, parent_field_id in
+            self._schema._lazy_id_to_parent.items()
         }
 
         self._allow_incompatible_changes = allow_incompatible_changes
@@ -1401,7 +1418,8 @@ class UpdateSchema:
         return self
 
     def add_column(
-        self, path: Union[str, Tuple[str, ...]], field_type: IcebergType, doc: Optional[str] = None, required: bool = False
+            self, path: Union[str, Tuple[str, ...]], field_type: IcebergType, doc: Optional[str] = None,
+            required: bool = False
     ) -> UpdateSchema:
         """Add a new column to a nested struct or Add a new top-level column.
 
@@ -1589,11 +1607,11 @@ class UpdateSchema:
             )
 
     def update_column(
-        self,
-        path: Union[str, Tuple[str, ...]],
-        field_type: Optional[IcebergType] = None,
-        required: Optional[bool] = None,
-        doc: Optional[str] = None,
+            self,
+            path: Union[str, Tuple[str, ...]],
+            field_type: Optional[IcebergType] = None,
+            required: Optional[bool] = None,
+            doc: Optional[str] = None,
     ) -> UpdateSchema:
         """Update the type of column.
 
@@ -1625,7 +1643,8 @@ class UpdateSchema:
                 try:
                     promote(field.field_type, field_type)
                 except ResolveError as e:
-                    raise ValidationError(f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
+                    raise ValidationError(
+                        f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
 
         if updated := self._updates.get(field.field_id):
             self._updates[field.field_id] = NestedField(
@@ -1732,7 +1751,8 @@ class UpdateSchema:
         if field_id == before_field_id:
             raise ValueError(f"Cannot move {full_name} before itself")
 
-        self._move(Move(field_id=field_id, full_name=full_name, other_field_id=before_field_id, op=MoveOperation.Before))
+        self._move(
+            Move(field_id=field_id, full_name=full_name, other_field_id=before_field_id, op=MoveOperation.Before))
 
         return self
 
@@ -1769,7 +1789,8 @@ class UpdateSchema:
         """Apply the pending changes and commit."""
         new_schema = self._apply()
 
-        existing_schema_id = next((schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema), None)
+        existing_schema_id = next((schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema),
+                                  None)
 
         # Check if it is different current schema ID
         if existing_schema_id != self._table.schema().schema_id:
@@ -1826,7 +1847,8 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
     _moves: Dict[int, List[Move]]
 
     def __init__(
-        self, adds: Dict[int, List[NestedField]], updates: Dict[int, NestedField], deletes: Set[int], moves: Dict[int, List[Move]]
+            self, adds: Dict[int, List[NestedField]], updates: Dict[int, NestedField], deletes: Set[int],
+            moves: Dict[int, List[Move]]
     ) -> None:
         self._adds = adds
         self._updates = updates
@@ -1910,10 +1932,11 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
         if element_type is None:
             raise ValueError(f"Cannot delete element type from list: {element_result}")
 
-        return ListType(element_id=list_type.element_id, element=element_type, element_required=list_type.element_required)
+        return ListType(element_id=list_type.element_id, element=element_type,
+                        element_required=list_type.element_required)
 
     def map(
-        self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
+            self, map_type: MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
     ) -> Optional[IcebergType]:
         key_id: int = map_type.key_field.field_id
 
@@ -1975,7 +1998,7 @@ def _move_fields(fields: Tuple[NestedField, ...], moves: List[Move]) -> Tuple[Ne
 
 
 def _add_and_move_fields(
-    fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[Move]
+        fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[Move]
 ) -> Optional[Tuple[NestedField, ...]]:
     if len(adds) > 0:
         # always apply adds first so that added fields can be moved
@@ -2005,93 +2028,60 @@ def _generate_snapshot_id() -> int:
 
 @dataclass(frozen=True)
 class WriteTask:
+    write_uuid: uuid.UUID
+    task_id: int
     df: pa.Table
+    sort_order_id: Optional[int] = None
+
     # Later to be extended with partition information
 
-
-def _generate_datafile_filename(extension: str) -> str:
-    # Mimics the behavior in the Java API:
-    # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
-    return f"00000-0-{uuid.uuid4()}-0.{extension}"
-
-
-def _new_manifest_path(location: str, num: int = 0) -> str:
-    return f'{location}/metadata/{uuid.uuid4()}-m{num}.avro'
+    def generate_datafile_filename(self, extension: str) -> str:
+        # Mimics the behavior in the Java API:
+        # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
+        return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
 
-def _generate_manifest_list_filename(snapshot_id: int, attempt: int = 0) -> str:
+def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
+    return f'{location}/metadata/{commit_uuid}-m{num}.avro'
+
+
+def _generate_manifest_list_filename(snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
-    return f"snap-{snapshot_id}-{attempt}-{uuid.uuid4()}.avro"
+    return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
-def _dataframe_to_data_files(table: Table, snapshot_id: int, df: pa.Table) -> Iterable[DataFile]:
+def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import write_file
+
+    write_uuid = uuid.uuid4()
+    counter = itertools.count(0)
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(table, iter([WriteTask(df)]))
-
-
-def _manifests_to_manifest_list(
-    table: Table, snapshot_id: int, parent_snapshot_id: Optional[int], manifests: List[ManifestFile], summary: Dict[str, str]
-) -> Snapshot:
-    manifest_list_file_path = f'{table.location()}/metadata/{_generate_manifest_list_filename(snapshot_id=snapshot_id)}'
-    with write_manifest_list(
-        format_version=table.metadata.format_version,
-        output_file=table.io.new_output(manifest_list_file_path),
-        snapshot_id=snapshot_id,
-        parent_snapshot_id=parent_snapshot_id,
-        sequence_number=None,
-    ) as writer:
-        writer.add_manifests(manifests)
-
-    return Snapshot(
-        snapshot_id=snapshot_id,
-        parent_snapshot_id=parent_snapshot_id,
-        manifest_list=manifest_list_file_path,
-        sequence_number=table._next_sequence_number(),
-        summary=summary,
-        schema_id=table.schema().schema_id,
-    )
-
-
-class _AppendManifest(ABC):
-    @abstractmethod
-    def append_manifest(self, manifest_file: ManifestFile) -> _AppendManifest:
-        pass
-
-    @abstractmethod
-    def manifests(self) -> List[ManifestFile]:
-        pass
+    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))
 
 
 class _MergeAppend:
+    _operation: Operation
     _table: Table
     _snapshot_id: int
+    _parent_snapshot_id: Optional[int]
     _added_manifests: List[ManifestFile]
     _added_datafiles: List[DataFile]
+    _commit_uuid: uuid.UUID
 
-    def __init__(self, table: Table, snapshot_id: int) -> None:
+    def __init__(self, operation: Operation, table: Table, snapshot_id: int, parent_snapshot_id: Optional[int]) -> None:
+        self._operation = operation
         self._table = table
         self._snapshot_id = snapshot_id
+        self._parent_snapshot_id = parent_snapshot_id
         self._added_manifests = []
         self._added_datafiles = []
+        self._commit_uuid = uuid.uuid4()
 
     def append_datafile(self, data_file: DataFile) -> _MergeAppend:
         self._added_datafiles.append(data_file)
-        return self
-
-    def append_manifest(self, manifest_file: ManifestFile) -> _MergeAppend:
-        if manifest_file.content != ManifestContent.DATA:
-            raise ValueError(f"Can only add DATA manifests: {manifest_file.content}")
-
-        if manifest_file.added_snapshot_id is not None and self._snapshot_id != manifest_file.added_snapshot_id:
-            # We have to rewrite the manifest because there is a new snapshot
-            self._added_manifests.append(self._copy_manifest(manifest_file))
-        else:
-            self._added_manifests.append(manifest_file)
-
         return self
 
     def _copy_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -2103,29 +2093,30 @@ class _MergeAppend:
         Returns:
             New manifest file with the current snapshot-id
         """
+        output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
         with write_manifest(
-            format_version=self._table.format_version,
-            spec=self._table.specs()[manifest_file.partition_spec_id],
-            # TODO: We want to get the schema from the metadata
-            schema=self._table.schema(),
-            output_file=self._table.io.new_output(_new_manifest_path(self._table.location())),
-            snapshot_id=self._snapshot_id,
+                format_version=self._table.format_version,
+                spec=self._table.specs()[manifest_file.partition_spec_id],
+                schema=self._table.schema(),
+                output_file=self._table.io.new_output(output_file_location),
+                snapshot_id=self._snapshot_id,
         ) as writer:
             for entry in manifest_file.fetch_manifest_entry(self._table.io, discard_deleted=True):
                 writer.add_entry(entry)
 
         return writer.to_manifest_file()
 
-    def manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
+    def _manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
         ssc = SnapshotSummaryCollector()
         if self._added_datafiles:
+            output_file_location = _new_manifest_path(location=self._table.location(), num=0,
+                                                      commit_uuid=self._commit_uuid)
             with write_manifest(
-                format_version=self._table.format_version,
-                spec=self._table.spec(),
-                # TODO: We want to get the schema from the metadata
-                schema=self._table.schema(),
-                output_file=self._table.io.new_output(_new_manifest_path(self._table.location())),
-                snapshot_id=self._snapshot_id,
+                    format_version=self._table.format_version,
+                    spec=self._table.spec(),
+                    schema=self._table.schema(),
+                    output_file=self._table.io.new_output(output_file_location),
+                    snapshot_id=self._snapshot_id,
             ) as writer:
                 for data_file in self._added_datafiles:
                     writer.add_entry(
@@ -2142,3 +2133,47 @@ class _MergeAppend:
             self._added_manifests.append(writer.to_manifest_file())
 
         return ssc.build(), self._added_manifests
+
+    def commit(self) -> Snapshot:
+        summary, manifests = self._manifests()
+
+        previous_summary = (
+            self._table.snapshot_by_id(self._parent_snapshot_id).summary.additional_properties
+            if self._parent_snapshot_id is not None
+            else None
+        )
+        summary = update_snapshot_summaries(
+            summary=Summary(operation=self._operation, **summary),
+            previous_summary=previous_summary
+        )
+
+        manifest_list_filename = _generate_manifest_list_filename(
+            snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
+        )
+        manifest_list_file_path = f'{self._table.location()}/metadata/{manifest_list_filename}'
+        with write_manifest_list(
+                format_version=self._table.metadata.format_version,
+                output_file=self._table.io.new_output(manifest_list_file_path),
+                snapshot_id=self._snapshot_id,
+                parent_snapshot_id=self._parent_snapshot_id,
+                sequence_number=self._table.next_sequence_number(),
+        ) as writer:
+            writer.add_manifests(manifests)
+
+        snapshot = Snapshot(
+            snapshot_id=self._snapshot_id,
+            parent_snapshot_id=self._parent_snapshot_id,
+            manifest_list=manifest_list_file_path,
+            sequence_number=self._table._next_sequence_number(),
+            summary=summary,
+            schema_id=self._table.schema().schema_id,
+        )
+
+        with self._table.transaction() as tx:
+            tx.add_snapshot(snapshot=snapshot)
+            tx.set_ref_snapshot(
+                snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main",
+                type="branch"
+            )
+
+        return snapshot

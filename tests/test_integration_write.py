@@ -147,7 +147,7 @@ def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
         pass
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-    tbl.write_arrow(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
@@ -164,7 +164,7 @@ def table_v1_appended_with_null(session_catalog: Catalog, arrow_table_with_null:
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
 
     for _ in range(2):
-        tbl.write_arrow(arrow_table_with_null, mode='append')
+        tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
@@ -179,7 +179,7 @@ def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
         pass
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
-    tbl.write_arrow(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
@@ -196,7 +196,7 @@ def table_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null:
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
 
     for _ in range(2):
-        tbl.write_arrow(arrow_table_with_null, mode='append')
+        tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
@@ -211,14 +211,14 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
         pass
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-    tbl.write_arrow(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
     with tbl.transaction() as tx:
         tx.upgrade_table_version(format_version=2)
 
-    tbl.write_arrow(arrow_table_with_null, mode='append')
+    tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
@@ -297,9 +297,9 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         pass
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
 
-    tbl.write_arrow(arrow_table_with_null, mode='append')
-    tbl.write_arrow(arrow_table_with_null, mode='append')
-    tbl.write_arrow(arrow_table_with_null, mode='overwrite')
+    tbl.append(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+    tbl.overwrite(arrow_table_with_null)
 
     rows = spark.sql(
         f"""

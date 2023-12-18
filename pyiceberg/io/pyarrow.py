@@ -121,7 +121,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import WriteTask, _generate_datafile_filename
+from pyiceberg.table import WriteTask
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -159,7 +159,7 @@ logger = logging.getLogger(__name__)
 ONE_MEGABYTE = 1024 * 1024
 BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
-FIELD_ID = "field_id"
+FIELD_ID = b"PARQUET:field_id"
 DOC = "doc"
 PYARROW_FIELD_ID_KEYS = [b"PARQUET:field_id", b"field_id"]
 PYARROW_FIELD_DOC_KEYS = [b"PARQUET:field_doc", b"field_doc", b"doc"]
@@ -1448,7 +1448,7 @@ def parquet_path_to_id_mapping(
 
 
 def fill_parquet_file_metadata(
-    df: DataFile,
+    datafile: DataFile,
     parquet_metadata: pq.FileMetaData,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
@@ -1466,7 +1466,7 @@ def fill_parquet_file_metadata(
     - split_offsets
 
     Args:
-        df (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
+        datafile (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
         parquet_metadata (pyarrow.parquet.FileMetaData): A pyarrow metadata object.
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
@@ -1564,14 +1564,14 @@ def fill_parquet_file_metadata(
         del upper_bounds[field_id]
         del null_value_counts[field_id]
 
-    df.record_count = parquet_metadata.num_rows
-    df.column_sizes = column_sizes
-    df.value_counts = value_counts
-    df.null_value_counts = null_value_counts
-    df.nan_value_counts = nan_value_counts
-    df.lower_bounds = lower_bounds
-    df.upper_bounds = upper_bounds
-    df.split_offsets = split_offsets
+    datafile.record_count = parquet_metadata.num_rows
+    datafile.column_sizes = column_sizes
+    datafile.value_counts = value_counts
+    datafile.null_value_counts = null_value_counts
+    datafile.nan_value_counts = nan_value_counts
+    datafile.lower_bounds = lower_bounds
+    datafile.upper_bounds = upper_bounds
+    datafile.split_offsets = split_offsets
 
 
 def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
@@ -1580,38 +1580,40 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     try:
         _ = next(tasks)
         # If there are more tasks, raise an exception
-        raise ValueError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
+        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
     except StopIteration:
         pass
 
-    df = task.df
-
-    file_path = f'{table.location()}/data/{_generate_datafile_filename("parquet")}'
+    file_path = f'{table.location()}/data/{task.generate_datafile_filename("parquet")}'
     file_schema = schema_to_pyarrow(table.schema())
 
     collected_metrics: List[pq.FileMetaData] = []
     fo = table.io.new_output(file_path)
     with fo.create() as fos:
         with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
-            writer.write_table(df)
+            writer.write_table(task.df)
 
-    df = DataFile(
+    datafile = DataFile(
         content=DataFileContent.DATA,
         file_path=file_path,
         file_format=FileFormat.PARQUET,
         partition=Record(),
-        record_count=len(df),
         file_size_in_bytes=len(fo),
+        sort_order_id=task.sort_order_id,
         # Just copy these from the table for now
-        sort_order_id=table.sort_order().order_id,
         spec_id=table.spec().spec_id,
-        equality_ids=table.schema().identifier_field_ids,
+        equality_ids=None,
         key_metadata=None,
     )
+
+    if len(collected_metrics) != 1:
+        # One file has been written
+        raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
+
     fill_parquet_file_metadata(
-        df=df,
+        datafile=datafile,
         parquet_metadata=collected_metrics[0],
         stats_columns=compute_statistics_plan(table.schema(), table.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
-    return iter([df])
+    return iter([datafile])
