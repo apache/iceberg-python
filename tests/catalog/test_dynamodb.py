@@ -55,7 +55,7 @@ def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: 
 
 @mock_dynamodb
 def test_create_table_with_database_location(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -68,7 +68,7 @@ def test_create_table_with_database_location(
 
 @mock_dynamodb
 def test_create_table_with_default_warehouse(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -81,7 +81,7 @@ def test_create_table_with_default_warehouse(
 
 @mock_dynamodb
 def test_create_table_with_given_location(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -107,7 +107,7 @@ def test_create_table_with_no_location(
 
 @mock_dynamodb
 def test_create_table_with_strips(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -120,7 +120,7 @@ def test_create_table_with_strips(
 
 @mock_dynamodb
 def test_create_table_with_strips_bucket_root(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -143,7 +143,7 @@ def test_create_table_with_no_database(
 
 @mock_dynamodb
 def test_create_duplicated_table(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
@@ -155,7 +155,7 @@ def test_create_duplicated_table(
 
 @mock_dynamodb
 def test_load_table(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -169,7 +169,7 @@ def test_load_table(
 
 @mock_dynamodb
 def test_load_table_from_self_identifier(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -193,7 +193,7 @@ def test_load_non_exist_table(_bucket_initialize: None, database_name: str, tabl
 
 @mock_dynamodb
 def test_drop_table(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -210,7 +210,7 @@ def test_drop_table(
 
 @mock_dynamodb
 def test_drop_table_from_self_identifier(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
@@ -237,7 +237,7 @@ def test_drop_non_exist_table(_bucket_initialize: None, database_name: str, tabl
 
 @mock_dynamodb
 def test_rename_table(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     new_table_name = f"{table_name}_new"
@@ -260,7 +260,7 @@ def test_rename_table(
 
 @mock_dynamodb
 def test_rename_table_from_self_identifier(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     new_table_name = f"{table_name}_new"
@@ -336,7 +336,7 @@ def test_fail_on_rename_non_iceberg_table(_dynamodb, _bucket_initialize: None, d
 
 @mock_dynamodb
 def test_list_tables(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_list: List[str], moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_list: List[str]
 ) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
@@ -410,7 +410,7 @@ def test_drop_namespace(_bucket_initialize: None, database_name: str) -> None:
 
 @mock_dynamodb
 def test_drop_non_empty_namespace(
-    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str, moto_endpoint_url: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
