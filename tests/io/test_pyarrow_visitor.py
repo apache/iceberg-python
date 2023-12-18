@@ -273,18 +273,14 @@ def test_round_schema_conversion_nested(table_schema_nested: Schema) -> None:
     assert actual == expected
 
 
-@patch("warnings.warn")
-def test_schema_to_pyarrow_schema_missing_ids(warn: Mock) -> None:
+def test_schema_to_pyarrow_schema_missing_ids() -> None:
     schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
-    actual = pyarrow_to_schema(schema)
-
-    expected = Schema(
-        NestedField(field_id=1, name="some_int", field_type=IntegerType(), required=False),
-        NestedField(field_id=2, name="some_string", field_type=StringType(), required=True),
+    with pytest.raises(ValueError) as exc_info:
+        _ = pyarrow_to_schema(schema)
+    assert (
+        "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
+        in str(exc_info.value)
     )
-
-    assert actual == expected
-    assert warn.called
 
 
 @patch("warnings.warn")
@@ -318,6 +314,18 @@ def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
     )
 
     assert actual == expected
+
+
+def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_partial_exception() -> None:
+    schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
+    name_mapping = NameMapping(
+        [
+            MappedField(field_id=1, names=['some_string']),
+        ]
+    )
+    with pytest.raises(ValueError) as exc_info:
+        _ = pyarrow_to_schema(schema, name_mapping)
+    assert "Could not find field with name: some_int" in str(exc_info.value)
 
 
 def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_nested() -> None:
@@ -453,5 +461,43 @@ def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_nested() -> Non
         ),
     )
 
-    print(name_mapping)
     assert actual == expected
+
+
+def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_nested_missing_id() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False),
+            pa.field(
+                'quux',
+                pa.map_(
+                    pa.string(),
+                    pa.map_(pa.string(), pa.int32()),
+                ),
+                nullable=False,
+            ),
+        ]
+    )
+
+    name_mapping = NameMapping(
+        [
+            MappedField(field_id=1, names=['foo']),
+            MappedField(
+                field_id=6,
+                names=['quux'],
+                fields=[
+                    MappedField(field_id=7, names=['key']),
+                    MappedField(
+                        field_id=8,
+                        names=['value'],
+                        fields=[
+                            MappedField(field_id=10, names=['value']),
+                        ],
+                    ),
+                ],
+            ),
+        ]
+    )
+    with pytest.raises(ValueError) as exc_info:
+        _ = pyarrow_to_schema(schema, name_mapping)
+    assert "Could not find field with name: quux.value.key" in str(exc_info.value)

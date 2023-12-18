@@ -77,6 +77,7 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
 )
+from pyiceberg.table.name_mapping import NameMapping, load_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import SortOrder
@@ -829,6 +830,13 @@ class Table:
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+
+    def name_mapping(self) -> Optional[NameMapping]:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get("schema.name-mapping.default"):
+            return load_mapping_from_json(name_mapping_json)
+        else:
+            return None
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""

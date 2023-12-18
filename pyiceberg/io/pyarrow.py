@@ -112,7 +112,6 @@ from pyiceberg.schema import (
     Schema,
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
-    assign_fresh_schema_ids,
     pre_order_visit,
     promote,
     prune_columns,
@@ -633,7 +632,9 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     elif name_mapping is not None:
         return apply_name_mapping(schema, name_mapping)
     else:
-        return assign_fresh_schema_ids(schema)
+        raise ValueError(
+            "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
+        )
 
 
 @singledispatch
@@ -848,6 +849,7 @@ def _task_to_table(
     case_sensitive: bool,
     row_counts: List[int],
     limit: Optional[int] = None,
+    name_mapping: Optional[NameMapping] = None,
 ) -> Optional[pa.Table]:
     if limit and sum(row_counts) >= limit:
         return None
@@ -862,7 +864,9 @@ def _task_to_table(
             schema_raw = metadata.get(ICEBERG_SCHEMA)
         # TODO: if field_ids are not present, Name Mapping should be implemented to look them up in the table schema,
         #  see https://github.com/apache/iceberg/issues/7451
-        file_schema = Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema)
+        file_schema = (
+            Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
+        )
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
@@ -999,6 +1003,7 @@ def project_table(
             case_sensitive,
             row_counts,
             limit,
+            table.name_mapping(),
         )
         for task in tasks
     ]
