@@ -38,12 +38,13 @@ from typing import (
     Generator,
     List,
     Optional,
+    Union,
 )
 from urllib.parse import urlparse
 
 import boto3
 import pytest
-from moto.server import ThreadedMotoServer
+from moto.server import ThreadedMotoServer  # type: ignore
 
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
@@ -82,6 +83,8 @@ from pyiceberg.types import (
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
+    from pytest import ExitCode, Session
+
     from pyiceberg.io.pyarrow import PyArrowFile, PyArrowFileIO
 
 
@@ -1566,19 +1569,22 @@ def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
 MOTO_SERVER = ThreadedMotoServer(port=5456)
 
 
-def pytest_sessionfinish(session, exitstatus):
+def pytest_sessionfinish(
+    session: "Session",
+    exitstatus: Union[int, "ExitCode"],
+) -> None:
     if MOTO_SERVER._server_ready:
         MOTO_SERVER.stop()
 
 
 @pytest.fixture(scope="session")
-def moto_server():
+def moto_server() -> ThreadedMotoServer:
     MOTO_SERVER.start()
     return MOTO_SERVER
 
 
 @pytest.fixture(scope="session")
-def moto_endpoint_url(moto_server):
+def moto_endpoint_url(moto_server: ThreadedMotoServer) -> str:
     _url = f"http://{moto_server._ip_address}:{moto_server._port}"
     return _url
 
