@@ -1586,7 +1586,7 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
     os.environ.pop("AWS_DEFAULT_REGION")
 
 
-MOTO_SERVER = ThreadedMotoServer(port=5456)
+MOTO_SERVER = ThreadedMotoServer(port=5000)
 
 
 def pytest_sessionfinish(
