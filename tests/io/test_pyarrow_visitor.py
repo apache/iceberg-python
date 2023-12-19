@@ -23,6 +23,7 @@ import pytest
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
+    _HasIds,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -272,7 +273,101 @@ def test_round_schema_conversion_nested(table_schema_nested: Schema) -> None:
     assert actual == expected
 
 
-def test_schema_to_pyarrow_schema_missing_ids() -> None:
+def test_simple_schema_has_missing_ids() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False),
+        ]
+    )
+    visitor = _HasIds()
+    has_ids = visit_pyarrow(schema, visitor)
+    assert not has_ids
+
+
+def test_simple_schema_has_missing_ids_partial() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False, metadata={"field_id": "1", "doc": "foo doc"}),
+            pa.field('bar', pa.int32(), nullable=False),
+        ]
+    )
+    visitor = _HasIds()
+    has_ids = visit_pyarrow(schema, visitor)
+    assert not has_ids
+
+
+def test_nested_schema_has_missing_ids() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False),
+            pa.field(
+                'quux',
+                pa.map_(
+                    pa.string(),
+                    pa.map_(pa.string(), pa.int32()),
+                ),
+                nullable=False,
+            ),
+        ]
+    )
+    visitor = _HasIds()
+    has_ids = visit_pyarrow(schema, visitor)
+    assert not has_ids
+
+
+def test_nested_schema_has_ids() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False, metadata={"field_id": "1", "doc": "foo doc"}),
+            pa.field(
+                'quux',
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata={"field_id": "7"}),
+                    pa.field(
+                        "value",
+                        pa.map_(
+                            pa.field('key', pa.string(), nullable=False, metadata={"field_id": "9"}),
+                            pa.field('value', pa.int32(), metadata={"field_id": "10"}),
+                        ),
+                        nullable=False,
+                        metadata={"field_id": "8"},
+                    ),
+                ),
+                nullable=False,
+                metadata={"field_id": "6", "doc": "quux doc"},
+            ),
+        ]
+    )
+    visitor = _HasIds()
+    has_ids = visit_pyarrow(schema, visitor)
+    assert has_ids
+
+
+def test_nested_schema_has_partial_missing_ids() -> None:
+    schema = pa.schema(
+        [
+            pa.field('foo', pa.string(), nullable=False, metadata={"field_id": "1", "doc": "foo doc"}),
+            pa.field(
+                'quux',
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata={"field_id": "7"}),
+                    pa.field(
+                        "value",
+                        pa.map_(pa.field('key', pa.string(), nullable=False), pa.field('value', pa.int32())),
+                        nullable=False,
+                    ),
+                ),
+                nullable=False,
+                metadata={"field_id": "6", "doc": "quux doc"},
+            ),
+        ]
+    )
+    visitor = _HasIds()
+    has_ids = visit_pyarrow(schema, visitor)
+    assert not has_ids
+
+
+def test_schema_to_pyarrow_schema_missing_ids_and_name_mapping() -> None:
     schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
     with pytest.raises(ValueError) as exc_info:
         _ = pyarrow_to_schema(schema)
@@ -282,7 +377,7 @@ def test_schema_to_pyarrow_schema_missing_ids() -> None:
     )
 
 
-def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
+def test_simple_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
     schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
     name_mapping = NameMapping(
         [
@@ -300,7 +395,7 @@ def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
     assert actual == expected
 
 
-def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_partial_exception() -> None:
+def test_simple_schema_to_pyarrow_schema_missing_ids_using_name_mapping_partial_exception() -> None:
     schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
     name_mapping = NameMapping(
         [
@@ -312,7 +407,7 @@ def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_partial_excepti
     assert "Could not find field with name: some_int" in str(exc_info.value)
 
 
-def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping_nested() -> None:
+def test_nested_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
     schema = pa.schema(
         [
             pa.field('foo', pa.string(), nullable=False),
