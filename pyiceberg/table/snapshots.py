@@ -278,18 +278,21 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
     }:
         summary[prop] = '0'
 
-    if value := previous_summary.get(TOTAL_DATA_FILES):
-        summary[DELETED_DATA_FILES] = value
-    if value := previous_summary.get(TOTAL_DELETE_FILES):
-        summary[REMOVED_DELETE_FILES] = value
-    if value := previous_summary.get(TOTAL_RECORDS):
-        summary[DELETED_RECORDS] = value
-    if value := previous_summary.get(TOTAL_FILE_SIZE):
-        summary[REMOVED_FILE_SIZE] = value
-    if value := previous_summary.get(TOTAL_POSITION_DELETES):
-        summary[REMOVED_POSITION_DELETES] = value
-    if value := previous_summary.get(TOTAL_EQUALITY_DELETES):
-        summary[REMOVED_EQUALITY_DELETES] = value
+    def get_prop(prop: str) -> int:
+        return int(previous_summary.get(prop, '0'))
+
+    if value := get_prop(TOTAL_DATA_FILES):
+        summary[DELETED_DATA_FILES] = str(value)
+    if value := get_prop(TOTAL_DELETE_FILES):
+        summary[REMOVED_DELETE_FILES] = str(value)
+    if value := get_prop(TOTAL_RECORDS):
+        summary[DELETED_RECORDS] = str(value)
+    if value := get_prop(TOTAL_FILE_SIZE):
+        summary[REMOVED_FILE_SIZE] = str(value)
+    if value := get_prop(TOTAL_POSITION_DELETES):
+        summary[REMOVED_POSITION_DELETES] = str(value)
+    if value := get_prop(TOTAL_EQUALITY_DELETES):
+        summary[REMOVED_EQUALITY_DELETES] = str(value)
 
     return summary
 
