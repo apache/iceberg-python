@@ -16,7 +16,6 @@
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import re
-from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
