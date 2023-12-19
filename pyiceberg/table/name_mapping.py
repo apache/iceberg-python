@@ -210,7 +210,7 @@ class _ApplyNameMapping(SchemaVisitor[IcebergType]):
 
     def field(self, field: NestedField, field_result: IcebergType | None) -> NestedField:
         return NestedField(
-            field_id=self.name_mapping.id(self._path(field.name)),
+            field_id=self.name_mapping.find(self._path(field.name)).field_id,
             name=field.name,
             field_type=field_result,
             required=field.required,
@@ -219,16 +219,16 @@ class _ApplyNameMapping(SchemaVisitor[IcebergType]):
 
     def list(self, list_type: ListType, element_result: IcebergType | None) -> ListType:
         return ListType(
-            element_id=self.name_mapping.id(self._current_path() + "." + LIST_ELEMENT_NAME),
+            element_id=self.name_mapping.find(self._current_path() + "." + LIST_ELEMENT_NAME).field_id,
             element=element_result,
             element_required=list_type.element_required,
         )
 
     def map(self, map_type: MapType, key_result: IcebergType | None, value_result: IcebergType | None) -> MapType:
         return MapType(
-            key_id=self.name_mapping.id(self._current_path() + "." + MAP_KEY_NAME),
+            key_id=self.name_mapping.find(self._current_path() + "." + MAP_KEY_NAME).field_id,
             key_type=key_result,
-            value_id=self.name_mapping.id(self._current_path() + "." + MAP_VALUE_NAME),
+            value_id=self.name_mapping.find(self._current_path() + "." + MAP_VALUE_NAME).field_id,
             value_type=value_result,
             value_required=map_type.value_required,
         )

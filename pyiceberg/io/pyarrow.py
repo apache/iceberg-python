@@ -25,11 +25,9 @@ with the pyarrow library.
 from __future__ import annotations
 
 import concurrent.futures
-import itertools
 import logging
 import os
 import re
-import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -731,37 +729,34 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
         """Visit a primitive type."""
 
 
+def _get_field_id(field: pa.Field) -> Optional[int]:
+    if field.metadata:
+        for pyarrow_field_id_key in PYARROW_FIELD_ID_KEYS:
+            if field_id_str := field.metadata.get(pyarrow_field_id_key):
+                return int(field_id_str.decode())
+    return None
+
+
+def _get_field_doc(field: pa.Field) -> Optional[str]:
+    if field.metadata:
+        for pyarrow_doc_key in PYARROW_FIELD_DOC_KEYS:
+            if doc_str := field.metadata.get(pyarrow_doc_key):
+                return doc_str.decode()
+    return None
+
+
 class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
-    counter: itertools.count[int]
     missing_id_metadata: Optional[bool]
 
     def __init__(self) -> None:
-        self.counter = itertools.count(1)
-        self.missing_id_metadata = None
+        self.missing_id_metadata = False
 
     def _get_field_id(self, field: pa.Field) -> int:
-        field_id: Optional[int] = None
-
         for pyarrow_field_id_key in PYARROW_FIELD_ID_KEYS:
             if field.metadata and (field_id_str := field.metadata.get(pyarrow_field_id_key)):
-                field_id = int(field_id_str.decode())
-
-        if field_id is None:
-            if self.missing_id_metadata is None:
-                warnings.warn(
-                    "Missing field-IDs will be auto-assigned, possibly leading to inconsistencies between the file schema and the schema stored in table metadata."
-                )
-            field_id = next(self.counter)
-            missing_is_metadata = True
-        else:
-            missing_is_metadata = False
-
-        if self.missing_id_metadata is not None and self.missing_id_metadata != missing_is_metadata:
-            raise ValueError("Parquet file contains partial field-ids")
-        else:
-            self.missing_id_metadata = missing_is_metadata
-
-        return field_id
+                return int(field_id_str.decode())
+        self.missing_id_metadata = True
+        return -1
 
     def _get_field_doc(self, field: pa.Field) -> Optional[str]:
         for pyarrow_doc_key in PYARROW_FIELD_DOC_KEYS:

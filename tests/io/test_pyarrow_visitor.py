@@ -283,21 +283,6 @@ def test_schema_to_pyarrow_schema_missing_ids() -> None:
     )
 
 
-@patch("warnings.warn")
-def test_schema_to_pyarrow_schema_missing_id(warn: Mock) -> None:
-    schema = pa.schema(
-        [
-            pa.field('some_int', pa.int32(), nullable=True),
-            pa.field('some_string', pa.string(), nullable=False, metadata={b"field_id": "22"}),
-        ]
-    )
-
-    with pytest.raises(ValueError) as exc_info:
-        _ = pyarrow_to_schema(schema)
-    assert "Parquet file contains partial field-ids" in str(exc_info.value)
-    assert warn.called
-
-
 def test_schema_to_pyarrow_schema_missing_ids_using_name_mapping() -> None:
     schema = pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
     name_mapping = NameMapping(
