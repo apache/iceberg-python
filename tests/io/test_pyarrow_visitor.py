@@ -25,7 +25,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToIceberg,
     pyarrow_to_schema,
     schema_to_pyarrow,
-    visit_pyarrow, PYARROW_FIELD_ID_KEY,
+    visit_pyarrow,
 )
 from pyiceberg.schema import Schema, visit
 from pyiceberg.types import (
@@ -209,9 +209,9 @@ def test_pyarrow_variable_binary_to_iceberg() -> None:
 def test_pyarrow_struct_to_iceberg() -> None:
     pyarrow_struct = pa.struct(
         [
-            pa.field("foo", pa.string(), nullable=True, metadata={PYARROW_FIELD_ID_KEY: "1", "doc": "foo doc"}),
-            pa.field("bar", pa.int32(), nullable=False, metadata={PYARROW_FIELD_ID_KEY: "2"}),
-            pa.field("baz", pa.bool_(), nullable=True, metadata={PYARROW_FIELD_ID_KEY: "3"}),
+            pa.field("foo", pa.string(), nullable=True, metadata={b"PARQUET:field_id": "1", "doc": "foo doc"}),
+            pa.field("bar", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": "2"}),
+            pa.field("baz", pa.bool_(), nullable=True, metadata={b"PARQUET:field_id": "3"}),
         ]
     )
     expected = StructType(
@@ -223,7 +223,7 @@ def test_pyarrow_struct_to_iceberg() -> None:
 
 
 def test_pyarrow_list_to_iceberg() -> None:
-    pyarrow_list = pa.list_(pa.field("element", pa.int32(), nullable=False, metadata={PYARROW_FIELD_ID_KEY: "1"}))
+    pyarrow_list = pa.list_(pa.field("element", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": "1"}))
     expected = ListType(
         element_id=1,
         element_type=IntegerType(),
@@ -234,8 +234,8 @@ def test_pyarrow_list_to_iceberg() -> None:
 
 def test_pyarrow_map_to_iceberg() -> None:
     pyarrow_map = pa.map_(
-        pa.field("key", pa.int32(), nullable=False, metadata={PYARROW_FIELD_ID_KEY: "1"}),
-        pa.field("value", pa.string(), nullable=False, metadata={PYARROW_FIELD_ID_KEY: "2"}),
+        pa.field("key", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": "1"}),
+        pa.field("value", pa.string(), nullable=False, metadata={b"PARQUET:field_id": "2"}),
     )
     expected = MapType(
         key_id=1,
