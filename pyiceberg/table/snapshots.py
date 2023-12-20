@@ -279,7 +279,11 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
         summary[prop] = '0'
 
     def get_prop(prop: str) -> int:
-        return int(previous_summary.get(prop, '0'))
+        value = previous_summary.get(prop, '0')
+        try:
+            return int(value)
+        except ValueError as e:
+            raise ValueError(f"Could not parse summary property {prop} to an int: {value}") from e
 
     if value := get_prop(TOTAL_DATA_FILES):
         summary[DELETED_DATA_FILES] = str(value)
