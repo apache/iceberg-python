@@ -519,13 +519,11 @@ def test_passing_profile_name() -> None:
 
 @mock_glue
 def test_commit_table_update_schema(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(
-        catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO", "warehouse": f"s3://{BUCKET_NAME}"}
-    )
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_table_metadata = table.metadata

@@ -604,6 +604,8 @@ class Catalog(ABC):
         For example, the version of the metadata file
         `s3://bucket/db/tb/metadata/00001-6c97e413-d51b-4538-ac70-12fe2a85cb83.metadata.json`
         is 1.
+        If the path does not comply with the pattern, the version is defaulted to be -1, ensuring
+        that the next metadata file is treated as having version 0.
 
         Args:
             metadata_location (str): The location of the metadata file.
