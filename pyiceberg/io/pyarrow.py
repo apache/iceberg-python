@@ -797,6 +797,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
     field_names: List[str]
+    name_mapping: Optional[NameMapping]
 
     def __init__(self, name_mapping: Optional[NameMapping] = None) -> None:
         self.field_names = []
@@ -804,9 +805,6 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
     def _current_path(self) -> str:
         return ".".join(self.field_names)
-
-    def _path(self, name: str) -> str:
-        return ".".join(self.field_names + [name])
 
     def _get_field_id(self, field: pa.Field) -> int:
         if self.name_mapping:
@@ -826,8 +824,6 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         field_id = self._get_field_id(field)
         field_doc = _get_field_doc(field)
         field_type = field_result
-        if field_type is None:
-            raise ValueError(f"Cannot convert {field} to Iceberg Field as field_type is empty.")
         return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
 
     def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
@@ -931,8 +927,6 @@ def _task_to_table(
         schema_raw = None
         if metadata := physical_schema.metadata:
             schema_raw = metadata.get(ICEBERG_SCHEMA)
-        # TODO: if field_ids are not present, Name Mapping should be implemented to look them up in the table schema,
-        #  see https://github.com/apache/iceberg/issues/7451
         file_schema = (
             Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
         )
