@@ -75,7 +75,7 @@ URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
 
-TABLE_METADATA_FILE_NAME_REGEX = re.compile(r"""\d*-.*\.json""", re.X)
+TABLE_METADATA_FILE_NAME_REGEX = re.compile(r"""(\d+)-.*\.json""", re.X)
 
 
 class CatalogType(Enum):
@@ -614,8 +614,8 @@ class Catalog(ABC):
             int: The version of the metadata file. -1 if the file name does not have valid version string
         """
         file_name = metadata_location.split("/")[-1]
-        if TABLE_METADATA_FILE_NAME_REGEX.fullmatch(file_name):
-            return int(file_name.split("-")[0])
+        if file_name_match := TABLE_METADATA_FILE_NAME_REGEX.fullmatch(file_name):
+            return int(file_name_match.group(1))
         else:
             return -1
 
