@@ -890,12 +890,9 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         snapshot_id = self.new_snapshot_id()
-        parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
 
         data_files = _dataframe_to_data_files(self, df=df)
-        merge = _MergeAppend(
-            operation=Operation.APPEND, table=self, snapshot_id=snapshot_id, parent_snapshot_id=parent_snapshot_id
-        )
+        merge = _MergeAppend(operation=Operation.APPEND, table=self, snapshot_id=snapshot_id)
         for data_file in data_files:
             merge.append_datafile(data_file)
 
@@ -914,15 +911,13 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         snapshot_id = self.new_snapshot_id()
-        parent_snapshot_id = current_snapshot.snapshot_id if (current_snapshot := self.current_snapshot()) else None
 
         data_files = _dataframe_to_data_files(self, df=df)
 
         merge = _MergeAppend(
-            operation=Operation.OVERWRITE if parent_snapshot_id is not None else Operation.APPEND,
+            operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
             snapshot_id=snapshot_id,
-            parent_snapshot_id=parent_snapshot_id,
         )
 
         for data_file in data_files:
@@ -2051,11 +2046,12 @@ class _MergeAppend:
     _existing_datafiles: List[DataFile]
     _commit_uuid: uuid.UUID
 
-    def __init__(self, operation: Operation, table: Table, snapshot_id: int, parent_snapshot_id: Optional[int]) -> None:
+    def __init__(self, operation: Operation, table: Table, snapshot_id: int) -> None:
         self._operation = operation
         self._table = table
         self._snapshot_id = snapshot_id
-        self._parent_snapshot_id = parent_snapshot_id
+        # Since we only support the main branch for now
+        self._parent_snapshot_id = snapshot.parent_snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_datafiles = []
         self._existing_datafiles = []
         self._commit_uuid = uuid.uuid4()
@@ -2066,28 +2062,6 @@ class _MergeAppend:
         else:
             self._existing_datafiles.append(data_file)
         return self
-
-    def _copy_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
-        """Rewrites a manifest file with a new snapshot-id.
-
-        Args:
-            manifest_file: The existing manifest file
-
-        Returns:
-            New manifest file with the current snapshot-id
-        """
-        output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
-        with write_manifest(
-            format_version=self._table.format_version,
-            spec=self._table.specs()[manifest_file.partition_spec_id],
-            schema=self._table.schema(),
-            output_file=self._table.io.new_output(output_file_location),
-            snapshot_id=self._snapshot_id,
-        ) as writer:
-            for entry in manifest_file.fetch_manifest_entry(self._table.io, discard_deleted=True):
-                writer.add_entry(entry)
-
-        return writer.to_manifest_file()
 
     def _manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
         ssc = SnapshotSummaryCollector()
@@ -2123,10 +2097,10 @@ class _MergeAppend:
     def commit(self) -> Snapshot:
         new_summary, manifests = self._manifests()
 
-        previous_summary = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
+        previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
         summary = update_snapshot_summaries(
             summary=Summary(operation=self._operation, **new_summary),
-            previous_summary=previous_summary.summary if previous_summary is not None else None,
+            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 

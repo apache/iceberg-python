@@ -1452,7 +1452,7 @@ def parquet_path_to_id_mapping(
 
 
 def fill_parquet_file_metadata(
-    datafile: DataFile,
+    data_file: DataFile,
     parquet_metadata: pq.FileMetaData,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
@@ -1470,7 +1470,7 @@ def fill_parquet_file_metadata(
     - split_offsets
 
     Args:
-        datafile (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
+        data_file (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
         parquet_metadata (pyarrow.parquet.FileMetaData): A pyarrow metadata object.
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
@@ -1568,14 +1568,14 @@ def fill_parquet_file_metadata(
         del upper_bounds[field_id]
         del null_value_counts[field_id]
 
-    datafile.record_count = parquet_metadata.num_rows
-    datafile.column_sizes = column_sizes
-    datafile.value_counts = value_counts
-    datafile.null_value_counts = null_value_counts
-    datafile.nan_value_counts = nan_value_counts
-    datafile.lower_bounds = lower_bounds
-    datafile.upper_bounds = upper_bounds
-    datafile.split_offsets = split_offsets
+    data_file.record_count = parquet_metadata.num_rows
+    data_file.column_sizes = column_sizes
+    data_file.value_counts = value_counts
+    data_file.null_value_counts = null_value_counts
+    data_file.nan_value_counts = nan_value_counts
+    data_file.lower_bounds = lower_bounds
+    data_file.upper_bounds = upper_bounds
+    data_file.split_offsets = split_offsets
 
 
 def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
@@ -1597,7 +1597,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
             writer.write_table(task.df)
 
-    datafile = DataFile(
+    data_file = DataFile(
         content=DataFileContent.DATA,
         file_path=file_path,
         file_format=FileFormat.PARQUET,
@@ -1615,9 +1615,9 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
 
     fill_parquet_file_metadata(
-        datafile=datafile,
+        data_file=data_file,
         parquet_metadata=collected_metrics[0],
         stats_columns=compute_statistics_plan(table.schema(), table.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
-    return iter([datafile])
+    return iter([data_file])
