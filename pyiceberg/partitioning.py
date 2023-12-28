@@ -15,14 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 from __future__ import annotations
-
+from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import (
     Any,
+    cast,
     Dict,
+    Generic,
     List,
     Optional,
     Tuple,
+    TypeVar
 )
 
 from pydantic import (
@@ -34,7 +37,19 @@ from pydantic import (
 from typing_extensions import Annotated
 
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import Transform, parse_transform
+from pyiceberg.transforms import (
+    BucketTransform, 
+    DayTransform, 
+    IdentityTransform, 
+    HourTransform, 
+    Transform, 
+    TruncateTransform,
+    UnknownTransform, 
+    VoidTransform, 
+    YearTransform, 
+    parse_transform
+)
+
 from pyiceberg.typedef import IcebergBaseModel
 from pyiceberg.types import NestedField, StructType
 
@@ -215,3 +230,118 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
             )
         )
     return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID)
+
+T = TypeVar("T")
+class PartitionSpecVisitor(Generic[T], ABC):
+    @abstractmethod
+    def identity(field_id: int, source_name: str, source_id: int) -> T:
+        """
+        Visit identity partition field
+        """
+
+    @abstractmethod
+    def bucket(field_id: int, source_name: str, source_id: int, num_buckets: int) -> T:
+        """
+        Visit bucket partition field
+        """
+
+    @abstractmethod
+    def truncate(field_id: int, source_name: str, source_id: int, width: int) -> T:
+        """
+        Visit truncate partition field
+        """
+
+    @abstractmethod
+    def year(field_id: int, source_name: str, source_id: int) -> T:
+        """
+        Visit year partition field
+        """
+
+    @abstractmethod
+    def month(field_id: int, source_name: str, source_id: int) -> T:
+        """
+        Visit month partition field
+        """
+
+    @abstractmethod
+    def day(field_id: int, source_name: str, source_id: int) -> T:
+        """
+        Visit day partition field
+        """
+
+    @abstractmethod
+    def hour(field_id: int, source_name: str, source_id: int) -> T:
+        """
+        Visit hour partition field
+        """
+
+    @abstractmethod
+    def always_null(field_id: int, source_name: str, source_id: int) -> T:
+        """
+        Visit void partition field
+        """
+
+    @abstractmethod
+    def unknown(field_id: int, source_name: str, source_id: int, transform: str) -> T:
+        """
+        Visit unknown partition field
+        """
+        raise ValueError(f"Unknown transform {transform} is not supported")
+
+class _PartitionNameGenerator(PartitionSpecVisitor[str]):
+    def identity(field_id: int, source_name: str, source_id: int) -> str:
+        return source_name
+    
+    def bucket(field_id: int, source_name: str, source_id: int, num_buckets: int) -> str:
+        return source_name + "_bucket_" + num_buckets
+
+    def truncate(field_id: int, source_name: str, source_id: int, width: int) -> str:
+        return source_name + "_trunc_" + width
+
+    def year(field_id: int, source_name: str, source_id: int) -> str:
+        return source_name + "_year"
+
+    def month(field_id: int, source_name: str, source_id: int) -> str:
+        return source_name + "_month"
+
+    def day(field_id: int, source_name: str, source_id: int) -> str:
+        return source_name + "_day"
+    
+    def hour(field_id: int, source_name: str, source_id: int) -> str:
+        return source_name + "_hour"
+
+    def always_null(field_id: int, source_name: str, source_id: int) -> str:
+        return source_name + "_null"
+
+R = TypeVar("R")
+
+@staticmethod
+def _visit(spec: PartitionSpec, schema: Schema, visitor: PartitionSpecVisitor[R]) -> [R]:
+    results = []
+    for field in spec.fields:
+        results.append(_visit(schema, field, visitor))
+    return results
+
+@staticmethod
+def _visit(schema: Schema, field: PartitionField, visitor: PartitionSpecVisitor[R]) -> [R]:
+    source_name = schema.find_column_name(field.source_id)
+    transform = field.transform
+    if isinstance(transform, IdentityTransform):
+        visitor.identity(field.field_id, source_name, field.source_id)
+    elif isinstance(transform, BucketTransform):
+        visitor.bucket(field.field_id, source_name, field.source_id, cast(BucketTransform, transform).num_buckets)
+    elif isinstance(transform, TruncateTransform):
+        visitor.truncate(field.field_id, source_name, field.source_id, cast(TruncateTransform, transform).width)
+    elif isinstance(transform, DayTransform):
+        visitor.day(field.field_id, source_name, field.source_id)
+    elif isinstance(transform, HourTransform):
+        visitor.hour(field.field_id, source_name, field.source_id)
+    elif isinstance(transform, YearTransform):
+        visitor.year(field.field_id, source_name, field.source_id)
+    elif isinstance(transform, VoidTransform):
+        visitor.always_null(field.field_id, source_name, field.source_id)
+        pass
+    elif isinstance(transform, UnknownTransform):
+        visitor.unknown(field.field_id, source_name, field.source_id)
+    else:
+        raise ValueError(f"Unknown transform {transform}")
