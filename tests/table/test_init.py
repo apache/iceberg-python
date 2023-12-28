@@ -278,6 +278,17 @@ def test_table_scan_projection_single_column(table_v2: Table) -> None:
     )
 
 
+def test_table_scan_select_preserves_order(table_v2: Table) -> None:
+    scan = table_v2.scan()
+    assert scan.select("y", "x", "z").projection() == Schema(
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=3, name="z", field_type=LongType(), required=True),
+        schema_id=1,
+        identifier_field_ids=[1, 2],
+    )
+
+
 def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> None:
     scan = table_v2.scan()
     assert scan.with_case_sensitive(False).select("Y").projection() == Schema(
