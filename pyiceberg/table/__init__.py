@@ -51,6 +51,7 @@ from pyiceberg.expressions import (
     And,
     BooleanExpression,
     EqualTo,
+    Reference,
     parser,
     visitors,
 )
@@ -67,7 +68,15 @@ from pyiceberg.manifest import (
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import (
+    INITIAL_PARTITION_SPEC_ID,
+    PARTITION_FIELD_ID_START,
+    IdentityTransform,
+    PartitionField,
+    PartitionSpec,
+    _PartitionNameGenerator,
+    _visit_partition_field,
+)
 from pyiceberg.schema import (
     PartnerAccessor,
     Schema,
@@ -99,6 +108,7 @@ from pyiceberg.table.snapshots import (
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import SortOrder
+from pyiceberg.transforms import TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -372,6 +382,14 @@ class Transaction:
         """
         return UpdateSnapshot(self._table, self)
 
+    def update_spec(self) -> UpdateSpec:
+        """Create a new UpdateSpec to update the partitioning of the table.
+
+        Returns:
+            A new UpdateSpec.
+        """
+        return UpdateSpec(self._table, self)
+
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
 
@@ -632,6 +650,43 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 
     context.add_update(update)
     return base_metadata.model_copy(update={"current_schema_id": new_schema_id})
+
+
+@_apply_table_update.register(AddPartitionSpecUpdate)
+def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for spec in base_metadata.partition_specs:
+        if spec.spec_id == update.spec.spec_id:
+            raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
+    context.add_update(update)
+    return base_metadata.model_copy(
+        update={
+            "partition_specs": base_metadata.partition_specs + [update.spec],
+            "last_partition_id": max(
+                max(field.field_id for field in update.spec.fields),
+                base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
+            ),
+        }
+    )
+
+
+@_apply_table_update.register(SetDefaultSpecUpdate)
+def _(update: SetDefaultSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    new_spec_id = update.spec_id
+    if new_spec_id == -1:
+        new_spec_id = max(spec.spec_id for spec in base_metadata.partition_specs)
+    if new_spec_id == base_metadata.default_spec_id:
+        return base_metadata
+    found_spec_id = False
+    for spec in base_metadata.partition_specs:
+        found_spec_id = spec.spec_id == new_spec_id
+        if found_spec_id:
+            break
+
+    if not found_spec_id:
+        raise ValueError(f"Failed to find spec with id {new_spec_id}")
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"default_spec_id": new_spec_id})
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
@@ -969,6 +1024,12 @@ class Table:
         """Return a dict of the sort orders of this table."""
         return {sort_order.order_id: sort_order for sort_order in self.metadata.sort_orders}
 
+    def last_partition_id(self) -> int:
+        """Return the highest assigned partition field ID across all specs or 999 if only the unpartitioned spec exists."""
+        if self.metadata.last_partition_id:
+            return self.metadata.last_partition_id
+        return PARTITION_FIELD_ID_START - 1
+
     @property
     def properties(self) -> Dict[str, str]:
         """Properties of the table."""
@@ -1094,6 +1155,9 @@ class Table:
                 data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
+
+    def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
+        return UpdateSpec(self, case_sensitive=case_sensitive)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -2655,3 +2719,232 @@ class UpdateSnapshot:
             operation=Operation.OVERWRITE if self._table.current_snapshot() is not None else Operation.APPEND,
             transaction=self._transaction,
         )
+
+
+class UpdateSpec:
+    _table: Table
+    _name_to_field: Dict[str, PartitionField] = {}
+    _name_to_added_field: Dict[str, PartitionField] = {}
+    _transform_to_field: Dict[Tuple[int, str], PartitionField] = {}
+    _transform_to_added_field: Dict[Tuple[int, str], PartitionField] = {}
+    _renames: Dict[str, str] = {}
+    _added_time_fields: Dict[int, PartitionField] = {}
+    _case_sensitive: bool
+    _adds: List[PartitionField]
+    _deletes: Set[int]
+    _last_assigned_partition_id: int
+    _transaction: Optional[Transaction]
+
+    def __init__(self, table: Table, transaction: Optional[Transaction] = None, case_sensitive: bool = True) -> None:
+        self._table = table
+        self._name_to_field = {field.name: field for field in table.spec().fields}
+        self._name_to_added_field = {}
+        self._transform_to_field = {(field.source_id, repr(field.transform)): field for field in table.spec().fields}
+        self._transform_to_added_field = {}
+        self._adds = []
+        self._deletes = set()
+        self._last_assigned_partition_id = table.last_partition_id()
+        self._renames = {}
+        self._transaction = transaction
+        self._case_sensitive = case_sensitive
+        self._added_time_fields = {}
+
+    def add_field(
+        self,
+        source_column_name: str,
+        transform: Transform[Any, Any],
+        partition_field_name: Optional[str] = None,
+    ) -> UpdateSpec:
+        ref = Reference(source_column_name)
+        bound_ref = ref.bind(self._table.schema(), self._case_sensitive)
+        # verify transform can actually bind it
+        output_type = bound_ref.field.field_type
+        if not transform.can_transform(output_type):
+            raise ValueError(f"{transform} cannot transform {output_type} values from {bound_ref.field.name}")
+
+        transform_key = (bound_ref.field.field_id, repr(transform))
+        existing_partition_field = self._transform_to_field.get(transform_key)
+        if existing_partition_field and self._is_duplicate_partition(transform, existing_partition_field):
+            raise ValueError(f"Duplicate partition field for ${ref.name}=${ref}, ${existing_partition_field} already exists")
+
+        added = self._transform_to_added_field.get(transform_key)
+        if added:
+            raise ValueError(f"Already added partition: {added.name}")
+
+        new_field = self._partition_field((bound_ref.field.field_id, transform), partition_field_name)
+        if new_field.name in self._name_to_added_field:
+            raise ValueError(f"Already added partition field with name: {new_field.name}")
+
+        if isinstance(new_field.transform, TimeTransform):
+            existing_time_field = self._added_time_fields.get(new_field.source_id)
+            if existing_time_field:
+                raise ValueError(f"Cannot add time partition field: {new_field.name} conflicts with {existing_time_field.name}")
+            self._added_time_fields[new_field.source_id] = new_field
+        self._transform_to_added_field[transform_key] = new_field
+
+        existing_partition_field = self._name_to_field.get(new_field.name)
+        if existing_partition_field and new_field.field_id not in self._deletes:
+            if isinstance(existing_partition_field.transform, VoidTransform):
+                self.rename_field(
+                    existing_partition_field.name, existing_partition_field.name + "_" + str(existing_partition_field.field_id)
+                )
+            else:
+                raise ValueError(f"Cannot add duplicate partition field name: {existing_partition_field.name}")
+
+        self._name_to_added_field[new_field.name] = new_field
+        self._adds.append(new_field)
+        return self
+
+    def add_identity(self, source_column_name: str) -> UpdateSpec:
+        return self.add_field(source_column_name, IdentityTransform(), None)
+
+    def remove_field(self, name: str) -> UpdateSpec:
+        added = self._name_to_added_field.get(name)
+        if added:
+            raise ValueError(f"Cannot delete newly added field {name}")
+        renamed = self._renames.get(name)
+        if renamed:
+            raise ValueError(f"Cannot rename and delete field {name}")
+        field = self._name_to_field.get(name)
+        if not field:
+            raise ValueError(f"No such partition field: {name}")
+
+        self._deletes.add(field.field_id)
+        return self
+
+    def rename_field(self, name: str, new_name: str) -> UpdateSpec:
+        existing_field = self._name_to_field.get(new_name)
+        if existing_field and isinstance(existing_field.transform, VoidTransform):
+            return self.rename_field(name, name + "_" + str(existing_field.field_id))
+        added = self._name_to_added_field.get(name)
+        if added:
+            raise ValueError("Cannot rename recently added partitions")
+        field = self._name_to_field.get(name)
+        if not field:
+            raise ValueError(f"Cannot find partition field {name}")
+        if field.field_id in self._deletes:
+            raise ValueError(f"Cannot delete and rename partition field {name}")
+        self._renames[name] = new_name
+        return self
+
+    def commit(self) -> None:
+        new_spec = self._apply()
+        if self._table.metadata.default_spec_id != new_spec.spec_id:
+            if new_spec.spec_id not in self._table.specs():
+                updates = [AddPartitionSpecUpdate(spec=new_spec), SetDefaultSpecUpdate(spec_id=-1)]
+            else:
+                updates = [SetDefaultSpecUpdate(spec_id=new_spec.spec_id)]
+
+            required_last_assigned_partitioned_id = self._table.last_partition_id()
+            requirements = [AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id)]
+
+            if self._transaction is not None:
+                self._transaction._append_updates(*updates)  # pylint: disable=W0212
+                self._transaction._append_requirements(*requirements)  # pylint: disable=W0212
+            else:
+                requirements.append(AssertDefaultSpecId(default_spec_id=self._table.spec().spec_id))
+                self._table._do_commit(updates=tuple(updates), requirements=tuple(requirements))  # pylint: disable=W0212
+
+    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
+        """Close and commit the change."""
+        return self.commit()
+
+    def __enter__(self) -> UpdateSpec:
+        """Update the table."""
+        return self
+
+    def _apply(self) -> PartitionSpec:
+        def _check_and_add_partition_name(schema: Schema, name: str, source_id: int, partition_names: Set[str]) -> None:
+            try:
+                field = schema.find_field(name)
+            except ValueError:
+                field = None
+
+            if source_id is not None and field is not None and field.field_id != source_id:
+                raise ValueError(f"Cannot create identity partition from a different field in the schema {name}")
+            elif field is not None and source_id != field.field_id:
+                raise ValueError(f"Cannot create partition from name that exists in schema {name}")
+            if not name:
+                raise ValueError("Undefined name")
+            if name in partition_names:
+                raise ValueError(f"Partition name has to be unique: {name}")
+            partition_names.add(name)
+
+        def _add_new_field(
+            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str]
+        ) -> PartitionField:
+            _check_and_add_partition_name(schema, name, source_id, partition_names)
+            return PartitionField(source_id, field_id, transform, name)
+
+        partition_fields = []
+        partition_names: Set[str] = set()
+        for field in self._table.spec().fields:
+            if field.field_id not in self._deletes:
+                renamed = self._renames.get(field.name)
+                if renamed:
+                    new_field = _add_new_field(
+                        self._table.schema(), field.source_id, field.field_id, renamed, field.transform, partition_names
+                    )
+                else:
+                    new_field = _add_new_field(
+                        self._table.schema(), field.source_id, field.field_id, field.name, field.transform, partition_names
+                    )
+                partition_fields.append(new_field)
+            elif self._table.format_version == 1:
+                renamed = self._renames.get(field.name)
+                if renamed:
+                    new_field = _add_new_field(
+                        self._table.schema(), field.source_id, field.field_id, renamed, VoidTransform(), partition_names
+                    )
+                else:
+                    new_field = _add_new_field(
+                        self._table.schema(), field.source_id, field.field_id, field.name, VoidTransform(), partition_names
+                    )
+
+                partition_fields.append(new_field)
+
+        for added_field in self._adds:
+            new_field = PartitionField(
+                source_id=added_field.source_id,
+                field_id=added_field.field_id,
+                transform=added_field.transform,
+                name=added_field.name,
+            )
+            partition_fields.append(new_field)
+
+        # Reuse spec id or create a new one.
+        new_spec = PartitionSpec(*partition_fields)
+        new_spec_id = INITIAL_PARTITION_SPEC_ID
+        for spec in self._table.specs().values():
+            if new_spec.compatible_with(spec):
+                new_spec_id = spec.spec_id
+                break
+            elif new_spec_id <= spec.spec_id:
+                new_spec_id = spec.spec_id + 1
+        return PartitionSpec(*partition_fields, spec_id=new_spec_id)
+
+    def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
+        if self._table.metadata.format_version == 2:
+            source_id, transform = transform_key
+            historical_fields = []
+            for spec in self._table.specs().values():
+                for field in spec.fields:
+                    historical_fields.append((field.source_id, field.field_id, repr(field.transform), field.name))
+
+            for field_key in historical_fields:
+                if field_key[0] == source_id and field_key[2] == repr(transform):
+                    if name is None or field_key[3] == name:
+                        return PartitionField(source_id, field_key[1], transform, name)
+
+        new_field_id = self._new_field_id()
+        if name is None:
+            tmp_field = PartitionField(transform_key[0], new_field_id, transform_key[1], 'unassigned_field_name')
+            name = _visit_partition_field(self._table.schema(), tmp_field, _PartitionNameGenerator())
+        return PartitionField(transform_key[0], new_field_id, transform_key[1], name)
+
+    def _new_field_id(self) -> int:
+        self._last_assigned_partition_id += 1
+        return self._last_assigned_partition_id
+
+    def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
+        return partition_field.field_id not in self._deletes and partition_field.transform == transform
