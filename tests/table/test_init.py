@@ -22,6 +22,7 @@ from typing import Dict
 import pytest
 from sortedcontainers import SortedList
 
+from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysTrue,
@@ -29,7 +30,7 @@ from pyiceberg.expressions import (
     EqualTo,
     In,
 )
-from pyiceberg.io import PY_IO_IMPL
+from pyiceberg.io import PY_IO_IMPL, load_file_io
 from pyiceberg.manifest import (
     DataFile,
     DataFileContent,
@@ -848,3 +849,72 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
         match="Requirement failed: default sort order id has changed: expected 1, found 3",
     ):
         AssertDefaultSortOrderId(default_sort_order_id=1).validate(base_metadata)
+
+
+def test_correct_schema() -> None:
+    table_metadata = TableMetadataV2(
+        **{
+            "format-version": 2,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": "s3://bucket/test/location",
+            "last-sequence-number": 34,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 3,
+            "current-schema-id": 1,
+            "schemas": [
+                {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+                {
+                    "type": "struct",
+                    "schema-id": 1,
+                    "identifier-field-ids": [1, 2],
+                    "fields": [
+                        {"id": 1, "name": "x", "required": True, "type": "long"},
+                        {"id": 2, "name": "y", "required": True, "type": "long"},
+                        {"id": 3, "name": "z", "required": True, "type": "long"},
+                    ],
+                },
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [
+                {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}
+            ],
+            "last-partition-id": 1000,
+            "default-sort-order-id": 0,
+            "sort-orders": [],
+            "current-snapshot-id": 3055729675574597004,
+            "snapshots": [
+                {
+                    "snapshot-id": 3055729675574597004,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 0,
+                }
+            ],
+        }
+    )
+
+    t = Table(
+        identifier=("default", "t1"),
+        metadata=table_metadata,
+        metadata_location="s3://../..",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+    # Should use the current schema, instead the one from the snapshot
+    assert t.scan().projection() == Schema(
+        NestedField(field_id=1, name='x', field_type=LongType(), required=True),
+        NestedField(field_id=2, name='y', field_type=LongType(), required=True),
+        NestedField(field_id=3, name='z', field_type=LongType(), required=True),
+        schema_id=1,
+        identifier_field_ids=[1, 2],
+    )
+
+    # When we explicitly filter on the commit, we want to take the schema
+    assert t.scan(snapshot_id=3055729675574597004).projection() == Schema(
+        NestedField(field_id=1, name='x', field_type=LongType(), required=True),
+        schema_id=0,
+        identifier_field_ids=[],
+    )

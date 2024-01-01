@@ -942,15 +942,16 @@ class TableScan(ABC):
         return self.table.current_snapshot()
 
     def projection(self) -> Schema:
-        snapshot_schema = self.table.schema()
-        if snapshot := self.snapshot():
-            if snapshot.schema_id is not None:
-                snapshot_schema = self.table.schemas()[snapshot.schema_id]
+        current_schema = self.table.schema()
+        if self.snapshot_id is not None:
+            snapshot = self.table.snapshot_by_id(self.snapshot_id)
+            if snapshot is not None and snapshot.schema_id is not None:
+                current_schema = self.table.schemas().get(snapshot.schema_id, current_schema)
 
         if "*" in self.selected_fields:
-            return snapshot_schema
+            return current_schema
 
-        return snapshot_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]:
