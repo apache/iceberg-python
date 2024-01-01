@@ -75,7 +75,16 @@ URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
 
-TABLE_METADATA_FILE_NAME_REGEX = re.compile(r"""(\d+)-.*\.json""", re.X)
+TABLE_METADATA_FILE_NAME_REGEX = re.compile(
+    r"""
+    (\d+)              # version number
+    -                  # separator
+    ([\w-]{36})        # UUID (36 characters, including hyphens)
+    (?:\.\w+)?         # optional codec name
+    \.metadata\.json   # file extension
+    """,
+    re.X,
+)
 
 
 class CatalogType(Enum):
@@ -592,7 +601,7 @@ class Catalog(ABC):
     @staticmethod
     def _get_metadata_location(location: str, new_version: int = 0) -> str:
         if new_version < 0:
-            raise ValueError(f"Table metadata version: {new_version} cannot be negative")
+            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
         version_str = f"{new_version:05d}"
         return f"{location}/metadata/{version_str}-{uuid.uuid4()}.metadata.json"
 
@@ -615,6 +624,10 @@ class Catalog(ABC):
         """
         file_name = metadata_location.split("/")[-1]
         if file_name_match := TABLE_METADATA_FILE_NAME_REGEX.fullmatch(file_name):
+            try:
+                uuid.UUID(file_name_match.group(2))
+            except ValueError:
+                return -1
             return int(file_name_match.group(1))
         else:
             return -1

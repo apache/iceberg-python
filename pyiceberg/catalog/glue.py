@@ -207,10 +207,10 @@ class GlueCatalog(Catalog):
                 VersionId=version_id,
             )
         except self.glue.exceptions.EntityNotFoundException as e:
-            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name} (Glue table version {version_id})") from e
         except self.glue.exceptions.ConcurrentModificationException as e:
             raise CommitFailedException(
-                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update"
+                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
             ) from e
 
     def _get_glue_table(self, database_name: str, table_name: str) -> TableTypeDef:
@@ -299,7 +299,7 @@ class GlueCatalog(Catalog):
 
         current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
         glue_table_version_id = current_glue_table.get("VersionId")
-        if glue_table_version_id is None:
+        if not glue_table_version_id:
             raise CommitFailedException(f"Cannot commit {database_name}.{table_name} because Glue table version id is missing")
         current_table = self._convert_glue_to_iceberg(glue_table=current_glue_table)
         base_metadata = current_table.metadata
