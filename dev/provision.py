@@ -152,7 +152,6 @@ DELETE FROM default.test_positional_mor_deletes.branch_without_5 WHERE number = 
     """
 )
 
-
 spark.sql(
     """
 DELETE FROM default.test_positional_mor_deletes WHERE number = 9
@@ -315,9 +314,28 @@ TBLPROPERTIES (
 )
 
 spark.sql(
-    f"""
+    """
 INSERT INTO default.test_table_sanitized_character
 VALUES
     ('123')
 """
 )
+
+spark.sql(
+    """
+CREATE TABLE default.test_table_add_column (
+    a string
+)
+USING iceberg
+"""
+)
+
+spark.sql("INSERT INTO default.test_table_add_column VALUES ('1')")
+
+spark.sql(
+    """
+ALTER TABLE default.test_table_add_column ADD COLUMN b string
+"""
+)
+
+spark.sql("INSERT INTO default.test_table_add_column VALUES ('2', '2')")

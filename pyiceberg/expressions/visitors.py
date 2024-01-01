@@ -906,7 +906,16 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
 
 def translate_column_names(expr: BooleanExpression, file_schema: Schema, case_sensitive: bool) -> BooleanExpression:
-    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
+    try:
+        return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
+    except ValueError as e:
+        if "Not found in file schema" in str(e):
+            if isinstance(expr, BoundIsNull):
+                return AlwaysTrue()
+            else:
+                return AlwaysFalse()
+        else:
+            raise e
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[Set[int]]):
