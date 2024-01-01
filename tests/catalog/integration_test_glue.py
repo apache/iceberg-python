@@ -31,6 +31,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType
 from tests.conftest import clean_up, get_bucket_name, get_s3_path
 
 # The number of tables/databases used in list_table/namespace test
@@ -61,6 +62,7 @@ def test_create_table(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_create_table_with_invalid_location(table_schema_nested: Schema, table_name: str, database_name: str) -> None:
@@ -82,6 +84,7 @@ def test_create_table_with_default_location(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_nested: Schema, table_name: str) -> None:
@@ -105,6 +108,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     assert table.identifier == loaded_table.identifier
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
@@ -126,6 +130,7 @@ def test_rename_table(
     new_table_name = f"rename-{table_name}"
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     assert table.identifier == (CATALOG_NAME,) + identifier
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
@@ -261,3 +266,31 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+def test_commit_table_update_schema(
+    test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    original_table_metadata = table.metadata
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert original_table_metadata.current_schema_id == 0
+
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.current_schema_id == 1
+    assert len(updated_table_metadata.schemas) == 2
+    new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
+    assert new_schema
+    assert new_schema == update._apply()
+    assert new_schema.find_field("b").field_type == IntegerType()
