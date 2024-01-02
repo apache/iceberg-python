@@ -561,12 +561,12 @@ def test_expr_less_than_or_equal_to_pyarrow(bound_reference: BoundReference[str]
 def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(BoundIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
-  "hello",
-  "world"
-], null_matching_behavior=MATCH})>""",
-        """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
   "world",
   "hello"
+], null_matching_behavior=MATCH})>""",
+        """<pyarrow.compute.Expression is_in(foo, {value_set=string:[
+  "hello",
+  "world"
 ], null_matching_behavior=MATCH})>""",
     )
 
@@ -574,12 +574,12 @@ def test_expr_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
 def test_expr_not_in_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(BoundNotIn(bound_reference, {literal("hello"), literal("world")}))) in (
         """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
-  "hello",
-  "world"
-], null_matching_behavior=MATCH}))>""",
-        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
   "world",
   "hello"
+], null_matching_behavior=MATCH}))>""",
+        """<pyarrow.compute.Expression invert(is_in(foo, {value_set=string:[
+  "hello",
+  "world"
 ], null_matching_behavior=MATCH}))>""",
     )
 
@@ -763,7 +763,7 @@ def file_struct(schema_struct: Schema, tmpdir: str) -> str:
 def file_list(schema_list: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_list, metadata={ICEBERG_SCHEMA: bytes(schema_list.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"file:{tmpdir}/list.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -782,7 +782,7 @@ def file_list_of_structs(schema_list_of_structs: Schema, tmpdir: str) -> str:
         schema_list_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_list_of_structs.model_dump_json(), UTF8)}
     )
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"file:{tmpdir}/list_of_structs.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -810,6 +810,7 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
             schema=pyarrow_schema,
         ),
     )
+    return _write_table_to_file(f"file:{tmpdir}/map.parquet", pyarrow_schema, tbl)
 
 
 def project(
@@ -887,10 +888,14 @@ def test_projection_add_column(file_int: str) -> None:
     assert (
         repr(result_table.schema)
         == """id: int32
+  -- field metadata --
+  field_id: '10'
 list: list<element: int32>
   child 0, element: int32
     -- field metadata --
     field_id: '21'
+  -- field metadata --
+  field_id: '20'
 map: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
@@ -899,13 +904,17 @@ map: map<int32, string>
       child 1, value: string
       -- field metadata --
       field_id: '32'
+  -- field metadata --
+  field_id: '30'
 location: struct<lat: double, lon: double>
   child 0, lat: double
     -- field metadata --
     field_id: '41'
   child 1, lon: double
     -- field metadata --
-    field_id: '42'"""
+    field_id: '42'
+  -- field metadata --
+  field_id: '40'"""
     )
 
 
@@ -916,11 +925,19 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     for actual, expected in zip(result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))]):
         assert actual.as_py() == expected
 
-    assert repr(result_table.schema) == "ids: list<item: int32>\n  child 0, item: int32"
+    assert (
+        repr(result_table.schema)
+        == """ids: list<element: int32>
+  child 0, element: int32
+    -- field metadata --
+    field_id: '51'
+  -- field metadata --
+  field_id: '5'"""
+    )
 
 
 def test_read_map(schema_map: Schema, file_map: str) -> None:
-    result_table = project(schema_map, [file_map])
+    result_table = project(schema_map, [file_map], table_schema=schema_map)
 
     assert len(result_table.columns[0]) == 3
     for actual, expected in zip(result_table.columns[0], [[("a", "b")], [("c", "d")], [("e", "f"), ("g", "h")]]):
@@ -929,9 +946,15 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     assert (
         repr(result_table.schema)
         == """properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string> not null
+  child 0, entries: struct<key: string not null, value: string not null> not null
       child 0, key: string not null
-      child 1, value: string"""
+      -- field metadata --
+      field_id: '51'
+      child 1, value: string not null
+      -- field metadata --
+      field_id: '52'
+  -- field metadata --
+  field_id: '5'"""
     )
 
 
@@ -958,11 +981,13 @@ def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None
       field_id: '3'
       child 1, value: string
       -- field metadata --
-      field_id: '4'"""
+      field_id: '4'
+  -- field metadata --
+  field_id: '2'"""
     )
 
 
-def test_projection_add_column_struct_required(file_int: str) -> None:
+def test_projection_add_column_struct_required(file_int: str, schema_int: Schema) -> None:
     schema = Schema(
         # A new ID
         NestedField(
@@ -973,8 +998,8 @@ def test_projection_add_column_struct_required(file_int: str) -> None:
         )
     )
     with pytest.raises(ResolveError) as exc_info:
-        _ = project(schema, [file_int])
-    assert "Field is required, and could not be found in the file: 2: other_id: required int" in str(exc_info.value)
+        _ = project(schema, [file_int], table_schema=schema_int)
+    assert "Field is required, and could not be found: 2: other_id: required int" in str(exc_info.value)
 
 
 def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
@@ -987,7 +1012,12 @@ def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
     for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
         assert actual.as_py() == expected
 
-    assert repr(result_table.schema) == "other_name: int32 not null"
+    assert (
+        repr(result_table.schema)
+        == """other_name: int32 not null
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
@@ -996,7 +1026,12 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     for actual, expected in zip(result_table.columns[0], [0, 1, 2, 0, 1, 2]):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
-    assert repr(result_table.schema) == "id: int32"
+    assert (
+        repr(result_table.schema)
+        == """id: int32
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:
@@ -1017,7 +1052,12 @@ def test_projection_filter_renamed_column(file_int: str) -> None:
     )
     result_table = project(schema, [file_int], GreaterThan("other_id", 1))
     assert len(result_table.columns[0]) == 1
-    assert repr(result_table.schema) == "other_id: int32 not null"
+    assert (
+        repr(result_table.schema)
+        == """other_id: int32 not null
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_string: str) -> None:
@@ -1027,7 +1067,12 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
     for actual, expected in zip(result_table.columns[0], [0, 1, 2, None, None, None]):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
-    assert repr(result_table.schema) == "id: int32"
+    assert (
+        repr(result_table.schema)
+        == """id: int32
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
 def test_projection_filter_add_column_promote(file_int: str) -> None:
@@ -1037,13 +1082,18 @@ def test_projection_filter_add_column_promote(file_int: str) -> None:
     for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "id: int64 not null"
+    assert (
+        repr(result_table.schema)
+        == """id: int64 not null
+  -- field metadata --
+  field_id: '1'"""
+    )
 
 
-def test_projection_filter_add_column_demote(file_long: str) -> None:
+def test_projection_filter_add_column_demote(file_long: str, schema_long: Schema) -> None:
     schema_int = Schema(NestedField(3, "id", IntegerType()))
     with pytest.raises(ResolveError) as exc_info:
-        _ = project(schema_int, [file_long])
+        _ = project(schema_int, [file_long], table_schema=schema_long)
     assert "Cannot promote long to int" in str(exc_info.value)
 
 
@@ -1065,7 +1115,15 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "location: struct<lat: double not null> not null\n  child 0, lat: double not null"
+    assert (
+        repr(result_table.schema)
+        == """location: struct<lat: double not null> not null
+  child 0, lat: double not null
+    -- field metadata --
+    field_id: '41'
+  -- field metadata --
+  field_id: '4'"""
+    )
 
 
 def test_projection_nested_new_field(file_struct: str) -> None:
@@ -1202,7 +1260,7 @@ def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int
     ):
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 1
-    assert repr(result_table.schema) == "id: int32 not null"
+    assert repr(result_table.schema) == "id: int32"
 
 
 def test_projection_filter_on_unknown_field(schema_int_str: Schema, file_int_str: str) -> None:
@@ -1262,7 +1320,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1305,7 +1363,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1341,7 +1399,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         str(projection)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","b","c"]]
