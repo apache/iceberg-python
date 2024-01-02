@@ -25,6 +25,7 @@ services:
       iceberg_net:
     depends_on:
       - rest
+      - hive
       - minio
     volumes:
       - ./warehouse:/home/iceberg/warehouse
@@ -37,6 +38,7 @@ services:
       - 8080:8080
     links:
       - rest:rest
+      - hive:hive
       - minio:minio
   rest:
     image: tabulario/iceberg-rest
@@ -85,5 +87,17 @@ services:
       /usr/bin/mc policy set public minio/warehouse;
       tail -f /dev/null
       "
+  hive:
+    build: hive/
+    container_name: hive
+    hostname: hive
+    networks:
+      iceberg_net:
+    ports:
+      - 9083:9083
+    environment:
+      SERVICE_NAME: "metastore"
+      SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse/hive/"
+
 networks:
   iceberg_net:
