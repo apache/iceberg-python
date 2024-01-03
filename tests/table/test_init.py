@@ -881,16 +881,24 @@ def test_correct_schema() -> None:
             "last-partition-id": 1000,
             "default-sort-order-id": 0,
             "sort-orders": [],
-            "current-snapshot-id": 3055729675574597004,
+            "current-snapshot-id": 123,
             "snapshots": [
                 {
-                    "snapshot-id": 3055729675574597004,
+                    "snapshot-id": 234,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 10,
+                },
+                {
+                    "snapshot-id": 123,
                     "timestamp-ms": 1515100955770,
                     "sequence-number": 0,
                     "summary": {"operation": "append"},
                     "manifest-list": "s3://a/b/1.avro",
                     "schema-id": 0,
-                }
+                },
             ],
         }
     )
@@ -913,8 +921,11 @@ def test_correct_schema() -> None:
     )
 
     # When we explicitly filter on the commit, we want to take the schema
-    assert t.scan(snapshot_id=3055729675574597004).projection() == Schema(
+    assert t.scan(snapshot_id=123).projection() == Schema(
         NestedField(field_id=1, name='x', field_type=LongType(), required=True),
         schema_id=0,
         identifier_field_ids=[],
     )
+
+    with pytest.warns(UserWarning, match="Metadata does not contain schema with id: 10"):
+        t.scan(snapshot_id=234).projection()

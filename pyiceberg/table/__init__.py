@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import itertools
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
@@ -946,7 +947,11 @@ class TableScan(ABC):
         if self.snapshot_id is not None:
             snapshot = self.table.snapshot_by_id(self.snapshot_id)
             if snapshot is not None and snapshot.schema_id is not None:
-                current_schema = self.table.schemas().get(snapshot.schema_id, current_schema)
+                snapshot_schema = self.table.schemas().get(snapshot.schema_id)
+                if snapshot_schema is not None:
+                    current_schema = snapshot_schema
+                else:
+                    warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
 
         if "*" in self.selected_fields:
             return current_schema
