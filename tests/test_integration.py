@@ -384,6 +384,9 @@ def test_filter_on_new_column(test_table_add_column: Table) -> None:
     arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()
     assert arrow_table["b"].to_pylist() == ['2']
 
+    arrow_table = test_table_add_column.scan(row_filter="b is not null").to_arrow()
+    assert arrow_table["b"].to_pylist() == ['2']
+
     arrow_table = test_table_add_column.scan(row_filter="b is null").to_arrow()
     assert arrow_table["b"].to_pylist() == [None]
 

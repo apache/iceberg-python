@@ -892,8 +892,13 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
         file_column_name = self.file_schema.find_column_name(predicate.term.ref().field.field_id)
 
-        if not file_column_name:
-            raise ValueError(f"Not found in file schema: {file_column_name}")
+        if file_column_name is None:
+            # In the case of schema evolution, the column might not be present
+            # in the file schema when reading older data
+            if isinstance(predicate, BoundIsNull):
+                return AlwaysTrue()
+            else:
+                return AlwaysFalse()
 
         if isinstance(predicate, BoundUnaryPredicate):
             return predicate.as_unbound(file_column_name)
@@ -906,16 +911,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
 
 
 def translate_column_names(expr: BooleanExpression, file_schema: Schema, case_sensitive: bool) -> BooleanExpression:
-    try:
-        return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
-    except ValueError as e:
-        if "Not found in file schema" in str(e):
-            if isinstance(expr, BoundIsNull):
-                return AlwaysTrue()
-            else:
-                return AlwaysFalse()
-        else:
-            raise e
+    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive))
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[Set[int]]):
