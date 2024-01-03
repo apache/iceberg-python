@@ -545,7 +545,7 @@ class Table:
 
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
-        if snapshot_id := self.metadata.current_snapshot_id:
+        if (snapshot_id := self.metadata.current_snapshot_id) is not None or isinstance(snapshot_id, int):
             return self.snapshot_by_id(snapshot_id)
         return None
 
