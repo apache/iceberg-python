@@ -250,6 +250,7 @@ class Transaction:
         self._append_updates(
             SetSnapshotRefUpdate(
                 snapshot_id=snapshot_id,
+                parent_snapshot_id=parent_snapshot_id,
                 ref_name=ref_name,
                 type=type,
                 max_age_ref_ms=max_age_ref_ms,
@@ -2051,7 +2052,7 @@ class _MergeAppend:
         self._table = table
         self._snapshot_id = snapshot_id
         # Since we only support the main branch for now
-        self._parent_snapshot_id = snapshot.parent_snapshot_id if (snapshot := self._table.current_snapshot()) else None
+        self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_datafiles = []
         self._existing_datafiles = []
         self._commit_uuid = uuid.uuid4()
