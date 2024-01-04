@@ -30,10 +30,12 @@ For the development, Poetry is used for packing and dependency management. You c
 pip install poetry
 ```
 
-If you have an older version of pip and virtualenv you need to update these:
+Make sure you're using an up-to-date environment from venv
 
 ```bash
 pip install --upgrade virtualenv pip
+python -m venv ./venv
+source ./venv/bin/activate
 ```
 
 To get started, you can run `make install`, which installs Poetry and all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --no-dev`.
