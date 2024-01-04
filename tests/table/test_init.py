@@ -920,7 +920,7 @@ def test_correct_schema() -> None:
         identifier_field_ids=[1, 2],
     )
 
-    # When we explicitly filter on the commit, we want to take the schema
+    # When we explicitly filter on the commit, we want to have the schema that's linked to the snapshot
     assert t.scan(snapshot_id=123).projection() == Schema(
         NestedField(field_id=1, name='x', field_type=LongType(), required=True),
         schema_id=0,
@@ -929,3 +929,9 @@ def test_correct_schema() -> None:
 
     with pytest.warns(UserWarning, match="Metadata does not contain schema with id: 10"):
         t.scan(snapshot_id=234).projection()
+
+    # Invalid snapshot
+    with pytest.raises(ValueError) as exc_info:
+        _ = t.scan(snapshot_id=-1).projection()
+
+    assert "Snapshot not found: -1" in str(exc_info.value)
