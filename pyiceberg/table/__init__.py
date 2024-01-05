@@ -62,7 +62,10 @@ from pyiceberg.manifest import (
     DataFileContent,
     ManifestContent,
     ManifestEntry,
+    ManifestEntryStatus,
     ManifestFile,
+    write_manifest,
+    write_manifest_list,
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import (
@@ -79,7 +82,14 @@ from pyiceberg.table.metadata import (
     TableMetadataUtil,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
+from pyiceberg.table.snapshots import (
+    Operation,
+    Snapshot,
+    SnapshotLogEntry,
+    SnapshotSummaryCollector,
+    Summary,
+    update_snapshot_summaries,
+)
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -110,6 +120,8 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
+
+_JAVA_LONG_MAX = 9223372036854775807
 
 
 class Transaction:
@@ -209,6 +221,47 @@ class Transaction:
             The alter table builder.
         """
         return self._append_updates(SetPropertiesUpdate(updates=updates))
+
+    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
+        """Add a new snapshot to the table.
+
+        Returns:
+            The transaction with the add-snapshot staged.
+        """
+        self._append_updates(AddSnapshotUpdate(snapshot=snapshot))
+        self._append_requirements(AssertTableUUID(uuid=self._table.metadata.table_uuid))
+
+        return self
+
+    def set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        ref_name: str,
+        type: str,
+        max_age_ref_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> Transaction:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The transaction with the set-snapshot-ref staged
+        """
+        self._append_updates(
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                parent_snapshot_id=parent_snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_age_ref_ms=max_age_ref_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            )
+        )
+
+        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"))
+        return self
 
     def update_schema(self) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -584,7 +637,7 @@ class AssertRefSnapshotId(TableRequirement):
     """
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
-    ref: str
+    ref: str = Field(...)
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
@@ -797,6 +850,9 @@ class Table:
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
 
+    def next_sequence_number(self) -> int:
+        return self.last_sequence_number + 1 if self.metadata.format_version > 1 else INITIAL_SEQUENCE_NUMBER
+
     def _next_sequence_number(self) -> int:
         return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
 
@@ -830,6 +886,46 @@ class Table:
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+
+    def append(self, df: pa.Table) -> None:
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned tables")
+
+        snapshot_id = self.new_snapshot_id()
+
+        data_files = _dataframe_to_data_files(self, df=df)
+        merge = _MergeAppend(operation=Operation.APPEND, table=self, snapshot_id=snapshot_id)
+        for data_file in data_files:
+            merge.append_datafile(data_file)
+
+        if current_snapshot := self.current_snapshot():
+            for manifest in current_snapshot.manifests(io=self.io):
+                for entry in manifest.fetch_manifest_entry(io=self.io):
+                    merge.append_datafile(entry.data_file, added=False)
+
+        merge.commit()
+
+    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+        if overwrite_filter != AlwaysTrue():
+            raise NotImplementedError("Cannot overwrite a subset of a table")
+
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned tables")
+
+        snapshot_id = self.new_snapshot_id()
+
+        data_files = _dataframe_to_data_files(self, df=df)
+
+        merge = _MergeAppend(
+            operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
+            table=self,
+            snapshot_id=snapshot_id,
+        )
+
+        for data_file in data_files:
+            merge.append_datafile(data_file)
+
+        merge.commit()
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -1910,3 +2006,137 @@ def _generate_snapshot_id() -> int:
     snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 
     return snapshot_id
+
+
+@dataclass(frozen=True)
+class WriteTask:
+    write_uuid: uuid.UUID
+    task_id: int
+    df: pa.Table
+    sort_order_id: Optional[int] = None
+
+    # Later to be extended with partition information
+
+    def generate_datafile_filename(self, extension: str) -> str:
+        # Mimics the behavior in the Java API:
+        # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
+        return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+
+
+def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
+    return f'{location}/metadata/{commit_uuid}-m{num}.avro'
+
+
+def _generate_manifest_list_filename(snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
+    # Mimics the behavior in Java:
+    # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
+    return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
+
+
+def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
+    from pyiceberg.io.pyarrow import write_file
+
+    write_uuid = uuid.uuid4()
+    counter = itertools.count(0)
+
+    # This is an iter, so we don't have to materialize everything every time
+    # This will be more relevant when we start doing partitioned writes
+    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))
+
+
+class _MergeAppend:
+    _operation: Operation
+    _table: Table
+    _snapshot_id: int
+    _parent_snapshot_id: Optional[int]
+    _added_datafiles: List[DataFile]
+    _existing_datafiles: List[DataFile]
+    _commit_uuid: uuid.UUID
+
+    def __init__(self, operation: Operation, table: Table, snapshot_id: int) -> None:
+        self._operation = operation
+        self._table = table
+        self._snapshot_id = snapshot_id
+        # Since we only support the main branch for now
+        self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
+        self._added_datafiles = []
+        self._existing_datafiles = []
+        self._commit_uuid = uuid.uuid4()
+
+    def append_datafile(self, data_file: DataFile, added: bool = True) -> _MergeAppend:
+        if added:
+            self._added_datafiles.append(data_file)
+        else:
+            self._existing_datafiles.append(data_file)
+        return self
+
+    def _manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
+        ssc = SnapshotSummaryCollector()
+        manifests = []
+
+        if self._added_datafiles:
+            output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
+            with write_manifest(
+                format_version=self._table.format_version,
+                spec=self._table.spec(),
+                schema=self._table.schema(),
+                output_file=self._table.io.new_output(output_file_location),
+                snapshot_id=self._snapshot_id,
+            ) as writer:
+                for data_file in self._added_datafiles + self._existing_datafiles:
+                    writer.add_entry(
+                        ManifestEntry(
+                            status=ManifestEntryStatus.ADDED,
+                            snapshot_id=self._snapshot_id,
+                            data_sequence_number=None,
+                            file_sequence_number=None,
+                            data_file=data_file,
+                        )
+                    )
+
+                for data_file in self._added_datafiles:
+                    ssc.add_file(data_file=data_file)
+
+            manifests.append(writer.to_manifest_file())
+
+        return ssc.build(), manifests
+
+    def commit(self) -> Snapshot:
+        new_summary, manifests = self._manifests()
+
+        previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
+        summary = update_snapshot_summaries(
+            summary=Summary(operation=self._operation, **new_summary),
+            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
+            truncate_full_table=self._operation == Operation.OVERWRITE,
+        )
+
+        manifest_list_filename = _generate_manifest_list_filename(
+            snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
+        )
+        manifest_list_file_path = f'{self._table.location()}/metadata/{manifest_list_filename}'
+        with write_manifest_list(
+            format_version=self._table.metadata.format_version,
+            output_file=self._table.io.new_output(manifest_list_file_path),
+            snapshot_id=self._snapshot_id,
+            parent_snapshot_id=self._parent_snapshot_id,
+            sequence_number=self._table.next_sequence_number(),
+        ) as writer:
+            writer.add_manifests(manifests)
+
+        snapshot = Snapshot(
+            snapshot_id=self._snapshot_id,
+            parent_snapshot_id=self._parent_snapshot_id,
+            manifest_list=manifest_list_file_path,
+            sequence_number=self._table._next_sequence_number(),
+            summary=summary,
+            schema_id=self._table.schema().schema_id,
+        )
+
+        with self._table.transaction() as tx:
+            tx.add_snapshot(snapshot=snapshot)
+            tx.set_ref_snapshot(
+                snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+            )
+
+        return snapshot
