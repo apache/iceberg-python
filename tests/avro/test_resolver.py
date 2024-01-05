@@ -318,34 +318,30 @@ def test_resolver_initial_value() -> None:
 
 def test_resolve_writer() -> None:
     actual = resolve_writer(record_schema=MANIFEST_ENTRY_SCHEMAS[2], file_schema=MANIFEST_ENTRY_SCHEMAS[1])
-    expected = StructWriter(
+    expected = StructWriter((
+        (0, IntegerWriter()),
+        (1, IntegerWriter()),
         (
-            (0, IntegerWriter()),
-            (1, IntegerWriter()),
-            (
-                4,
-                StructWriter(
-                    (
-                        (1, StringWriter()),
-                        (2, StringWriter()),
-                        (3, StructWriter(())),
-                        (4, IntegerWriter()),
-                        (5, IntegerWriter()),
-                        (None, DefaultWriter(writer=IntegerWriter(), value=67108864)),
-                        (6, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
-                        (7, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
-                        (8, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
-                        (9, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
-                        (10, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=BinaryWriter()))),
-                        (11, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=BinaryWriter()))),
-                        (12, OptionWriter(option=BinaryWriter())),
-                        (13, OptionWriter(option=ListWriter(element_writer=IntegerWriter()))),
-                        (15, OptionWriter(option=IntegerWriter())),
-                    )
-                ),
-            ),
-        )
-    )
+            4,
+            StructWriter((
+                (1, StringWriter()),
+                (2, StringWriter()),
+                (3, StructWriter(())),
+                (4, IntegerWriter()),
+                (5, IntegerWriter()),
+                (None, DefaultWriter(writer=IntegerWriter(), value=67108864)),
+                (6, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                (7, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                (8, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                (9, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=IntegerWriter()))),
+                (10, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=BinaryWriter()))),
+                (11, OptionWriter(option=MapWriter(key_writer=IntegerWriter(), value_writer=BinaryWriter()))),
+                (12, OptionWriter(option=BinaryWriter())),
+                (13, OptionWriter(option=ListWriter(element_writer=IntegerWriter()))),
+                (15, OptionWriter(option=IntegerWriter())),
+            )),
+        ),
+    ))
 
     assert actual == expected
 

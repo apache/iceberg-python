@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=W0621
 """Avro reader for reading Avro files."""
+
 from __future__ import annotations
 
 import io

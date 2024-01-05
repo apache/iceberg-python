@@ -17,6 +17,7 @@
 from typing import Any, Dict, List
 from unittest import mock
 
+import boto3
 import pytest
 from moto import mock_glue
 
@@ -273,7 +274,9 @@ def test_rename_table_from_self_identifier(
 
 
 @mock_glue
-def test_rename_table_no_params(_glue, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:  # type: ignore
+def test_rename_table_no_params(
+    _glue: boto3.client, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
@@ -290,7 +293,9 @@ def test_rename_table_no_params(_glue, _bucket_initialize: None, moto_endpoint_u
 
 
 @mock_glue
-def test_rename_non_iceberg_table(_glue, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:  # type: ignore
+def test_rename_non_iceberg_table(
+    _glue: boto3.client, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)

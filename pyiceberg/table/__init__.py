@@ -962,16 +962,13 @@ class TableScan(ABC):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     @abstractmethod
-    def plan_files(self) -> Iterable[ScanTask]:
-        ...
+    def plan_files(self) -> Iterable[ScanTask]: ...
 
     @abstractmethod
-    def to_arrow(self) -> pa.Table:
-        ...
+    def to_arrow(self) -> pa.Table: ...
 
     @abstractmethod
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
-        ...
+    def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
