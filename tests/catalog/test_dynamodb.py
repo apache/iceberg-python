@@ -16,6 +16,7 @@
 #  under the License.
 from typing import List
 
+import boto3
 import pytest
 from moto import mock_dynamodb
 
@@ -308,7 +309,9 @@ def test_fail_on_rename_table_with_missing_required_params(_bucket_initialize: N
 
 
 @mock_dynamodb
-def test_fail_on_rename_non_iceberg_table(_dynamodb, _bucket_initialize: None, database_name: str, table_name: str) -> None:  # type: ignore
+def test_fail_on_rename_non_iceberg_table(
+    _dynamodb: boto3.client, _bucket_initialize: None, database_name: str, table_name: str
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)

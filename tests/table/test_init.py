@@ -424,7 +424,9 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
 
 
 def test_serialize_set_properties_updates() -> None:
-    assert SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
+    assert (
+        SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
+    )
 
 
 def test_add_column(table_v2: Table) -> None:
@@ -535,18 +537,14 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
 
     test_context = _TableMetadataUpdateContext()
 
-    new_table_metadata = _apply_table_update(
-        transaction._updates[0], base_metadata=table_v2.metadata, context=test_context
-    )  # pylint: disable=W0212
+    new_table_metadata = _apply_table_update(transaction._updates[0], base_metadata=table_v2.metadata, context=test_context)  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
     assert new_table_metadata.current_schema_id == 1
     assert len(test_context._updates) == 1
     assert test_context._updates[0] == transaction._updates[0]  # pylint: disable=W0212
     assert test_context.is_added_schema(2)
 
-    new_table_metadata = _apply_table_update(
-        transaction._updates[1], base_metadata=new_table_metadata, context=test_context
-    )  # pylint: disable=W0212
+    new_table_metadata = _apply_table_update(transaction._updates[1], base_metadata=new_table_metadata, context=test_context)  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
     assert new_table_metadata.current_schema_id == 2
     assert len(test_context._updates) == 2

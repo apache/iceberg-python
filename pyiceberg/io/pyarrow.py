@@ -22,6 +22,7 @@ by PyArrow. It relies on PyArrow's `from_uri` method that infers the correct fil
 type to use. Theoretically, this allows the supported storage types to grow naturally
 with the pyarrow library.
 """
+
 from __future__ import annotations
 
 import concurrent.futures
