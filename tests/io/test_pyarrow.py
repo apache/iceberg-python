@@ -324,57 +324,57 @@ def test_schema_to_pyarrow_schema(table_schema_nested: Schema) -> None:
     actual = schema_to_pyarrow(table_schema_nested)
     expected = """foo: string
   -- field metadata --
-  field_id: '1'
+  PARQUET:field_id: '1'
 bar: int32 not null
   -- field metadata --
-  field_id: '2'
+  PARQUET:field_id: '2'
 baz: bool
   -- field metadata --
-  field_id: '3'
+  PARQUET:field_id: '3'
 qux: list<element: string not null> not null
   child 0, element: string not null
     -- field metadata --
-    field_id: '5'
+    PARQUET:field_id: '5'
   -- field metadata --
-  field_id: '4'
+  PARQUET:field_id: '4'
 quux: map<string, map<string, int32>> not null
   child 0, entries: struct<key: string not null, value: map<string, int32> not null> not null
       child 0, key: string not null
       -- field metadata --
-      field_id: '7'
+      PARQUET:field_id: '7'
       child 1, value: map<string, int32> not null
           child 0, entries: struct<key: string not null, value: int32 not null> not null
               child 0, key: string not null
           -- field metadata --
-          field_id: '9'
+          PARQUET:field_id: '9'
               child 1, value: int32 not null
           -- field metadata --
-          field_id: '10'
+          PARQUET:field_id: '10'
       -- field metadata --
-      field_id: '8'
+      PARQUET:field_id: '8'
   -- field metadata --
-  field_id: '6'
+  PARQUET:field_id: '6'
 location: list<element: struct<latitude: float, longitude: float> not null> not null
   child 0, element: struct<latitude: float, longitude: float> not null
       child 0, latitude: float
       -- field metadata --
-      field_id: '13'
+      PARQUET:field_id: '13'
       child 1, longitude: float
       -- field metadata --
-      field_id: '14'
+      PARQUET:field_id: '14'
     -- field metadata --
-    field_id: '12'
+    PARQUET:field_id: '12'
   -- field metadata --
-  field_id: '11'
+  PARQUET:field_id: '11'
 person: struct<name: string, age: int32 not null>
   child 0, name: string
     -- field metadata --
-    field_id: '16'
+    PARQUET:field_id: '16'
   child 1, age: int32 not null
     -- field metadata --
-    field_id: '17'
+    PARQUET:field_id: '17'
   -- field metadata --
-  field_id: '15'"""
+  PARQUET:field_id: '15'"""
     assert repr(actual) == expected
 
 
@@ -890,22 +890,22 @@ def test_projection_add_column(file_int: str) -> None:
 list: list<element: int32>
   child 0, element: int32
     -- field metadata --
-    field_id: '21'
+    PARQUET:field_id: '21'
 map: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
       -- field metadata --
-      field_id: '31'
+      PARQUET:field_id: '31'
       child 1, value: string
       -- field metadata --
-      field_id: '32'
+      PARQUET:field_id: '32'
 location: struct<lat: double, lon: double>
   child 0, lat: double
     -- field metadata --
-    field_id: '41'
+    PARQUET:field_id: '41'
   child 1, lon: double
     -- field metadata --
-    field_id: '42'"""
+    PARQUET:field_id: '42'"""
     )
 
 
@@ -955,10 +955,10 @@ def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
       -- field metadata --
-      field_id: '3'
+      PARQUET:field_id: '3'
       child 1, value: string
       -- field metadata --
-      field_id: '4'"""
+      PARQUET:field_id: '4'"""
     )
 
 
@@ -1006,7 +1006,7 @@ def test_projection_filter(schema_int: Schema, file_int: str) -> None:
         repr(result_table.schema)
         == """id: int32
   -- field metadata --
-  field_id: '1'"""
+  PARQUET:field_id: '1'"""
     )
 
 
@@ -1184,10 +1184,10 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
         == """location: struct<lat: double, long: double>
   child 0, lat: double
     -- field metadata --
-    field_id: '41'
+    PARQUET:field_id: '41'
   child 1, long: double
     -- field metadata --
-    field_id: '42'"""
+    PARQUET:field_id: '42'"""
     )
 
 
