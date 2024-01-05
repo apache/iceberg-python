@@ -1052,24 +1052,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         return field_array
 
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
-        return (
-            pa.ListArray.from_arrays(list_array.offsets, self.cast_if_needed(list_type.element_field, value_array))
-            if isinstance(list_array, pa.ListArray)
-            else None
-        )
+        return list_array.cast(schema_to_pyarrow(list_type)) if isinstance(list_array, pa.ListArray) else None
 
     def map(
         self, map_type: MapType, map_array: Optional[pa.Array], key_result: Optional[pa.Array], value_result: Optional[pa.Array]
     ) -> Optional[pa.Array]:
-        return (
-            pa.MapArray.from_arrays(
-                map_array.offsets,
-                self.cast_if_needed(map_type.key_field, key_result),
-                self.cast_if_needed(map_type.value_field, value_result),
-            )
-            if isinstance(map_array, pa.MapArray)
-            else None
-        )
+        return map_array.cast(schema_to_pyarrow(map_type)) if isinstance(map_array, pa.MapArray) else None
 
     def primitive(self, _: PrimitiveType, array: Optional[pa.Array]) -> Optional[pa.Array]:
         return array

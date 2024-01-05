@@ -93,6 +93,11 @@ def table_test_table_sanitized_character(catalog: Catalog) -> Table:
     return catalog.load_table("default.test_table_sanitized_character")
 
 
+@pytest.fixture()
+def table_test_empty_list_and_map(catalog: Catalog) -> Table:
+    return catalog.load_table("default.test_table_empty_list_and_map")
+
+
 TABLE_NAME = ("default", "t1")
 
 
@@ -417,8 +422,15 @@ def test_upgrade_table_version(table_test_table_version: Table) -> None:
 
 
 @pytest.mark.integration
-def test_reproduce_issue(table_test_table_sanitized_character: Table) -> None:
+def test_sanitize_column_names(table_test_table_sanitized_character: Table) -> None:
     arrow_table = table_test_table_sanitized_character.scan().to_arrow()
     assert len(arrow_table.schema.names), 1
     assert len(table_test_table_sanitized_character.schema().fields), 1
     assert arrow_table.schema.names[0] == table_test_table_sanitized_character.schema().fields[0].name
+
+
+@pytest.mark.integration
+def test_null_list_and_map(table_test_empty_list_and_map: Table) -> None:
+    arrow_table = table_test_empty_list_and_map.scan().to_arrow()
+    assert arrow_table["col_list"].to_pylist() == [None]
+    assert arrow_table["col_map"].to_pylist() == [None]
