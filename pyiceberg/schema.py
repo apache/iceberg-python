@@ -291,13 +291,17 @@ class Schema(IcebergBaseModel):
         """
         try:
             if case_sensitive:
-                ids = {self._name_to_id[name] for name in names}
+                ids = [self._name_to_id[name] for name in names]
             else:
-                ids = {self._lazy_name_to_id_lower[name.lower()] for name in names}
+                ids = [self._lazy_name_to_id_lower[name.lower()] for name in names]
         except KeyError as e:
             raise ValueError(f"Could not find column: {e}") from e
 
-        return prune_columns(self, ids)
+        pruned_schema = prune_columns(self, set(ids))
+
+        fields = sorted(pruned_schema.fields, key=lambda f: ids.index(f.field_id))
+
+        return Schema(*fields, schema_id=pruned_schema.schema_id, identifier_field_ids=pruned_schema.identifier_field_ids)
 
     @property
     def field_ids(self) -> Set[int]:
