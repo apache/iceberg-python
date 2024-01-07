@@ -24,7 +24,7 @@ from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
-from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
@@ -43,6 +43,7 @@ from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
+TEST_AUTH_URL = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_HEADERS = {
     "Content-type": "application/json",
@@ -114,6 +115,28 @@ def test_token_200(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
         == f"Bearer {TEST_TOKEN}"
     )
+
+
+def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        TEST_AUTH_URL,
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    # pylint: disable=W0212
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{AUTH_URL: TEST_AUTH_URL})._session.headers[
+            "Authorization"
+        ]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    # pylint: enable=W0212
 
 
 def test_config_200(requests_mock: Mocker) -> None:
