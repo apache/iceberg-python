@@ -914,7 +914,11 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     for actual, expected in zip(result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))]):
         assert actual.as_py() == expected
 
-    assert repr(result_table.schema) == "ids: list<item: int32>\n  child 0, item: int32"
+    assert (
+        repr(result_table.schema)
+        == """'ids: list<element: int32>
+  child 0, element: int32'"""
+    )
 
 
 def test_read_map(schema_map: Schema, file_map: str) -> None:
@@ -926,10 +930,10 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """properties: map<string, string>
+        == """'properties: map<string, string>
   child 0, entries: struct<key: string not null, value: string> not null
       child 0, key: string not null
-      child 1, value: string"""
+      child 1, value: string'"""
     )
 
 
@@ -1082,7 +1086,11 @@ def test_projection_nested_new_field(file_struct: str) -> None:
     for actual, expected in zip(result_table.columns[0], [None, None, None]):
         assert actual.as_py() == {"null": expected}
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "location: struct<null: double> not null\n  child 0, null: double"
+    assert (
+        repr(result_table.schema)
+        == """location: struct<null: double> not null
+  child 0, null: double"""
+    )
 
 
 def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> None:
@@ -1153,8 +1161,8 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
-        == """locations: list<item: struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, item: struct<latitude: double not null, longitude: double not null, altitude: double>
+        == """locations: list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, element: struct<latitude: double not null, longitude: double not null, altitude: double>
       child 0, latitude: double not null
       child 1, longitude: double not null
       child 2, altitude: double"""
