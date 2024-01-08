@@ -424,7 +424,9 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
 
 
 def test_serialize_set_properties_updates() -> None:
-    assert SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
+    assert (
+        SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
+    )
 
 
 def test_add_column(table_v2: Table) -> None:
@@ -535,18 +537,14 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
 
     test_context = _TableMetadataUpdateContext()
 
-    new_table_metadata = _apply_table_update(
-        transaction._updates[0], base_metadata=table_v2.metadata, context=test_context
-    )  # pylint: disable=W0212
+    new_table_metadata = _apply_table_update(transaction._updates[0], base_metadata=table_v2.metadata, context=test_context)  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
     assert new_table_metadata.current_schema_id == 1
     assert len(test_context._updates) == 1
     assert test_context._updates[0] == transaction._updates[0]  # pylint: disable=W0212
     assert test_context.is_added_schema(2)
 
-    new_table_metadata = _apply_table_update(
-        transaction._updates[1], base_metadata=new_table_metadata, context=test_context
-    )  # pylint: disable=W0212
+    new_table_metadata = _apply_table_update(transaction._updates[1], base_metadata=new_table_metadata, context=test_context)  # pylint: disable=W0212
     assert len(new_table_metadata.schemas) == 3
     assert new_table_metadata.current_schema_id == 2
     assert len(test_context._updates) == 2
@@ -852,56 +850,52 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
 
 
 def test_correct_schema() -> None:
-    table_metadata = TableMetadataV2(
-        **{
-            "format-version": 2,
-            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
-            "location": "s3://bucket/test/location",
-            "last-sequence-number": 34,
-            "last-updated-ms": 1602638573590,
-            "last-column-id": 3,
-            "current-schema-id": 1,
-            "schemas": [
-                {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
-                {
-                    "type": "struct",
-                    "schema-id": 1,
-                    "identifier-field-ids": [1, 2],
-                    "fields": [
-                        {"id": 1, "name": "x", "required": True, "type": "long"},
-                        {"id": 2, "name": "y", "required": True, "type": "long"},
-                        {"id": 3, "name": "z", "required": True, "type": "long"},
-                    ],
-                },
-            ],
-            "default-spec-id": 0,
-            "partition-specs": [
-                {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}
-            ],
-            "last-partition-id": 1000,
-            "default-sort-order-id": 0,
-            "sort-orders": [],
-            "current-snapshot-id": 123,
-            "snapshots": [
-                {
-                    "snapshot-id": 234,
-                    "timestamp-ms": 1515100955770,
-                    "sequence-number": 0,
-                    "summary": {"operation": "append"},
-                    "manifest-list": "s3://a/b/1.avro",
-                    "schema-id": 10,
-                },
-                {
-                    "snapshot-id": 123,
-                    "timestamp-ms": 1515100955770,
-                    "sequence-number": 0,
-                    "summary": {"operation": "append"},
-                    "manifest-list": "s3://a/b/1.avro",
-                    "schema-id": 0,
-                },
-            ],
-        }
-    )
+    table_metadata = TableMetadataV2(**{
+        "format-version": 2,
+        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+        "location": "s3://bucket/test/location",
+        "last-sequence-number": 34,
+        "last-updated-ms": 1602638573590,
+        "last-column-id": 3,
+        "current-schema-id": 1,
+        "schemas": [
+            {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+            {
+                "type": "struct",
+                "schema-id": 1,
+                "identifier-field-ids": [1, 2],
+                "fields": [
+                    {"id": 1, "name": "x", "required": True, "type": "long"},
+                    {"id": 2, "name": "y", "required": True, "type": "long"},
+                    {"id": 3, "name": "z", "required": True, "type": "long"},
+                ],
+            },
+        ],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
+        "last-partition-id": 1000,
+        "default-sort-order-id": 0,
+        "sort-orders": [],
+        "current-snapshot-id": 123,
+        "snapshots": [
+            {
+                "snapshot-id": 234,
+                "timestamp-ms": 1515100955770,
+                "sequence-number": 0,
+                "summary": {"operation": "append"},
+                "manifest-list": "s3://a/b/1.avro",
+                "schema-id": 10,
+            },
+            {
+                "snapshot-id": 123,
+                "timestamp-ms": 1515100955770,
+                "sequence-number": 0,
+                "summary": {"operation": "append"},
+                "manifest-list": "s3://a/b/1.avro",
+                "schema-id": 0,
+            },
+        ],
+    })
 
     t = Table(
         identifier=("default", "t1"),

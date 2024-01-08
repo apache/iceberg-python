@@ -356,3 +356,6 @@ detect-same-package = true
 lines-between-types = 0
 known-first-party = ["pyiceberg", "tests"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+quote-style = "preserve"

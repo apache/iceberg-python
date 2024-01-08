@@ -80,13 +80,11 @@ class Unbound(Generic[B], ABC):
     """Represents an unbound value expression."""
 
     @abstractmethod
-    def bind(self, schema: Schema, case_sensitive: bool = True) -> B:
-        ...
+    def bind(self, schema: Schema, case_sensitive: bool = True) -> B: ...
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[Bound]:
-        ...
+    def as_bound(self) -> Type[Bound]: ...
 
 
 class BoundTerm(Term[L], Bound, ABC):
@@ -142,8 +140,7 @@ class UnboundTerm(Term[Any], Unbound[BoundTerm[L]], ABC):
     """Represents an unbound term."""
 
     @abstractmethod
-    def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundTerm[L]:
-        ...
+    def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundTerm[L]: ...
 
 
 class Reference(UnboundTerm[Any]):
@@ -352,8 +349,7 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[UnboundPredicate[Any]]:
-        ...
+    def as_unbound(self) -> Type[UnboundPredicate[Any]]: ...
 
 
 class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression, ABC):
@@ -367,13 +363,11 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
         return self.term == other.term if isinstance(other, self.__class__) else False
 
     @abstractmethod
-    def bind(self, schema: Schema, case_sensitive: bool = True) -> BooleanExpression:
-        ...
+    def bind(self, schema: Schema, case_sensitive: bool = True) -> BooleanExpression: ...
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundPredicate[L]]:
-        ...
+    def as_bound(self) -> Type[BoundPredicate[L]]: ...
 
 
 class UnaryPredicate(UnboundPredicate[Any], ABC):
@@ -387,8 +381,7 @@ class UnaryPredicate(UnboundPredicate[Any], ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundUnaryPredicate[Any]]:
-        ...
+    def as_bound(self) -> Type[BoundUnaryPredicate[Any]]: ...
 
 
 class BoundUnaryPredicate(BoundPredicate[L], ABC):
@@ -398,8 +391,7 @@ class BoundUnaryPredicate(BoundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[UnaryPredicate]:
-        ...
+    def as_unbound(self) -> Type[UnaryPredicate]: ...
 
     def __getnewargs__(self) -> Tuple[BoundTerm[L]]:
         """Pickle the BoundUnaryPredicate class."""
@@ -575,8 +567,7 @@ class BoundSetPredicate(BoundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[SetPredicate[L]]:
-        ...
+    def as_unbound(self) -> Type[SetPredicate[L]]: ...
 
 
 class BoundIn(BoundSetPredicate[L]):
@@ -705,8 +696,7 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_bound(self) -> Type[BoundLiteralPredicate[L]]:
-        ...
+    def as_bound(self) -> Type[BoundLiteralPredicate[L]]: ...
 
 
 class BoundLiteralPredicate(BoundPredicate[L], ABC):
@@ -729,8 +719,7 @@ class BoundLiteralPredicate(BoundPredicate[L], ABC):
 
     @property
     @abstractmethod
-    def as_unbound(self) -> Type[LiteralPredicate[L]]:
-        ...
+    def as_unbound(self) -> Type[LiteralPredicate[L]]: ...
 
 
 class BoundEqualTo(BoundLiteralPredicate[L]):

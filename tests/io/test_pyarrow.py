@@ -447,13 +447,11 @@ def test_binary_type_to_pyarrow() -> None:
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
-    expected = pa.struct(
-        [
-            pa.field("foo", pa.string(), nullable=True, metadata={"field_id": "1"}),
-            pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
-            pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
-        ]
-    )
+    expected = pa.struct([
+        pa.field("foo", pa.string(), nullable=True, metadata={"field_id": "1"}),
+        pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
+        pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
+    ])
     assert visit(table_schema_simple.as_struct(), _ConvertToArrowSchema()) == expected
 
 
