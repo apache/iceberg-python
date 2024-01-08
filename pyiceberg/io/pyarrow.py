@@ -1018,11 +1018,19 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     def __init__(self, file_schema: Schema):
         self.file_schema = file_schema
 
-    def cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
+    def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
         if field.field_type.is_primitive and field.field_type != file_field.field_type:
             return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type)))
         return values
+
+    def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
+        return pa.field(
+            name=field.name,
+            type=arrow_type,
+            nullable=field.optional,
+            metadata={DOC: field.doc, FIELD_ID: str(field.field_id)} if field.doc else {FIELD_ID: str(field.field_id)},
+        )
 
     def schema(self, schema: Schema, schema_partner: Optional[pa.Array], struct_result: Optional[pa.Array]) -> Optional[pa.Array]:
         return struct_result
@@ -1036,28 +1044,40 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         fields: List[pa.Field] = []
         for field, field_array in zip(struct.fields, field_results):
             if field_array is not None:
-                array = self.cast_if_needed(field, field_array)
+                array = self._cast_if_needed(field, field_array)
                 field_arrays.append(array)
-                fields.append(pa.field(field.name, array.type, field.optional))
+                fields.append(self._construct_field(field, array.type))
             elif field.optional:
                 arrow_type = schema_to_pyarrow(field.field_type)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
-                fields.append(pa.field(field.name, arrow_type, field.optional))
+                fields.append(self._construct_field(field, arrow_type))
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
 
-        return pa.StructArray.from_arrays(arrays=field_arrays, fields=pa.struct(fields))
+        arr = pa.StructArray.from_arrays(arrays=field_arrays, fields=pa.struct(fields))
+        return arr
 
     def field(self, field: NestedField, _: Optional[pa.Array], field_array: Optional[pa.Array]) -> Optional[pa.Array]:
         return field_array
 
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
-        return list_array.cast(schema_to_pyarrow(list_type)) if isinstance(list_array, pa.ListArray) else None
+        if isinstance(list_array, pa.ListArray) and value_array is not None:
+            arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
+            return pa.ListArray.from_arrays(list_array.offsets, value_array, arrow_field)
+        else:
+            return None
 
     def map(
         self, map_type: MapType, map_array: Optional[pa.Array], key_result: Optional[pa.Array], value_result: Optional[pa.Array]
     ) -> Optional[pa.Array]:
-        return map_array.cast(schema_to_pyarrow(map_type)) if isinstance(map_array, pa.MapArray) else None
+        if isinstance(map_array, pa.MapArray) and key_result is not None and value_result is not None:
+            arrow_field = pa.map_(
+                self._construct_field(map_type.key_field, key_result.type),
+                self._construct_field(map_type.value_field, value_result.type),
+            )
+            return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result, arrow_field)
+        else:
+            return None
 
     def primitive(self, _: PrimitiveType, array: Optional[pa.Array]) -> Optional[pa.Array]:
         return array
