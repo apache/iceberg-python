@@ -1030,7 +1030,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             name=field.name,
             type=arrow_type,
             nullable=field.optional,
-            metadata={DOC: field.doc, FIELD_ID: str(field.field_id)} if field.doc else {FIELD_ID: str(field.field_id)},
+            # Enable this once https://github.com/apache/arrow/pull/39516 gets merged and released
+            # metadata={DOC: field.doc, FIELD_ID: str(field.field_id)} if field.doc else {FIELD_ID: str(field.field_id)},
         )
 
     def schema(self, schema: Schema, schema_partner: Optional[pa.Array], struct_result: Optional[pa.Array]) -> Optional[pa.Array]:
@@ -1072,11 +1073,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         self, map_type: MapType, map_array: Optional[pa.Array], key_result: Optional[pa.Array], value_result: Optional[pa.Array]
     ) -> Optional[pa.Array]:
         if isinstance(map_array, pa.MapArray) and key_result is not None and value_result is not None:
-            arrow_field = pa.map_(
-                self._construct_field(map_type.key_field, key_result.type),
-                self._construct_field(map_type.value_field, value_result.type),
-            )
-            return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result, arrow_field)
+            # Enable this once https://github.com/apache/arrow/pull/39516 gets merged and released
+            # arrow_field = pa.map_(
+            #     self._construct_field(map_type.key_field, key_result.type),
+            #     self._construct_field(map_type.value_field, value_result.type),
+            # )
+            return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result)
         else:
             return None
 

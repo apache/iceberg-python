@@ -916,10 +916,8 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """ids: list<element: int32>
-  child 0, element: int32
-    -- field metadata --
-    field_id: '51'"""
+        == """'ids: list<element: int32>
+  child 0, element: int32'"""
     )
 
 
@@ -932,14 +930,10 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string not null> not null
+        == """'properties: map<string, string>
+  child 0, entries: struct<key: string not null, value: string> not null
       child 0, key: string not null
-      -- field metadata --
-      field_id: '51'
-      child 1, value: string not null
-      -- field metadata --
-      field_id: '52'"""
+      child 1, value: string'"""
     )
 
 
@@ -1095,9 +1089,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
     assert (
         repr(result_table.schema)
         == """location: struct<null: double> not null
-  child 0, null: double
-    -- field metadata --
-    field_id: '43'"""
+  child 0, null: double"""
     )
 
 
@@ -1172,16 +1164,8 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
         == """locations: list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
   child 0, element: struct<latitude: double not null, longitude: double not null, altitude: double>
       child 0, latitude: double not null
-      -- field metadata --
-      field_id: '511'
       child 1, longitude: double not null
-      -- field metadata --
-      field_id: '512'
-      child 2, altitude: double
-      -- field metadata --
-      field_id: '513'
-    -- field metadata --
-    field_id: '51'"""
+      child 2, altitude: double"""
     )
 
 
