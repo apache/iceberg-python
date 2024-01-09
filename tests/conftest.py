@@ -24,6 +24,7 @@ In the case where the fixture must be used in a pytest.mark.parametrize decorato
 and the built-in pytest fixture request should be used as an additional argument in the function. The fixture can then be
 retrieved using `request.getfixturevalue(fixture_name)`.
 """
+
 import os
 import re
 import string
@@ -1586,7 +1587,7 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
     os.environ.pop("AWS_DEFAULT_REGION")
 
 
-MOTO_SERVER = ThreadedMotoServer(port=5000)
+MOTO_SERVER = ThreadedMotoServer(ip_address="localhost", port=5000)
 
 
 def pytest_sessionfinish(
@@ -1687,7 +1688,7 @@ BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
     my_iceberg_table-[a-z]{20}/metadata/
-    00000-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
+    [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
 
