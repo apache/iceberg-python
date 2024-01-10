@@ -130,7 +130,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         config_kwargs["proxies"] = {"http": proxy_uri, "https": proxy_uri}
 
     if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
-        config_kwargs["connect_timeout"] = connect_timeout
+        config_kwargs["connect_timeout"] = float(connect_timeout)
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
