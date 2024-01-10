@@ -321,7 +321,7 @@ class PyArrowFileIO(FileIO):
         if scheme in {"s3", "s3a", "s3n"}:
             from pyarrow.fs import S3FileSystem
 
-            client_kwargs = {
+            client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
                 "access_key": self.properties.get(S3_ACCESS_KEY_ID),
                 "secret_key": self.properties.get(S3_SECRET_ACCESS_KEY),
