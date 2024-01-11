@@ -132,20 +132,17 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     root: str = Field()
 
     @abstractmethod
-    def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[T]]:
-        ...
+    def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[T]]: ...
 
     @abstractmethod
     def can_transform(self, source: IcebergType) -> bool:
         return False
 
     @abstractmethod
-    def result_type(self, source: IcebergType) -> IcebergType:
-        ...
+    def result_type(self, source: IcebergType) -> IcebergType: ...
 
     @abstractmethod
-    def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]:
-        ...
+    def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]: ...
 
     @property
     def preserves_order(self) -> bool:
@@ -285,8 +282,7 @@ class TimeResolution(IntEnum):
 class TimeTransform(Transform[S, int], Generic[S], Singleton):
     @property
     @abstractmethod
-    def granularity(self) -> TimeResolution:
-        ...
+    def granularity(self) -> TimeResolution: ...
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
         return self.granularity <= other.granularity if hasattr(other, "granularity") else False
@@ -295,8 +291,7 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
         return IntegerType()
 
     @abstractmethod
-    def transform(self, source: IcebergType) -> Callable[[Optional[Any]], Optional[int]]:
-        ...
+    def transform(self, source: IcebergType) -> Callable[[Optional[Any]], Optional[int]]: ...
 
     def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]:
         transformer = self.transform(pred.term.ref().field.field_type)

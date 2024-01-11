@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -73,6 +74,17 @@ METADATA = "metadata"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
+
+TABLE_METADATA_FILE_NAME_REGEX = re.compile(
+    r"""
+    (\d+)              # version number
+    -                  # separator
+    ([\w-]{36})        # UUID (36 characters, including hyphens)
+    (?:\.\w+)?         # optional codec name
+    \.metadata\.json   # file extension
+    """,
+    re.X,
+)
 
 
 class CatalogType(Enum):
@@ -587,8 +599,38 @@ class Catalog(ABC):
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
 
     @staticmethod
-    def _get_metadata_location(location: str) -> str:
-        return f"{location}/metadata/00000-{uuid.uuid4()}.metadata.json"
+    def _get_metadata_location(location: str, new_version: int = 0) -> str:
+        if new_version < 0:
+            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
+        version_str = f"{new_version:05d}"
+        return f"{location}/metadata/{version_str}-{uuid.uuid4()}.metadata.json"
+
+    @staticmethod
+    def _parse_metadata_version(metadata_location: str) -> int:
+        """Parse the version from the metadata location.
+
+        The version is the first part of the file name, before the first dash.
+        For example, the version of the metadata file
+        `s3://bucket/db/tb/metadata/00001-6c97e413-d51b-4538-ac70-12fe2a85cb83.metadata.json`
+        is 1.
+        If the path does not comply with the pattern, the version is defaulted to be -1, ensuring
+        that the next metadata file is treated as having version 0.
+
+        Args:
+            metadata_location (str): The location of the metadata file.
+
+        Returns:
+            int: The version of the metadata file. -1 if the file name does not have valid version string
+        """
+        file_name = metadata_location.split("/")[-1]
+        if file_name_match := TABLE_METADATA_FILE_NAME_REGEX.fullmatch(file_name):
+            try:
+                uuid.UUID(file_name_match.group(2))
+            except ValueError:
+                return -1
+            return int(file_name_match.group(1))
+        else:
+            return -1
 
     def _get_updated_props_and_update_summary(
         self, current_properties: Properties, removals: Optional[Set[str]], updates: Properties

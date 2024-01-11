@@ -16,6 +16,7 @@
 #  under the License.
 from typing import List
 
+import boto3
 import pytest
 from moto import mock_dynamodb
 
@@ -42,7 +43,7 @@ from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
 
 
 @mock_dynamodb
-def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: None, _patch_aiobotocore: None) -> None:  # type: ignore
+def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
     DynamoDbCatalog("test_ddb_catalog")
     response = _dynamodb.describe_table(TableName=DYNAMODB_TABLE_NAME_DEFAULT)
     assert response["Table"]["TableName"] == DYNAMODB_TABLE_NAME_DEFAULT
@@ -55,11 +56,11 @@ def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: 
 
 @mock_dynamodb
 def test_create_table_with_database_location(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"})
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
@@ -68,13 +69,11 @@ def test_create_table_with_database_location(
 
 @mock_dynamodb
 def test_create_table_with_default_warehouse(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO", "warehouse": f"s3://{BUCKET_NAME}"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
@@ -83,11 +82,11 @@ def test_create_table_with_default_warehouse(
 
 @mock_dynamodb
 def test_create_table_with_given_location(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"})
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(
         identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
@@ -98,7 +97,7 @@ def test_create_table_with_given_location(
 
 @mock_dynamodb
 def test_create_table_with_no_location(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
@@ -109,11 +108,11 @@ def test_create_table_with_no_location(
 
 @mock_dynamodb
 def test_create_table_with_strips(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"})
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db/"})
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
@@ -122,13 +121,11 @@ def test_create_table_with_strips(
 
 @mock_dynamodb
 def test_create_table_with_strips_bucket_root(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO", "warehouse": f"s3://{BUCKET_NAME}/"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
     assert table_strip.identifier == (catalog_name,) + identifier
@@ -137,7 +134,7 @@ def test_create_table_with_strips_bucket_root(
 
 @mock_dynamodb
 def test_create_table_with_no_database(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
@@ -147,12 +144,10 @@ def test_create_table_with_no_database(
 
 @mock_dynamodb
 def test_create_duplicated_table(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        "test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     with pytest.raises(TableAlreadyExistsError):
@@ -161,13 +156,11 @@ def test_create_duplicated_table(
 
 @mock_dynamodb
 def test_load_table(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -177,13 +170,11 @@ def test_load_table(
 
 @mock_dynamodb
 def test_load_table_from_self_identifier(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     intermediate = test_catalog.load_table(identifier)
@@ -193,7 +184,7 @@ def test_load_table_from_self_identifier(
 
 
 @mock_dynamodb
-def test_load_non_exist_table(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:
+def test_load_non_exist_table(_bucket_initialize: None, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", warehouse=f"s3://{BUCKET_NAME}")
     test_catalog.create_namespace(namespace=database_name)
@@ -203,13 +194,11 @@ def test_load_non_exist_table(_bucket_initialize: None, _patch_aiobotocore: None
 
 @mock_dynamodb
 def test_drop_table(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -222,13 +211,11 @@ def test_drop_table(
 
 @mock_dynamodb
 def test_drop_table_from_self_identifier(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -242,7 +229,7 @@ def test_drop_table_from_self_identifier(
 
 
 @mock_dynamodb
-def test_drop_non_exist_table(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:
+def test_drop_non_exist_table(_bucket_initialize: None, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", warehouse=f"s3://{BUCKET_NAME}")
     with pytest.raises(NoSuchTableError):
@@ -251,15 +238,13 @@ def test_drop_non_exist_table(_bucket_initialize: None, _patch_aiobotocore: None
 
 @mock_dynamodb
 def test_rename_table(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
@@ -276,15 +261,13 @@ def test_rename_table(
 
 @mock_dynamodb
 def test_rename_table_from_self_identifier(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "test_ddb_catalog"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
-    test_catalog = DynamoDbCatalog(
-        catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.identifier == (catalog_name,) + identifier
@@ -302,9 +285,7 @@ def test_rename_table_from_self_identifier(
 
 
 @mock_dynamodb
-def test_fail_on_rename_table_with_missing_required_params(
-    _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str
-) -> None:
+def test_fail_on_rename_table_with_missing_required_params(_bucket_initialize: None, database_name: str, table_name: str) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
@@ -328,7 +309,9 @@ def test_fail_on_rename_table_with_missing_required_params(
 
 
 @mock_dynamodb
-def test_fail_on_rename_non_iceberg_table(_dynamodb, _bucket_initialize: None, _patch_aiobotocore: None, database_name: str, table_name: str) -> None:  # type: ignore
+def test_fail_on_rename_non_iceberg_table(
+    _dynamodb: boto3.client, _bucket_initialize: None, database_name: str, table_name: str
+) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
@@ -356,11 +339,9 @@ def test_fail_on_rename_non_iceberg_table(_dynamodb, _bucket_initialize: None, _
 
 @mock_dynamodb
 def test_list_tables(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_list: List[str]
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_list: List[str]
 ) -> None:
-    test_catalog = DynamoDbCatalog(
-        "test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -370,7 +351,7 @@ def test_list_tables(
 
 
 @mock_dynamodb
-def test_list_namespaces(_bucket_initialize: None, _patch_aiobotocore: None, database_list: List[str]) -> None:
+def test_list_namespaces(_bucket_initialize: None, database_list: List[str]) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     for database_name in database_list:
         test_catalog.create_namespace(namespace=database_name)
@@ -380,7 +361,7 @@ def test_list_namespaces(_bucket_initialize: None, _patch_aiobotocore: None, dat
 
 
 @mock_dynamodb
-def test_create_namespace_no_properties(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_create_namespace_no_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
@@ -391,9 +372,7 @@ def test_create_namespace_no_properties(_bucket_initialize: None, _patch_aioboto
 
 
 @mock_dynamodb
-def test_create_namespace_with_comment_and_location(
-    _bucket_initialize: None, _patch_aiobotocore: None, database_name: str
-) -> None:
+def test_create_namespace_with_comment_and_location(_bucket_initialize: None, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
         "comment": "this is a test description",
@@ -410,7 +389,7 @@ def test_create_namespace_with_comment_and_location(
 
 
 @mock_dynamodb
-def test_create_duplicated_namespace(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_create_duplicated_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
@@ -421,7 +400,7 @@ def test_create_duplicated_namespace(_bucket_initialize: None, _patch_aiobotocor
 
 
 @mock_dynamodb
-def test_drop_namespace(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_drop_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
@@ -434,12 +413,10 @@ def test_drop_namespace(_bucket_initialize: None, _patch_aiobotocore: None, data
 
 @mock_dynamodb
 def test_drop_non_empty_namespace(
-    _bucket_initialize: None, _patch_aiobotocore: None, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(
-        "test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    )
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     assert len(test_catalog.list_tables(database_name)) == 1
@@ -448,14 +425,14 @@ def test_drop_non_empty_namespace(
 
 
 @mock_dynamodb
-def test_drop_non_exist_namespace(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_drop_non_exist_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.drop_namespace(database_name)
 
 
 @mock_dynamodb
-def test_load_namespace_properties(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_load_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
         "comment": "this is a test description",
@@ -473,14 +450,14 @@ def test_load_namespace_properties(_bucket_initialize: None, _patch_aiobotocore:
 
 
 @mock_dynamodb
-def test_load_non_exist_namespace_properties(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_load_non_exist_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.load_namespace_properties(database_name)
 
 
 @mock_dynamodb
-def test_update_namespace_properties(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_update_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
         "location": f"s3://{BUCKET_NAME}/{database_name}.db",
@@ -505,7 +482,7 @@ def test_update_namespace_properties(_bucket_initialize: None, _patch_aiobotocor
 
 
 @mock_dynamodb
-def test_load_empty_namespace_properties(_bucket_initialize: None, _patch_aiobotocore: None, database_name: str) -> None:
+def test_load_empty_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(database_name)
     listed_properties = test_catalog.load_namespace_properties(database_name)
@@ -513,9 +490,7 @@ def test_load_empty_namespace_properties(_bucket_initialize: None, _patch_aiobot
 
 
 @mock_dynamodb
-def test_update_namespace_properties_overlap_update_removal(
-    _bucket_initialize: None, _patch_aiobotocore: None, database_name: str
-) -> None:
+def test_update_namespace_properties_overlap_update_removal(_bucket_initialize: None, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
         "location": f"s3://{BUCKET_NAME}/{database_name}.db",
