@@ -303,31 +303,27 @@ def _(partition_field_type: PrimitiveType) -> PrimitiveType:
 
 
 def data_file_with_partition(partition_type: StructType, format_version: Literal[1, 2]) -> StructType:
-    data_file_partition_type = StructType(
-        *[
-            NestedField(
-                field_id=field.field_id,
-                name=field.name,
-                field_type=partition_field_to_data_file_partition_field(field.field_type),
-            )
-            for field in partition_type.fields
-        ]
-    )
+    data_file_partition_type = StructType(*[
+        NestedField(
+            field_id=field.field_id,
+            name=field.name,
+            field_type=partition_field_to_data_file_partition_field(field.field_type),
+        )
+        for field in partition_type.fields
+    ])
 
-    return StructType(
-        *[
-            NestedField(
-                field_id=102,
-                name="partition",
-                field_type=data_file_partition_type,
-                required=True,
-                doc="Partition data tuple, schema based on the partition spec",
-            )
-            if field.field_id == 102
-            else field
-            for field in DATA_FILE_TYPE[format_version].fields
-        ]
-    )
+    return StructType(*[
+        NestedField(
+            field_id=102,
+            name="partition",
+            field_type=data_file_partition_type,
+            required=True,
+            doc="Partition data tuple, schema based on the partition spec",
+        )
+        if field.field_id == 102
+        else field
+        for field in DATA_FILE_TYPE[format_version].fields
+    ])
 
 
 class DataFile(Record):
@@ -412,12 +408,10 @@ MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_v
 
 
 def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_file: StructType) -> Schema:
-    return Schema(
-        *[
-            NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-            for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
-        ]
-    )
+    return Schema(*[
+        NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
+        for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
+    ])
 
 
 class ManifestEntry(Record):
@@ -704,13 +698,11 @@ class ManifestWriter(ABC):
         self._writer.__exit__(exc_type, exc_value, traceback)
 
     @abstractmethod
-    def content(self) -> ManifestContent:
-        ...
+    def content(self) -> ManifestContent: ...
 
     @property
     @abstractmethod
-    def version(self) -> Literal[1, 2]:
-        ...
+    def version(self) -> Literal[1, 2]: ...
 
     def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
         data_file_type = data_file_with_partition(
@@ -728,8 +720,7 @@ class ManifestWriter(ABC):
         )
 
     @abstractmethod
-    def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
-        ...
+    def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry: ...
 
     def to_manifest_file(self) -> ManifestFile:
         """Return the manifest file."""
@@ -880,8 +871,7 @@ class ManifestListWriter(ABC):
         return
 
     @abstractmethod
-    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
-        ...
+    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile: ...
 
     def add_manifests(self, manifest_files: List[ManifestFile]) -> ManifestListWriter:
         self._writer.write_block([self.prepare_manifest(manifest_file) for manifest_file in manifest_files])
