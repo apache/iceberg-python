@@ -341,6 +341,17 @@ class Schema(IcebergBaseModel):
                     f"Cannot add field {field.name} as an identifier field: must not be nested in an optional field {parent}"
                 )
 
+    def is_compatible(self, promoted: Schema) -> Schema:
+        """Promotes the schema.
+
+        Args:
+            promoted: the destination schema to promote to.
+
+        Returns:
+            The promoted schema.
+        """
+        return visit_with_partner(promoted, self, _CheckSchemaCompatibility(), SchemaPartnerAccessor())
+
 
 class SchemaVisitor(Generic[T], ABC):
     def before_field(self, field: NestedField) -> None:
@@ -1589,3 +1600,69 @@ def _(file_type: FixedType, read_type: IcebergType) -> IcebergType:
         return read_type
     else:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
+
+
+class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
+    def schema_partner(self, partner: Optional[IcebergType]) -> Optional[IcebergType]:
+        if isinstance(partner, Schema):
+            return partner.as_struct()
+
+        raise ResolveError(f"File/read schema are not aligned for schema, got {partner}")
+
+    def field_partner(self, partner: Optional[IcebergType], field_id: int, field_name: str) -> Optional[IcebergType]:
+        if isinstance(partner, StructType):
+            field = partner.field(field_id)
+        else:
+            raise ResolveError(f"File/read schema are not aligned for struct, got {partner}")
+
+        return field.field_type if field else None
+
+    def list_element_partner(self, partner_list: Optional[IcebergType]) -> Optional[IcebergType]:
+        if isinstance(partner_list, ListType):
+            return partner_list.element_type
+
+        raise ResolveError(f"File/read schema are not aligned for list, got {partner_list}")
+
+    def map_key_partner(self, partner_map: Optional[IcebergType]) -> Optional[IcebergType]:
+        if isinstance(partner_map, MapType):
+            return partner_map.key_type
+
+        raise ResolveError(f"File/read schema are not aligned for map, got {partner_map}")
+
+    def map_value_partner(self, partner_map: Optional[IcebergType]) -> Optional[IcebergType]:
+        if isinstance(partner_map, MapType):
+            return partner_map.value_type
+
+        raise ResolveError(f"File/read schema are not aligned for map, got {partner_map}")
+
+
+class _CheckSchemaCompatibility(SchemaWithPartnerVisitor[IcebergType, IcebergType]):
+    def schema(self, schema: Schema, schema_partner: Optional[IcebergType], struct_result: IcebergType) -> IcebergType:
+        return schema
+
+    def struct(self, struct: StructType, struct_partner: Optional[IcebergType], field_results: List[IcebergType]) -> IcebergType:
+        """Visit a struct type with a partner."""
+        return struct
+
+    def field(self, field: NestedField, field_partner: Optional[IcebergType], field_result: IcebergType) -> IcebergType:
+        """Visit a nested field with a partner."""
+        if field_partner is None and field.required:
+            raise ResolveError(f"Field is required, and could not be found: {field}")
+
+        return field
+
+    def list(self, list_type: ListType, list_partner: Optional[IcebergType], element_result: IcebergType) -> IcebergType:
+        """Visit a list type with a partner."""
+        return list_type
+
+    def map(
+        self, map_type: MapType, map_partner: Optional[IcebergType], key_result: IcebergType, value_result: IcebergType
+    ) -> IcebergType:
+        """Visit a map type with a partner."""
+        return map_type
+
+    def primitive(self, primitive: PrimitiveType, primitive_partner: Optional[IcebergType]) -> IcebergType:
+        if primitive_partner is not None and primitive != primitive_partner:
+            return promote(primitive_partner, primitive)
+
+        return primitive

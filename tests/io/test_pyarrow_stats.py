@@ -752,10 +752,10 @@ def test_stats_types(table_schema_nested: Schema) -> None:
 #     table_metadata = TableMetadataUtil.parse_obj(table_metadata)
 #     schema = schema_to_pyarrow(table_metadata.schemas[0])
 
-#     _ints = [0, 2, 4, 8, 1, 3, 5, 7]
-#     parity = [True, True, True, True, False, False, False, False]
+    _ints = [0, 2, 4, 8, 1, 3, 5, 7]
+    parity = [True, True, True, True, False, False, False, False]
 
-#     table = pa.Table.from_pydict({"ints": _ints, "even": parity}, schema=schema)
+    table = pa.Table.from_pydict({"ints": _ints, "even": parity}, schema=schema)
 
 #     visited_paths = []
 
