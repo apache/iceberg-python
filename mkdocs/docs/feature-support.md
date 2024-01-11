@@ -36,8 +36,8 @@ The goal is that the python library will provide a functional, performant subset
 | Create Table             |  X   |   X    |
 | Rename Table             |  X   |   X    |
 | Drop Table               |  X   |   X    |
-| Alter Table              |  X   |        |
-| Set Table Properties     |  X   |        |
+| Alter Table              |  X   |   X    |
+| Set Table Properties     |  X   |   X    |
 | Create Namespace         |  X   |   X    |
 | Drop Namespace           |  X   |   X    |
 | Set Namespace Properties |  X   |   X    |
