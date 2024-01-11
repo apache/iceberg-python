@@ -114,26 +114,24 @@ def session_catalog() -> Catalog:
 @pytest.fixture(scope="session")
 def arrow_table_with_null() -> pa.Table:
     """PyArrow table with all kinds of columns"""
-    pa_schema = pa.schema(
-        [
-            ("bool", pa.bool_()),
-            ("string", pa.string()),
-            ("string_long", pa.string()),
-            ("int", pa.int32()),
-            ("long", pa.int64()),
-            ("float", pa.float32()),
-            ("double", pa.float64()),
-            ("timestamp", pa.timestamp(unit="us")),
-            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-            ("date", pa.date32()),
-            # Not supported by Spark
-            # ("time", pa.time64("us")),
-            # Not natively supported by Arrow
-            # ("uuid", pa.fixed(16)),
-            ("binary", pa.binary()),
-            ("fixed", pa.binary(16)),
-        ]
-    )
+    pa_schema = pa.schema([
+        ("bool", pa.bool_()),
+        ("string", pa.string()),
+        ("string_long", pa.string()),
+        ("int", pa.int32()),
+        ("long", pa.int64()),
+        ("float", pa.float32()),
+        ("double", pa.float64()),
+        ("timestamp", pa.timestamp(unit="us")),
+        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ("date", pa.date32()),
+        # Not supported by Spark
+        # ("time", pa.time64("us")),
+        # Not natively supported by Arrow
+        # ("uuid", pa.fixed(16)),
+        ("binary", pa.binary()),
+        ("fixed", pa.binary(16)),
+    ])
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
@@ -227,9 +225,9 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
 def spark() -> SparkSession:
     import os
 
-    os.environ[
-        "PYSPARK_SUBMIT_ARGS"
-    ] = "--packages org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.0,org.apache.iceberg:iceberg-aws-bundle:1.4.0 pyspark-shell"
+    os.environ["PYSPARK_SUBMIT_ARGS"] = (
+        "--packages org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.0,org.apache.iceberg:iceberg-aws-bundle:1.4.0 pyspark-shell"
+    )
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
