@@ -297,3 +297,30 @@ for catalog_name, catalog in catalogs.items():
         ('123')
     """
     )
+
+    spark.sql(
+        """
+    INSERT INTO default.test_table_sanitized_character
+    VALUES
+        ('123')
+    """
+    )
+
+    spark.sql(
+        """
+    CREATE TABLE default.test_table_add_column (
+        a string
+    )
+    USING iceberg
+    """
+    )
+
+    spark.sql("INSERT INTO default.test_table_add_column VALUES ('1')")
+
+    spark.sql(
+        """
+    ALTER TABLE default.test_table_add_column ADD COLUMN b string
+    """
+    )
+
+    spark.sql("INSERT INTO default.test_table_add_column VALUES ('2', '2')")

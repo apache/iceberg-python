@@ -22,6 +22,7 @@ as check if a file exists. An implementation of the FileIO abstract base class i
 for returning an InputFile instance, an OutputFile instance, and deleting a file given
 its location.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -51,6 +52,7 @@ S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
 S3_PROXY_URI = "s3.proxy-uri"
+S3_CONNECT_TIMEOUT = "s3.connect-timeout"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -77,20 +79,16 @@ class InputStream(Protocol):
     """
 
     @abstractmethod
-    def read(self, size: int = 0) -> bytes:
-        ...
+    def read(self, size: int = 0) -> bytes: ...
 
     @abstractmethod
-    def seek(self, offset: int, whence: int = SEEK_SET) -> int:
-        ...
+    def seek(self, offset: int, whence: int = SEEK_SET) -> int: ...
 
     @abstractmethod
-    def tell(self) -> int:
-        ...
+    def tell(self) -> int: ...
 
     @abstractmethod
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
     def __enter__(self) -> InputStream:
         """Provide setup when opening an InputStream using a 'with' statement."""
@@ -111,12 +109,10 @@ class OutputStream(Protocol):  # pragma: no cover
     """
 
     @abstractmethod
-    def write(self, b: bytes) -> int:
-        ...
+    def write(self, b: bytes) -> int: ...
 
     @abstractmethod
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
     @abstractmethod
     def __enter__(self) -> OutputStream:

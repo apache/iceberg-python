@@ -724,9 +724,7 @@ def test_projection_day_human(bound_reference_date: BoundReference[int]) -> None
 
     assert DayTransform().project(
         "dt", BoundGreaterThanOrEqual(term=bound_reference_date, literal=date_literal)
-    ) == GreaterThanOrEqual(
-        term="dt", literal=17532
-    )  # >= 2018, 1, 1
+    ) == GreaterThanOrEqual(term="dt", literal=17532)  # >= 2018, 1, 1
 
     assert DayTransform().project("dt", BoundGreaterThan(term=bound_reference_date, literal=date_literal)) == GreaterThanOrEqual(
         term="dt", literal=17533

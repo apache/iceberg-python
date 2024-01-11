@@ -144,6 +144,12 @@ def test_positional_mor_deletes(catalog: Catalog) -> Table:
 
 
 @pytest.fixture()
+def test_table_add_column(catalog: Catalog) -> Table:
+    """Table that has a new column"""
+    return catalog.load_table("default.test_table_add_column")
+
+
+@pytest.fixture()
 def test_positional_mor_double_deletes(catalog: Catalog) -> Table:
     """Table that has multiple positional deletes"""
     return catalog.load_table("default.test_positional_mor_double_deletes")
@@ -371,6 +377,18 @@ def test_scan_tag(test_positional_mor_deletes: Table) -> None:
 def test_scan_branch(test_positional_mor_deletes: Table) -> None:
     arrow_table = test_positional_mor_deletes.scan().use_ref("without_5").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
+
+
+@pytest.mark.integration
+def test_filter_on_new_column(test_table_add_column: Table) -> None:
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()
+    assert arrow_table["b"].to_pylist() == ['2']
+
+    arrow_table = test_table_add_column.scan(row_filter="b is not null").to_arrow()
+    assert arrow_table["b"].to_pylist() == ['2']
+
+    arrow_table = test_table_add_column.scan(row_filter="b is null").to_arrow()
+    assert arrow_table["b"].to_pylist() == [None]
 
 
 @pytest.mark.integration

@@ -27,6 +27,7 @@ return it.
 
 More information on metaclasses: https://docs.python.org/3/reference/datamodel.html#metaclasses
 """
+
 from typing import Any, ClassVar, Dict
 
 

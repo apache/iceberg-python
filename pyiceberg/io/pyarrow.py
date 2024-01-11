@@ -22,6 +22,7 @@ by PyArrow. It relies on PyArrow's `from_uri` method that infers the correct fil
 type to use. Theoretically, this allows the supported storage types to grow naturally
 with the pyarrow library.
 """
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -92,6 +93,7 @@ from pyiceberg.io import (
     HDFS_PORT,
     HDFS_USER,
     S3_ACCESS_KEY_ID,
+    S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_PROXY_URI,
     S3_REGION,
@@ -319,7 +321,7 @@ class PyArrowFileIO(FileIO):
         if scheme in {"s3", "s3a", "s3n"}:
             from pyarrow.fs import S3FileSystem
 
-            client_kwargs = {
+            client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
                 "access_key": self.properties.get(S3_ACCESS_KEY_ID),
                 "secret_key": self.properties.get(S3_SECRET_ACCESS_KEY),
@@ -329,6 +331,9 @@ class PyArrowFileIO(FileIO):
 
             if proxy_uri := self.properties.get(S3_PROXY_URI):
                 client_kwargs["proxy_options"] = proxy_uri
+
+            if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+                client_kwargs["connect_timeout"] = float(connect_timeout)
 
             return S3FileSystem(**client_kwargs)
         elif scheme == "hdfs":
