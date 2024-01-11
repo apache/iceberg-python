@@ -48,6 +48,7 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -59,7 +60,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
@@ -329,8 +330,42 @@ class SqlCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: If the commit failed.
         """
-        raise NotImplementedError
+        from_identifier_tuple = tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
+        current_table = self.load_table(from_identifier_tuple)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        base_metadata = current_table.metadata
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        with Session(self.engine) as session:
+            stmt = (
+                update(IcebergTables)
+                .where(
+                    IcebergTables.catalog_name == self.name,
+                    IcebergTables.table_namespace == from_database_name,
+                    IcebergTables.table_name == from_table_name,
+                    IcebergTables.metadata_location == current_table.metadata_location,
+                )
+                .values(metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location)
+            )
+            result = session.execute(stmt)
+            if result.rowcount < 1:
+                raise CommitFailedException("A concurrent commit has been made.")
+            session.commit()
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace = self.identifier_to_database(identifier)
