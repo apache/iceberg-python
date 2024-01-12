@@ -332,9 +332,11 @@ class SqlCatalog(Catalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: If the commit failed.
         """
-        from_identifier_tuple = tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        current_table = self.load_table(from_identifier_tuple)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
+        )
+        current_table = self.load_table(identifier_tuple)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         base_metadata = current_table.metadata
         for requirement in table_request.requirements:
             requirement.validate(base_metadata)
@@ -362,7 +364,9 @@ class SqlCatalog(Catalog):
             )
             result = session.execute(stmt)
             if result.rowcount < 1:
-                raise CommitFailedException("A concurrent commit has been made.")
+                raise CommitFailedException(
+                    "Commit was unsuccessful as a conflicting concurrent commit was made to the database."
+                )
             session.commit()
 
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
