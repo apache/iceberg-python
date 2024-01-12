@@ -336,7 +336,7 @@ class SqlCatalog(Catalog):
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
         current_table = self.load_table(identifier_tuple)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         base_metadata = current_table.metadata
         for requirement in table_request.requirements:
             requirement.validate(base_metadata)
@@ -356,8 +356,8 @@ class SqlCatalog(Catalog):
                 update(IcebergTables)
                 .where(
                     IcebergTables.catalog_name == self.name,
-                    IcebergTables.table_namespace == from_database_name,
-                    IcebergTables.table_name == from_table_name,
+                    IcebergTables.table_namespace == database_name,
+                    IcebergTables.table_name == table_name,
                     IcebergTables.metadata_location == current_table.metadata_location,
                 )
                 .values(metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location)
