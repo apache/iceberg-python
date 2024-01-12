@@ -634,8 +634,7 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
         raise ValueError(
             "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
         )
-    schema = visit_pyarrow(schema, visitor)
-    return schema
+    return visit_pyarrow(schema, visitor)
 
 
 @singledispatch
