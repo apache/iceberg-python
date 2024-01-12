@@ -628,7 +628,7 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
         visitor = _ConvertToIceberg()
-    elif name_mapping:
+    elif name_mapping is not None:
         visitor = _ConvertToIceberg(name_mapping=name_mapping)
     else:
         raise ValueError(
