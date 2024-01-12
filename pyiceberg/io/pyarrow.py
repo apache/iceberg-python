@@ -156,10 +156,9 @@ logger = logging.getLogger(__name__)
 ONE_MEGABYTE = 1024 * 1024
 BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
-FIELD_ID = "field_id"
-DOC = "doc"
-PYARROW_FIELD_ID_KEYS = [b"PARQUET:field_id", b"field_id"]
-PYARROW_FIELD_DOC_KEYS = [b"PARQUET:field_doc", b"field_doc", b"doc"]
+# The PARQUET: in front means that it is Parquet specific, in this case the field_id
+PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
+PYARROW_FIELD_DOC_KEY = b"doc"
 
 T = TypeVar("T")
 
@@ -461,7 +460,9 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             name=field.name,
             type=field_result,
             nullable=field.optional,
-            metadata={DOC: field.doc, FIELD_ID: str(field.field_id)} if field.doc else {FIELD_ID: str(field.field_id)},
+            metadata={PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
+            if field.doc
+            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
         )
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
@@ -725,17 +726,11 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    for pyarrow_field_id_key in PYARROW_FIELD_ID_KEYS:
-        if field_id_str := field.metadata.get(pyarrow_field_id_key):
-            return int(field_id_str.decode())
-    return None
-
-
-def _get_field_doc(field: pa.Field) -> Optional[str]:
-    for pyarrow_doc_key in PYARROW_FIELD_DOC_KEYS:
-        if doc_str := field.metadata.get(pyarrow_doc_key):
-            return doc_str.decode()
-    return None
+    return (
+        int(field_id_str.decode())
+        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
+        else None
+    )
 
 
 class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
@@ -743,7 +738,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         fields = []
         for i, field in enumerate(arrow_fields):
             field_id = _get_field_id(field)
-            field_doc = _get_field_doc(field)
+            field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
             field_type = field_results[i]
             if field_type is not None and field_id is not None:
                 fields.append(NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc))
