@@ -795,20 +795,20 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
 class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
-    field_names: List[str]
-    name_mapping: Optional[NameMapping]
+    _field_names: List[str]
+    _name_mapping: Optional[NameMapping]
 
     def __init__(self, name_mapping: Optional[NameMapping] = None) -> None:
-        self.field_names = []
-        self.name_mapping = name_mapping
+        self._field_names = []
+        self._name_mapping = name_mapping
 
     def _current_path(self) -> str:
-        return ".".join(self.field_names)
+        return ".".join(self._field_names)
 
-    def _get_field_id(self, field: pa.Field) -> int:
-        if self.name_mapping:
-            return self.name_mapping.find(self._current_path()).field_id
-        elif field_id := _get_field_id(field):
+    def _field_id(self, field: pa.Field) -> int:
+        if self._name_mapping:
+            return self._name_mapping.find(self._current_path()).field_id
+        elif (field_id := _get_field_id(field)) is not None:
             return field_id
         else:
             raise ValueError(f"Cannot convert {field} to Iceberg Field as field_id is empty.")
@@ -820,27 +820,27 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         return StructType(*field_results)
 
     def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:
-        field_id = self._get_field_id(field)
+        field_id = self._field_id(field)
         field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
         field_type = field_result
         return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
 
     def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
         element_field = list_type.value_field
-        self.field_names.append(LIST_ELEMENT_NAME)
-        element_id = self._get_field_id(element_field)
-        self.field_names.pop()
+        self._field_names.append(LIST_ELEMENT_NAME)
+        element_id = self._field_id(element_field)
+        self._field_names.pop()
         return ListType(element_id, element_result, element_required=not element_field.nullable)
 
     def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:
         key_field = map_type.key_field
-        self.field_names.append(MAP_KEY_NAME)
-        key_id = self._get_field_id(key_field)
-        self.field_names.pop()
+        self._field_names.append(MAP_KEY_NAME)
+        key_id = self._field_id(key_field)
+        self._field_names.pop()
         value_field = map_type.item_field
-        self.field_names.append(MAP_VALUE_NAME)
-        value_id = self._get_field_id(value_field)
-        self.field_names.pop()
+        self._field_names.append(MAP_VALUE_NAME)
+        value_id = self._field_id(value_field)
+        self._field_names.pop()
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
@@ -879,28 +879,28 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         raise TypeError(f"Unsupported type: {primitive}")
 
     def before_field(self, field: pa.Field) -> None:
-        self.field_names.append(field.name)
+        self._field_names.append(field.name)
 
     def after_field(self, field: pa.Field) -> None:
-        self.field_names.pop()
+        self._field_names.pop()
 
     def before_list_element(self, element: pa.Field) -> None:
-        self.field_names.append(LIST_ELEMENT_NAME)
+        self._field_names.append(LIST_ELEMENT_NAME)
 
     def after_list_element(self, element: pa.Field) -> None:
-        self.field_names.pop()
+        self._field_names.pop()
 
     def before_map_key(self, key: pa.Field) -> None:
-        self.field_names.append(MAP_KEY_NAME)
+        self._field_names.append(MAP_KEY_NAME)
 
     def after_map_key(self, element: pa.Field) -> None:
-        self.field_names.pop()
+        self._field_names.pop()
 
     def before_map_value(self, value: pa.Field) -> None:
-        self.field_names.append(MAP_VALUE_NAME)
+        self._field_names.append(MAP_VALUE_NAME)
 
     def after_map_value(self, element: pa.Field) -> None:
-        self.field_names.pop()
+        self._field_names.pop()
 
 
 def _task_to_table(
