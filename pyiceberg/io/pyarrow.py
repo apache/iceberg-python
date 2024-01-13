@@ -757,11 +757,11 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    if field.metadata:
-        for pyarrow_field_id_key in PYARROW_FIELD_ID_KEYS:
-            if field_id_str := field.metadata.get(pyarrow_field_id_key):
-                return int(field_id_str.decode())
-    return None
+    return (
+        int(field_id_str.decode())
+        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
+        else None
+    )
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
@@ -821,7 +821,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
     def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:
         field_id = self._get_field_id(field)
-        field_doc = _get_field_doc(field)
+        field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
         field_type = field_result
         return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
 
