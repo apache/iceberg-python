@@ -88,6 +88,20 @@ def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     catalog.destroy_tables()
 
 
+@pytest.fixture(scope="module")
+def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": "sqlite:////tmp/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
+    catalog.engine.dialect.supports_sane_rowcount = False
+    print(f"DEBUG: {catalog.engine.dialect.supports_sane_rowcount=}")
+    catalog.create_tables()
+    yield catalog
+    catalog.destroy_tables()
+
+
 def test_creation_with_no_uri() -> None:
     with pytest.raises(NoSuchPropertyException):
         SqlCatalog("test_ddb_catalog", not_uri="unused")
@@ -306,6 +320,7 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
@@ -323,6 +338,7 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
@@ -342,6 +358,7 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: Identifier) -> None:
@@ -354,6 +371,7 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: 
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table(
@@ -378,6 +396,7 @@ def test_rename_table(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_from_self_identifier(
@@ -404,6 +423,7 @@ def test_rename_table_from_self_identifier(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_to_existing_one(
@@ -426,6 +446,7 @@ def test_rename_table_to_existing_one(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier, another_random_identifier: Identifier) -> None:
@@ -440,6 +461,7 @@ def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_to_missing_namespace(
@@ -672,6 +694,7 @@ def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) ->
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
