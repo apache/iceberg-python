@@ -771,11 +771,9 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
     def struct(self, struct: pa.StructType, field_results: List[bool]) -> bool:
         return all(field_results)
 
-
     def field(self, field: pa.Field, field_result: bool) -> bool:
         return all([_get_field_id(field) is not None, field_result])
 
-      
     def list(self, list_type: pa.ListType, element_result: bool) -> bool:
         element_field = list_type.value_field
         element_id = _get_field_id(element_field)

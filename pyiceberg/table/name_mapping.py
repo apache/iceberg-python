@@ -34,6 +34,8 @@ from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
 from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, StructType
 
+SCHEMA_NAME_MAPPING_DEFAULT = "schema.name-mapping.default"
+
 
 class MappedField(IcebergBaseModel):
     field_id: int = Field(alias="field-id")

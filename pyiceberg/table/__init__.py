@@ -78,7 +78,7 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
 )
-from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
+from pyiceberg.table.name_mapping import SCHEMA_NAME_MAPPING_DEFAULT, NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import SortOrder
@@ -834,7 +834,7 @@ class Table:
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
-        if name_mapping_json := self.properties.get("schema.name-mapping.default"):
+        if name_mapping_json := self.properties.get(SCHEMA_NAME_MAPPING_DEFAULT):
             return parse_mapping_from_json(name_mapping_json)
         else:
             return None
