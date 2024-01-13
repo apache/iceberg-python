@@ -34,7 +34,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
-from itertools import chain, count
+from itertools import chain
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -781,9 +781,7 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
 
     def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:
         key_field = map_type.key_field
-        self.field_names.append(MAP_KEY_NAME)
-        key_id = self._get_field_id(key_field)
-        self.field_names.pop()
+        key_id = _get_field_id(key_field)
         value_field = map_type.item_field
         value_id = _get_field_id(value_field)
         return all([key_id is not None, value_id is not None, key_result, value_result])
