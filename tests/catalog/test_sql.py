@@ -96,7 +96,6 @@ def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, No
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
     catalog.engine.dialect.supports_sane_rowcount = False
-    print(f"DEBUG: {catalog.engine.dialect.supports_sane_rowcount=}")
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
