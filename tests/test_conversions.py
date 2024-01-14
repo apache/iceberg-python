@@ -71,6 +71,7 @@ Notes:
         - -4.5F is -1 * 2ˆ2 * 1.125 and encoded as 11000000|10010000|0...0 in binary
         - 00000000 -> 0, 00000000 -> 0, 10010000 -> 144 (-112), 11000000 -> 192 (-64),
 """
+
 import struct
 import uuid
 from datetime import (

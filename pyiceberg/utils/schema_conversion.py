@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 """Utility class for converting between Avro and Iceberg schemas."""
+
 import logging
 from typing import (
     Any,

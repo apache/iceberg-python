@@ -23,6 +23,7 @@ to decouple the reader implementation from the schema.
 The reader tree can be changed in such a way that the
 read schema is different, while respecting the read schema.
 """
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -85,12 +86,10 @@ def _skip_map_array(decoder: BinaryDecoder, skip_entry: Callable[[], None]) -> N
 
 class Reader(Singleton):
     @abstractmethod
-    def read(self, decoder: BinaryDecoder) -> Any:
-        ...
+    def read(self, decoder: BinaryDecoder) -> Any: ...
 
     @abstractmethod
-    def skip(self, decoder: BinaryDecoder) -> None:
-        ...
+    def skip(self, decoder: BinaryDecoder) -> None: ...
 
     def __repr__(self) -> str:
         """Return the string representation of the Reader class."""

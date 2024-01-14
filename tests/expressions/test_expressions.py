@@ -476,7 +476,8 @@ def test_less_than_or_equal_invert() -> None:
 )
 def test_bind(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
     assert pred.bind(table_schema_simple, case_sensitive=True).term.field == table_schema_simple.find_field(  # type: ignore
-        pred.term.name, case_sensitive=True  # type: ignore
+        pred.term.name,  # type: ignore
+        case_sensitive=True,
     )
 
 
@@ -495,7 +496,8 @@ def test_bind(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
 )
 def test_bind_case_insensitive(pred: UnboundPredicate[Any], table_schema_simple: Schema) -> None:
     assert pred.bind(table_schema_simple, case_sensitive=False).term.field == table_schema_simple.find_field(  # type: ignore
-        pred.term.name, case_sensitive=False  # type: ignore
+        pred.term.name,  # type: ignore
+        case_sensitive=False,
     )
 
 

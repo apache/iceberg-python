@@ -20,6 +20,7 @@ Classes for building the Writer tree.
 Constructing a writer tree from the schema makes it easy
 to decouple the writing implementation from the schema.
 """
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -43,8 +44,7 @@ from pyiceberg.utils.singleton import Singleton
 @dataclass(frozen=True)
 class Writer(Singleton):
     @abstractmethod
-    def write(self, encoder: BinaryEncoder, val: Any) -> Any:
-        ...
+    def write(self, encoder: BinaryEncoder, val: Any) -> Any: ...
 
     def __repr__(self) -> str:
         """Return string representation of this object."""

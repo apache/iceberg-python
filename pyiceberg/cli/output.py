@@ -40,48 +40,37 @@ class Output(ABC):
     """Output interface for exporting."""
 
     @abstractmethod
-    def exception(self, ex: Exception) -> None:
-        ...
+    def exception(self, ex: Exception) -> None: ...
 
     @abstractmethod
-    def identifiers(self, identifiers: List[Identifier]) -> None:
-        ...
+    def identifiers(self, identifiers: List[Identifier]) -> None: ...
 
     @abstractmethod
-    def describe_table(self, table: Table) -> None:
-        ...
+    def describe_table(self, table: Table) -> None: ...
 
     @abstractmethod
-    def files(self, table: Table, history: bool) -> None:
-        ...
+    def files(self, table: Table, history: bool) -> None: ...
 
     @abstractmethod
-    def describe_properties(self, properties: Properties) -> None:
-        ...
+    def describe_properties(self, properties: Properties) -> None: ...
 
     @abstractmethod
-    def text(self, response: str) -> None:
-        ...
+    def text(self, response: str) -> None: ...
 
     @abstractmethod
-    def schema(self, schema: Schema) -> None:
-        ...
+    def schema(self, schema: Schema) -> None: ...
 
     @abstractmethod
-    def spec(self, spec: PartitionSpec) -> None:
-        ...
+    def spec(self, spec: PartitionSpec) -> None: ...
 
     @abstractmethod
-    def uuid(self, uuid: Optional[UUID]) -> None:
-        ...
+    def uuid(self, uuid: Optional[UUID]) -> None: ...
 
     @abstractmethod
-    def version(self, version: str) -> None:
-        ...
+    def version(self, version: str) -> None: ...
 
     @abstractmethod
-    def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
-        ...
+    def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None: ...
 
 
 class ConsoleOutput(Output):
@@ -252,10 +241,8 @@ class JsonOutput(Output):
         self._out({"version": version})
 
     def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
-        self._out(
-            [
-                {"name": name, "type": type, detail_key: detail_val}
-                for name, type, detail in refs
-                for detail_key, detail_val in detail.items()
-            ]
-        )
+        self._out([
+            {"name": name, "type": type, detail_key: detail_val}
+            for name, type, detail in refs
+            for detail_key, detail_val in detail.items()
+        ])

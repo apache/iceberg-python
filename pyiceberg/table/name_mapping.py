@@ -20,6 +20,7 @@ Contains everything around the name mapping.
 More information can be found on here:
 https://iceberg.apache.org/spec/#name-mapping-serialization
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

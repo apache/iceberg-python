@@ -29,6 +29,7 @@ Example:
 Notes:
   - https://iceberg.apache.org/#spec/#primitive-types
 """
+
 from __future__ import annotations
 
 import re

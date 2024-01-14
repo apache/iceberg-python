@@ -27,6 +27,7 @@ Note:
     implementation, a concrete function is registered for each generic conversion function. For PrimitiveType
     implementations that share the same conversion logic, registrations can be stacked.
 """
+
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal

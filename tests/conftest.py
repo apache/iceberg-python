@@ -24,6 +24,7 @@ In the case where the fixture must be used in a pytest.mark.parametrize decorato
 and the built-in pytest fixture request should be used as an additional argument in the function. The fixture can then be
 retrieved using `request.getfixturevalue(fixture_name)`.
 """
+
 import os
 import re
 import string

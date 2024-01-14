@@ -23,6 +23,7 @@ Avro world (https://avro.apache.org/docs/current/spec.html#Object+Container+File
 so don't confuse it with the Python's "codecs", which is a package mainly for
 converting character sets (https://docs.python.org/3/library/codecs.html).
 """
+
 from __future__ import annotations
 
 from typing import Dict, Optional, Type

@@ -22,6 +22,7 @@ as check if a file exists. An implementation of the FileIO abstract base class i
 for returning an InputFile instance, an OutputFile instance, and deleting a file given
 its location.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -78,20 +79,16 @@ class InputStream(Protocol):
     """
 
     @abstractmethod
-    def read(self, size: int = 0) -> bytes:
-        ...
+    def read(self, size: int = 0) -> bytes: ...
 
     @abstractmethod
-    def seek(self, offset: int, whence: int = SEEK_SET) -> int:
-        ...
+    def seek(self, offset: int, whence: int = SEEK_SET) -> int: ...
 
     @abstractmethod
-    def tell(self) -> int:
-        ...
+    def tell(self) -> int: ...
 
     @abstractmethod
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
     def __enter__(self) -> InputStream:
         """Provide setup when opening an InputStream using a 'with' statement."""
@@ -112,12 +109,10 @@ class OutputStream(Protocol):  # pragma: no cover
     """
 
     @abstractmethod
-    def write(self, b: bytes) -> int:
-        ...
+    def write(self, b: bytes) -> int: ...
 
     @abstractmethod
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
     @abstractmethod
     def __enter__(self) -> OutputStream:

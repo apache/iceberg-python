@@ -169,15 +169,11 @@ class FooBoundBooleanExpressionVisitor(BoundBooleanExpressionVisitor[List[str]])
         self.visit_history.append("NOT_EQUAL")
         return self.visit_history
 
-    def visit_greater_than_or_equal(
-        self, term: BoundTerm[Any], literal: Literal[Any]
-    ) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("GREATER_THAN_OR_EQUAL")
         return self.visit_history
 
-    def visit_greater_than(
-        self, term: BoundTerm[Any], literal: Literal[Any]
-    ) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("GREATER_THAN")
         return self.visit_history
 
@@ -185,9 +181,7 @@ class FooBoundBooleanExpressionVisitor(BoundBooleanExpressionVisitor[List[str]])
         self.visit_history.append("LESS_THAN")
         return self.visit_history
 
-    def visit_less_than_or_equal(
-        self, term: BoundTerm[Any], literal: Literal[Any]
-    ) -> List[str]:  # pylint: disable=redefined-outer-name
+    def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> List[str]:  # pylint: disable=redefined-outer-name
         self.visit_history.append("LESS_THAN_OR_EQUAL")
         return self.visit_history
 
