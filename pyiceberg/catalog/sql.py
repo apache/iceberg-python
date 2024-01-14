@@ -283,7 +283,7 @@ class SqlCatalog(Catalog):
                 try:
                     tbl = (
                         session.query(IcebergTables)
-                        .with_for_update(of=IcebergTables, nowait=True)
+                        .with_for_update(of=IcebergTables)
                         .filter(
                             IcebergTables.catalog_name == self.name,
                             IcebergTables.table_namespace == database_name,
@@ -335,7 +335,7 @@ class SqlCatalog(Catalog):
                     try:
                         tbl = (
                             session.query(IcebergTables)
-                            .with_for_update(of=IcebergTables, nowait=True)
+                            .with_for_update(of=IcebergTables)
                             .filter(
                                 IcebergTables.catalog_name == self.name,
                                 IcebergTables.table_namespace == from_database_name,
@@ -405,7 +405,7 @@ class SqlCatalog(Catalog):
                 try:
                     tbl = (
                         session.query(IcebergTables)
-                        .with_for_update(of=IcebergTables, nowait=True)
+                        .with_for_update(of=IcebergTables)
                         .filter(
                             IcebergTables.catalog_name == self.name,
                             IcebergTables.table_namespace == database_name,
