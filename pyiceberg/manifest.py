@@ -512,9 +512,9 @@ MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
         NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
         NestedField(501, "manifest_length", LongType(), required=True),
         NestedField(502, "partition_spec_id", IntegerType(), required=True),
-        NestedField(517, "content", IntegerType(), required=False, initial_default=ManifestContent.DATA),
-        NestedField(515, "sequence_number", LongType(), required=False, initial_default=0),
-        NestedField(516, "min_sequence_number", LongType(), required=False, initial_default=0),
+        NestedField(517, "content", IntegerType(), required=True, initial_default=ManifestContent.DATA),
+        NestedField(515, "sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(516, "min_sequence_number", LongType(), required=True, initial_default=0),
         NestedField(503, "added_snapshot_id", LongType(), required=True),
         NestedField(504, "added_files_count", IntegerType(), required=True),
         NestedField(505, "existing_files_count", IntegerType(), required=True),
@@ -646,12 +646,12 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
 
     # in v1 tables, the data sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the data sequence number should be inherited iff the entry status is ADDED
-    if entry.data_sequence_number is None and (manifest.sequence_number <= 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.data_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
         entry.data_sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
-    if entry.file_sequence_number is None and (manifest.sequence_number <= 0 or entry.status == ManifestEntryStatus.ADDED):
+    if entry.file_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
         # Only available in V2, always 0 in V1
         entry.file_sequence_number = manifest.sequence_number
 
