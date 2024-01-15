@@ -853,9 +853,6 @@ class Table:
     def next_sequence_number(self) -> int:
         return self.last_sequence_number + 1 if self.metadata.format_version > 1 else INITIAL_SEQUENCE_NUMBER
 
-    def _next_sequence_number(self) -> int:
-        return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
-
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
@@ -888,29 +885,44 @@ class Table:
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
 
     def append(self, df: pa.Table) -> None:
+        """
+        Append data to the table.
+
+        Args:
+            df: The Arrow dataframe that will be appended to overwrite the table
+        """
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
+
+        if len(self.sort_order().fields) > 0:
+            raise ValueError("Cannot write to tables with a sort-order")
 
         snapshot_id = self.new_snapshot_id()
 
         data_files = _dataframe_to_data_files(self, df=df)
         merge = _MergeAppend(operation=Operation.APPEND, table=self, snapshot_id=snapshot_id)
         for data_file in data_files:
-            merge.append_datafile(data_file)
-
-        if current_snapshot := self.current_snapshot():
-            for manifest in current_snapshot.manifests(io=self.io):
-                for entry in manifest.fetch_manifest_entry(io=self.io):
-                    merge.append_datafile(entry.data_file, added=False)
+            merge.append_data_file(data_file)
 
         merge.commit()
 
     def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+        """
+        Overwrite all the data in the table.
+
+        Args:
+            df: The Arrow dataframe that will be used to overwrite the table
+            overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
+                              or a boolean expression in case of a partial overwrite
+        """
         if overwrite_filter != AlwaysTrue():
             raise NotImplementedError("Cannot overwrite a subset of a table")
 
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
+
+        if len(self.sort_order().fields) > 0:
+            raise ValueError("Cannot write to tables with a sort-order")
 
         snapshot_id = self.new_snapshot_id()
 
@@ -923,7 +935,7 @@ class Table:
         )
 
         for data_file in data_files:
-            merge.append_datafile(data_file)
+            merge.append_data_file(data_file)
 
         merge.commit()
 
@@ -1139,7 +1151,7 @@ def _min_data_file_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -1283,7 +1295,7 @@ class DataScan(TableScan):
         return [
             FileScanTask(
                 data_entry.data_file,
-                delete_files=_match_deletes_to_datafile(
+                delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
                 ),
@@ -2017,7 +2029,7 @@ class WriteTask:
 
     # Later to be extended with partition information
 
-    def generate_datafile_filename(self, extension: str) -> str:
+    def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
@@ -2027,14 +2039,20 @@ def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
     return f'{location}/metadata/{commit_uuid}-m{num}.avro'
 
 
-def _generate_manifest_list_filename(snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
+def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
-    return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
+    return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
 
 
 def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import write_file
+
+    if len(table.spec().fields) > 0:
+        raise ValueError("Cannot write to partitioned tables")
+
+    if len(table.sort_order().fields) > 0:
+        raise ValueError("Cannot write to tables with a sort-order")
 
     write_uuid = uuid.uuid4()
     counter = itertools.count(0)
@@ -2049,8 +2067,8 @@ class _MergeAppend:
     _table: Table
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
-    _added_datafiles: List[DataFile]
-    _existing_datafiles: List[DataFile]
+    _added_data_files: List[DataFile]
+    _existing_manifest_entries: List[ManifestEntry]
     _commit_uuid: uuid.UUID
 
     def __init__(self, operation: Operation, table: Table, snapshot_id: int) -> None:
@@ -2059,22 +2077,30 @@ class _MergeAppend:
         self._snapshot_id = snapshot_id
         # Since we only support the main branch for now
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
-        self._added_datafiles = []
-        self._existing_datafiles = []
+        self._added_data_files = []
+        self._existing_manifest_entries = []
         self._commit_uuid = uuid.uuid4()
+        if self._operation == Operation.APPEND:
+            self._add_existing_files()
 
-    def append_datafile(self, data_file: DataFile, added: bool = True) -> _MergeAppend:
-        if added:
-            self._added_datafiles.append(data_file)
-        else:
-            self._existing_datafiles.append(data_file)
+    def _add_existing_files(self) -> None:
+        if current_snapshot := self._table.current_snapshot():
+            for manifest in current_snapshot.manifests(io=self._table.io):
+                if manifest.content != ManifestContent.DATA:
+                    raise ValueError(f"Cannot write to tables that contain Merge-on-Write manifests: {manifest}")
+
+                for entry in manifest.fetch_manifest_entry(io=self._table.io):
+                    self._existing_manifest_entries.append(entry)
+
+    def append_data_file(self, data_file: DataFile) -> _MergeAppend:
+        self._added_data_files.append(data_file)
         return self
 
     def _manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
         ssc = SnapshotSummaryCollector()
         manifests = []
 
-        if self._added_datafiles:
+        if self._added_data_files or self._existing_manifest_entries:
             output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
             with write_manifest(
                 format_version=self._table.format_version,
@@ -2083,7 +2109,20 @@ class _MergeAppend:
                 output_file=self._table.io.new_output(output_file_location),
                 snapshot_id=self._snapshot_id,
             ) as writer:
-                for data_file in self._added_datafiles + self._existing_datafiles:
+                # First write the existing entries
+                for existing_entry in self._existing_manifest_entries:
+                    writer.add_entry(
+                        ManifestEntry(
+                            status=ManifestEntryStatus.EXISTING,
+                            snapshot_id=existing_entry.snapshot_id,
+                            data_sequence_number=existing_entry.data_sequence_number,
+                            file_sequence_number=existing_entry.file_sequence_number,
+                            data_file=existing_entry.data_file,
+                        )
+                    )
+
+                # Write the newly added data
+                for data_file in self._added_data_files:
                     writer.add_entry(
                         ManifestEntry(
                             status=ManifestEntryStatus.ADDED,
@@ -2093,8 +2132,6 @@ class _MergeAppend:
                             data_file=data_file,
                         )
                     )
-
-                for data_file in self._added_datafiles:
                     ssc.add_file(data_file=data_file)
 
             manifests.append(writer.to_manifest_file())
@@ -2103,6 +2140,7 @@ class _MergeAppend:
 
     def commit(self) -> Snapshot:
         new_summary, manifests = self._manifests()
+        next_sequence_number = self._table.next_sequence_number()
 
         previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
         summary = update_snapshot_summaries(
@@ -2111,16 +2149,15 @@ class _MergeAppend:
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-        manifest_list_filename = _generate_manifest_list_filename(
-            snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
+        manifest_list_file_path = _generate_manifest_list_path(
+            location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
         )
-        manifest_list_file_path = f'{self._table.location()}/metadata/{manifest_list_filename}'
         with write_manifest_list(
             format_version=self._table.metadata.format_version,
             output_file=self._table.io.new_output(manifest_list_file_path),
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
-            sequence_number=self._table.next_sequence_number(),
+            sequence_number=next_sequence_number,
         ) as writer:
             writer.add_manifests(manifests)
 
@@ -2128,7 +2165,7 @@ class _MergeAppend:
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
             manifest_list=manifest_list_file_path,
-            sequence_number=self._table._next_sequence_number(),
+            sequence_number=next_sequence_number,
             summary=summary,
             schema_id=self._table.schema().schema_id,
         )

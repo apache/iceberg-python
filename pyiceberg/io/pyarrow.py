@@ -1585,12 +1585,12 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     except StopIteration:
         pass
 
-    file_path = f'{table.location()}/data/{task.generate_datafile_filename("parquet")}'
+    file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
     file_schema = schema_to_pyarrow(table.schema())
 
     collected_metrics: List[pq.FileMetaData] = []
     fo = table.io.new_output(file_path)
-    with fo.create() as fos:
+    with fo.create(overwrite=True) as fos:
         with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
             writer.write_table(task.df)
 

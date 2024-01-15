@@ -23,7 +23,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     BinaryType,
@@ -43,7 +43,7 @@ from pyiceberg.types import (
 
 @pytest.fixture()
 def catalog() -> Catalog:
-    return load_catalog(
+    catalog = load_catalog(
         "local",
         **{
             "type": "rest",
@@ -53,6 +53,13 @@ def catalog() -> Catalog:
             "s3.secret-access-key": "password",
         },
     )
+
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+
+    return catalog
 
 
 TEST_DATA_WITH_NULL = {

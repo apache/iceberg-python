@@ -58,7 +58,7 @@ from pyiceberg.table import (
     UpdateSchema,
     _apply_table_update,
     _generate_snapshot_id,
-    _match_deletes_to_datafile,
+    _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
 )
@@ -357,7 +357,7 @@ def test_match_deletes_to_datafile() -> None:
             upper_bounds={},
         ),
     )
-    assert _match_deletes_to_datafile(
+    assert _match_deletes_to_data_file(
         data_entry,
         SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
     ) == {
@@ -414,7 +414,7 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
             upper_bounds={},
         ),
     )
-    assert _match_deletes_to_datafile(
+    assert _match_deletes_to_data_file(
         data_entry,
         SortedList(iterable=[delete_entry_1, delete_entry_2], key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER),
     ) == {
