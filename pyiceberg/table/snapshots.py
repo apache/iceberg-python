@@ -279,7 +279,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
         summary[prop] = '0'
 
     def get_prop(prop: str) -> int:
-        value = previous_summary.get(prop, '0')
+        value = previous_summary.get(prop) or '0'
         try:
             return int(value)
         except ValueError as e:
