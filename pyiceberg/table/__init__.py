@@ -2096,8 +2096,7 @@ class _MergeAppend:
         self._added_data_files.append(data_file)
         return self
 
-    def _manifests(self) -> Tuple[Dict[str, str], List[ManifestFile]]:
-        ssc = SnapshotSummaryCollector()
+    def _manifests(self) -> List[ManifestFile]:
         manifests = []
 
         if self._added_data_files or self._existing_manifest_entries:
@@ -2132,19 +2131,26 @@ class _MergeAppend:
                             data_file=data_file,
                         )
                     )
-                    ssc.add_file(data_file=data_file)
 
             manifests.append(writer.to_manifest_file())
 
-        return ssc.build(), manifests
+        return manifests
+
+    def _summary(self) -> Dict[str, str]:
+        ssc = SnapshotSummaryCollector()
+
+        for data_file in self._added_data_files:
+            ssc.add_file(data_file=data_file)
+
+        return ssc.build()
 
     def commit(self) -> Snapshot:
-        new_summary, manifests = self._manifests()
+        manifests = self._manifests()
         next_sequence_number = self._table.next_sequence_number()
 
         previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
         summary = update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **new_summary),
+            summary=Summary(operation=self._operation, **self._summary()),
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
