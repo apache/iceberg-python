@@ -415,6 +415,31 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
+@_apply_table_update.register(SetPropertiesUpdate)
+def _(update: SetPropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(update.updates) == 0:
+        return base_metadata
+
+    properties = dict(base_metadata.properties)
+    properties.update(update.updates)
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"properties": properties})
+
+
+@_apply_table_update.register(RemovePropertiesUpdate)
+def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(update.removals) == 0:
+        return base_metadata
+
+    properties = dict(base_metadata.properties)
+    for key in update.removals:
+        properties.pop(key)
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"properties": properties})
+
+
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.last_column_id < base_metadata.last_column_id:
