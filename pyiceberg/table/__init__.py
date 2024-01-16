@@ -2068,7 +2068,6 @@ class _MergeAppend:
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
-    _existing_manifest_entries: List[ManifestEntry]
     _commit_uuid: uuid.UUID
 
     def __init__(self, operation: Operation, table: Table, snapshot_id: int) -> None:
@@ -2078,19 +2077,7 @@ class _MergeAppend:
         # Since we only support the main branch for now
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_data_files = []
-        self._existing_manifest_entries = []
         self._commit_uuid = uuid.uuid4()
-        if self._operation == Operation.APPEND:
-            self._add_existing_files()
-
-    def _add_existing_files(self) -> None:
-        if current_snapshot := self._table.current_snapshot():
-            for manifest in current_snapshot.manifests(io=self._table.io):
-                if manifest.content != ManifestContent.DATA:
-                    raise ValueError(f"Cannot write to tables that contain Merge-on-Write manifests: {manifest}")
-
-                for entry in manifest.fetch_manifest_entry(io=self._table.io):
-                    self._existing_manifest_entries.append(entry)
 
     def append_data_file(self, data_file: DataFile) -> _MergeAppend:
         self._added_data_files.append(data_file)
@@ -2099,7 +2086,7 @@ class _MergeAppend:
     def _manifests(self) -> List[ManifestFile]:
         manifests = []
 
-        if self._added_data_files or self._existing_manifest_entries:
+        if self._added_data_files:
             output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
             with write_manifest(
                 format_version=self._table.format_version,
@@ -2108,19 +2095,6 @@ class _MergeAppend:
                 output_file=self._table.io.new_output(output_file_location),
                 snapshot_id=self._snapshot_id,
             ) as writer:
-                # First write the existing entries
-                for existing_entry in self._existing_manifest_entries:
-                    writer.add_entry(
-                        ManifestEntry(
-                            status=ManifestEntryStatus.EXISTING,
-                            snapshot_id=existing_entry.snapshot_id,
-                            data_sequence_number=existing_entry.data_sequence_number,
-                            file_sequence_number=existing_entry.file_sequence_number,
-                            data_file=existing_entry.data_file,
-                        )
-                    )
-
-                # Write the newly added data
                 for data_file in self._added_data_files:
                     writer.add_entry(
                         ManifestEntry(
@@ -2145,7 +2119,7 @@ class _MergeAppend:
         return ssc.build()
 
     def commit(self) -> Snapshot:
-        manifests = self._manifests()
+        new_manifests = self._manifests()
         next_sequence_number = self._table.next_sequence_number()
 
         previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
@@ -2165,7 +2139,10 @@ class _MergeAppend:
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
         ) as writer:
-            writer.add_manifests(manifests)
+            if self._operation == Operation.APPEND and previous_snapshot is not None:
+                # In case we want to append, just add the existing manifests
+                writer.add_manifests(previous_snapshot.manifests(io=self._table.io))
+            writer.add_manifests(new_manifests)
 
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
