@@ -268,7 +268,6 @@ class RestCatalog(Catalog):
 
     @property
     def auth_url(self) -> str:
-        print(f"DEBUG: {self.properties}")
         if url := self.properties.get(AUTH_URL):
             return url
         else:
