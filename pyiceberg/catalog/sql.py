@@ -398,9 +398,7 @@ class SqlCatalog(Catalog):
                 )
                 result = session.execute(stmt)
                 if result.rowcount < 1:
-                    raise CommitFailedException(
-                        "Commit was unsuccessful as a conflicting concurrent commit was made to the database."
-                    )
+                    raise CommitFailedException(f"Table has been updated by another process: {database_name}.{table_name}")
             else:
                 try:
                     tbl = (
@@ -417,9 +415,7 @@ class SqlCatalog(Catalog):
                     tbl.metadata_location = new_metadata_location
                     tbl.previous_metadata_location = current_table.metadata_location
                 except NoResultFound as e:
-                    raise CommitFailedException(
-                        "Commit was unsuccessful as a conflicting concurrent commit was made to the database."
-                    ) from e
+                    raise CommitFailedException(f"Table has been updated by another process: {database_name}.{table_name}") from e
             session.commit()
 
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
