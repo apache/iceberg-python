@@ -27,6 +27,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 from pyiceberg.catalog import Identifier
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -719,3 +720,26 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_i
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table_a = catalog.create_table(random_identifier, table_schema_simple)
+    table_b = catalog.load_table(random_identifier)
+
+    with table_a.update_schema() as update:
+        update.add_column(path="b", field_type=IntegerType())
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 0, found 1"):
+        # This one should fail since it already has been updated
+        with table_b.update_schema() as update:
+            update.add_column(path="c", field_type=IntegerType())
