@@ -150,7 +150,6 @@ def test_pyarrow_nan_rewritten(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
-
 @pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
 def test_pyarrow_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan = catalog.load_table("default.test_null_nan")
@@ -206,7 +205,6 @@ def test_ray_nan_rewritten(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
-
 @pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
 def test_ray_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
@@ -425,7 +423,6 @@ def test_upgrade_table_version(catalog: Catalog) -> None:
         with table_test_table_version.transaction() as transaction:
             transaction.upgrade_table_version(format_version=3)
     assert "Unsupported table format version: 3" in str(e.value)
-
 
 
 @pytest.mark.integration
