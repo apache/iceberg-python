@@ -307,20 +307,16 @@ for catalog_name, catalog in catalogs.items():
     )
 
     spark.sql(
-        """
-    CREATE TABLE default.test_table_add_column (
+        f"""
+    CREATE TABLE {catalog_name}.test_table_add_column (
         a string
     )
     USING iceberg
     """
     )
 
-    spark.sql("INSERT INTO default.test_table_add_column VALUES ('1')")
+    spark.sql(f"INSERT INTO {catalog_name}.test_table_add_column VALUES ('1')")
 
-    spark.sql(
-        """
-    ALTER TABLE default.test_table_add_column ADD COLUMN b string
-    """
-    )
+    spark.sql(f"ALTER TABLE {catalog_name}.test_table_add_column ADD COLUMN b string")
 
-    spark.sql("INSERT INTO default.test_table_add_column VALUES ('2', '2')")
+    spark.sql(f"INSERT INTO {catalog_name}.test_table_add_column VALUES ('2', '2')")
