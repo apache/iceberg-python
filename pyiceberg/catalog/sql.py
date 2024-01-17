@@ -31,7 +31,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -48,6 +48,7 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -59,7 +60,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
@@ -268,16 +269,32 @@ class SqlCatalog(Catalog):
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         with Session(self.engine) as session:
-            res = session.execute(
-                delete(IcebergTables).where(
-                    IcebergTables.catalog_name == self.name,
-                    IcebergTables.table_namespace == database_name,
-                    IcebergTables.table_name == table_name,
+            if self.engine.dialect.supports_sane_rowcount:
+                res = session.execute(
+                    delete(IcebergTables).where(
+                        IcebergTables.catalog_name == self.name,
+                        IcebergTables.table_namespace == database_name,
+                        IcebergTables.table_name == table_name,
+                    )
                 )
-            )
+                if res.rowcount < 1:
+                    raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}")
+            else:
+                try:
+                    tbl = (
+                        session.query(IcebergTables)
+                        .with_for_update(of=IcebergTables)
+                        .filter(
+                            IcebergTables.catalog_name == self.name,
+                            IcebergTables.table_namespace == database_name,
+                            IcebergTables.table_name == table_name,
+                        )
+                        .one()
+                    )
+                    session.delete(tbl)
+                except NoResultFound as e:
+                    raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
             session.commit()
-        if res.rowcount < 1:
-            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}")
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         """Rename a fully classified table name.
@@ -301,18 +318,35 @@ class SqlCatalog(Catalog):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_database_name}")
         with Session(self.engine) as session:
             try:
-                stmt = (
-                    update(IcebergTables)
-                    .where(
-                        IcebergTables.catalog_name == self.name,
-                        IcebergTables.table_namespace == from_database_name,
-                        IcebergTables.table_name == from_table_name,
+                if self.engine.dialect.supports_sane_rowcount:
+                    stmt = (
+                        update(IcebergTables)
+                        .where(
+                            IcebergTables.catalog_name == self.name,
+                            IcebergTables.table_namespace == from_database_name,
+                            IcebergTables.table_name == from_table_name,
+                        )
+                        .values(table_namespace=to_database_name, table_name=to_table_name)
                     )
-                    .values(table_namespace=to_database_name, table_name=to_table_name)
-                )
-                result = session.execute(stmt)
-                if result.rowcount < 1:
-                    raise NoSuchTableError(f"Table does not exist: {from_table_name}")
+                    result = session.execute(stmt)
+                    if result.rowcount < 1:
+                        raise NoSuchTableError(f"Table does not exist: {from_table_name}")
+                else:
+                    try:
+                        tbl = (
+                            session.query(IcebergTables)
+                            .with_for_update(of=IcebergTables)
+                            .filter(
+                                IcebergTables.catalog_name == self.name,
+                                IcebergTables.table_namespace == from_database_name,
+                                IcebergTables.table_name == from_table_name,
+                            )
+                            .one()
+                        )
+                        tbl.table_namespace = to_database_name
+                        tbl.table_name = to_table_name
+                    except NoResultFound as e:
+                        raise NoSuchTableError(f"Table does not exist: {from_table_name}") from e
                 session.commit()
             except IntegrityError as e:
                 raise TableAlreadyExistsError(f"Table {to_database_name}.{to_table_name} already exists") from e
@@ -329,8 +363,62 @@ class SqlCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: If the commit failed.
         """
-        raise NotImplementedError
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
+        )
+        current_table = self.load_table(identifier_tuple)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        base_metadata = current_table.metadata
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        with Session(self.engine) as session:
+            if self.engine.dialect.supports_sane_rowcount:
+                stmt = (
+                    update(IcebergTables)
+                    .where(
+                        IcebergTables.catalog_name == self.name,
+                        IcebergTables.table_namespace == database_name,
+                        IcebergTables.table_name == table_name,
+                        IcebergTables.metadata_location == current_table.metadata_location,
+                    )
+                    .values(metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location)
+                )
+                result = session.execute(stmt)
+                if result.rowcount < 1:
+                    raise CommitFailedException(f"Table has been updated by another process: {database_name}.{table_name}")
+            else:
+                try:
+                    tbl = (
+                        session.query(IcebergTables)
+                        .with_for_update(of=IcebergTables)
+                        .filter(
+                            IcebergTables.catalog_name == self.name,
+                            IcebergTables.table_namespace == database_name,
+                            IcebergTables.table_name == table_name,
+                            IcebergTables.metadata_location == current_table.metadata_location,
+                        )
+                        .one()
+                    )
+                    tbl.metadata_location = new_metadata_location
+                    tbl.previous_metadata_location = current_table.metadata_location
+                except NoResultFound as e:
+                    raise CommitFailedException(f"Table has been updated by another process: {database_name}.{table_name}") from e
+            session.commit()
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace = self.identifier_to_database(identifier)
