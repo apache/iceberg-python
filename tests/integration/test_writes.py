@@ -357,3 +357,29 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         'total-position-deletes': '0',
         'total-records': '3',
     }
+
+
+@pytest.mark.integration
+def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_data_files"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+
+    tbl.overwrite(arrow_table_with_null)
+    # should produce a DELETE entry
+    tbl.overwrite(arrow_table_with_null)
+
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [1, 1]
+    assert [row.existing_data_files_count for row in rows] == [0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 1]

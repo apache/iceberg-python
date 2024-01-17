@@ -2108,8 +2108,44 @@ class _MergeAppend:
         self._added_data_files.append(data_file)
         return self
 
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to record any deleted entries.
+
+        With partial overwrites we have to use the predicate to evaluate
+        which entries are affected.
+        """
+        if self._operation == Operation.OVERWRITE:
+            if self._parent_snapshot_id is not None:
+                previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
+                if previous_snapshot is None:
+                    # This should never happen since you cannot overwrite an empty table
+                    raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+                executor = ExecutorFactory.get_or_create()
+
+                def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+                    return [
+                        ManifestEntry(
+                            status=ManifestEntryStatus.DELETED,
+                            snapshot_id=entry.snapshot_id,
+                            data_sequence_number=entry.data_sequence_number,
+                            file_sequence_number=entry.file_sequence_number,
+                            data_file=entry.data_file,
+                        )
+                        for entry in manifest.fetch_manifest_entry(self._table.io, discard_deleted=True)
+                    ]
+
+                list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._table.io))
+                return list(chain(*list_of_entries))
+            return []
+        elif self._operation == Operation.APPEND:
+            return []
+        else:
+            raise ValueError(f"Not implemented for: {self._operation}")
+
     def _manifests(self) -> List[ManifestFile]:
         manifests = []
+        deleted_entries = self._deleted_entries()
 
         if self._added_data_files:
             output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
@@ -2130,6 +2166,9 @@ class _MergeAppend:
                             data_file=data_file,
                         )
                     )
+
+                for delete_entry in deleted_entries:
+                    writer.add_entry(delete_entry)
 
             manifests.append(writer.to_manifest_file())
 
