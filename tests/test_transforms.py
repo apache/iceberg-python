@@ -362,7 +362,7 @@ def test_identity_method(type_var: PrimitiveType) -> None:
 @pytest.mark.parametrize("type_var", [IntegerType(), LongType()])
 @pytest.mark.parametrize(
     "input_var,expected",
-    [(1, 0), (5, 0), (9, 0), (10, 10), (11, 10), (-1, -10), (-10, -10), (-12, -20)],
+    [(1, 0), (5, 0), (9, 0), (10, 10), (11, 10), (-1, -10), (-10, -10), (-12, -20), (0, 0)],
 )
 def test_truncate_integer(type_var: PrimitiveType, input_var: int, expected: int) -> None:
     trunc = TruncateTransform(10)  # type: ignore
@@ -377,6 +377,7 @@ def test_truncate_integer(type_var: PrimitiveType, input_var: int, expected: int
         (Decimal("12.29"), Decimal("12.20")),
         (Decimal("0.05"), Decimal("0.00")),
         (Decimal("-0.05"), Decimal("-0.10")),
+        (Decimal("0.0"), Decimal("0.0")),
     ],
 )
 def test_truncate_decimal(input_var: Decimal, expected: Decimal) -> None:
@@ -384,7 +385,7 @@ def test_truncate_decimal(input_var: Decimal, expected: Decimal) -> None:
     assert trunc.transform(DecimalType(9, 2))(input_var) == expected
 
 
-@pytest.mark.parametrize("input_var,expected", [("abcdefg", "abcde"), ("abc", "abc")])
+@pytest.mark.parametrize("input_var,expected", [("abcdefg", "abcde"), ("abc", "abc"), ("", "")])
 def test_truncate_string(input_var: str, expected: str) -> None:
     trunc = TruncateTransform(5)  # type: ignore
     assert trunc.transform(StringType())(input_var) == expected
