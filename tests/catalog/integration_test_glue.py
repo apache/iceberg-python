@@ -294,3 +294,20 @@ def test_commit_table_update_schema(
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+
+
+def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    transaction = table.transaction()
+    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+    transaction.remove_properties("test_b")
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}

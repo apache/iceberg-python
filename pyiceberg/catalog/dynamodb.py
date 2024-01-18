@@ -80,7 +80,15 @@ ITEM = "Item"
 class DynamoDbCatalog(Catalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self.dynamodb = boto3.client(DYNAMODB_CLIENT)
+        session = boto3.Session(
+            profile_name=properties.get("profile_name"),
+            region_name=properties.get("region_name"),
+            botocore_session=properties.get("botocore_session"),
+            aws_access_key_id=properties.get("aws_access_key_id"),
+            aws_secret_access_key=properties.get("aws_secret_access_key"),
+            aws_session_token=properties.get("aws_session_token"),
+        )
+        self.dynamodb = session.client(DYNAMODB_CLIENT)
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
         self._ensure_catalog_table_exists_or_create()
 
