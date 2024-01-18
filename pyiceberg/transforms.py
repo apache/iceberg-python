@@ -613,7 +613,7 @@ class TruncateTransform(Transform[S, S]):
         else:
             raise ValueError(f"Cannot truncate for type: {source}")
 
-        return lambda v: truncate_func(v) if v else None
+        return lambda v: truncate_func(v) if v is not None else None
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
         if self == other:
