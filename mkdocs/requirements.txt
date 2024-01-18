@@ -26,3 +26,4 @@ mkdocs-gen-files==0.5.0
 mkdocs-material==9.5.4
 mkdocs-material-extensions==1.3.1
 mkdocs-section-index==0.3.8
+mkdocs-google-translate==1.2.0
