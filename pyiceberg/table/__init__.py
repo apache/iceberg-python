@@ -922,10 +922,8 @@ class Table:
         if len(self.sort_order().fields) > 0:
             raise ValueError("Cannot write to tables with a sort-order")
 
-        snapshot_id = self.new_snapshot_id()
-
         data_files = _dataframe_to_data_files(self, df=df)
-        merge = _MergeAppend(operation=Operation.APPEND, table=self, snapshot_id=snapshot_id)
+        merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
         for data_file in data_files:
             merge.append_data_file(data_file)
 
@@ -949,14 +947,10 @@ class Table:
         if len(self.sort_order().fields) > 0:
             raise ValueError("Cannot write to tables with a sort-order")
 
-        snapshot_id = self.new_snapshot_id()
-
         data_files = _dataframe_to_data_files(self, df=df)
-
-        merge = _MergeAppend(
+        merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
-            snapshot_id=snapshot_id,
         )
 
         for data_file in data_files:
@@ -2087,7 +2081,7 @@ def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
     yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))
 
 
-class _MergeAppend:
+class _MergingSnapshotProducer:
     _operation: Operation
     _table: Table
     _snapshot_id: int
@@ -2095,16 +2089,16 @@ class _MergeAppend:
     _added_data_files: List[DataFile]
     _commit_uuid: uuid.UUID
 
-    def __init__(self, operation: Operation, table: Table, snapshot_id: int) -> None:
+    def __init__(self, operation: Operation, table: Table) -> None:
         self._operation = operation
         self._table = table
-        self._snapshot_id = snapshot_id
+        self._snapshot_id = table.new_snapshot_id()
         # Since we only support the main branch for now
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_data_files = []
         self._commit_uuid = uuid.uuid4()
 
-    def append_data_file(self, data_file: DataFile) -> _MergeAppend:
+    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
         return self
 
@@ -2133,6 +2127,7 @@ class _MergeAppend:
                             data_file=entry.data_file,
                         )
                         for entry in manifest.fetch_manifest_entry(self._table.io, discard_deleted=True)
+                        if entry.data_file.content == DataFileContent.DATA
                     ]
 
                 list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._table.io))
@@ -2144,54 +2139,96 @@ class _MergeAppend:
             raise ValueError(f"Not implemented for: {self._operation}")
 
     def _manifests(self) -> List[ManifestFile]:
-        manifests = []
-        deleted_entries = self._deleted_entries()
-
-        if self._added_data_files:
-            output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
-            with write_manifest(
-                format_version=self._table.format_version,
-                spec=self._table.spec(),
-                schema=self._table.schema(),
-                output_file=self._table.io.new_output(output_file_location),
-                snapshot_id=self._snapshot_id,
-            ) as writer:
-                for data_file in self._added_data_files:
-                    writer.add_entry(
-                        ManifestEntry(
-                            status=ManifestEntryStatus.ADDED,
-                            snapshot_id=self._snapshot_id,
-                            data_sequence_number=None,
-                            file_sequence_number=None,
-                            data_file=data_file,
+        def _write_added_manifest() -> List[ManifestFile]:
+            if self._added_data_files:
+                output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
+                with write_manifest(
+                    format_version=self._table.format_version,
+                    spec=self._table.spec(),
+                    schema=self._table.schema(),
+                    output_file=self._table.io.new_output(output_file_location),
+                    snapshot_id=self._snapshot_id,
+                ) as writer:
+                    for data_file in self._added_data_files:
+                        writer.add_entry(
+                            ManifestEntry(
+                                status=ManifestEntryStatus.ADDED,
+                                snapshot_id=self._snapshot_id,
+                                data_sequence_number=None,
+                                file_sequence_number=None,
+                                data_file=data_file,
+                            )
                         )
-                    )
+                return [writer.to_manifest_file()]
+            else:
+                return []
 
-                for delete_entry in deleted_entries:
-                    writer.add_entry(delete_entry)
+        def _write_delete_manifest() -> List[ManifestFile]:
+            # Check if we need to mark the files as deleted
+            deleted_entries = self._deleted_entries()
+            if deleted_entries:
+                output_file_location = _new_manifest_path(location=self._table.location(), num=1, commit_uuid=self._commit_uuid)
+                with write_manifest(
+                    format_version=self._table.format_version,
+                    spec=self._table.spec(),
+                    schema=self._table.schema(),
+                    output_file=self._table.io.new_output(output_file_location),
+                    snapshot_id=self._snapshot_id,
+                ) as writer:
+                    for delete_entry in deleted_entries:
+                        writer.add_entry(delete_entry)
+                return [writer.to_manifest_file()]
+            else:
+                return []
 
-            manifests.append(writer.to_manifest_file())
+        def _fetch_existing_manifests() -> List[ManifestFile]:
+            existing_manifests = []
 
-        return manifests
+            # Add existing manifests
+            if self._operation == Operation.APPEND and self._parent_snapshot_id is not None:
+                # In case we want to append, just add the existing manifests
+                previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
 
-    def _summary(self) -> Dict[str, str]:
+                if previous_snapshot is None:
+                    raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
+
+                for manifest in previous_snapshot.manifests(io=self._table.io):
+                    if (
+                        manifest.has_added_files()
+                        or manifest.has_existing_files()
+                        or manifest.added_snapshot_id == self._snapshot_id
+                    ):
+                        existing_manifests.append(manifest)
+
+            return existing_manifests
+
+        executor = ExecutorFactory.get_or_create()
+
+        added_manifests = executor.submit(_write_added_manifest)
+        delete_manifests = executor.submit(_write_delete_manifest)
+        existing_manifests = executor.submit(_fetch_existing_manifests)
+
+        return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
+
+    def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
 
         for data_file in self._added_data_files:
             ssc.add_file(data_file=data_file)
 
-        return ssc.build()
+        previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
+
+        return update_snapshot_summaries(
+            summary=Summary(operation=self._operation, **ssc.build()),
+            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
+            truncate_full_table=self._operation == Operation.OVERWRITE,
+        )
 
     def commit(self) -> Snapshot:
         new_manifests = self._manifests()
         next_sequence_number = self._table.next_sequence_number()
 
-        previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
-        summary = update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **self._summary()),
-            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
-            truncate_full_table=self._operation == Operation.OVERWRITE,
-        )
+        summary = self._summary()
 
         manifest_list_file_path = _generate_manifest_list_path(
             location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
@@ -2203,9 +2240,6 @@ class _MergeAppend:
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
         ) as writer:
-            if self._operation == Operation.APPEND and previous_snapshot is not None:
-                # In case we want to append, just add the existing manifests
-                writer.add_manifests(previous_snapshot.manifests(io=self._table.io))
             writer.add_manifests(new_manifests)
 
         snapshot = Snapshot(

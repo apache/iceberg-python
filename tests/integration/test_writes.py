@@ -372,6 +372,8 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     tbl.overwrite(arrow_table_with_null)
     # should produce a DELETE entry
     tbl.overwrite(arrow_table_with_null)
+    # Since we don't rewrite, this should produce a new manifest with an ADDED entry
+    tbl.append(arrow_table_with_null)
 
     rows = spark.sql(
         f"""
@@ -380,6 +382,6 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     """
     ).collect()
 
-    assert [row.added_data_files_count for row in rows] == [1, 1]
-    assert [row.existing_data_files_count for row in rows] == [0, 0]
-    assert [row.deleted_data_files_count for row in rows] == [0, 1]
+    assert [row.added_data_files_count for row in rows] == [1, 1, 0, 1, 1]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 1, 0, 0]
