@@ -237,6 +237,19 @@ def test_negative_value_to_human_string(negative_value: int, time_transform: Tim
 
 
 @pytest.mark.parametrize(
+    "zero_value,time_transform,expected",
+    [
+        (0, YearTransform(), "1970"),
+        (0, MonthTransform(), "1970-01"),
+        (0, DayTransform(), "1970-01-01"),
+        (0, HourTransform(), "1970-01-01-00"),
+    ],
+)
+def test_zero_value_to_human_string(zero_value: int, time_transform: TimeTransform[Any], expected: str) -> None:
+    assert time_transform.to_human_string(TimestampType(), zero_value) == expected
+
+
+@pytest.mark.parametrize(
     "type_var",
     [
         DateType(),
@@ -274,6 +287,12 @@ def test_time_methods(type_var: PrimitiveType) -> None:
         (MonthTransform(), TimestamptzType(), -1, -1),
         (DayTransform(), TimestampType(), 1512151975038194, 17501),
         (DayTransform(), TimestampType(), -1, -1),
+        (YearTransform(), DateType(), 0, 0),
+        (MonthTransform(), DateType(), 0, 0),
+        (DayTransform(), DateType(), 0, 0),
+        (YearTransform(), TimestampType(), 0, 0),
+        (MonthTransform(), TimestampType(), 0, 0),
+        (DayTransform(), TimestampType(), 0, 0),
     ],
 )
 def test_time_apply_method(transform: TimeTransform[Any], type_var: PrimitiveType, value: int, expected: int) -> None:
@@ -291,6 +310,7 @@ def test_hour_method(type_var: PrimitiveType) -> None:
     assert HourTransform().can_transform(type_var)
     assert HourTransform().result_type(type_var) == IntegerType()
     assert HourTransform().transform(type_var)(1512151975038194) == 420042  # type: ignore
+    assert HourTransform().transform(type_var)(0) == 0  # type: ignore
     assert HourTransform().dedup_name == "time"
 
 

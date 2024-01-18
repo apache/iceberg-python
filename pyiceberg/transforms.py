@@ -382,7 +382,7 @@ class MonthTransform(TimeTransform[S]):
         else:
             raise ValueError(f"Cannot apply month transform for type: {source}")
 
-        return lambda v: month_func(v) if v else None
+        return lambda v: month_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (DateType, TimestampType, TimestamptzType))
@@ -424,7 +424,7 @@ class DayTransform(TimeTransform[S]):
         else:
             raise ValueError(f"Cannot apply day transform for type: {source}")
 
-        return lambda v: day_func(v) if v else None
+        return lambda v: day_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (DateType, TimestampType, TimestamptzType))
@@ -464,7 +464,7 @@ class HourTransform(TimeTransform[S]):
         else:
             raise ValueError(f"Cannot apply hour transform for type: {source}")
 
-        return lambda v: hour_func(v) if v else None
+        return lambda v: hour_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (TimestampType, TimestamptzType))
