@@ -26,7 +26,6 @@ with the pyarrow library.
 from __future__ import annotations
 
 import concurrent.futures
-import itertools
 import logging
 import os
 import re
@@ -34,7 +33,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import Enum
-from functools import lru_cache, partial, singledispatch
+from functools import lru_cache, singledispatch
 from itertools import chain
 from typing import (
     TYPE_CHECKING,
@@ -124,8 +123,8 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table import WriteTask
+from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -649,15 +648,6 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     return visit_pyarrow(schema, visitor)
 
 
-def new_schema_for_table(schema: pa.Schema) -> Schema:
-    """Return a PyIceberg Schema with freshly assigned field_ids for a given PyArrow Schema.
-
-    This utility function should be used exclusively when creating a new Iceberg table.
-    It should not be used when parsing PyArrow Schema that represents an existing Iceberg Table.
-    """
-    return pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())
-
-
 @singledispatch
 def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisitor[T]) -> T:
     """Apply a pyarrow schema visitor to any point within a schema.
@@ -721,60 +711,6 @@ def _(obj: pa.DataType, visitor: PyArrowSchemaVisitor[T]) -> T:
     return visitor.primitive(obj)
 
 
-@singledispatch
-def pre_order_visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PreOrderPyArrowSchemaVisitor[T]) -> T:
-    """Apply a pyarrow schema visitor to any point within a schema.
-
-    The function traverses the schema in pre-order fashion.
-
-    Args:
-        obj (Union[pa.DataType, pa.Schema]): An instance of a Schema or an IcebergType.
-        visitor (PyArrowSchemaVisitor[T]): An instance of an implementation of the generic PyarrowSchemaVisitor base class.
-
-    Raises:
-        NotImplementedError: If attempting to visit an unrecognized object type.
-    """
-    raise NotImplementedError(f"Cannot visit non-type: {obj}")
-
-
-@pre_order_visit_pyarrow.register(pa.Schema)
-def _(obj: pa.Schema, visitor: PreOrderPyArrowSchemaVisitor[T]) -> T:
-    return visitor.schema(obj, lambda: pre_order_visit_pyarrow(pa.struct(obj), visitor))
-
-
-@pre_order_visit_pyarrow.register(pa.StructType)
-def _(obj: pa.StructType, visitor: PreOrderPyArrowSchemaVisitor[T]) -> T:
-    return visitor.struct(
-        obj,
-        [
-            partial(
-                lambda field: visitor.field(field, partial(lambda field: pre_order_visit_pyarrow(field.type, visitor), field)),
-                field,
-            )
-            for field in obj
-        ],
-    )
-
-
-@pre_order_visit_pyarrow.register(pa.ListType)
-def _(obj: pa.ListType, visitor: PreOrderPyArrowSchemaVisitor[T]) -> T:
-    return visitor.list(obj, lambda: pre_order_visit_pyarrow(obj.value_type, visitor))
-
-
-@pre_order_visit_pyarrow.register(pa.MapType)
-def _(obj: pa.MapType, visitor: PreOrderPyArrowSchemaVisitor[T]) -> T:
-    return visitor.map(
-        obj, lambda: pre_order_visit_pyarrow(obj.key_type, visitor), lambda: pre_order_visit_pyarrow(obj.item_type, visitor)
-    )
-
-
-@pre_order_visit_pyarrow.register(pa.DataType)
-def _(obj: pa.DataType, visitor: PreOrderPyArrowSchemaVisitor[T]) -> T:
-    if pa.types.is_nested(obj):
-        raise TypeError(f"Expected primitive type, got: {type(obj)}")
-    return visitor.primitive(obj)
-
-
 class PyArrowSchemaVisitor(Generic[T], ABC):
     def before_field(self, field: pa.Field) -> None:
         """Override this method to perform an action immediately before visiting a field."""
@@ -818,32 +754,6 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
     @abstractmethod
     def map(self, map_type: pa.MapType, key_result: T, value_result: T) -> T:
-        """Visit a map."""
-
-    @abstractmethod
-    def primitive(self, primitive: pa.DataType) -> T:
-        """Visit a primitive type."""
-
-
-class PreOrderPyArrowSchemaVisitor(Generic[T], ABC):
-    @abstractmethod
-    def schema(self, schema: pa.Schema, struct_result: Callable[[], T]) -> T:
-        """Visit a schema."""
-
-    @abstractmethod
-    def struct(self, struct: pa.StructType, field_results: List[Callable[[], T]]) -> T:
-        """Visit a struct."""
-
-    @abstractmethod
-    def field(self, field: pa.Field, field_result: Callable[[], T]) -> T:
-        """Visit a field."""
-
-    @abstractmethod
-    def list(self, list_type: pa.ListType, element_result: Callable[[], T]) -> T:
-        """Visit a list."""
-
-    @abstractmethod
-    def map(self, map_type: pa.MapType, key_result: Callable[[], T], value_result: Callable[[], T]) -> T:
         """Visit a map."""
 
     @abstractmethod
@@ -994,76 +904,6 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
     def after_map_value(self, element: pa.Field) -> None:
         self._field_names.pop()
-
-
-class _ConvertToIcebergWithFreshIds(PreOrderPyArrowSchemaVisitor[Union[IcebergType, Schema]]):
-    """Converts PyArrowSchema to Iceberg Schema with fresh ids."""
-
-    def __init__(self) -> None:
-        self.counter = itertools.count(1)
-
-    def _field_id(self) -> int:
-        return next(self.counter)
-
-    def schema(self, schema: pa.Schema, struct_result: Callable[[], StructType]) -> Schema:
-        return Schema(*struct_result().fields)
-
-    def struct(self, struct: pa.StructType, field_results: List[Callable[[], NestedField]]) -> StructType:
-        return StructType(*[field() for field in field_results])
-
-    def field(self, field: pa.Field, field_result: Callable[[], IcebergType]) -> NestedField:
-        field_id = self._field_id()
-        field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
-        field_type = field_result()
-        return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
-
-    def list(self, list_type: pa.ListType, element_result: Callable[[], IcebergType]) -> ListType:
-        element_field = list_type.value_field
-        element_id = self._field_id()
-        return ListType(element_id, element_result(), element_required=not element_field.nullable)
-
-    def map(
-        self, map_type: pa.MapType, key_result: Callable[[], IcebergType], value_result: Callable[[], IcebergType]
-    ) -> MapType:
-        key_id = self._field_id()
-        value_field = map_type.item_field
-        value_id = self._field_id()
-        return MapType(key_id, key_result(), value_id, value_result(), value_required=not value_field.nullable)
-
-    def primitive(self, primitive: pa.DataType) -> PrimitiveType:
-        if pa.types.is_boolean(primitive):
-            return BooleanType()
-        elif pa.types.is_int32(primitive):
-            return IntegerType()
-        elif pa.types.is_int64(primitive):
-            return LongType()
-        elif pa.types.is_float32(primitive):
-            return FloatType()
-        elif pa.types.is_float64(primitive):
-            return DoubleType()
-        elif isinstance(primitive, pa.Decimal128Type):
-            primitive = cast(pa.Decimal128Type, primitive)
-            return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive):
-            return StringType()
-        elif pa.types.is_date32(primitive):
-            return DateType()
-        elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
-            return TimeType()
-        elif pa.types.is_timestamp(primitive):
-            primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit == "us":
-                if primitive.tz == "UTC" or primitive.tz == "+00:00":
-                    return TimestamptzType()
-                elif primitive.tz is None:
-                    return TimestampType()
-        elif pa.types.is_binary(primitive):
-            return BinaryType()
-        elif pa.types.is_fixed_size_binary(primitive):
-            primitive = cast(pa.FixedSizeBinaryType, primitive)
-            return FixedType(primitive.byte_width)
-
-        raise TypeError(f"Unsupported type: {primitive}")
 
 
 def _task_to_table(

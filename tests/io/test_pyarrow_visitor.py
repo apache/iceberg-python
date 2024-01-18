@@ -24,7 +24,6 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _HasIds,
-    new_schema_for_table,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -573,15 +572,3 @@ def test_pyarrow_schema_to_schema_missing_ids_using_name_mapping_nested_missing_
     with pytest.raises(ValueError) as exc_info:
         _ = pyarrow_to_schema(schema, name_mapping)
     assert "Could not find field with name: quux.value.key" in str(exc_info.value)
-
-
-def test_new_schema_for_table_simple_schema(pyarrow_schema_simple_without_ids: pa.Schema, iceberg_schema_simple: Schema) -> None:
-    schema = pyarrow_schema_simple_without_ids
-
-    assert new_schema_for_table(schema) == iceberg_schema_simple
-
-
-def test_new_schema_for_table_nested_schema(pyarrow_schema_nested_without_ids: pa.Schema, iceberg_schema_nested: Schema) -> None:
-    schema = pyarrow_schema_nested_without_ids
-
-    assert new_schema_for_table(schema) == iceberg_schema_nested
