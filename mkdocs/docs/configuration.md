@@ -218,6 +218,19 @@ catalog:
     table-name: iceberg
 ```
 
+If you prefer to pass the credentials explicitly to the client instead of relying on environment variables,
+
+```yaml
+catalog:
+  default:
+    type: dynamodb
+    table-name: iceberg
+    aws_access_key_id: <ACCESS_KEY_ID>
+    aws_secret_access_key: <SECRET_ACCESS_KEY>
+    aws_session_token: <SESSION_TOKEN>
+    region_name: <REGION_NAME>
+```
+
 # Concurrency
 
 PyIceberg uses multiple threads to parallelize operations. The number of workers can be configured by supplying a `max-workers` entry in the configuration file, or by setting the `PYICEBERG_MAX_WORKERS` environment variable. The default value depends on the system hardware and Python version. See [the Python documentation](https://docs.python.org/3/library/concurrent.futures.html#threadpoolexecutor) for more details.

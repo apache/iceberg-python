@@ -14,11 +14,12 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import List
+from typing import Any, Dict, List
 
 import boto3
 import pytest
 from moto import mock_dynamodb
+from unittest import mock
 
 from pyiceberg.catalog import METADATA_LOCATION, TABLE_TYPE
 from pyiceberg.catalog.dynamodb import (
@@ -26,6 +27,7 @@ from pyiceberg.catalog.dynamodb import (
     DYNAMODB_COL_IDENTIFIER,
     DYNAMODB_COL_NAMESPACE,
     DYNAMODB_TABLE_NAME_DEFAULT,
+    ACTIVE,
     DynamoDbCatalog,
     _add_property_prefix,
 )
@@ -47,12 +49,13 @@ def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: 
     DynamoDbCatalog("test_ddb_catalog")
     response = _dynamodb.describe_table(TableName=DYNAMODB_TABLE_NAME_DEFAULT)
     assert response["Table"]["TableName"] == DYNAMODB_TABLE_NAME_DEFAULT
+    assert response["Table"]["TableStatus"] == ACTIVE
 
     custom_table_name = "custom_table_name"
     DynamoDbCatalog("test_ddb_catalog", **{"table-name": custom_table_name})
     response = _dynamodb.describe_table(TableName=custom_table_name)
     assert response["Table"]["TableName"] == custom_table_name
-
+    assert response["Table"]["TableStatus"] == ACTIVE
 
 @mock_dynamodb
 def test_create_table_with_database_location(
@@ -506,3 +509,24 @@ def test_update_namespace_properties_overlap_update_removal(_bucket_initialize: 
         test_catalog.update_namespace_properties(database_name, removals, updates)
     # should not modify the properties
     assert test_catalog.load_namespace_properties(database_name) == test_properties
+
+def test_passing_provided_profile() -> None:
+    catalog_name = "test_ddb_catalog"
+    session_props = {
+        "aws_access_key_id": "abc",
+        "aws_secret_access_key": "def",
+        "aws_session_token": "ghi",
+        "region_name": "eu-central-1",
+        "botocore_session": None,
+        "profile_name": None
+    }
+    props = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    props.update(session_props)
+    with mock.patch('boto3.Session', return_value=mock.Mock()) as mock_session:
+        mock_client = mock.Mock()
+        mock_session.return_value.client.return_value = mock_client
+        mock_client.describe_table.return_value = {'Table': {'TableStatus': 'ACTIVE'}}
+        test_catalog = DynamoDbCatalog(catalog_name, **props)
+        assert test_catalog.dynamodb is mock_client
+        mock_session.assert_called_with(**session_props)
+        assert test_catalog.dynamodb is mock_session().client()
