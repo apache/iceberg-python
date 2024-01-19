@@ -81,6 +81,12 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
 )
+from pyiceberg.table.name_mapping import (
+    SCHEMA_NAME_MAPPING_DEFAULT,
+    NameMapping,
+    create_mapping_from_schema,
+    parse_mapping_from_json,
+)
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
     Operation,
@@ -908,6 +914,13 @@ class Table:
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+
+    def name_mapping(self) -> NameMapping:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get(SCHEMA_NAME_MAPPING_DEFAULT):
+            return parse_mapping_from_json(name_mapping_json)
+        else:
+            return create_mapping_from_schema(self.schema())
 
     def append(self, df: pa.Table) -> None:
         """
