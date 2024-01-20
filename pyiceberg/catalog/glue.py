@@ -18,6 +18,7 @@
 
 from typing import (
     Any,
+    Dict,
     List,
     Optional,
     Set,
@@ -28,6 +29,7 @@ from typing import (
 import boto3
 from mypy_boto3_glue.client import GlueClient
 from mypy_boto3_glue.type_defs import (
+    ColumnTypeDef,
     DatabaseInputTypeDef,
     DatabaseTypeDef,
     StorageDescriptorTypeDef,
@@ -62,9 +64,29 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
-from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table.metadata import TableMetadataCommonFields, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    IcebergType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    StringType,
+    StructType,
+    TimestampType,
+    TimeType,
+    UUIDType,
+)
 
 # If Glue should skip archiving an old table version when creating a new version in a commit. By
 # default, Glue archives all old table versions after an UpdateTable call, but Glue has a default
@@ -72,6 +94,10 @@ from pyiceberg.typedef import EMPTY_DICT
 # of commits, it is recommended to set this value to true.
 GLUE_SKIP_ARCHIVE = "glue.skip-archive"
 GLUE_SKIP_ARCHIVE_DEFAULT = True
+
+ICEBERG_FIELD_ID = "iceberg.field.id"
+ICEBERG_FIELD_OPTIONAL = "iceberg.field.optional"
+ICEBERG_FIELD_CURRENT = "iceberg.field.current"
 
 
 def _construct_parameters(
@@ -84,10 +110,92 @@ def _construct_parameters(
     return new_parameters
 
 
+def _type_to_glue_type_string(input_type: IcebergType) -> str:
+    if isinstance(input_type, BooleanType):
+        return "boolean"
+    if isinstance(input_type, IntegerType):
+        return "int"
+    if isinstance(input_type, LongType):
+        return "bigint"
+    if isinstance(input_type, FloatType):
+        return "float"
+    if isinstance(input_type, DoubleType):
+        return "double"
+    if isinstance(input_type, DateType):
+        return "date"
+    if isinstance(
+        input_type,
+        (
+            TimeType,
+            StringType,
+            UUIDType,
+        ),
+    ):
+        return "string"
+    if isinstance(input_type, TimestampType):
+        return "timestamp"
+    if isinstance(
+        input_type,
+        (
+            FixedType,
+            BinaryType,
+        ),
+    ):
+        return "binary"
+    if isinstance(input_type, DecimalType):
+        return f"decimal({input_type.precision},{input_type.scale})"
+    if isinstance(input_type, StructType):
+        name_to_type = ",".join(f"{f.name}:{_type_to_glue_type_string(f.field_type)}" for f in input_type.fields)
+        return f"struct<{name_to_type}>"
+    if isinstance(input_type, ListType):
+        return f"array<{_type_to_glue_type_string(input_type.element_type)}>"
+    if isinstance(input_type, MapType):
+        return f"map<{_type_to_glue_type_string(input_type.key_type)},{_type_to_glue_type_string(input_type.value_type)}>"
+
+    raise ValueError(f"Unknown Type {input_type}")
+
+
+def _to_columns(metadata: TableMetadataCommonFields) -> List[ColumnTypeDef]:
+    results: Dict[str, ColumnTypeDef] = {}
+
+    def _append_to_results(field: NestedField, is_current: bool) -> None:
+        if field.name in results:
+            return
+
+        results[field.name] = cast(
+            ColumnTypeDef,
+            {
+                "Name": field.name,
+                "Type": _type_to_glue_type_string(field.field_type),
+                "Parameters": {
+                    ICEBERG_FIELD_ID: str(field.field_id),
+                    ICEBERG_FIELD_OPTIONAL: str(field.optional).lower(),
+                    ICEBERG_FIELD_CURRENT: str(is_current).lower(),
+                },
+            },
+        )
+        if field.doc:
+            results[field.name]["Comment"] = field.doc
+
+    if current_schema := metadata.schema_by_id(metadata.current_schema_id):
+        for field in current_schema.columns:
+            _append_to_results(field, True)
+
+    for schema in metadata.schemas:
+        if schema.schema_id == metadata.current_schema_id:
+            continue
+        for field in schema.columns:
+            _append_to_results(field, False)
+
+    return list(results.values())
+
+
 def _construct_table_input(
     table_name: str,
     metadata_location: str,
     properties: Properties,
+    metadata: TableMetadataCommonFields,
+    location: Optional[str] = None,
     glue_table: Optional[TableTypeDef] = None,
     prev_metadata_location: Optional[str] = None,
 ) -> TableInputTypeDef:
@@ -95,7 +203,11 @@ def _construct_table_input(
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
+        "StorageDescriptor": {"Columns": _to_columns(metadata)},
     }
+
+    if location:
+        table_input["StorageDescriptor"]["Location"] = location
 
     if "Description" in properties:
         table_input["Description"] = properties["Description"]
@@ -258,7 +370,7 @@ class GlueCatalog(Catalog):
         io = load_file_io(properties=self.properties, location=metadata_location)
         self._write_metadata(metadata, io, metadata_location)
 
-        table_input = _construct_table_input(table_name, metadata_location, properties)
+        table_input = _construct_table_input(table_name, metadata_location, properties, metadata, location)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
@@ -322,6 +434,7 @@ class GlueCatalog(Catalog):
             table_name=table_name,
             metadata_location=new_metadata_location,
             properties=current_table.properties,
+            metadata=updated_metadata,
             glue_table=current_glue_table,
             prev_metadata_location=current_table.metadata_location,
         )
