@@ -14,7 +14,10 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import datetime
 import os
+import uuid
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -59,6 +62,13 @@ def fixture_namespace_properties() -> Properties:
     return TEST_NAMESPACE_PROPERTIES.copy()
 
 
+@pytest.fixture()
+def mock_datetime_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    datetime_mock = MagicMock(wraps=datetime.datetime)
+    datetime_mock.now.return_value = datetime.datetime.fromtimestamp(TEST_TIMESTAMP / 1000.0).astimezone()
+    monkeypatch.setattr(datetime, "datetime", datetime_mock)
+
+
 TEST_TABLE_IDENTIFIER = ("default", "my_table")
 TEST_TABLE_NAMESPACE = "default"
 TEST_NAMESPACE_PROPERTIES = {"location": "s3://warehouse/database/location"}
@@ -71,6 +81,8 @@ TEST_TABLE_SCHEMA = Schema(
 TEST_TABLE_LOCATION = "s3://bucket/test/location"
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"read.split.target.size": "134217728"}
+TEST_TABLE_UUID = uuid.UUID("d20125c8-7284-442c-9aea-15fee620737c")
+TEST_TIMESTAMP = 1602638573874
 MOCK_ENVIRONMENT = {"PYICEBERG_CATALOG__PRODUCTION__URI": "test://doesnotexist"}
 
 
@@ -120,12 +132,14 @@ def test_describe_namespace_does_not_exists(catalog: InMemoryCatalog) -> None:
     assert result.output == "Namespace does not exist: ('doesnotexist',)\n"
 
 
-def test_describe_table(catalog: InMemoryCatalog) -> None:
+@pytest.fixture()
+def test_describe_table(catalog: InMemoryCatalog, mock_datetime_now: None) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
+        table_uuid=TEST_TABLE_UUID,
     )
 
     runner = CliRunner()
@@ -134,7 +148,7 @@ def test_describe_table(catalog: InMemoryCatalog) -> None:
     assert (
         # Strip the whitespace on the end
         "\n".join([line.rstrip() for line in result.output.split("\n")])
-        == """Table format version  1
+        == """Table format version  2
 Metadata location     s3://warehouse/default/my_table/metadata/metadata.json
 Table UUID            d20125c8-7284-442c-9aea-15fee620737c
 Last Updated          1602638573874
@@ -227,6 +241,7 @@ def test_uuid(catalog: InMemoryCatalog) -> None:
         schema=TEST_TABLE_SCHEMA,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
+        table_uuid=TEST_TABLE_UUID,
     )
 
     runner = CliRunner()
@@ -550,12 +565,14 @@ def test_json_describe_namespace_does_not_exists(catalog: InMemoryCatalog) -> No
     assert result.output == """{"type": "NoSuchNamespaceError", "message": "Namespace does not exist: ('doesnotexist',)"}\n"""
 
 
-def test_json_describe_table(catalog: InMemoryCatalog) -> None:
+@pytest.fixture()
+def test_json_describe_table(catalog: InMemoryCatalog, mock_datetime_now: None) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
+        table_uuid=TEST_TABLE_UUID,
     )
 
     runner = CliRunner()
@@ -563,7 +580,7 @@ def test_json_describe_table(catalog: InMemoryCatalog) -> None:
     assert result.exit_code == 0
     assert (
         result.output
-        == """{"identifier":["default","my_table"],"metadata_location":"s3://warehouse/default/my_table/metadata/metadata.json","metadata":{"location":"s3://bucket/test/location","table-uuid":"d20125c8-7284-442c-9aea-15fee620737c","last-updated-ms":1602638573874,"last-column-id":3,"schemas":[{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}],"current-schema-id":0,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{},"snapshots":[{"snapshot-id":1925,"timestamp-ms":1602638573822}],"snapshot-log":[],"metadata-log":[],"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0,"refs":{},"format-version":1,"schema":{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]},"partition-spec":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}}\n"""
+        == """{"identifier":["default","my_table"],"metadata_location":"s3://warehouse/default/my_table/metadata/metadata.json","metadata":{"location":"s3://bucket/test/location","table-uuid":"d20125c8-7284-442c-9aea-15fee620737c","last-updated-ms":1602638573874,"last-column-id":3,"schemas":[{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]}],"current-schema-id":0,"partition-specs":[{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}],"default-spec-id":0,"last-partition-id":1000,"properties":{},"snapshots":[{"snapshot-id":1925,"timestamp-ms":1602638573822}],"snapshot-log":[],"metadata-log":[],"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0,"refs":{},"format-version":2,"schema":{"type":"struct","fields":[{"id":1,"name":"x","type":"long","required":true},{"id":2,"name":"y","type":"long","required":true,"doc":"comment"},{"id":3,"name":"z","type":"long","required":true}],"schema-id":0,"identifier-field-ids":[]},"partition-spec":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}}\n"""
     )
 
 
@@ -634,6 +651,7 @@ def test_json_uuid(catalog: InMemoryCatalog) -> None:
         schema=TEST_TABLE_SCHEMA,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
+        table_uuid=TEST_TABLE_UUID,
     )
 
     runner = CliRunner()

@@ -1,3 +1,4 @@
+import uuid
 from typing import (
     Dict,
     List,
@@ -28,13 +29,13 @@ from pyiceberg.table import (
     CommitTableResponse,
     Table,
 )
-from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
+from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
 
 
 class InMemoryCatalog(Catalog):
-    """An in-memory catalog implementation for testing purposes."""
+    """An in-memory catalog implementation."""
 
     __tables: Dict[Identifier, Table]
     __namespaces: Dict[Identifier, Properties]
@@ -52,6 +53,7 @@ class InMemoryCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        table_uuid: Optional[uuid.UUID] = None,
     ) -> Table:
         identifier = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_from(identifier)
@@ -62,24 +64,24 @@ class InMemoryCatalog(Catalog):
             if namespace not in self.__namespaces:
                 self.__namespaces[namespace] = {}
 
-            new_location = location or f's3://warehouse/{"/".join(identifier)}/data'
-            metadata = TableMetadataV1(**{
-                "format-version": 1,
-                "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
-                "location": new_location,
-                "last-updated-ms": 1602638573874,
-                "last-column-id": schema.highest_field_id,
-                "schema": schema.model_dump(),
-                "partition-spec": partition_spec.model_dump()["fields"],
-                "properties": properties,
-                "current-snapshot-id": -1,
-                "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
-            })
+            if not location:
+                location = f's3://warehouse/{"/".join(identifier)}/data'
+
+            metadata_location = f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json'
+
+            metadata = new_table_metadata(
+                schema=schema,
+                partition_spec=partition_spec,
+                sort_order=sort_order,
+                location=location,
+                properties=properties,
+                table_uuid=table_uuid,
+            )
             table = Table(
                 identifier=identifier,
                 metadata=metadata,
-                metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                io=load_file_io(),
+                metadata_location=metadata_location,
+                io=self._load_file_io(properties=metadata.properties, location=metadata_location),
                 catalog=self,
             )
             self.__tables[identifier] = table
@@ -109,7 +111,7 @@ class InMemoryCatalog(Catalog):
                     identifier=identifier,
                     metadata=new_metadata,
                     metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                    io=load_file_io(),
+                    io=self._load_file_io(properties=new_metadata.properties, location=metadata_location),
                     catalog=self,
                 )
 
@@ -154,7 +156,7 @@ class InMemoryCatalog(Catalog):
             identifier=to_identifier,
             metadata=table.metadata,
             metadata_location=table.metadata_location,
-            io=load_file_io(),
+            io=self._load_file_io(properties=table.metadata.properties, location=table.metadata_location),
             catalog=self,
         )
         return self.__tables[to_identifier]
