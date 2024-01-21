@@ -20,18 +20,19 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSchemaUpdate,
     CommitTableRequest,
     CommitTableResponse,
     Table,
+    update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadata, new_table_metadata
+from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
+
+DEFAULT_WAREHOUSE_LOCATION = "file:///tmp/warehouse"
 
 
 class InMemoryCatalog(Catalog):
@@ -40,8 +41,10 @@ class InMemoryCatalog(Catalog):
     __tables: Dict[Identifier, Table]
     __namespaces: Dict[Identifier, Properties]
 
-    def __init__(self, name: str, **properties: str) -> None:
+    def __init__(self, name: str, warehouse_location: Optional[str] = None, **properties: str) -> None:
         super().__init__(name, **properties)
+
+        self._warehouse_location = warehouse_location or DEFAULT_WAREHOUSE_LOCATION
         self.__tables = {}
         self.__namespaces = {}
 
@@ -64,10 +67,11 @@ class InMemoryCatalog(Catalog):
             if namespace not in self.__namespaces:
                 self.__namespaces[namespace] = {}
 
-            if not location:
-                location = f's3://warehouse/{"/".join(identifier)}/data'
+            # if not location:
+            location = f'{self._warehouse_location}/{"/".join(identifier)}'
 
-            metadata_location = f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json'
+            # _get_default_warehouse_location
+            metadata_location = f'{self._warehouse_location}/{"/".join(identifier)}/metadata/metadata.json'
 
             metadata = new_table_metadata(
                 schema=schema,
@@ -91,37 +95,29 @@ class InMemoryCatalog(Catalog):
         raise NotImplementedError
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        new_metadata: Optional[TableMetadata] = None
-        metadata_location = ""
-        for update in table_request.updates:
-            if isinstance(update, AddSchemaUpdate):
-                add_schema_update: AddSchemaUpdate = update
-                identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
-                table = self.__tables[identifier]
-                new_metadata = new_table_metadata(
-                    add_schema_update.schema_,
-                    table.metadata.partition_specs[0],
-                    table.sort_order(),
-                    table.location(),
-                    table.properties,
-                    table.metadata.table_uuid,
-                )
-
-                table = Table(
-                    identifier=identifier,
-                    metadata=new_metadata,
-                    metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                    io=self._load_file_io(properties=new_metadata.properties, location=metadata_location),
-                    catalog=self,
-                )
-
-                self.__tables[identifier] = table
-                metadata_location = f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json'
-
-        return CommitTableResponse(
-            metadata=new_metadata.model_dump() if new_metadata else {},
-            metadata_location=metadata_location if metadata_location else "",
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
+        current_table = self.load_table(identifier_tuple)
+        base_metadata = current_table.metadata
+
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        # update table state
+        current_table.metadata = updated_metadata
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         identifier = self.identifier_to_tuple_without_catalog(identifier)
