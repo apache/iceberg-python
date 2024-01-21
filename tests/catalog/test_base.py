@@ -18,6 +18,8 @@
 
 
 import pyarrow as pa
+from pathlib import PosixPath
+
 import pytest
 from pytest_lazyfixture import lazy_fixture
 
@@ -48,8 +50,10 @@ from pyiceberg.types import IntegerType, LongType, NestedField
 
 
 @pytest.fixture
-def catalog() -> InMemoryCatalog:
-    return InMemoryCatalog("test.in.memory.catalog", **{"test.key": "test.value"})
+def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
+    return InMemoryCatalog(
+        "test.in.memory.catalog", warehouse_location=tmp_path.absolute().as_posix(), **{"test.key": "test.value"}
+    )
 
 
 TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
