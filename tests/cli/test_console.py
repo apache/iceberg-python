@@ -264,7 +264,6 @@ def test_location(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -272,6 +271,20 @@ def test_location(catalog: InMemoryCatalog) -> None:
     result = runner.invoke(run, ["location", "default.my_table"])
     assert result.exit_code == 0
     assert result.output == f"""{DEFAULT_WAREHOUSE_LOCATION}/default/my_table\n"""
+
+
+def test_location_override(catalog: InMemoryCatalog) -> None:
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        location=TEST_TABLE_LOCATION,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["location", "default.my_table"])
+    assert result.exit_code == 0
+    assert result.output == f"""{TEST_TABLE_LOCATION}\n"""
 
 
 def test_location_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -674,7 +687,6 @@ def test_json_location(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -682,6 +694,20 @@ def test_json_location(catalog: InMemoryCatalog) -> None:
     result = runner.invoke(run, ["--output=json", "location", "default.my_table"])
     assert result.exit_code == 0
     assert result.output == f'"{DEFAULT_WAREHOUSE_LOCATION}/default/my_table"\n'
+
+
+def test_json_location_override(catalog: InMemoryCatalog) -> None:
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        location=TEST_TABLE_LOCATION,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["--output=json", "location", "default.my_table"])
+    assert result.exit_code == 0
+    assert result.output == f'"{TEST_TABLE_LOCATION}"\n'
 
 
 def test_json_location_does_not_exists(catalog: InMemoryCatalog) -> None:

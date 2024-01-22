@@ -20,6 +20,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -41,12 +42,11 @@ class InMemoryCatalog(Catalog):
     __tables: Dict[Identifier, Table]
     __namespaces: Dict[Identifier, Properties]
 
-    def __init__(self, name: str, warehouse_location: Optional[str] = None, **properties: str) -> None:
+    def __init__(self, name: str, **properties: str) -> None:
         super().__init__(name, **properties)
-
-        self._warehouse_location = warehouse_location or DEFAULT_WAREHOUSE_LOCATION
         self.__tables = {}
         self.__namespaces = {}
+        self._warehouse_location = properties.get(WAREHOUSE, None) or DEFAULT_WAREHOUSE_LOCATION
 
     def create_table(
         self,
@@ -67,10 +67,9 @@ class InMemoryCatalog(Catalog):
             if namespace not in self.__namespaces:
                 self.__namespaces[namespace] = {}
 
-            # if not location:
-            location = f'{self._warehouse_location}/{"/".join(identifier)}'
+            if not location:
+                location = f'{self._warehouse_location}/{"/".join(identifier)}'
 
-            # _get_default_warehouse_location
             metadata_location = f'{self._warehouse_location}/{"/".join(identifier)}/metadata/metadata.json'
 
             metadata = new_table_metadata(

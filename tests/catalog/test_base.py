@@ -35,6 +35,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -51,9 +52,7 @@ from pyiceberg.types import IntegerType, LongType, NestedField
 
 @pytest.fixture
 def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
-    return InMemoryCatalog(
-        "test.in.memory.catalog", warehouse_location=tmp_path.absolute().as_posix(), **{"test.key": "test.value"}
-    )
+    return InMemoryCatalog("test.in.memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
 
 
 TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
@@ -78,7 +77,6 @@ def given_catalog_has_a_table(catalog: InMemoryCatalog) -> Table:
     return catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -121,6 +119,16 @@ def test_name_from_str() -> None:
 
 
 def test_create_table(catalog: InMemoryCatalog) -> None:
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+
+
+def test_create_table_override(catalog: InMemoryCatalog) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
