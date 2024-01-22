@@ -25,7 +25,6 @@ import pytest
 from pyarrow.fs import S3FileSystem
 
 from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import (
     And,
@@ -101,8 +100,6 @@ def create_table(catalog: Catalog) -> Table:
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
 def test_table_properties(catalog: Catalog) -> None:
-    if isinstance(catalog, HiveCatalog):
-        pytest.skip("Not yet implemented: https://github.com/apache/iceberg-python/issues/275")
     table = create_table(catalog)
 
     assert table.properties == DEFAULT_PROPERTIES
@@ -398,8 +395,6 @@ def test_filter_on_new_column(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
 def test_upgrade_table_version(catalog: Catalog) -> None:
-    if isinstance(catalog, HiveCatalog):
-        pytest.skip("Not yet implemented: https://github.com/apache/iceberg-python/issues/274")
     table_test_table_version = catalog.load_table("default.test_table_version")
 
     assert table_test_table_version.format_version == 1
