@@ -145,7 +145,7 @@ def load_sql(name: str, conf: Properties) -> Catalog:
 
 
 def load_memory(name: str, conf: Properties) -> Catalog:
-    from pyiceberg.catalog.memory import InMemoryCatalog
+    from pyiceberg.catalog.in_memory import InMemoryCatalog
 
     return InMemoryCatalog(name, **conf)
 

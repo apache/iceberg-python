@@ -27,7 +27,7 @@ from pyiceberg.catalog import (
     Catalog,
     PropertiesUpdateSummary,
 )
-from pyiceberg.catalog.memory import InMemoryCatalog
+from pyiceberg.catalog.in_memory import InMemoryCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -52,7 +52,7 @@ from pyiceberg.types import IntegerType, LongType, NestedField
 
 @pytest.fixture
 def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
-    return InMemoryCatalog("test.in.memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
+    return InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
 
 
 TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
@@ -486,4 +486,4 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
 
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
-    assert s == "test.in.memory.catalog (<class 'pyiceberg.catalog.memory.InMemoryCatalog'>)"
+    assert s == "test.in_memory.catalog (<class 'pyiceberg.catalog.in_memory.InMemoryCatalog'>)"

@@ -23,7 +23,7 @@ import pytest
 from click.testing import CliRunner
 from pytest_mock import MockFixture
 
-from pyiceberg.catalog.memory import DEFAULT_WAREHOUSE_LOCATION
+from pyiceberg.catalog.in_memory import DEFAULT_WAREHOUSE_LOCATION
 from pyiceberg.cli.console import run
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -53,7 +53,7 @@ def env_vars(mocker: MockFixture) -> None:
 
 @pytest.fixture(name="catalog")
 def fixture_catalog(mocker: MockFixture) -> InMemoryCatalog:
-    in_memory_catalog = InMemoryCatalog("test.in.memory.catalog", **{"test.key": "test.value"})
+    in_memory_catalog = InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
     mocker.patch("pyiceberg.cli.console.load_catalog", return_value=in_memory_catalog)
     return in_memory_catalog
 
