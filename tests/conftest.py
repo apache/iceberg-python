@@ -27,6 +27,7 @@ retrieved using `request.getfixturevalue(fixture_name)`.
 
 import os
 import re
+import socket
 import string
 import uuid
 from datetime import datetime
@@ -1587,7 +1588,7 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
     os.environ.pop("AWS_DEFAULT_REGION")
 
 
-MOTO_SERVER = ThreadedMotoServer(ip_address="localhost", port=5000)
+MOTO_SERVER = ThreadedMotoServer(ip_address="localhost", port=5001)
 
 
 def pytest_sessionfinish(
@@ -1600,8 +1601,15 @@ def pytest_sessionfinish(
 
 @pytest.fixture(scope="session")
 def moto_server() -> ThreadedMotoServer:
+    # this will throw an exception if the port is already in use
+    is_port_in_use(MOTO_SERVER._ip_address, MOTO_SERVER._port)
     MOTO_SERVER.start()
     return MOTO_SERVER
+
+
+def is_port_in_use(ip_address: str, port: int) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((ip_address, port))
 
 
 @pytest.fixture(scope="session")
