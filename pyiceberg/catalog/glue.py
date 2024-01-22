@@ -195,7 +195,6 @@ def _construct_table_input(
     metadata_location: str,
     properties: Properties,
     metadata: TableMetadataCommonFields,
-    location: Optional[str] = None,
     glue_table: Optional[TableTypeDef] = None,
     prev_metadata_location: Optional[str] = None,
 ) -> TableInputTypeDef:
@@ -203,11 +202,11 @@ def _construct_table_input(
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
-        "StorageDescriptor": {"Columns": _to_columns(metadata)},
+        "StorageDescriptor": {
+            "Columns": _to_columns(metadata),
+            "Location": metadata.location,
+        },
     }
-
-    if location:
-        table_input["StorageDescriptor"]["Location"] = location
 
     if "Description" in properties:
         table_input["Description"] = properties["Description"]
@@ -370,7 +369,7 @@ class GlueCatalog(Catalog):
         io = load_file_io(properties=self.properties, location=metadata_location)
         self._write_metadata(metadata, io, metadata_location)
 
-        table_input = _construct_table_input(table_name, metadata_location, properties, metadata, location)
+        table_input = _construct_table_input(table_name, metadata_location, properties, metadata)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 

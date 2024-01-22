@@ -585,13 +585,15 @@ def test_commit_table_update_schema(
         DatabaseName=database_name,
         Name=table_name,
     )
-    columns = table_info["Table"]["StorageDescriptor"]["Columns"]
+    storage_descriptor = table_info["Table"]["StorageDescriptor"]
+    columns = storage_descriptor["Columns"]
     assert len(columns) == len(table_schema_nested.fields) + 1
     assert columns[-1] == {
         "Name": "b",
         "Type": "int",
         "Parameters": {"iceberg.field.id": "18", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
     }
+    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
 
 
 @mock_glue
