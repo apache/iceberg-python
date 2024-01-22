@@ -64,7 +64,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
-from pyiceberg.table.metadata import TableMetadataCommonFields, new_table_metadata
+from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
 from pyiceberg.types import (
@@ -155,7 +155,7 @@ def _type_to_glue_type_string(input_type: IcebergType) -> str:
     raise ValueError(f"Unknown Type {input_type}")
 
 
-def _to_columns(metadata: TableMetadataCommonFields) -> List[ColumnTypeDef]:
+def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
     results: Dict[str, ColumnTypeDef] = {}
 
     def _append_to_results(field: NestedField, is_current: bool) -> None:
@@ -194,7 +194,7 @@ def _construct_table_input(
     table_name: str,
     metadata_location: str,
     properties: Properties,
-    metadata: TableMetadataCommonFields,
+    metadata: TableMetadata,
     glue_table: Optional[TableTypeDef] = None,
     prev_metadata_location: Optional[str] = None,
 ) -> TableInputTypeDef:
