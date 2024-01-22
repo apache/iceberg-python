@@ -61,7 +61,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import TableMetadata, new_table_metadata
@@ -75,12 +75,12 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
-    IcebergType,
     IntegerType,
     ListType,
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
     TimestampType,
@@ -110,49 +110,44 @@ def _construct_parameters(
     return new_parameters
 
 
-def _type_to_glue_type_string(input_type: IcebergType) -> str:
-    if isinstance(input_type, BooleanType):
-        return "boolean"
-    if isinstance(input_type, IntegerType):
-        return "int"
-    if isinstance(input_type, LongType):
-        return "bigint"
-    if isinstance(input_type, FloatType):
-        return "float"
-    if isinstance(input_type, DoubleType):
-        return "double"
-    if isinstance(input_type, DateType):
-        return "date"
-    if isinstance(
-        input_type,
-        (
-            TimeType,
-            StringType,
-            UUIDType,
-        ),
-    ):
-        return "string"
-    if isinstance(input_type, TimestampType):
-        return "timestamp"
-    if isinstance(
-        input_type,
-        (
-            FixedType,
-            BinaryType,
-        ),
-    ):
-        return "binary"
-    if isinstance(input_type, DecimalType):
-        return f"decimal({input_type.precision},{input_type.scale})"
-    if isinstance(input_type, StructType):
-        name_to_type = ",".join(f"{f.name}:{_type_to_glue_type_string(f.field_type)}" for f in input_type.fields)
-        return f"struct<{name_to_type}>"
-    if isinstance(input_type, ListType):
-        return f"array<{_type_to_glue_type_string(input_type.element_type)}>"
-    if isinstance(input_type, MapType):
-        return f"map<{_type_to_glue_type_string(input_type.key_type)},{_type_to_glue_type_string(input_type.value_type)}>"
+GLUE_PRIMITIVE_TYPES = {
+    BooleanType: "boolean",
+    IntegerType: "int",
+    LongType: "bigint",
+    FloatType: "float",
+    DoubleType: "double",
+    DateType: "date",
+    TimeType: "string",
+    StringType: "string",
+    UUIDType: "string",
+    TimestampType: "timestamp",
+    FixedType: "binary",
+    BinaryType: "binary",
+}
 
-    raise ValueError(f"Unknown Type {input_type}")
+
+class SchemaToGlueType(SchemaVisitor[str]):
+    def schema(self, schema: Schema, struct_result: str) -> str:
+        return struct_result
+
+    def struct(self, struct: StructType, field_results: List[str]) -> str:
+        return f"struct<{','.join(field_results)}>"
+
+    def field(self, field: NestedField, field_result: str) -> str:
+        return f"{field.name}:{field_result}"
+
+    def list(self, list_type: ListType, element_result: str) -> str:
+        return f"array<{element_result}>"
+
+    def map(self, map_type: MapType, key_result: str, value_result: str) -> str:
+        return f"map<{key_result},{value_result}>"
+
+    def primitive(self, primitive: PrimitiveType) -> str:
+        if isinstance(primitive, DecimalType):
+            return f"decimal({primitive.precision},{primitive.scale})"
+        if (primitive_type := type(primitive)) not in GLUE_PRIMITIVE_TYPES:
+            raise ValueError(f"Unknown primitive type: {primitive}")
+        return GLUE_PRIMITIVE_TYPES[primitive_type]
 
 
 def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
@@ -166,7 +161,7 @@ def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
             ColumnTypeDef,
             {
                 "Name": field.name,
-                "Type": _type_to_glue_type_string(field.field_type),
+                "Type": visit(field.field_type, SchemaToGlueType()),
                 "Parameters": {
                     ICEBERG_FIELD_ID: str(field.field_id),
                     ICEBERG_FIELD_OPTIONAL: str(field.optional).lower(),
