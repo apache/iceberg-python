@@ -101,8 +101,6 @@ def create_table(catalog: Catalog) -> Table:
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
 def test_table_properties(catalog: Catalog) -> None:
-    if isinstance(catalog, HiveCatalog):
-        pytest.skip("Not yet implemented: https://github.com/apache/iceberg-python/issues/275")
     table = create_table(catalog)
 
     assert table.properties == DEFAULT_PROPERTIES
