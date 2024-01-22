@@ -407,6 +407,7 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
         NestedField(2, "y", LongType(), doc="comment"),
         NestedField(3, "z", LongType()),
         NestedField(4, "add", LongType()),
+        schema_id=1,
     )
 
     # When
@@ -422,8 +423,10 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
 
     # Then
     assert response.metadata.table_uuid == given_table.metadata.table_uuid
-    assert len(response.metadata.schemas) == 1
-    assert response.metadata.schemas[0] == new_schema
+    assert given_table.metadata.current_schema_id == 1
+    assert len(response.metadata.schemas) == 2
+    assert response.metadata.schemas[1] == new_schema.model_copy(update={"schema_id": 1})
+    assert given_table.metadata.last_column_id == new_schema.highest_field_id
 
 
 def test_add_column(catalog: InMemoryCatalog) -> None:
