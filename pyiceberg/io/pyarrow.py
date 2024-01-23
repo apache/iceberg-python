@@ -105,7 +105,11 @@ from pyiceberg.io import (
     OutputFile,
     OutputStream,
 )
-from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    FileFormat,
+)
 from pyiceberg.schema import (
     PartnerAccessor,
     PreOrderSchemaVisitor,
@@ -119,8 +123,10 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
+from pyiceberg.table import WriteTask
+from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, Properties
+from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -156,10 +162,12 @@ logger = logging.getLogger(__name__)
 ONE_MEGABYTE = 1024 * 1024
 BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
-FIELD_ID = "field_id"
-DOC = "doc"
-PYARROW_FIELD_ID_KEYS = [b"PARQUET:field_id", b"field_id"]
-PYARROW_FIELD_DOC_KEYS = [b"PARQUET:field_doc", b"field_doc", b"doc"]
+# The PARQUET: in front means that it is Parquet specific, in this case the field_id
+PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
+PYARROW_FIELD_DOC_KEY = b"doc"
+LIST_ELEMENT_NAME = "element"
+MAP_KEY_NAME = "key"
+MAP_VALUE_NAME = "value"
 
 T = TypeVar("T")
 
@@ -321,7 +329,7 @@ class PyArrowFileIO(FileIO):
         if scheme in {"s3", "s3a", "s3n"}:
             from pyarrow.fs import S3FileSystem
 
-            client_kwargs = {
+            client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
                 "access_key": self.properties.get(S3_ACCESS_KEY_ID),
                 "secret_key": self.properties.get(S3_SECRET_ACCESS_KEY),
@@ -333,7 +341,7 @@ class PyArrowFileIO(FileIO):
                 client_kwargs["proxy_options"] = proxy_uri
 
             if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-                client_kwargs["connect_timeout"] = connect_timeout
+                client_kwargs["connect_timeout"] = float(connect_timeout)
 
             return S3FileSystem(**client_kwargs)
         elif scheme == "hdfs":
@@ -461,7 +469,9 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             name=field.name,
             type=field_result,
             nullable=field.optional,
-            metadata={DOC: field.doc, FIELD_ID: str(field.field_id)} if field.doc else {FIELD_ID: str(field.field_id)},
+            metadata={PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
+            if field.doc
+            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
         )
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
@@ -625,8 +635,16 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], rows:
     return np.setdiff1d(np.arange(rows), all_chunks, assume_unique=False)
 
 
-def pyarrow_to_schema(schema: pa.Schema) -> Schema:
-    visitor = _ConvertToIceberg()
+def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = None) -> Schema:
+    has_ids = visit_pyarrow(schema, _HasIds())
+    if has_ids:
+        visitor = _ConvertToIceberg()
+    elif name_mapping is not None:
+        visitor = _ConvertToIceberg(name_mapping=name_mapping)
+    else:
+        raise ValueError(
+            "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
+        )
     return visit_pyarrow(schema, visitor)
 
 
@@ -647,50 +665,47 @@ def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisi
 
 
 @visit_pyarrow.register(pa.Schema)
-def _(obj: pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> Optional[T]:
-    struct_results: List[Optional[T]] = []
-    for field in obj:
-        visitor.before_field(field)
-        struct_result = visit_pyarrow(field.type, visitor)
-        visitor.after_field(field)
-        struct_results.append(struct_result)
-
-    return visitor.schema(obj, struct_results)
+def _(obj: pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> T:
+    return visitor.schema(obj, visit_pyarrow(pa.struct(obj), visitor))
 
 
 @visit_pyarrow.register(pa.StructType)
-def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> Optional[T]:
-    struct_results: List[Optional[T]] = []
+def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
+    results = []
+
     for field in obj:
         visitor.before_field(field)
-        struct_result = visit_pyarrow(field.type, visitor)
+        result = visit_pyarrow(field.type, visitor)
+        results.append(visitor.field(field, result))
         visitor.after_field(field)
-        struct_results.append(struct_result)
 
-    return visitor.struct(obj, struct_results)
+    return visitor.struct(obj, results)
 
 
 @visit_pyarrow.register(pa.ListType)
-def _(obj: pa.ListType, visitor: PyArrowSchemaVisitor[T]) -> Optional[T]:
-    visitor.before_field(obj.value_field)
-    list_result = visit_pyarrow(obj.value_field.type, visitor)
-    visitor.after_field(obj.value_field)
-    return visitor.list(obj, list_result)
+def _(obj: pa.ListType, visitor: PyArrowSchemaVisitor[T]) -> T:
+    visitor.before_list_element(obj.value_field)
+    result = visit_pyarrow(obj.value_type, visitor)
+    visitor.after_list_element(obj.value_field)
+
+    return visitor.list(obj, result)
 
 
 @visit_pyarrow.register(pa.MapType)
-def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> Optional[T]:
-    visitor.before_field(obj.key_field)
-    key_result = visit_pyarrow(obj.key_field.type, visitor)
-    visitor.after_field(obj.key_field)
-    visitor.before_field(obj.item_field)
-    value_result = visit_pyarrow(obj.item_field.type, visitor)
-    visitor.after_field(obj.item_field)
+def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:
+    visitor.before_map_key(obj.key_field)
+    key_result = visit_pyarrow(obj.key_type, visitor)
+    visitor.after_map_key(obj.key_field)
+
+    visitor.before_map_value(obj.item_field)
+    value_result = visit_pyarrow(obj.item_type, visitor)
+    visitor.after_map_value(obj.item_field)
+
     return visitor.map(obj, key_result, value_result)
 
 
 @visit_pyarrow.register(pa.DataType)
-def _(obj: pa.DataType, visitor: PyArrowSchemaVisitor[T]) -> Optional[T]:
+def _(obj: pa.DataType, visitor: PyArrowSchemaVisitor[T]) -> T:
     if pa.types.is_nested(obj):
         raise TypeError(f"Expected primitive type, got: {type(obj)}")
     return visitor.primitive(obj)
@@ -703,77 +718,135 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
     def after_field(self, field: pa.Field) -> None:
         """Override this method to perform an action immediately after visiting a field."""
 
+    def before_list_element(self, element: pa.Field) -> None:
+        """Override this method to perform an action immediately before visiting an element within a ListType."""
+
+    def after_list_element(self, element: pa.Field) -> None:
+        """Override this method to perform an action immediately after visiting an element within a ListType."""
+
+    def before_map_key(self, key: pa.Field) -> None:
+        """Override this method to perform an action immediately before visiting a key within a MapType."""
+
+    def after_map_key(self, key: pa.Field) -> None:
+        """Override this method to perform an action immediately after visiting a key within a MapType."""
+
+    def before_map_value(self, value: pa.Field) -> None:
+        """Override this method to perform an action immediately before visiting a value within a MapType."""
+
+    def after_map_value(self, value: pa.Field) -> None:
+        """Override this method to perform an action immediately after visiting a value within a MapType."""
+
     @abstractmethod
-    def schema(self, schema: pa.Schema, field_results: List[Optional[T]]) -> Optional[T]:
+    def schema(self, schema: pa.Schema, struct_result: T) -> T:
         """Visit a schema."""
 
     @abstractmethod
-    def struct(self, struct: pa.StructType, field_results: List[Optional[T]]) -> Optional[T]:
+    def struct(self, struct: pa.StructType, field_results: List[T]) -> T:
         """Visit a struct."""
 
     @abstractmethod
-    def list(self, list_type: pa.ListType, element_result: Optional[T]) -> Optional[T]:
+    def field(self, field: pa.Field, field_result: T) -> T:
+        """Visit a field."""
+
+    @abstractmethod
+    def list(self, list_type: pa.ListType, element_result: T) -> T:
         """Visit a list."""
 
     @abstractmethod
-    def map(self, map_type: pa.MapType, key_result: Optional[T], value_result: Optional[T]) -> Optional[T]:
+    def map(self, map_type: pa.MapType, key_result: T, value_result: T) -> T:
         """Visit a map."""
 
     @abstractmethod
-    def primitive(self, primitive: pa.DataType) -> Optional[T]:
+    def primitive(self, primitive: pa.DataType) -> T:
         """Visit a primitive type."""
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    for pyarrow_field_id_key in PYARROW_FIELD_ID_KEYS:
-        if field_id_str := field.metadata.get(pyarrow_field_id_key):
-            return int(field_id_str.decode())
-    return None
+    return (
+        int(field_id_str.decode())
+        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
+        else None
+    )
 
 
-def _get_field_doc(field: pa.Field) -> Optional[str]:
-    for pyarrow_doc_key in PYARROW_FIELD_DOC_KEYS:
-        if doc_str := field.metadata.get(pyarrow_doc_key):
-            return doc_str.decode()
-    return None
+class _HasIds(PyArrowSchemaVisitor[bool]):
+    def schema(self, schema: pa.Schema, struct_result: bool) -> bool:
+        return struct_result
 
+    def struct(self, struct: pa.StructType, field_results: List[bool]) -> bool:
+        return all(field_results)
 
-class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
-    def _convert_fields(self, arrow_fields: Iterable[pa.Field], field_results: List[Optional[IcebergType]]) -> List[NestedField]:
-        fields = []
-        for i, field in enumerate(arrow_fields):
-            field_id = _get_field_id(field)
-            field_doc = _get_field_doc(field)
-            field_type = field_results[i]
-            if field_type is not None and field_id is not None:
-                fields.append(NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc))
-        return fields
+    def field(self, field: pa.Field, field_result: bool) -> bool:
+        return all([_get_field_id(field) is not None, field_result])
 
-    def schema(self, schema: pa.Schema, field_results: List[Optional[IcebergType]]) -> Schema:
-        return Schema(*self._convert_fields(schema, field_results))
-
-    def struct(self, struct: pa.StructType, field_results: List[Optional[IcebergType]]) -> IcebergType:
-        return StructType(*self._convert_fields(struct, field_results))
-
-    def list(self, list_type: pa.ListType, element_result: Optional[IcebergType]) -> Optional[IcebergType]:
+    def list(self, list_type: pa.ListType, element_result: bool) -> bool:
         element_field = list_type.value_field
         element_id = _get_field_id(element_field)
-        if element_result is not None and element_id is not None:
-            return ListType(element_id, element_result, element_required=not element_field.nullable)
-        return None
+        return element_result and element_id is not None
 
-    def map(
-        self, map_type: pa.MapType, key_result: Optional[IcebergType], value_result: Optional[IcebergType]
-    ) -> Optional[IcebergType]:
+    def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:
         key_field = map_type.key_field
         key_id = _get_field_id(key_field)
         value_field = map_type.item_field
         value_id = _get_field_id(value_field)
-        if key_result is not None and value_result is not None and key_id is not None and value_id is not None:
-            return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
-        return None
+        return all([key_id is not None, value_id is not None, key_result, value_result])
 
-    def primitive(self, primitive: pa.DataType) -> IcebergType:
+    def primitive(self, primitive: pa.DataType) -> bool:
+        return True
+
+
+class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
+    """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
+
+    _field_names: List[str]
+    _name_mapping: Optional[NameMapping]
+
+    def __init__(self, name_mapping: Optional[NameMapping] = None) -> None:
+        self._field_names = []
+        self._name_mapping = name_mapping
+
+    def _current_path(self) -> str:
+        return ".".join(self._field_names)
+
+    def _field_id(self, field: pa.Field) -> int:
+        if self._name_mapping:
+            return self._name_mapping.find(self._current_path()).field_id
+        elif (field_id := _get_field_id(field)) is not None:
+            return field_id
+        else:
+            raise ValueError(f"Cannot convert {field} to Iceberg Field as field_id is empty.")
+
+    def schema(self, schema: pa.Schema, struct_result: StructType) -> Schema:
+        return Schema(*struct_result.fields)
+
+    def struct(self, struct: pa.StructType, field_results: List[NestedField]) -> StructType:
+        return StructType(*field_results)
+
+    def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:
+        field_id = self._field_id(field)
+        field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
+        field_type = field_result
+        return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
+
+    def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
+        element_field = list_type.value_field
+        self._field_names.append(LIST_ELEMENT_NAME)
+        element_id = self._field_id(element_field)
+        self._field_names.pop()
+        return ListType(element_id, element_result, element_required=not element_field.nullable)
+
+    def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:
+        key_field = map_type.key_field
+        self._field_names.append(MAP_KEY_NAME)
+        key_id = self._field_id(key_field)
+        self._field_names.pop()
+        value_field = map_type.item_field
+        self._field_names.append(MAP_VALUE_NAME)
+        value_id = self._field_id(value_field)
+        self._field_names.pop()
+        return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
+
+    def primitive(self, primitive: pa.DataType) -> PrimitiveType:
         if pa.types.is_boolean(primitive):
             return BooleanType()
         elif pa.types.is_int32(primitive):
@@ -808,6 +881,30 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
         raise TypeError(f"Unsupported type: {primitive}")
 
+    def before_field(self, field: pa.Field) -> None:
+        self._field_names.append(field.name)
+
+    def after_field(self, field: pa.Field) -> None:
+        self._field_names.pop()
+
+    def before_list_element(self, element: pa.Field) -> None:
+        self._field_names.append(LIST_ELEMENT_NAME)
+
+    def after_list_element(self, element: pa.Field) -> None:
+        self._field_names.pop()
+
+    def before_map_key(self, key: pa.Field) -> None:
+        self._field_names.append(MAP_KEY_NAME)
+
+    def after_map_key(self, element: pa.Field) -> None:
+        self._field_names.pop()
+
+    def before_map_value(self, value: pa.Field) -> None:
+        self._field_names.append(MAP_VALUE_NAME)
+
+    def after_map_value(self, element: pa.Field) -> None:
+        self._field_names.pop()
+
 
 def _task_to_table(
     fs: FileSystem,
@@ -819,6 +916,7 @@ def _task_to_table(
     case_sensitive: bool,
     row_counts: List[int],
     limit: Optional[int] = None,
+    name_mapping: Optional[NameMapping] = None,
 ) -> Optional[pa.Table]:
     if limit and sum(row_counts) >= limit:
         return None
@@ -831,9 +929,9 @@ def _task_to_table(
         schema_raw = None
         if metadata := physical_schema.metadata:
             schema_raw = metadata.get(ICEBERG_SCHEMA)
-        # TODO: if field_ids are not present, Name Mapping should be implemented to look them up in the table schema,
-        #  see https://github.com/apache/iceberg/issues/7451
-        file_schema = Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema)
+        file_schema = (
+            Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
+        )
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
@@ -970,6 +1068,7 @@ def project_table(
             case_sensitive,
             row_counts,
             limit,
+            table.name_mapping(),
         )
         for task in tasks
     ]
@@ -1458,9 +1557,8 @@ def parquet_path_to_id_mapping(
 
 
 def fill_parquet_file_metadata(
-    df: DataFile,
+    data_file: DataFile,
     parquet_metadata: pq.FileMetaData,
-    file_size: int,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
 ) -> None:
@@ -1468,8 +1566,6 @@ def fill_parquet_file_metadata(
     Compute and fill the following fields of the DataFile object.
 
     - file_format
-    - record_count
-    - file_size_in_bytes
     - column_sizes
     - value_counts
     - null_value_counts
@@ -1479,11 +1575,8 @@ def fill_parquet_file_metadata(
     - split_offsets
 
     Args:
-        df (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
+        data_file (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
         parquet_metadata (pyarrow.parquet.FileMetaData): A pyarrow metadata object.
-        file_size (int): The total compressed file size cannot be retrieved from the metadata and hence has to
-            be passed here. Depending on the kind of file system and pyarrow library call used, different
-            ways to obtain this value might be appropriate.
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
     """
@@ -1580,13 +1673,56 @@ def fill_parquet_file_metadata(
         del upper_bounds[field_id]
         del null_value_counts[field_id]
 
-    df.file_format = FileFormat.PARQUET
-    df.record_count = parquet_metadata.num_rows
-    df.file_size_in_bytes = file_size
-    df.column_sizes = column_sizes
-    df.value_counts = value_counts
-    df.null_value_counts = null_value_counts
-    df.nan_value_counts = nan_value_counts
-    df.lower_bounds = lower_bounds
-    df.upper_bounds = upper_bounds
-    df.split_offsets = split_offsets
+    data_file.record_count = parquet_metadata.num_rows
+    data_file.column_sizes = column_sizes
+    data_file.value_counts = value_counts
+    data_file.null_value_counts = null_value_counts
+    data_file.nan_value_counts = nan_value_counts
+    data_file.lower_bounds = lower_bounds
+    data_file.upper_bounds = upper_bounds
+    data_file.split_offsets = split_offsets
+
+
+def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+    task = next(tasks)
+
+    try:
+        _ = next(tasks)
+        # If there are more tasks, raise an exception
+        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
+    except StopIteration:
+        pass
+
+    file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
+    file_schema = schema_to_pyarrow(table.schema())
+
+    collected_metrics: List[pq.FileMetaData] = []
+    fo = table.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+            writer.write_table(task.df)
+
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        file_size_in_bytes=len(fo),
+        sort_order_id=task.sort_order_id,
+        # Just copy these from the table for now
+        spec_id=table.spec().spec_id,
+        equality_ids=None,
+        key_metadata=None,
+    )
+
+    if len(collected_metrics) != 1:
+        # One file has been written
+        raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
+
+    fill_parquet_file_metadata(
+        data_file=data_file,
+        parquet_metadata=collected_metrics[0],
+        stats_columns=compute_statistics_plan(table.schema(), table.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+    return iter([data_file])

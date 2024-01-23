@@ -27,6 +27,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 from pyiceberg.catalog import Identifier
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -42,6 +43,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.types import IntegerType
 
 
 @pytest.fixture(name="warehouse", scope="session")
@@ -82,6 +84,19 @@ def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
+    catalog.create_tables()
+    yield catalog
+    catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": "sqlite:////tmp/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
+    catalog.engine.dialect.supports_sane_rowcount = False
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
@@ -305,6 +320,7 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
@@ -322,6 +338,7 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
@@ -341,6 +358,7 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: Identifier) -> None:
@@ -353,6 +371,7 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: 
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table(
@@ -377,6 +396,7 @@ def test_rename_table(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_from_self_identifier(
@@ -403,6 +423,7 @@ def test_rename_table_from_self_identifier(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_to_existing_one(
@@ -425,6 +446,7 @@ def test_rename_table_to_existing_one(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier, another_random_identifier: Identifier) -> None:
@@ -439,6 +461,7 @@ def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_to_missing_namespace(
@@ -664,3 +687,59 @@ def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) ->
         else:
             assert k in update_report.removed
     assert "updated test description" == catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, table_schema_nested)
+
+    assert catalog._parse_metadata_version(table.metadata_location) == 0
+    assert table.metadata.current_schema_id == 0
+
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+
+    assert catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.current_schema_id == 1
+    assert len(updated_table_metadata.schemas) == 2
+    new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
+    assert new_schema
+    assert new_schema == update._apply()
+    assert new_schema.find_field("b").field_type == IntegerType()
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table_a = catalog.create_table(random_identifier, table_schema_simple)
+    table_b = catalog.load_table(random_identifier)
+
+    with table_a.update_schema() as update:
+        update.add_column(path="b", field_type=IntegerType())
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 0, found 1"):
+        # This one should fail since it already has been updated
+        with table_b.update_schema() as update:
+            update.add_column(path="c", field_type=IntegerType())

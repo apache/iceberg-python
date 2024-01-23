@@ -175,6 +175,104 @@ static_table = StaticTable.from_metadata(
 
 The static-table is considered read-only.
 
+## Write support
+
+With PyIceberg 0.6.0 write support is added through Arrow. Let's consider an Arrow Table:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+```
+
+Next, create a table based on the schema:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+Now write the data to the table:
+
+<!-- prettier-ignore-start -->
+
+!!! note inline end "Fast append"
+    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) to minimize the amount of data written. This enables quick writes, reducing the possibility of conflicts. The downside of the fast append is that it creates more metadata than a normal commit. [Compaction is planned](https://github.com/apache/iceberg-python/issues/270) and will automatically rewrite all the metadata when a threshold is hit, to maintain performant reads.
+
+<!-- prettier-ignore-end -->
+
+```python
+tbl.append(df)
+
+# or
+
+tbl.overwrite(df)
+```
+
+The data is written to the table, and when the table is read using `tbl.scan().to_arrow()`:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten","Paris"]]
+lat: [[52.371807,37.773972,53.11254,48.864716]]
+long: [[4.896029,-122.431297,6.0989,2.349014]]
+```
+
+You both can use `append(df)` or `overwrite(df)` since there is no data yet. If we want to add more data, we can use `.append()` again:
+
+```python
+df = pa.Table.from_pylist(
+    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}],
+)
+
+tbl.append(df)
+```
+
+When reading the table `tbl.scan().to_arrow()` you can see that `Groningen` is now also part of the table:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten","Paris"],["Groningen"]]
+lat: [[52.371807,37.773972,53.11254,48.864716],[53.21917]]
+long: [[4.896029,-122.431297,6.0989,2.349014],[6.56667]]
+```
+
+The nested lists indicate the different Arrow buffers, where the first write results into a buffer, and the second append in a separate buffer. This is expected since it will read two parquet files.
+
+<!-- prettier-ignore-start -->
+
+!!! example "Under development"
+    Writing using PyIceberg is still under development. Support for [partial overwrites](https://github.com/apache/iceberg-python/issues/268) and writing to [partitioned tables](https://github.com/apache/iceberg-python/issues/208) is planned and being worked on.
+
+<!-- prettier-ignore-end -->
+
 ## Schema evolution
 
 PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).

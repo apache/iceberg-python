@@ -66,7 +66,7 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
@@ -150,6 +150,7 @@ PROP_EXTERNAL = "EXTERNAL"
 PROP_TABLE_TYPE = "table_type"
 PROP_METADATA_LOCATION = "metadata_location"
 PROP_PREVIOUS_METADATA_LOCATION = "previous_metadata_location"
+DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
 
 
 def _construct_parameters(metadata_location: str, previous_metadata_location: Optional[str] = None) -> Dict[str, Any]:
@@ -272,6 +273,7 @@ class HiveCatalog(Catalog):
             AlreadyExistsError: If a table with the name already exists.
             ValueError: If the identifier is invalid.
         """
+        properties = {**DEFAULT_PROPERTIES, **properties}
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         current_time_millis = int(time.time() * 1000)
 
@@ -279,7 +281,11 @@ class HiveCatalog(Catalog):
 
         metadata_location = self._get_metadata_location(location=location)
         metadata = new_table_metadata(
-            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
+            location=location,
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
         )
         io = load_file_io({**self.properties, **properties}, location=location)
         self._write_metadata(metadata, io, metadata_location)
@@ -330,7 +336,37 @@ class HiveCatalog(Catalog):
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
         """
-        raise NotImplementedError
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
+        )
+        current_table = self.load_table(identifier_tuple)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        base_metadata = current_table.metadata
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        # commit to hive
+        try:
+            with self._client as open_client:
+                tbl = open_client.get_table(dbname=database_name, tbl_name=table_name)
+                tbl.parameters = _construct_parameters(
+                    metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
+                )
+                open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=tbl)
+        except NoSuchObjectException as e:
+            raise NoSuchTableError(f"Table does not exist: {table_name}") from e
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and return the table instance.
