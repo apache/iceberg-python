@@ -1181,7 +1181,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 self._construct_field(map_type.key_field, key_result.type),
                 self._construct_field(map_type.value_field, value_result.type),
             )
-            return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result, arrow_field)
+            if isinstance(value_result, pa.StructArray):
+                # Arrow does not allow reordering of fields, therefore we have to copy the array :(
+                return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result, arrow_field)
+            else:
+                return map_array.cast(arrow_field)
         else:
             return None
 
