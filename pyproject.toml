@@ -113,6 +113,7 @@ adlfs = ["adlfs"]
 dynamodb = ["boto3"]
 zstandard = ["zstandard"]
 sql-postgres = ["sqlalchemy", "psycopg2-binary"]
+sql-sqlite = ["sqlalchemy"]
 gcsfs = ["gcsfs"]
 
 [tool.pytest.ini_options]

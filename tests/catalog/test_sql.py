@@ -68,7 +68,7 @@ def fixture_another_random_identifier(warehouse: Path, database_name: str, table
 @pytest.fixture(scope="module")
 def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite+pysqlite:///:memory:",
+        "uri": "sqlite:///:memory:",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
