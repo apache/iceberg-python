@@ -168,6 +168,7 @@ PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
+DOC = "doc"
 
 T = TypeVar("T")
 
@@ -1129,8 +1130,9 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             name=field.name,
             type=arrow_type,
             nullable=field.optional,
-            # Enable this once https://github.com/apache/arrow/pull/39516 gets merged and released
-            # metadata={DOC: field.doc, FIELD_ID: str(field.field_id)} if field.doc else {FIELD_ID: str(field.field_id)},
+            metadata={DOC: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
+            if field.doc
+            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
         )
 
     def schema(self, schema: Schema, schema_partner: Optional[pa.Array], struct_result: Optional[pa.Array]) -> Optional[pa.Array]:
@@ -1155,8 +1157,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
 
-        arr = pa.StructArray.from_arrays(arrays=field_arrays, fields=pa.struct(fields))
-        return arr
+        return pa.StructArray.from_arrays(arrays=field_arrays, fields=pa.struct(fields))
 
     def field(self, field: NestedField, _: Optional[pa.Array], field_array: Optional[pa.Array]) -> Optional[pa.Array]:
         return field_array
@@ -1164,7 +1165,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
         if isinstance(list_array, pa.ListArray) and value_array is not None:
             arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
-            return pa.ListArray.from_arrays(list_array.offsets, value_array, arrow_field)
+            if isinstance(value_array, pa.StructArray):
+                # Arrow does not allow reordering of fields, therefore we have to copy the array :(
+                return pa.ListArray.from_arrays(list_array.offsets, value_array, arrow_field)
+            else:
+                return list_array.cast(arrow_field)
         else:
             return None
 
@@ -1172,12 +1177,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         self, map_type: MapType, map_array: Optional[pa.Array], key_result: Optional[pa.Array], value_result: Optional[pa.Array]
     ) -> Optional[pa.Array]:
         if isinstance(map_array, pa.MapArray) and key_result is not None and value_result is not None:
-            # Enable this once https://github.com/apache/arrow/pull/39516 gets merged and released
-            # arrow_field = pa.map_(
-            #     self._construct_field(map_type.key_field, key_result.type),
-            #     self._construct_field(map_type.value_field, value_result.type),
-            # )
-            return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result)
+            arrow_field = pa.map_(
+                self._construct_field(map_type.key_field, key_result.type),
+                self._construct_field(map_type.value_field, value_result.type),
+            )
+            return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result, arrow_field)
         else:
             return None
 

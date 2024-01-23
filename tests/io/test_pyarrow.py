@@ -683,6 +683,24 @@ def schema_list_of_structs() -> Schema:
 
 
 @pytest.fixture
+def schema_map_of_structs() -> Schema:
+    return Schema(
+        NestedField(
+            5,
+            "locations",
+            MapType(
+                key_id=51,
+                value_id=52,
+                key_type=StringType(),
+                value_type=StructType(NestedField(511, "lat", DoubleType()), NestedField(512, "long", DoubleType())),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+
+
+@pytest.fixture
 def schema_map() -> Schema:
     return Schema(
         NestedField(
@@ -787,6 +805,25 @@ def file_list_of_structs(schema_list_of_structs: Schema, tmpdir: str) -> str:
                 {"locations": [{"lat": 52.371807, "long": 4.896029}, {"lat": 52.387386, "long": 4.646219}]},
                 {"locations": []},
                 {"locations": [{"lat": 52.078663, "long": 4.288788}, {"lat": 52.387386, "long": 4.646219}]},
+            ],
+            schema=pyarrow_schema,
+        ),
+    )
+
+
+@pytest.fixture
+def file_map_of_structs(schema_map_of_structs: Schema, tmpdir: str) -> str:
+    pyarrow_schema = schema_to_pyarrow(
+        schema_map_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_map_of_structs.model_dump_json(), UTF8)}
+    )
+    return _write_table_to_file(
+        f"file:{tmpdir}/e.parquet",
+        pyarrow_schema,
+        pa.Table.from_pylist(
+            [
+                {"locations": {"1": {"lat": 52.371807, "long": 4.896029}, "2": {"lat": 52.387386, "long": 4.646219}}},
+                {"locations": {}},
+                {"locations": {"3": {"lat": 52.078663, "long": 4.288788}, "4": {"lat": 52.387386, "long": 4.646219}}},
             ],
             schema=pyarrow_schema,
         ),
@@ -916,8 +953,10 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """'ids: list<element: int32>
-  child 0, element: int32'"""
+        == """ids: list<element: int32>
+  child 0, element: int32
+    -- field metadata --
+    PARQUET:field_id: '51'"""
     )
 
 
@@ -930,10 +969,14 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """'properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string> not null
+        == """properties: map<string, string>
+  child 0, entries: struct<key: string not null, value: string not null> not null
       child 0, key: string not null
-      child 1, value: string'"""
+      -- field metadata --
+      PARQUET:field_id: '51'
+      child 1, value: string not null
+      -- field metadata --
+      PARQUET:field_id: '52'"""
     )
 
 
@@ -1067,7 +1110,13 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "location: struct<lat: double not null> not null\n  child 0, lat: double not null"
+    assert (
+        repr(result_table.schema)
+        == """location: struct<lat: double not null> not null
+  child 0, lat: double not null
+    -- field metadata --
+    PARQUET:field_id: '41'"""
+    )
 
 
 def test_projection_nested_new_field(file_struct: str) -> None:
@@ -1089,7 +1138,9 @@ def test_projection_nested_new_field(file_struct: str) -> None:
     assert (
         repr(result_table.schema)
         == """location: struct<null: double> not null
-  child 0, null: double"""
+  child 0, null: double
+    -- field metadata --
+    PARQUET:field_id: '43'"""
     )
 
 
@@ -1119,7 +1170,16 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
     assert len(result_table.columns[0]) == 3
     assert (
         repr(result_table.schema)
-        == "location: struct<lat: double, null: double, long: double> not null\n  child 0, lat: double\n  child 1, null: double\n  child 2, long: double"
+        == """location: struct<lat: double, null: double, long: double> not null
+  child 0, lat: double
+    -- field metadata --
+    PARQUET:field_id: '41'
+  child 1, null: double
+    -- field metadata --
+    PARQUET:field_id: '43'
+  child 2, long: double
+    -- field metadata --
+    PARQUET:field_id: '42'"""
     )
 
 
@@ -1164,8 +1224,76 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
         == """locations: list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
   child 0, element: struct<latitude: double not null, longitude: double not null, altitude: double>
       child 0, latitude: double not null
+      -- field metadata --
+      PARQUET:field_id: '511'
       child 1, longitude: double not null
-      child 2, altitude: double"""
+      -- field metadata --
+      PARQUET:field_id: '512'
+      child 2, altitude: double
+      -- field metadata --
+      PARQUET:field_id: '513'
+    -- field metadata --
+    PARQUET:field_id: '51'"""
+    )
+
+
+def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_structs: str) -> None:
+    schema = Schema(
+        NestedField(
+            5,
+            "locations",
+            MapType(
+                key_id=51,
+                value_id=52,
+                key_type=StringType(),
+                value_type=StructType(
+                    NestedField(511, "latitude", DoubleType()),
+                    NestedField(512, "longitude", DoubleType()),
+                    NestedField(513, "altitude", DoubleType(), required=False),
+                ),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+
+    result_table = project(schema, [file_map_of_structs])
+    assert len(result_table.columns) == 1
+    assert len(result_table.columns[0]) == 3
+    for actual, expected in zip(
+        result_table.columns[0],
+        [
+            [
+                ("1", {"latitude": 52.371807, "longitude": 4.896029, "altitude": None}),
+                ("2", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
+            ],
+            [],
+            [
+                ("3", {"latitude": 52.078663, "longitude": 4.288788, "altitude": None}),
+                ("4", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
+            ],
+        ],
+    ):
+        assert actual.as_py() == expected
+    assert (
+        repr(result_table.schema)
+        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
+      child 0, key: string not null
+      -- field metadata --
+      PARQUET:field_id: '51'
+      child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
+          child 0, latitude: double not null
+        -- field metadata --
+        PARQUET:field_id: '511'
+          child 1, longitude: double not null
+        -- field metadata --
+        PARQUET:field_id: '512'
+          child 2, altitude: double
+        -- field metadata --
+        PARQUET:field_id: '513'
+      -- field metadata --
+      PARQUET:field_id: '52'"""
     )
 
 
