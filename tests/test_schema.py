@@ -16,12 +16,12 @@
 # under the License.
 
 from textwrap import dedent
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 
 from pyiceberg import schema
-from pyiceberg.exceptions import ResolveError
+from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.expressions import Accessor
 from pyiceberg.schema import (
     Schema,
@@ -30,6 +30,7 @@ from pyiceberg.schema import (
     prune_columns,
     sanitize_column_names,
 )
+from pyiceberg.table import UpdateSchema
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
     BinaryType,
@@ -45,6 +46,7 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
     TimestampType,
@@ -912,3 +914,668 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
     else:
         with pytest.raises(ResolveError):
             promote(file_type, read_type)
+
+
+@pytest.fixture()
+def primitive_fields() -> List[NestedField]:
+    return [
+        NestedField(field_id=1, name=str(primitive_type), field_type=primitive_type, required=False)
+        for primitive_type in TEST_PRIMITIVE_TYPES
+    ]
+
+
+def test_add_top_level_primitives(primitive_fields: NestedField) -> None:
+    for primitive_field in primitive_fields:
+        new_schema = Schema(primitive_field)
+        applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+        assert applied == new_schema
+
+
+def test_add_top_level_list_of_primitives(primitive_fields: NestedField) -> None:
+    for primitive_type in TEST_PRIMITIVE_TYPES:
+        new_schema = Schema(
+            NestedField(
+                field_id=1,
+                name="aList",
+                field_type=ListType(element_id=2, element_type=primitive_type, element_required=False),
+                required=False,
+            )
+        )
+        applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+        assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_add_top_level_map_of_primitives(primitive_fields: NestedField) -> None:
+    for primitive_type in TEST_PRIMITIVE_TYPES:
+        new_schema = Schema(
+            NestedField(
+                field_id=1,
+                name="aMap",
+                field_type=MapType(
+                    key_id=2, key_type=primitive_type, value_id=3, value_type=primitive_type, value_required=False
+                ),
+                required=False,
+            )
+        )
+        applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+        assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_add_top_struct_of_primitives(primitive_fields: NestedField) -> None:
+    for primitive_type in TEST_PRIMITIVE_TYPES:
+        new_schema = Schema(
+            NestedField(
+                field_id=1,
+                name="aStruct",
+                field_type=StructType(NestedField(field_id=2, name="primitive", field_type=primitive_type, required=False)),
+                required=False,
+            )
+        )
+        applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+        assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_add_nested_primitive(primitive_fields: NestedField) -> None:
+    for primitive_type in TEST_PRIMITIVE_TYPES:
+        current_schema = Schema(NestedField(field_id=1, name="aStruct", field_type=StructType(), required=False))
+        new_schema = Schema(
+            NestedField(
+                field_id=1,
+                name="aStruct",
+                field_type=StructType(NestedField(field_id=2, name="primitive", field_type=primitive_type, required=False)),
+                required=False,
+            )
+        )
+        applied = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+        assert applied.as_struct() == new_schema.as_struct()
+
+
+def _primitive_fields(types: List[PrimitiveType], start_id: int = 0) -> List[NestedField]:
+    fields = []
+    for iceberg_type in types:
+        fields.append(NestedField(field_id=start_id, name=str(iceberg_type), field_type=iceberg_type, required=False))
+        start_id = start_id + 1
+
+    return fields
+
+
+def test_add_nested_primitives(primitive_fields: NestedField) -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aStruct", field_type=StructType(), required=False))
+    new_schema = Schema(
+        NestedField(
+            field_id=1, name="aStruct", field_type=StructType(*_primitive_fields(TEST_PRIMITIVE_TYPES, 2)), required=False
+        )
+    )
+    applied = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+    assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_add_nested_lists(primitive_fields: NestedField) -> None:
+    new_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="aList",
+            type=ListType(
+                element_id=2,
+                element_type=ListType(
+                    element_id=3,
+                    element_type=ListType(
+                        element_id=4,
+                        element_type=ListType(
+                            element_id=5,
+                            element_type=ListType(
+                                element_id=6,
+                                element_type=ListType(
+                                    element_id=7,
+                                    element_type=ListType(
+                                        element_id=8,
+                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=11, scale=20)),
+                                        element_required=False,
+                                    ),
+                                    element_required=False,
+                                ),
+                                element_required=False,
+                            ),
+                            element_required=False,
+                        ),
+                        element_required=False,
+                    ),
+                    element_required=False,
+                ),
+                element_required=False,
+            ),
+            required=False,
+        )
+    )
+    applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+    assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_add_nested_struct(primitive_fields: NestedField) -> None:
+    new_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="struct1",
+            type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="struct2",
+                    type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="struct3",
+                            type=StructType(
+                                NestedField(
+                                    field_id=4,
+                                    name="struct4",
+                                    type=StructType(
+                                        NestedField(
+                                            field_id=5,
+                                            name="struct5",
+                                            type=StructType(
+                                                NestedField(
+                                                    field_id=6,
+                                                    name="struct6",
+                                                    type=StructType(
+                                                        NestedField(field_id=7, name="aString", field_type=StringType())
+                                                    ),
+                                                    required=False,
+                                                )
+                                            ),
+                                            required=False,
+                                        )
+                                    ),
+                                    required=False,
+                                )
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+    applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+    assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_add_nested_maps(primitive_fields: NestedField) -> None:
+    new_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="struct",
+            field_type=MapType(
+                key_id=2,
+                value_id=3,
+                key_type=StringType(),
+                value_type=MapType(
+                    key_id=4,
+                    value_id=5,
+                    key_type=StringType(),
+                    value_type=MapType(
+                        key_id=6,
+                        value_id=7,
+                        key_type=StringType(),
+                        value_type=MapType(
+                            key_id=8,
+                            value_id=9,
+                            key_type=StringType(),
+                            value_type=MapType(
+                                key_id=10,
+                                value_id=11,
+                                key_type=StringType(),
+                                value_type=MapType(key_id=12, value_id=13, key_type=StringType(), value_type=StringType()),
+                                value_required=False,
+                            ),
+                            value_required=False,
+                        ),
+                        value_required=False,
+                    ),
+                    value_required=False,
+                ),
+                value_required=False,
+            ),
+            required=False,
+        )
+    )
+    applied = UpdateSchema(None, schema=Schema()).union_by_name(new_schema)._apply()
+    assert applied.as_struct() == new_schema.as_struct()
+
+
+def test_detect_invalid_top_level_list() -> None:
+    current_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="aList",
+            field_type=ListType(element_id=2, element_type=StringType(), element_required=False),
+            required=False,
+        )
+    )
+    new_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="aList",
+            field_type=ListType(element_id=2, element_type=DoubleType(), element_required=False),
+            required=False,
+        )
+    )
+
+    with pytest.raises(ValidationError, match="Cannot change column type: aList.element: string -> double"):
+        _ = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+
+
+def test_detect_invalid_top_level_maps() -> None:
+    current_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="aMap",
+            field_type=MapType(key_id=2, value_id=3, key_type=StringType(), value_type=StringType(), value_required=False),
+            required=False,
+        )
+    )
+    new_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="aMap",
+            field_type=MapType(key_id=2, value_id=3, key_type=UUIDType(), value_type=StringType(), value_required=False),
+            required=False,
+        )
+    )
+
+    with pytest.raises(ValidationError, match="Cannot change column type: aMap.key: string -> uuid"):
+        _ = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+
+
+def test_promote_float_to_double() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
+
+    applied = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+
+    assert applied.as_struct() == new_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, DoubleType)
+
+
+def test_detect_invalid_promotion_double_to_float() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
+
+    with pytest.raises(ValidationError, match="Cannot change column type: aCol: double -> float"):
+        _ = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+
+
+# decimal(P,S) Fixed-point decimal; precision P, scale S -> Scale is fixed [1],
+# precision must be 38 or less
+def test_type_promote_decimal_to_fixed_scale_with_wider_precision() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DecimalType(precision=20, scale=1), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DecimalType(precision=22, scale=1), required=False))
+
+    applied = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+
+    assert applied.as_struct() == new_schema.as_struct()
+    assert len(applied.fields) == 1
+    field = applied.fields[0]
+    decimal_type = field.field_type
+    assert isinstance(decimal_type, DecimalType)
+    assert decimal_type.precision == 22
+    assert decimal_type.scale == 1
+
+
+def test_add_nested_structs(primitive_fields: NestedField) -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="struct1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="struct2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="list",
+                            field_type=ListType(
+                                element_id=4,
+                                element_type=StructType(
+                                    NestedField(field_id=5, name="value", field_type=StringType(), required=False)
+                                ),
+                                element_required=False,
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+    new_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="struct1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="struct2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="list",
+                            field_type=ListType(
+                                element_id=4,
+                                element_type=StructType(
+                                    NestedField(field_id=5, name="time", field_type=TimeType(), required=False)
+                                ),
+                                element_required=False,
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+    applied = UpdateSchema(None, schema=schema).union_by_name(new_schema)._apply()
+
+    expected = Schema(
+        NestedField(
+            field_id=1,
+            name="struct1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="struct2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="list",
+                            field_type=ListType(
+                                element_id=4,
+                                element_type=StructType(
+                                    NestedField(field_id=5, name="value", field_type=StringType(), required=False),
+                                    NestedField(field_id=6, name="time", field_type=TimeType(), required=False),
+                                ),
+                                element_required=False,
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+
+    assert applied.as_struct() == expected.as_struct()
+
+
+def test_replace_list_with_primitive() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=ListType(element_id=2, element_type=StringType())))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=StringType()))
+
+    with pytest.raises(ValidationError, match="Cannot change column type: list<string> is not a primitive"):
+        _ = UpdateSchema(None, schema=current_schema).union_by_name(new_schema)._apply()
+
+
+def test_mirrored_schemas() -> None:
+    current_schema = Schema(
+        NestedField(9, "struct1", StructType(NestedField(8, "string1", StringType(), required=False)), required=False),
+        NestedField(6, "list1", ListType(element_id=7, element_type=StringType(), element_required=False), required=False),
+        NestedField(5, "string2", StringType(), required=False),
+        NestedField(4, "string3", StringType(), required=False),
+        NestedField(3, "string4", StringType(), required=False),
+        NestedField(2, "string5", StringType(), required=False),
+        NestedField(1, "string6", StringType(), required=False),
+    )
+    mirrored_schema = Schema(
+        NestedField(1, "struct1", StructType(NestedField(2, "string1", StringType(), required=False))),
+        NestedField(3, "list1", ListType(element_id=4, element_type=StringType(), element_required=False), required=False),
+        NestedField(5, "string2", StringType(), required=False),
+        NestedField(6, "string3", StringType(), required=False),
+        NestedField(7, "string4", StringType(), required=False),
+        NestedField(8, "string5", StringType(), required=False),
+        NestedField(9, "string6", StringType(), required=False),
+    )
+
+    applied = UpdateSchema(None, schema=current_schema).union_by_name(mirrored_schema)._apply()
+
+    assert applied.as_struct() == current_schema.as_struct()
+
+
+def test_add_new_top_level_struct() -> None:
+    current_schema = Schema(
+        NestedField(
+            1,
+            "map1",
+            MapType(
+                key_id=2,
+                value_id=3,
+                key_type=StringType(),
+                value_type=ListType(
+                    element_id=4,
+                    element_type=StructType(NestedField(field_id=5, name="string", field_type=StringType(), required=False)),
+                ),
+                value_required=False,
+            ),
+        )
+    )
+    observed_schema = Schema(
+        NestedField(
+            1,
+            "map1",
+            MapType(
+                key_id=2,
+                value_id=3,
+                key_type=StringType(),
+                value_type=ListType(
+                    element_id=4,
+                    element_type=StructType(NestedField(field_id=5, name="string", field_type=StringType(), required=False)),
+                ),
+                value_required=False,
+            ),
+        ),
+        NestedField(
+            field_id=6,
+            name="struct1",
+            field_type=StructType(
+                NestedField(
+                    field_id=7,
+                    name="d1",
+                    field_type=StructType(NestedField(field_id=8, name="d2", field_type=StringType(), required=False)),
+                    required=False,
+                )
+            ),
+            required=False,
+        ),
+    )
+
+    applied = UpdateSchema(None, schema=current_schema).union_by_name(observed_schema)._apply()
+
+    assert applied.as_struct() == observed_schema.as_struct()
+
+
+def test_append_nested_struct() -> None:
+    current_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="s1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="s2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="s3",
+                            field_type=StructType(NestedField(field_id=4, name="s4", field_type=StringType(), required=False)),
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+        )
+    )
+    observed_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="s1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="s2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="s3",
+                            field_type=StructType(NestedField(field_id=4, name="s4", field_type=StringType(), required=False)),
+                            required=False,
+                        ),
+                        NestedField(
+                            field_id=5,
+                            name="repeat",
+                            field_type=StructType(
+                                NestedField(
+                                    field_id=6,
+                                    name="s1",
+                                    field_type=StructType(
+                                        NestedField(
+                                            field_id=7,
+                                            name="s2",
+                                            field_type=StructType(
+                                                NestedField(
+                                                    field_id=8,
+                                                    name="s3",
+                                                    field_type=StructType(
+                                                        NestedField(field_id=9, name="s4", field_type=StringType())
+                                                    ),
+                                                    required=False,
+                                                )
+                                            ),
+                                            required=False,
+                                        )
+                                    ),
+                                    required=False,
+                                )
+                            ),
+                            required=False,
+                        ),
+                        required=False,
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+
+    applied = UpdateSchema(None, schema=current_schema).union_by_name(observed_schema)._apply()
+
+    assert applied.as_struct() == observed_schema.as_struct()
+
+
+def test_append_nested_lists() -> None:
+    current_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="s1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="s2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="s3",
+                            field_type=StructType(
+                                NestedField(
+                                    field_id=4,
+                                    name="list1",
+                                    field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
+                                    required=False,
+                                )
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+
+    observed_schema = Schema(
+        NestedField(
+            field_id=1,
+            name="s1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="s2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="s3",
+                            field_type=StructType(
+                                NestedField(
+                                    field_id=4,
+                                    name="list2",
+                                    field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
+                                    required=False,
+                                )
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+    union = UpdateSchema(None, schema=current_schema).union_by_name(observed_schema)._apply()
+
+    expected = Schema(
+        NestedField(
+            field_id=1,
+            name="s1",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="s2",
+                    field_type=StructType(
+                        NestedField(
+                            field_id=3,
+                            name="s3",
+                            field_type=StructType(
+                                NestedField(
+                                    field_id=4,
+                                    name="list1",
+                                    field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
+                                    required=False,
+                                ),
+                                NestedField(
+                                    field_id=6,
+                                    name="list2",
+                                    field_type=ListType(element_id=7, element_type=StringType(), element_required=False),
+                                    required=False,
+                                ),
+                            ),
+                            required=False,
+                        )
+                    ),
+                    required=False,
+                )
+            ),
+            required=False,
+        )
+    )
+
+    assert union.as_struct() == expected.as_struct()

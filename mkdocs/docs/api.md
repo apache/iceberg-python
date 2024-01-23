@@ -293,6 +293,47 @@ with table.transaction() as transaction:
     # ... Update properties etc
 ```
 
+### Union by Name
+
+Using `.union_by_name()` you can merge another schema into an existing schema without having to worry about field-IDs:
+
+```python
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType, LongType
+
+catalog = load_catalog()
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+table = catalog.create_table("default.locations", schema)
+
+new_schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+    NestedField(10, "population", LongType(), required=False),
+)
+
+with table.update_schema() as update:
+    update.union_by_name(new_schema)
+```
+
+Now the table has the union of the two schemas `print(table.schema())`:
+
+```
+table {
+  1: city: optional string
+  2: lat: optional double
+  3: long: optional double
+  4: population: optional long
+}
+```
+
 ### Add column
 
 Using `add_column` you can add a column, without having to worry about the field-id:
