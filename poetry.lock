@@ -4309,9 +4309,10 @@ ray = ["pandas", "pyarrow", "ray"]
 s3fs = ["s3fs"]
 snappy = ["python-snappy"]
 sql-postgres = ["psycopg2-binary", "sqlalchemy"]
+sql-sqlite = ["sqlalchemy"]
 zstandard = ["zstandard"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "3ade86388f952103b386085c19de0cf77967f7768cfc89f012557c7ac5017db5"
+content-hash = "32b2b8186f77ccc5b67cfc8f1cc04795f0b8cb27dff43c3fad851cbed8d3f386"

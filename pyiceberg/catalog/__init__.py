@@ -134,7 +134,9 @@ def load_sql(name: str, conf: Properties) -> Catalog:
 
         return SqlCatalog(name, **conf)
     except ImportError as exc:
-        raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-postgres]'") from exc
+        raise NotInstalledError(
+            "SQLAlchemy support not installed: pip install 'pyiceberg[sql-postgres]' or pip install 'pyiceberg[sql-sqlite]'"
+        ) from exc
 
 
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
