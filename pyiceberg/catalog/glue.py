@@ -126,7 +126,7 @@ GLUE_PRIMITIVE_TYPES = {
 }
 
 
-class IcebergSchemaToGlueType(SchemaVisitor[str]):
+class _IcebergSchemaToGlueType(SchemaVisitor[str]):
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
@@ -161,7 +161,7 @@ def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
             ColumnTypeDef,
             {
                 "Name": field.name,
-                "Type": visit(field.field_type, IcebergSchemaToGlueType()),
+                "Type": visit(field.field_type, _IcebergSchemaToGlueType()),
                 "Parameters": {
                     ICEBERG_FIELD_ID: str(field.field_id),
                     ICEBERG_FIELD_OPTIONAL: str(field.optional).lower(),
