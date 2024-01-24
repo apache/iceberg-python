@@ -172,6 +172,13 @@ MAP_VALUE_NAME = "value"
 T = TypeVar("T")
 
 
+class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
+    def open_output_stream(self, path, *args, **kwargs):
+        # In LocalFileSystem, parent directories must be first created before opening an output stream
+        self.create_dir(os.path.dirname(path), recursive=True)
+        return super().open_output_stream(path, *args, **kwargs)
+
+
 class PyArrowFile(InputFile, OutputFile):
     """A combined InputFile and OutputFile implementation that uses a pyarrow filesystem to generate pyarrow.lib.NativeFile instances.
 
@@ -378,9 +385,7 @@ class PyArrowFileIO(FileIO):
 
             return GcsFileSystem(**gcs_kwargs)
         elif scheme == "file":
-            from pyarrow.fs import LocalFileSystem
-
-            return LocalFileSystem()
+            return PyArrowLocalFileSystem()
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
