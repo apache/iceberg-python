@@ -1165,10 +1165,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                list_array = pa.ListArray.from_arrays(
-                    list_array.offsets,
-                    value_array
-                )
+                list_array = pa.ListArray.from_arrays(list_array.offsets, value_array)
 
             arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
