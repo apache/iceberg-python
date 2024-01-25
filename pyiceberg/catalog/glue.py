@@ -597,7 +597,6 @@ class GlueCatalog(Catalog):
         table_list: List[TableTypeDef] = []
         next_token: Optional[str] = None
         try:
-            table_list_response = self.glue.get_tables(DatabaseName=database_name)
             while True:
                 table_list_response = (
                     self.glue.get_tables(DatabaseName=database_name)
@@ -624,7 +623,6 @@ class GlueCatalog(Catalog):
             return []
 
         database_list: List[DatabaseTypeDef] = []
-        databases_response = self.glue.get_databases()
         next_token: Optional[str] = None
 
         while True:
