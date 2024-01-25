@@ -146,6 +146,26 @@ catalog.create_table(
 )
 ```
 
+One can also create an Iceberg table using a pyarrow schema:
+
+```python
+import pyarrow as pa
+
+pa.schema(
+    [
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ]
+)
+
+catalog.create_table(
+    identifier="docs_example.bids",
+    schema=schema,
+    location="s3://pyiceberg",
+)
+```
+
 ## Load a table
 
 ### Catalog table
