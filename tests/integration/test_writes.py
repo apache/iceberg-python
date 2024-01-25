@@ -230,10 +230,16 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
 
 @pytest.fixture(scope="session")
 def spark() -> SparkSession:
+    import importlib.metadata
     import os
 
+    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
+    scala_version = "2.12"
+    iceberg_version = "1.4.3"
+
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
-        "--packages org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.0,org.apache.iceberg:iceberg-aws-bundle:1.4.0 pyspark-shell"
+        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
     )
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
