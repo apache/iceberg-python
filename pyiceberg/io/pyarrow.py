@@ -1130,9 +1130,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             name=field.name,
             type=arrow_type,
             nullable=field.optional,
-            metadata={DOC: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
-            if field.doc
-            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
+            metadata={DOC: field.doc} if field.doc is not None else None,
         )
 
     def schema(self, schema: Schema, schema_partner: Optional[pa.Array], struct_result: Optional[pa.Array]) -> Optional[pa.Array]:
@@ -1164,12 +1162,16 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
 
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
         if isinstance(list_array, pa.ListArray) and value_array is not None:
-            arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
             if isinstance(value_array, pa.StructArray):
-                # Arrow does not allow reordering of fields, therefore we have to copy the array :(
-                return pa.ListArray.from_arrays(list_array.offsets, value_array, arrow_field)
-            else:
-                return list_array.cast(arrow_field)
+                # This can be removed once this has been fixed:
+                # https://github.com/apache/arrow/issues/38809
+                list_array = pa.ListArray.from_arrays(
+                    list_array.offsets,
+                    value_array
+                )
+
+            arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
+            return list_array.cast(arrow_field)
         else:
             return None
 

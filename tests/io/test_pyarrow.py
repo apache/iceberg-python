@@ -954,9 +954,7 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     assert (
         repr(result_table.schema)
         == """ids: list<element: int32>
-  child 0, element: int32
-    -- field metadata --
-    PARQUET:field_id: '51'"""
+  child 0, element: int32"""
     )
 
 
@@ -972,11 +970,7 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
         == """properties: map<string, string>
   child 0, entries: struct<key: string not null, value: string not null> not null
       child 0, key: string not null
-      -- field metadata --
-      PARQUET:field_id: '51'
-      child 1, value: string not null
-      -- field metadata --
-      PARQUET:field_id: '52'"""
+      child 1, value: string not null"""
     )
 
 
@@ -1113,9 +1107,7 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
     assert (
         repr(result_table.schema)
         == """location: struct<lat: double not null> not null
-  child 0, lat: double not null
-    -- field metadata --
-    PARQUET:field_id: '41'"""
+  child 0, lat: double not null"""
     )
 
 
@@ -1138,9 +1130,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
     assert (
         repr(result_table.schema)
         == """location: struct<null: double> not null
-  child 0, null: double
-    -- field metadata --
-    PARQUET:field_id: '43'"""
+  child 0, null: double"""
     )
 
 
@@ -1172,14 +1162,8 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
         repr(result_table.schema)
         == """location: struct<lat: double, null: double, long: double> not null
   child 0, lat: double
-    -- field metadata --
-    PARQUET:field_id: '41'
   child 1, null: double
-    -- field metadata --
-    PARQUET:field_id: '43'
-  child 2, long: double
-    -- field metadata --
-    PARQUET:field_id: '42'"""
+  child 2, long: double"""
     )
 
 
@@ -1204,36 +1188,25 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
     result_table = project(schema, [file_list_of_structs])
     assert len(result_table.columns) == 1
     assert len(result_table.columns[0]) == 3
-    for actual, expected in zip(
-        result_table.columns[0],
+    results = [row.as_py() for row in result_table.columns[0]]
+    assert results == [
         [
-            [
-                {"latitude": 52.371807, "longitude": 4.896029, "altitude": None},
-                {"latitude": 52.387386, "longitude": 4.646219, "altitude": None},
-            ],
-            [],
-            [
-                {"latitude": 52.078663, "longitude": 4.288788, "altitude": None},
-                {"latitude": 52.387386, "longitude": 4.646219, "altitude": None},
-            ],
+            {'latitude': 52.371807, 'longitude': 4.896029, 'altitude': None},
+            {'latitude': 52.387386, 'longitude': 4.646219, 'altitude': None},
         ],
-    ):
-        assert actual.as_py() == expected
+        [],
+        [
+            {'latitude': 52.078663, 'longitude': 4.288788, 'altitude': None},
+            {'latitude': 52.387386, 'longitude': 4.646219, 'altitude': None},
+        ],
+    ]
     assert (
         repr(result_table.schema)
         == """locations: list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
   child 0, element: struct<latitude: double not null, longitude: double not null, altitude: double>
       child 0, latitude: double not null
-      -- field metadata --
-      PARQUET:field_id: '511'
       child 1, longitude: double not null
-      -- field metadata --
-      PARQUET:field_id: '512'
-      child 2, altitude: double
-      -- field metadata --
-      PARQUET:field_id: '513'
-    -- field metadata --
-    PARQUET:field_id: '51'"""
+      child 2, altitude: double"""
     )
 
 
@@ -1280,20 +1253,10 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
         == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
   child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
       child 0, key: string not null
-      -- field metadata --
-      PARQUET:field_id: '51'
       child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
           child 0, latitude: double not null
-        -- field metadata --
-        PARQUET:field_id: '511'
           child 1, longitude: double not null
-        -- field metadata --
-        PARQUET:field_id: '512'
-          child 2, altitude: double
-        -- field metadata --
-        PARQUET:field_id: '513'
-      -- field metadata --
-      PARQUET:field_id: '52'"""
+          child 2, altitude: double"""
     )
 
 
