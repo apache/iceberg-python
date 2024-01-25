@@ -18,6 +18,7 @@
 
 from typing import (
     Any,
+    Dict,
     List,
     Optional,
     Set,
@@ -28,6 +29,7 @@ from typing import (
 import boto3
 from mypy_boto3_glue.client import GlueClient
 from mypy_boto3_glue.type_defs import (
+    ColumnTypeDef,
     DatabaseInputTypeDef,
     DatabaseTypeDef,
     StorageDescriptorTypeDef,
@@ -59,12 +61,32 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
-from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    PrimitiveType,
+    StringType,
+    StructType,
+    TimestampType,
+    TimeType,
+    UUIDType,
+)
 
 # If Glue should skip archiving an old table version when creating a new version in a commit. By
 # default, Glue archives all old table versions after an UpdateTable call, but Glue has a default
@@ -72,6 +94,10 @@ from pyiceberg.typedef import EMPTY_DICT
 # of commits, it is recommended to set this value to true.
 GLUE_SKIP_ARCHIVE = "glue.skip-archive"
 GLUE_SKIP_ARCHIVE_DEFAULT = True
+
+ICEBERG_FIELD_ID = "iceberg.field.id"
+ICEBERG_FIELD_OPTIONAL = "iceberg.field.optional"
+ICEBERG_FIELD_CURRENT = "iceberg.field.current"
 
 
 def _construct_parameters(
@@ -84,10 +110,86 @@ def _construct_parameters(
     return new_parameters
 
 
+GLUE_PRIMITIVE_TYPES = {
+    BooleanType: "boolean",
+    IntegerType: "int",
+    LongType: "bigint",
+    FloatType: "float",
+    DoubleType: "double",
+    DateType: "date",
+    TimeType: "string",
+    StringType: "string",
+    UUIDType: "string",
+    TimestampType: "timestamp",
+    FixedType: "binary",
+    BinaryType: "binary",
+}
+
+
+class _IcebergSchemaToGlueType(SchemaVisitor[str]):
+    def schema(self, schema: Schema, struct_result: str) -> str:
+        return struct_result
+
+    def struct(self, struct: StructType, field_results: List[str]) -> str:
+        return f"struct<{','.join(field_results)}>"
+
+    def field(self, field: NestedField, field_result: str) -> str:
+        return f"{field.name}:{field_result}"
+
+    def list(self, list_type: ListType, element_result: str) -> str:
+        return f"array<{element_result}>"
+
+    def map(self, map_type: MapType, key_result: str, value_result: str) -> str:
+        return f"map<{key_result},{value_result}>"
+
+    def primitive(self, primitive: PrimitiveType) -> str:
+        if isinstance(primitive, DecimalType):
+            return f"decimal({primitive.precision},{primitive.scale})"
+        if (primitive_type := type(primitive)) not in GLUE_PRIMITIVE_TYPES:
+            raise ValueError(f"Unknown primitive type: {primitive}")
+        return GLUE_PRIMITIVE_TYPES[primitive_type]
+
+
+def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
+    results: Dict[str, ColumnTypeDef] = {}
+
+    def _append_to_results(field: NestedField, is_current: bool) -> None:
+        if field.name in results:
+            return
+
+        results[field.name] = cast(
+            ColumnTypeDef,
+            {
+                "Name": field.name,
+                "Type": visit(field.field_type, _IcebergSchemaToGlueType()),
+                "Parameters": {
+                    ICEBERG_FIELD_ID: str(field.field_id),
+                    ICEBERG_FIELD_OPTIONAL: str(field.optional).lower(),
+                    ICEBERG_FIELD_CURRENT: str(is_current).lower(),
+                },
+            },
+        )
+        if field.doc:
+            results[field.name]["Comment"] = field.doc
+
+    if current_schema := metadata.schema_by_id(metadata.current_schema_id):
+        for field in current_schema.columns:
+            _append_to_results(field, True)
+
+    for schema in metadata.schemas:
+        if schema.schema_id == metadata.current_schema_id:
+            continue
+        for field in schema.columns:
+            _append_to_results(field, False)
+
+    return list(results.values())
+
+
 def _construct_table_input(
     table_name: str,
     metadata_location: str,
     properties: Properties,
+    metadata: TableMetadata,
     glue_table: Optional[TableTypeDef] = None,
     prev_metadata_location: Optional[str] = None,
 ) -> TableInputTypeDef:
@@ -95,6 +197,10 @@ def _construct_table_input(
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
+        "StorageDescriptor": {
+            "Columns": _to_columns(metadata),
+            "Location": metadata.location,
+        },
     }
 
     if "Description" in properties:
@@ -258,7 +364,7 @@ class GlueCatalog(Catalog):
         io = load_file_io(properties=self.properties, location=metadata_location)
         self._write_metadata(metadata, io, metadata_location)
 
-        table_input = _construct_table_input(table_name, metadata_location, properties)
+        table_input = _construct_table_input(table_name, metadata_location, properties, metadata)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
@@ -322,6 +428,7 @@ class GlueCatalog(Catalog):
             table_name=table_name,
             metadata_location=new_metadata_location,
             properties=current_table.properties,
+            metadata=updated_metadata,
             glue_table=current_glue_table,
             prev_metadata_location=current_table.metadata_location,
         )
