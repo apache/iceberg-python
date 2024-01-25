@@ -51,7 +51,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, CommitTableRetryableExceptions, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -194,6 +194,14 @@ class DynamoDbCatalog(Catalog):
             TableAlreadyExistsError: If the table already exists
         """
         raise NotImplementedError
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        """Return commit exceptions that can be retried by the table.
+
+        Returns:
+            CommitTableRetryableExceptions: The retryable exceptions.
+        """
+        return CommitTableRetryableExceptions((GenericDynamoDbError,), ())
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.

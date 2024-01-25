@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property, singledispatch
+from functools import cached_property, partial, singledispatch
 from itertools import chain
 from typing import (
     TYPE_CHECKING,
@@ -39,17 +39,30 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    Type,
     TypeVar,
     Union,
 )
 
 from pydantic import Field, field_validator
 from sortedcontainers import SortedList
+from tenacity import (
+    RetryError,
+    Retrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    stop_after_delay,
+    wait_exponential,
+)
 from typing_extensions import Annotated
 
 import pyiceberg.expressions.parser as parser
 import pyiceberg.expressions.visitors as visitors
-from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
+from pyiceberg.exceptions import (
+    CommitFailedException,
+    ResolveError,
+    ValidationError,
+)
 from pyiceberg.expressions import (
     AlwaysTrue,
     And,
@@ -947,6 +960,97 @@ class CommitTableResponse(IcebergBaseModel):
     metadata_location: str = Field(alias="metadata-location")
 
 
+class CommitTableRetryableExceptions:
+    """A catalogs commit exceptions that are retryable."""
+
+    def __init__(self, retry_exceptions: tuple[Type[Exception], ...], retry_refresh_exceptions: tuple[Type[Exception], ...]):
+        self.retry_exceptions: tuple[Type[Exception], ...] = retry_exceptions
+        self.retry_refresh_exceptions: tuple[Type[Exception], ...] = retry_refresh_exceptions
+        self.all: tuple[Type[Exception], ...] = tuple(set(retry_exceptions).union(retry_refresh_exceptions))
+
+
+class TableCommitRetry:
+    """Decorator for building the table commit retry controller."""
+
+    num_retries = "commit.retry.num-retries"
+    num_retries_default: int = 4
+    min_wait_ms = "commit.retry.min-wait-ms"
+    min_wait_ms_default: int = 100
+    max_wait_ms = "commit.retry.max-wait-ms"
+    max_wait_ms_default: int = 60000  # 1 min
+    total_timeout_ms = "commit.retry.total-timeout-ms"
+    total_timeout_ms_default: int = 1800000  # 30 mins
+
+    properties_attr: str = "properties"
+    refresh_attr: str = "refresh"
+    commit_retry_exceptions_attr: str = "commit_retry_exceptions"
+
+    def __init__(self, func: Callable[..., Any]) -> None:
+        self.func: Callable[..., Any] = func
+        self.loaded_properties: Properties = {}
+        self.loaded_exceptions: CommitTableRetryableExceptions = CommitTableRetryableExceptions((), ())
+
+    def __get__(self, instance: Any, owner: Any) -> Callable[..., Any]:
+        """Return the __call__ method with the instance caller."""
+        return partial(self.__call__, instance)
+
+    def __call__(self, instance: Table, *args: Any, **kwargs: Any) -> Any:
+        """Run function with the retrying controller on the caller instance."""
+        self.loaded_properties = getattr(instance, self.properties_attr)
+        self.loaded_exceptions = getattr(instance, self.commit_retry_exceptions_attr)
+        previous_attempt_error = None
+        try:
+            for attempt in self.build_retry_controller():
+                with attempt:
+                    # Refresh table is previous exception requires a refresh
+                    if previous_attempt_error in self.loaded_exceptions.retry_refresh_exceptions:
+                        self.refresh_table(instance)
+
+                    result = self.func(instance, *args, **kwargs)
+
+                # Grab exception from the attempt
+                outcome = attempt.retry_state.outcome
+                previous_attempt_error = type(outcome.exception()) if outcome.failed else None
+
+        except RetryError as err:
+            raise Exception from err.reraise()
+        else:
+            return result
+
+    def build_retry_controller(self) -> Retrying:
+        """Build the retry controller."""
+        return Retrying(
+            stop=(
+                stop_after_attempt(self.get_config(self.num_retries, self.num_retries_default))
+                | stop_after_delay(
+                    datetime.timedelta(milliseconds=self.get_config(self.total_timeout_ms, self.total_timeout_ms_default))
+                )
+            ),
+            wait=wait_exponential(
+                min=self.get_config(self.min_wait_ms, self.min_wait_ms_default) / 1000.0,
+                max=self.get_config(self.max_wait_ms, self.max_wait_ms_default) / 1000.0,
+            ),
+            retry=retry_if_exception_type(self.loaded_exceptions.all),
+        )
+
+    def get_config(self, config: str, default: int) -> int:
+        """Get config out of the properties."""
+        return self.to_int(value, default, config) if (value := self.loaded_properties.get(config)) else default
+
+    def refresh_table(self, instance: Table) -> None:
+        getattr(instance, self.refresh_attr)()
+        return
+
+    @staticmethod
+    def to_int(v: str, default: int, config: str) -> int:
+        """Convert str value to int, otherwise return a default."""
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            warnings.warn(f"Expected an integer for table property {config}, got: {v}", category=UserWarning)
+        return default
+
+
 class Table:
     identifier: Identifier = Field()
     metadata: TableMetadata
@@ -1188,6 +1292,12 @@ class Table:
         """Return the snapshot references in the table."""
         return self.metadata.refs
 
+    @property
+    def commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        """Return the commit exceptions that can be retried on the catalog."""
+        return self.catalog._accepted_commit_retry_exceptions()  # pylint: disable=W0212
+
+    @TableCommitRetry
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
             CommitTableRequest(
@@ -1702,7 +1812,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
+            # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
