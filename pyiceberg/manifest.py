@@ -364,6 +364,46 @@ class DataFile(Record):
     sort_order_id: Optional[int]
     spec_id: Optional[int]
 
+    def __setitem__(self, pos: int, value: Any) -> None:
+        """Maps the position to a record"""
+        if pos == 0:
+            self.content = value
+        elif pos == 1:
+            self.file_path = value
+        elif pos == 2:
+            self.file_format = FileFormat[value]
+        elif pos == 3:
+            self.partition = value
+        elif pos == 4:
+            self.record_count = value
+        elif pos == 5:
+            self.file_size_in_bytes = value
+        elif pos == 6:
+            self.column_sizes = value
+        elif pos == 7:
+            self.value_counts = value
+        elif pos == 8:
+            self.null_value_counts = value
+        elif pos == 9:
+            self.nan_value_counts = value
+        elif pos == 10:
+            self.lower_bounds = value
+        elif pos == 11:
+            self.upper_bounds = value
+        elif pos == 12:
+            self.key_metadata = value
+        elif pos == 13:
+            self.split_offsets = value
+        elif pos == 14:
+            self.equality_ids = value
+        elif pos == 15:
+            self.sort_order_id = value
+        elif pos == 16:
+            self.spec_id = value
+        else:
+            raise ValueError(f"Out of bounds assignment: {pos}")
+
+
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""
         # The file_format is written as a string, so we need to cast it to the Enum
@@ -421,6 +461,21 @@ class ManifestEntry(Record):
     data_sequence_number: Optional[int]
     file_sequence_number: Optional[int]
     data_file: DataFile
+
+    def __setitem__(self, pos: int, value: Any) -> None:
+        """Maps the position to a record"""
+        if pos == 0:
+            self.status = value
+        elif pos == 1:
+            self.snapshot_id = value
+        elif pos == 2:
+            self.data_sequence_number = value
+        elif pos == 3:
+            self.file_sequence_number = value
+        elif pos == 4:
+            self.data_file = value
+        else:
+            raise ValueError(f"Out of bounds assignment: {pos}")
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
         super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMAS_STRUCT[DEFAULT_READ_VERSION], **named_data})
@@ -571,6 +626,41 @@ class ManifestFile(Record):
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
         super().__init__(*data, **{"struct": MANIFEST_LIST_FILE_STRUCTS[DEFAULT_READ_VERSION], **named_data})
+
+    def __setitem__(self, pos: int, value: Any) -> None:
+        """Maps the position to a record"""
+        if pos == 0:
+            self.manifest_path = value
+        elif pos == 1:
+            self.manifest_length = value
+        elif pos == 2:
+            self.partition_spec_id = value
+        elif pos == 3:
+            self.content = value
+        elif pos == 4:
+            self.sequence_number = value
+        elif pos == 5:
+            self.min_sequence_number = value
+        elif pos == 6:
+            self.added_snapshot_id = value
+        elif pos == 7:
+            self.added_files_count = value
+        elif pos == 8:
+            self.existing_files_count = value
+        elif pos == 9:
+            self.deleted_files_count = value
+        elif pos == 10:
+            self.added_rows_count = value
+        elif pos == 11:
+            self.existing_rows_count = value
+        elif pos == 12:
+            self.deleted_rows_count = value
+        elif pos == 13:
+            self.partitions = value
+        elif pos == 14:
+            self.key_metadata = value
+        else:
+            raise ValueError(f"Out of bounds assignment: {pos}")
 
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
