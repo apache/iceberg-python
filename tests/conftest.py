@@ -45,6 +45,7 @@ from typing import (
 from urllib.parse import urlparse
 
 import boto3
+import pyarrow as pa
 import pytest
 from moto import mock_dynamodb, mock_glue
 from moto.server import ThreadedMotoServer  # type: ignore
@@ -264,6 +265,120 @@ def table_schema_nested_with_struct_key_map() -> Schema:
         NestedField(field_id=29, name="double", field_type=DoubleType(), required=True),
         schema_id=1,
         identifier_field_ids=[1],
+    )
+
+
+@pytest.fixture(scope="session")
+def pyarrow_schema_simple_without_ids() -> pa.Schema:
+    return pa.schema([
+        pa.field('foo', pa.string(), nullable=True),
+        pa.field('bar', pa.int32(), nullable=False),
+        pa.field('baz', pa.bool_(), nullable=True),
+    ])
+
+
+@pytest.fixture(scope="session")
+def pyarrow_schema_nested_without_ids() -> pa.Schema:
+    return pa.schema([
+        pa.field('foo', pa.string(), nullable=False),
+        pa.field('bar', pa.int32(), nullable=False),
+        pa.field('baz', pa.bool_(), nullable=True),
+        pa.field('qux', pa.list_(pa.string()), nullable=False),
+        pa.field(
+            'quux',
+            pa.map_(
+                pa.string(),
+                pa.map_(pa.string(), pa.int32()),
+            ),
+            nullable=False,
+        ),
+        pa.field(
+            'location',
+            pa.list_(
+                pa.struct([
+                    pa.field('latitude', pa.float32(), nullable=False),
+                    pa.field('longitude', pa.float32(), nullable=False),
+                ]),
+            ),
+            nullable=False,
+        ),
+        pa.field(
+            'person',
+            pa.struct([
+                pa.field('name', pa.string(), nullable=True),
+                pa.field('age', pa.int32(), nullable=False),
+            ]),
+            nullable=True,
+        ),
+    ])
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_simple() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_table_schema_simple() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[],
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_nested() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=4,
+            name="qux",
+            field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
+            required=True,
+        ),
+        NestedField(
+            field_id=6,
+            name="quux",
+            field_type=MapType(
+                key_id=7,
+                key_type=StringType(),
+                value_id=8,
+                value_type=MapType(key_id=9, key_type=StringType(), value_id=10, value_type=IntegerType(), value_required=False),
+                value_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=11,
+            name="location",
+            field_type=ListType(
+                element_id=12,
+                element_type=StructType(
+                    NestedField(field_id=13, name="latitude", field_type=FloatType(), required=True),
+                    NestedField(field_id=14, name="longitude", field_type=FloatType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=15,
+            name="person",
+            field_type=StructType(
+                NestedField(field_id=16, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=17, name="age", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
     )
 
 

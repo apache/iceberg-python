@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Set,
@@ -33,12 +34,15 @@ from pyiceberg.table import (
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 
+if TYPE_CHECKING:
+    import pyarrow as pa
+
 
 class NoopCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,

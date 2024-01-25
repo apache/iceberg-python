@@ -23,7 +23,9 @@ import pytest
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
+    _ConvertToIcebergWithFreshIds,
     _HasIds,
+    pre_order_visit_pyarrow,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -49,104 +51,6 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
-
-
-@pytest.fixture(scope="module")
-def pyarrow_schema_simple_without_ids() -> pa.Schema:
-    return pa.schema([pa.field('some_int', pa.int32(), nullable=True), pa.field('some_string', pa.string(), nullable=False)])
-
-
-@pytest.fixture(scope="module")
-def pyarrow_schema_nested_without_ids() -> pa.Schema:
-    return pa.schema([
-        pa.field('foo', pa.string(), nullable=False),
-        pa.field('bar', pa.int32(), nullable=False),
-        pa.field('baz', pa.bool_(), nullable=True),
-        pa.field('qux', pa.list_(pa.string()), nullable=False),
-        pa.field(
-            'quux',
-            pa.map_(
-                pa.string(),
-                pa.map_(pa.string(), pa.int32()),
-            ),
-            nullable=False,
-        ),
-        pa.field(
-            'location',
-            pa.list_(
-                pa.struct([
-                    pa.field('latitude', pa.float32(), nullable=False),
-                    pa.field('longitude', pa.float32(), nullable=False),
-                ]),
-            ),
-            nullable=False,
-        ),
-        pa.field(
-            'person',
-            pa.struct([
-                pa.field('name', pa.string(), nullable=True),
-                pa.field('age', pa.int32(), nullable=False),
-            ]),
-            nullable=True,
-        ),
-    ])
-
-
-@pytest.fixture(scope="module")
-def iceberg_schema_simple() -> Schema:
-    return Schema(
-        NestedField(field_id=1, name="some_int", field_type=IntegerType(), required=False),
-        NestedField(field_id=2, name="some_string", field_type=StringType(), required=True),
-    )
-
-
-@pytest.fixture(scope="module")
-def iceberg_schema_nested() -> Schema:
-    return Schema(
-        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
-        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-        NestedField(
-            field_id=4,
-            name="qux",
-            field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
-            required=True,
-        ),
-        NestedField(
-            field_id=6,
-            name="quux",
-            field_type=MapType(
-                key_id=7,
-                key_type=StringType(),
-                value_id=8,
-                value_type=MapType(key_id=9, key_type=StringType(), value_id=10, value_type=IntegerType(), value_required=False),
-                value_required=False,
-            ),
-            required=True,
-        ),
-        NestedField(
-            field_id=11,
-            name="location",
-            field_type=ListType(
-                element_id=12,
-                element_type=StructType(
-                    NestedField(field_id=13, name="latitude", field_type=FloatType(), required=True),
-                    NestedField(field_id=14, name="longitude", field_type=FloatType(), required=True),
-                ),
-                element_required=False,
-            ),
-            required=True,
-        ),
-        NestedField(
-            field_id=15,
-            name="person",
-            field_type=StructType(
-                NestedField(field_id=16, name="name", field_type=StringType(), required=False),
-                NestedField(field_id=17, name="age", field_type=IntegerType(), required=True),
-            ),
-            required=False,
-        ),
-    )
 
 
 def test_pyarrow_binary_to_iceberg() -> None:
@@ -468,8 +372,9 @@ def test_simple_pyarrow_schema_to_schema_missing_ids_using_name_mapping(
 ) -> None:
     schema = pyarrow_schema_simple_without_ids
     name_mapping = NameMapping([
-        MappedField(field_id=1, names=['some_int']),
-        MappedField(field_id=2, names=['some_string']),
+        MappedField(field_id=1, names=['foo']),
+        MappedField(field_id=2, names=['bar']),
+        MappedField(field_id=3, names=['baz']),
     ])
 
     assert pyarrow_to_schema(schema, name_mapping) == iceberg_schema_simple
@@ -480,11 +385,11 @@ def test_simple_pyarrow_schema_to_schema_missing_ids_using_name_mapping_partial_
 ) -> None:
     schema = pyarrow_schema_simple_without_ids
     name_mapping = NameMapping([
-        MappedField(field_id=1, names=['some_string']),
+        MappedField(field_id=1, names=['foo']),
     ])
     with pytest.raises(ValueError) as exc_info:
         _ = pyarrow_to_schema(schema, name_mapping)
-    assert "Could not find field with name: some_int" in str(exc_info.value)
+    assert "Could not find field with name: bar" in str(exc_info.value)
 
 
 def test_nested_pyarrow_schema_to_schema_missing_ids_using_name_mapping(
@@ -572,3 +477,15 @@ def test_pyarrow_schema_to_schema_missing_ids_using_name_mapping_nested_missing_
     with pytest.raises(ValueError) as exc_info:
         _ = pyarrow_to_schema(schema, name_mapping)
     assert "Could not find field with name: quux.value.key" in str(exc_info.value)
+
+
+def test_pyarrow_schema_to_schema_fresh_ids_simple_schema(
+    pyarrow_schema_simple_without_ids: pa.Schema, iceberg_schema_simple: Schema
+) -> None:
+    assert pre_order_visit_pyarrow(pyarrow_schema_simple_without_ids, _ConvertToIcebergWithFreshIds()) == iceberg_schema_simple
+
+
+def test_pyarrow_schema_to_schema_fresh_ids_nested_schema(
+    pyarrow_schema_nested_without_ids: pa.Schema, iceberg_schema_nested: Schema
+) -> None:
+    assert pre_order_visit_pyarrow(pyarrow_schema_nested_without_ids, _ConvertToIcebergWithFreshIds()) == iceberg_schema_nested

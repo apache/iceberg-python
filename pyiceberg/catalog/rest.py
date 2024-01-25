@@ -16,6 +16,7 @@
 #  under the License.
 from json import JSONDecodeError
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -67,6 +68,9 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 ICEBERG_REST_SPEC_VERSION = "0.14.1"
 
@@ -437,12 +441,20 @@ class RestCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
+        if not isinstance(schema, Schema):
+            import pyarrow as pa
+
+            from pyiceberg.io.pyarrow import _ConvertToIcebergWithFreshIds, pre_order_visit_pyarrow
+
+            if isinstance(schema, pa.Schema):
+                schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(
             name=namespace_and_table["table"],

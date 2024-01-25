@@ -18,6 +18,7 @@ from typing import List
 from unittest import mock
 
 import boto3
+import pyarrow as pa
 import pytest
 from moto import mock_dynamodb
 
@@ -67,6 +68,23 @@ def test_create_table_with_database_location(
     test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, table_schema_nested)
+    assert table.identifier == (catalog_name,) + identifier
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+
+
+@mock_dynamodb
+def test_create_table_with_pyarrow_schema(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    pyarrow_schema_simple_without_ids: pa.Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
+    table = test_catalog.create_table(identifier, pyarrow_schema_simple_without_ids)
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
