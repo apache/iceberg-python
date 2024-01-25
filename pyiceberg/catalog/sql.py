@@ -169,13 +169,7 @@ class SqlCatalog(Catalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        if not isinstance(schema, Schema):
-            import pyarrow as pa
-
-            from pyiceberg.io.pyarrow import _ConvertToIcebergWithFreshIds, pre_order_visit_pyarrow
-
-            if isinstance(schema, pa.Schema):
-                schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         if not self._namespace_exists(database_name):

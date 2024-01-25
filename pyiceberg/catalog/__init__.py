@@ -516,6 +516,22 @@ class Catalog(ABC):
             if overlap:
                 raise ValueError(f"Updates and deletes have an overlap: {overlap}")
 
+    @staticmethod
+    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
+        try:
+            import pyarrow as pa
+
+            from pyiceberg.io.pyarrow import _ConvertToIcebergWithFreshIds, pre_order_visit_pyarrow
+
+            if isinstance(schema, pa.Schema):
+                schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+        except ModuleNotFoundError:
+            pass
+
+        if not isinstance(schema, Schema):
+            raise ValueError(f"{type(schema)=} must be pyiceberg.schema.Schema")
+        return schema
+
     def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
         if not location:
             return self._get_default_warehouse_location(database_name, table_name)

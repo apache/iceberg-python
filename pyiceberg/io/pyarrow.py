@@ -875,6 +875,42 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
         return True
 
 
+def _pyarrow_datatype_to_iceberg_primitive_type(primitive: pa.DataType) -> PrimitiveType:
+    if pa.types.is_boolean(primitive):
+        return BooleanType()
+    elif pa.types.is_int32(primitive):
+        return IntegerType()
+    elif pa.types.is_int64(primitive):
+        return LongType()
+    elif pa.types.is_float32(primitive):
+        return FloatType()
+    elif pa.types.is_float64(primitive):
+        return DoubleType()
+    elif isinstance(primitive, pa.Decimal128Type):
+        primitive = cast(pa.Decimal128Type, primitive)
+        return DecimalType(primitive.precision, primitive.scale)
+    elif pa.types.is_string(primitive):
+        return StringType()
+    elif pa.types.is_date32(primitive):
+        return DateType()
+    elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
+        return TimeType()
+    elif pa.types.is_timestamp(primitive):
+        primitive = cast(pa.TimestampType, primitive)
+        if primitive.unit == "us":
+            if primitive.tz == "UTC" or primitive.tz == "+00:00":
+                return TimestamptzType()
+            elif primitive.tz is None:
+                return TimestampType()
+    elif pa.types.is_binary(primitive):
+        return BinaryType()
+    elif pa.types.is_fixed_size_binary(primitive):
+        primitive = cast(pa.FixedSizeBinaryType, primitive)
+        return FixedType(primitive.byte_width)
+
+    raise TypeError(f"Unsupported type: {primitive}")
+
+
 class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
@@ -927,39 +963,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
-        if pa.types.is_boolean(primitive):
-            return BooleanType()
-        elif pa.types.is_int32(primitive):
-            return IntegerType()
-        elif pa.types.is_int64(primitive):
-            return LongType()
-        elif pa.types.is_float32(primitive):
-            return FloatType()
-        elif pa.types.is_float64(primitive):
-            return DoubleType()
-        elif isinstance(primitive, pa.Decimal128Type):
-            primitive = cast(pa.Decimal128Type, primitive)
-            return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive):
-            return StringType()
-        elif pa.types.is_date32(primitive):
-            return DateType()
-        elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
-            return TimeType()
-        elif pa.types.is_timestamp(primitive):
-            primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit == "us":
-                if primitive.tz == "UTC" or primitive.tz == "+00:00":
-                    return TimestamptzType()
-                elif primitive.tz is None:
-                    return TimestampType()
-        elif pa.types.is_binary(primitive):
-            return BinaryType()
-        elif pa.types.is_fixed_size_binary(primitive):
-            primitive = cast(pa.FixedSizeBinaryType, primitive)
-            return FixedType(primitive.byte_width)
-
-        raise TypeError(f"Unsupported type: {primitive}")
+        return _pyarrow_datatype_to_iceberg_primitive_type(primitive)
 
     def before_field(self, field: pa.Field) -> None:
         self._field_names.append(field.name)
@@ -1021,39 +1025,7 @@ class _ConvertToIcebergWithFreshIds(PreOrderPyArrowSchemaVisitor[Union[IcebergTy
         return MapType(key_id, key_result(), value_id, value_result(), value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
-        if pa.types.is_boolean(primitive):
-            return BooleanType()
-        elif pa.types.is_int32(primitive):
-            return IntegerType()
-        elif pa.types.is_int64(primitive):
-            return LongType()
-        elif pa.types.is_float32(primitive):
-            return FloatType()
-        elif pa.types.is_float64(primitive):
-            return DoubleType()
-        elif isinstance(primitive, pa.Decimal128Type):
-            primitive = cast(pa.Decimal128Type, primitive)
-            return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive):
-            return StringType()
-        elif pa.types.is_date32(primitive):
-            return DateType()
-        elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
-            return TimeType()
-        elif pa.types.is_timestamp(primitive):
-            primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit == "us":
-                if primitive.tz == "UTC" or primitive.tz == "+00:00":
-                    return TimestamptzType()
-                elif primitive.tz is None:
-                    return TimestampType()
-        elif pa.types.is_binary(primitive):
-            return BinaryType()
-        elif pa.types.is_fixed_size_binary(primitive):
-            primitive = cast(pa.FixedSizeBinaryType, primitive)
-            return FixedType(primitive.byte_width)
-
-        raise TypeError(f"Unsupported type: {primitive}")
+        return _pyarrow_datatype_to_iceberg_primitive_type(primitive)
 
 
 def _task_to_table(

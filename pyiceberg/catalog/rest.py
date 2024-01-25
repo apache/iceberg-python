@@ -447,13 +447,7 @@ class RestCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
-        if not isinstance(schema, Schema):
-            import pyarrow as pa
-
-            from pyiceberg.io.pyarrow import _ConvertToIcebergWithFreshIds, pre_order_visit_pyarrow
-
-            if isinstance(schema, pa.Schema):
-                schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(

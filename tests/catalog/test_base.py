@@ -79,13 +79,7 @@ class InMemoryCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
-        if not isinstance(schema, Schema):
-            import pyarrow as pa
-
-            from pyiceberg.io.pyarrow import _ConvertToIcebergWithFreshIds, pre_order_visit_pyarrow
-
-            if isinstance(schema, pa.Schema):
-                schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         identifier = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_from(identifier)
@@ -341,6 +335,23 @@ def test_create_table(catalog: InMemoryCatalog) -> None:
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+
+
+@pytest.mark.parametrize(
+    "schema_fixture,expected_fixture",
+    [
+        ("pyarrow_schema_simple_without_ids", "iceberg_schema_simple"),
+        ("iceberg_schema_simple", "iceberg_schema_simple"),
+        ("iceberg_schema_nested", "iceberg_schema_nested"),
+        ("pyarrow_schema_nested_without_ids", "iceberg_schema_nested"),
+    ],
+)
+def test_convert_schema_if_needed(
+    schema_fixture: str, expected_fixture: str, catalog: InMemoryCatalog, request: pytest.FixtureRequest
+) -> None:
+    schema = request.getfixturevalue(schema_fixture)
+    expected = request.getfixturevalue(expected_fixture)
+    assert expected == catalog._convert_schema_if_needed(schema)
 
 
 def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_simple_without_ids: pa.Schema) -> None:
