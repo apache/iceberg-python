@@ -36,6 +36,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
@@ -83,7 +84,7 @@ def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
 @pytest.fixture(scope="module")
 def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite:////tmp/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
@@ -95,7 +96,7 @@ def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
 @pytest.fixture(scope="module")
 def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite:////tmp/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
@@ -103,6 +104,20 @@ def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, No
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_sqlite_fsspec(warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+        PY_IO_IMPL: FSSPEC_FILE_IO,
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
+    catalog.create_tables()
+    yield catalog
+    catalog.destroy_tables()
+
 
 
 def test_creation_with_no_uri() -> None:
@@ -731,6 +746,7 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_i
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
         lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture('catalog_sqlite_fsspec'),
     ],
 )
 def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
