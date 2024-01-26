@@ -350,6 +350,18 @@ class StructType(IcebergType):
                 return field
         return None
 
+    def field_by_name(self, name: str, case_sensitive: bool = True) -> Optional[NestedField]:
+        if case_sensitive:
+            name_lower = name.lower()
+            for field in self.fields:
+                if field.name.lower() == name_lower:
+                    return field
+        else:
+            for field in self.fields:
+                if field.name == name:
+                    return field
+        return None
+
     def __str__(self) -> str:
         """Return the string representation of the StructType class."""
         return f"struct<{', '.join(map(str, self.fields))}>"
