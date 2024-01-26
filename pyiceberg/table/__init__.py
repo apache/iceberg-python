@@ -2120,7 +2120,7 @@ class UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         return False
 
     def primitive(self, primitive: PrimitiveType, primitive_partner_id: Optional[int]) -> bool:
-        return primitive_partner is None
+        return primitive_partner_id is None
 
 
 class PartnerIdByNameAccessor(PartnerAccessor[int]):
