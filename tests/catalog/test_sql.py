@@ -119,7 +119,6 @@ def catalog_sqlite_fsspec(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     catalog.destroy_tables()
 
 
-
 def test_creation_with_no_uri() -> None:
     with pytest.raises(NoSuchPropertyException):
         SqlCatalog("test_ddb_catalog", not_uri="unused")

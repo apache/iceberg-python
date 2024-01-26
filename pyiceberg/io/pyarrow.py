@@ -173,7 +173,7 @@ T = TypeVar("T")
 
 
 class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
-    def open_output_stream(self, path, *args, **kwargs):
+    def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
         # In LocalFileSystem, parent directories must be first created before opening an output stream
         self.create_dir(os.path.dirname(path), recursive=True)
         return super().open_output_stream(path, *args, **kwargs)
