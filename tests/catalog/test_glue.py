@@ -38,7 +38,12 @@ from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
 
 @mock_glue
 def test_create_table_with_database_location(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
@@ -48,6 +53,22 @@ def test_create_table_with_database_location(
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    # Ensure schema is also pushed to Glue
+    table_info = _glue.get_table(
+        DatabaseName=database_name,
+        Name=table_name,
+    )
+    storage_descriptor = table_info["Table"]["StorageDescriptor"]
+    columns = storage_descriptor["Columns"]
+    assert len(columns) == len(table_schema_nested.fields)
+    assert columns[0] == {
+        "Name": "foo",
+        "Type": "string",
+        "Parameters": {"iceberg.field.id": "1", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
+    }
+
+    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
 
 
 @mock_glue
@@ -524,7 +545,12 @@ def test_passing_profile_name() -> None:
 
 @mock_glue
 def test_commit_table_update_schema(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
@@ -553,6 +579,21 @@ def test_commit_table_update_schema(
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+
+    # Ensure schema is also pushed to Glue
+    table_info = _glue.get_table(
+        DatabaseName=database_name,
+        Name=table_name,
+    )
+    storage_descriptor = table_info["Table"]["StorageDescriptor"]
+    columns = storage_descriptor["Columns"]
+    assert len(columns) == len(table_schema_nested.fields) + 1
+    assert columns[-1] == {
+        "Name": "b",
+        "Type": "int",
+        "Parameters": {"iceberg.field.id": "18", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
+    }
+    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
 
 
 @mock_glue

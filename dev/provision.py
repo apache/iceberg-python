@@ -320,3 +320,25 @@ for catalog_name, catalog in catalogs.items():
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_table_add_column ADD COLUMN b string")
 
     spark.sql(f"INSERT INTO {catalog_name}.default.test_table_add_column VALUES ('2', '2')")
+
+    spark.sql(
+        f"""
+    CREATE TABLE {catalog_name}.default.test_table_empty_list_and_map (
+        col_list             array<int>,
+        col_map              map<int, int>,
+        col_list_with_struct array<struct<test:int>>
+    )
+    USING iceberg
+    TBLPROPERTIES (
+        'format-version'='1'
+    );
+    """
+    )
+
+    spark.sql(
+        f"""
+    INSERT INTO {catalog_name}.default.test_table_empty_list_and_map
+    VALUES (null, null, null),
+           (array(), map(), array(struct(1)))
+    """
+    )
