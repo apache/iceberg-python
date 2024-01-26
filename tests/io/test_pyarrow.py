@@ -92,6 +92,26 @@ from pyiceberg.types import (
 )
 
 
+def test_pyarrow_infer_local_fs_from_path() -> None:
+    """Test path with `file` scheme and no scheme both use LocalFileSystem"""
+    assert isinstance(PyArrowFileIO().new_output("file://tmp/warehouse")._filesystem, LocalFileSystem)
+    assert isinstance(PyArrowFileIO().new_output("/tmp/warehouse")._filesystem, LocalFileSystem)
+
+
+def test_pyarrow_local_fs_can_create_path_without_parent_dir() -> None:
+    """Test LocalFileSystem can create path without first creating the parent directories"""
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        file_path = f"{tmpdirname}/foo/bar/baz.txt"
+        output_file = PyArrowFileIO().new_output(file_path)
+        parent_path = os.path.dirname(file_path)
+        assert output_file._filesystem.get_file_info(parent_path).type == FileType.NotFound
+        try:
+            with output_file.create() as f:
+                f.write(b"foo")
+        except Exception:
+            pytest.fail("Failed to write to file without parent directory")
+
+
 def test_pyarrow_input_file() -> None:
     """Test reading a file using PyArrowFile"""
 
