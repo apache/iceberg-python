@@ -402,7 +402,7 @@ class Transaction:
             ),
         )
 
-        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=MAIN_BRANCH),)
         return self._apply(updates, requirements)
 
     def _set_ref_snapshot(
@@ -3227,10 +3227,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=MAIN_BRANCH, type="branch"
                 ),
             ),
-            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
+            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=MAIN_BRANCH),),
         )
 
     @property
