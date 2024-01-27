@@ -258,10 +258,6 @@ def catalog() -> InMemoryCatalog:
     return InMemoryCatalog("test.in.memory.catalog", **{"test.key": "test.value"})
 
 
-TEST_PYARROW_SCHEMA = pa.schema([
-    pa.field('some_int', pa.int32(), nullable=True),
-    pa.field('some_string', pa.string(), nullable=False),
-])
 TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
 TEST_TABLE_NAMESPACE = ("com", "organization", "department")
 TEST_TABLE_NAME = "my_table"
