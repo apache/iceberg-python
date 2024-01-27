@@ -146,7 +146,7 @@ catalog.create_table(
 )
 ```
 
-One can also create an Iceberg table using a pyarrow schema:
+To create a table using a pyarrow schema:
 
 ```python
 import pyarrow as pa
