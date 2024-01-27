@@ -518,6 +518,8 @@ class Catalog(ABC):
 
     @staticmethod
     def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
+        if isinstance(schema, Schema):
+            return schema
         try:
             import pyarrow as pa
 
@@ -525,12 +527,10 @@ class Catalog(ABC):
 
             if isinstance(schema, pa.Schema):
                 schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+                return schema
         except ModuleNotFoundError:
             pass
-
-        if not isinstance(schema, Schema):
-            raise ValueError(f"{type(schema)=} must be pyiceberg.schema.Schema")
-        return schema
+        raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
 
     def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
         if not location:
