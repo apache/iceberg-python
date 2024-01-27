@@ -117,7 +117,7 @@ from pyiceberg.table.name_mapping import (
     NameMapping,
     update_mapping,
 )
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -813,7 +813,7 @@ class AddSnapshotUpdate(IcebergBaseModel):
 class SetSnapshotRefUpdate(IcebergBaseModel):
     action: Literal["set-snapshot-ref"] = Field(default="set-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
-    type: Literal["tag", "branch"]
+    type: Literal[SnapshotRefType.TAG, SnapshotRefType.BRANCH]
     snapshot_id: int = Field(alias="snapshot-id")
     max_ref_age_ms: Annotated[Optional[int], Field(alias="max-ref-age-ms", default=None)]
     max_snapshot_age_ms: Annotated[Optional[int], Field(alias="max-snapshot-age-ms", default=None)]
@@ -3205,7 +3205,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=MAIN_BRANCH, type="branch"
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=MAIN_BRANCH, type=SnapshotRefType.BRANCH
                 ),
             ),
             (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=MAIN_BRANCH),),
