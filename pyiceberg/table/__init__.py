@@ -269,7 +269,7 @@ class Transaction:
             )
         )
 
-        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"))
+        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=MAIN_BRANCH))
         return self
 
     def update_schema(self) -> UpdateSchema:
@@ -2445,7 +2445,7 @@ class _MergingSnapshotProducer:
         with self._table.transaction() as tx:
             tx.add_snapshot(snapshot=snapshot)
             tx.set_ref_snapshot(
-                snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=MAIN_BRANCH, type="branch"
             )
 
         return snapshot
