@@ -269,7 +269,7 @@ class Transaction:
             )
         )
 
-        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=MAIN_BRANCH))
+        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=ref_name))
         return self
 
     def update_schema(self) -> UpdateSchema:
@@ -925,7 +925,7 @@ class Table:
         else:
             return create_mapping_from_schema(self.schema())
 
-    def append(self, df: pa.Table) -> None:
+    def append(self, df: pa.Table, branch: str = MAIN_BRANCH) -> None:
         """
         Append data to the table.
 
@@ -939,13 +939,13 @@ class Table:
             raise ValueError("Cannot write to tables with a sort-order")
 
         data_files = _dataframe_to_data_files(self, df=df)
-        merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
+        merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self, branch=branch)
         for data_file in data_files:
             merge.append_data_file(data_file)
 
         merge.commit()
 
-    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, branch: str = MAIN_BRANCH) -> None:
         """
         Overwrite all the data in the table.
 
@@ -967,6 +967,7 @@ class Table:
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
+            branch=branch,
         )
 
         for data_file in data_files:
@@ -2279,12 +2280,14 @@ class _MergingSnapshotProducer:
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
     _commit_uuid: uuid.UUID
+    _branch: str
 
-    def __init__(self, operation: Operation, table: Table) -> None:
+    def __init__(self, operation: Operation, table: Table, branch: str) -> None:
         self._operation = operation
         self._table = table
         self._snapshot_id = table.new_snapshot_id()
         # Since we only support the main branch for now
+        self._branch = branch
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_data_files = []
         self._commit_uuid = uuid.uuid4()
@@ -2447,7 +2450,7 @@ class _MergingSnapshotProducer:
             tx.set_ref_snapshot(
                 snapshot_id=self._snapshot_id,
                 parent_snapshot_id=self._parent_snapshot_id,
-                ref_name=MAIN_BRANCH,
+                ref_name=self._branch,
                 type=SnapshotRefType.BRANCH,
             )
 
