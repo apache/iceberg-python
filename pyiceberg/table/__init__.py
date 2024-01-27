@@ -932,6 +932,14 @@ class Table:
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
         """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
@@ -954,6 +962,14 @@ class Table:
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
         """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
         if overwrite_filter != AlwaysTrue():
             raise NotImplementedError("Cannot overwrite a subset of a table")
 

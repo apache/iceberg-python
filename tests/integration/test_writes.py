@@ -391,3 +391,21 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     assert [row.added_data_files_count for row in rows] == [1, 1, 0, 1, 1]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
     assert [row.deleted_data_files_count for row in rows] == [0, 0, 1, 0, 0]
+
+
+@pytest.mark.integration
+def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_data_files"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+
+    with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
+        tbl.overwrite("not a df")
+
+    with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
+        tbl.append("not a df")
