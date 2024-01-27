@@ -151,7 +151,7 @@ To create a table using a pyarrow schema:
 ```python
 import pyarrow as pa
 
-pa.schema(
+schema = pa.schema(
     [
         pa.field("foo", pa.string(), nullable=True),
         pa.field("bar", pa.int32(), nullable=False),
@@ -162,7 +162,6 @@ pa.schema(
 catalog.create_table(
     identifier="docs_example.bids",
     schema=schema,
-    location="s3://pyiceberg",
 )
 ```
 
