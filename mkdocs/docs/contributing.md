@@ -58,6 +58,22 @@ For IDEA ≤2021 you need to install the [Poetry integration as a plugin](https:
 
 Now you're set using Poetry, and all the tests will run in Poetry, and you'll have syntax highlighting in the pyproject.toml to indicate stale dependencies.
 
+## Installation from source
+
+Clone the repository for local development:
+
+```sh
+git clone https://github.com/apache/iceberg-python.git
+cd iceberg-python
+pip3 install -e ".[s3fs,hive]"
+```
+
+Install it directly for GitHub (not recommended), but sometimes handy:
+
+```
+pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[s3fs]"
+```
+
 ## Linting
 
 `pre-commit` is used for autoformatting and linting:
