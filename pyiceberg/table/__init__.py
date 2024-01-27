@@ -402,7 +402,7 @@ class Transaction:
             ),
         )
 
-        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=MAIN_BRANCH),)
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=ref_name),)
         return self._apply(updates, requirements)
 
     def _set_ref_snapshot(
@@ -1562,7 +1562,7 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT,branch: str = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -3066,14 +3066,16 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
+    _branch: str
 
     def __init__(
         self,
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -3081,6 +3083,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
         # Since we only support the main branch for now
+        self._branch = branch
         self._parent_snapshot_id = (
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
@@ -3227,10 +3230,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=MAIN_BRANCH, type=SnapshotRefType.BRANCH
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=self._branch, type=SnapshotRefType.BRANCH
                 ),
             ),
-            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=MAIN_BRANCH),),
+            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=self._branch),),
         )
 
     @property
