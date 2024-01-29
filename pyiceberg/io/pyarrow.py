@@ -761,32 +761,6 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
         """Visit a primitive type."""
 
 
-class PreOrderPyArrowSchemaVisitor(Generic[T], ABC):
-    @abstractmethod
-    def schema(self, schema: pa.Schema, struct_result: Callable[[], T]) -> T:
-        """Visit a schema."""
-
-    @abstractmethod
-    def struct(self, struct: pa.StructType, field_results: List[Callable[[], T]]) -> T:
-        """Visit a struct."""
-
-    @abstractmethod
-    def field(self, field: pa.Field, field_result: Callable[[], T]) -> T:
-        """Visit a field."""
-
-    @abstractmethod
-    def list(self, list_type: pa.ListType, element_result: Callable[[], T]) -> T:
-        """Visit a list."""
-
-    @abstractmethod
-    def map(self, map_type: pa.MapType, key_result: Callable[[], T], value_result: Callable[[], T]) -> T:
-        """Visit a map."""
-
-    @abstractmethod
-    def primitive(self, primitive: pa.DataType) -> T:
-        """Visit a primitive type."""
-
-
 def _get_field_id(field: pa.Field) -> Optional[int]:
     return (
         int(field_id_str.decode())
@@ -932,7 +906,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names.pop()
 
 
-class _ConvertToIcebergWithNoIds(_ConvertToIceberg):
+class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
     Converts PyArrowSchema to Iceberg Schema with all -1 ids.
 
