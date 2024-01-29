@@ -323,6 +323,15 @@ def iceberg_schema_simple() -> Schema:
 
 
 @pytest.fixture(scope="session")
+def iceberg_schema_simple_no_ids() -> Schema:
+    return Schema(
+        NestedField(field_id=-1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=-1, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=-1, name="baz", field_type=BooleanType(), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
 def iceberg_table_schema_simple() -> Schema:
     return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
@@ -376,6 +385,55 @@ def iceberg_schema_nested() -> Schema:
             field_type=StructType(
                 NestedField(field_id=16, name="name", field_type=StringType(), required=False),
                 NestedField(field_id=17, name="age", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_nested_no_ids() -> Schema:
+    return Schema(
+        NestedField(field_id=-1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=-1, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=-1, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=-1,
+            name="qux",
+            field_type=ListType(element_id=-1, element_type=StringType(), element_required=False),
+            required=True,
+        ),
+        NestedField(
+            field_id=-1,
+            name="quux",
+            field_type=MapType(
+                key_id=-1,
+                key_type=StringType(),
+                value_id=-1,
+                value_type=MapType(key_id=-1, key_type=StringType(), value_id=-1, value_type=IntegerType(), value_required=False),
+                value_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=-1,
+            name="location",
+            field_type=ListType(
+                element_id=-1,
+                element_type=StructType(
+                    NestedField(field_id=-1, name="latitude", field_type=FloatType(), required=True),
+                    NestedField(field_id=-1, name="longitude", field_type=FloatType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=-1,
+            name="person",
+            field_type=StructType(
+                NestedField(field_id=-1, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=-1, name="age", field_type=IntegerType(), required=True),
             ),
             required=False,
         ),

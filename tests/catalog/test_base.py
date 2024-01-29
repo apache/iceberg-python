@@ -26,6 +26,7 @@ from typing import (
 
 import pyarrow as pa
 import pytest
+from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
@@ -334,19 +335,19 @@ def test_create_table(catalog: InMemoryCatalog) -> None:
 
 
 @pytest.mark.parametrize(
-    "schema_fixture,expected_fixture",
+    "schema,expected",
     [
-        ("pyarrow_schema_simple_without_ids", "iceberg_schema_simple"),
-        ("iceberg_schema_simple", "iceberg_schema_simple"),
-        ("iceberg_schema_nested", "iceberg_schema_nested"),
-        ("pyarrow_schema_nested_without_ids", "iceberg_schema_nested"),
+        (lazy_fixture("pyarrow_schema_simple_without_ids"), lazy_fixture("iceberg_schema_simple_no_ids")),
+        (lazy_fixture("iceberg_schema_simple"), lazy_fixture("iceberg_schema_simple")),
+        (lazy_fixture("iceberg_schema_nested"), lazy_fixture("iceberg_schema_nested")),
+        (lazy_fixture("pyarrow_schema_nested_without_ids"), lazy_fixture("iceberg_schema_nested_no_ids")),
     ],
 )
 def test_convert_schema_if_needed(
-    schema_fixture: str, expected_fixture: str, catalog: InMemoryCatalog, request: pytest.FixtureRequest
+    schema: Union[Schema, pa.Schema],
+    expected: Schema,
+    catalog: InMemoryCatalog,
 ) -> None:
-    schema = request.getfixturevalue(schema_fixture)
-    expected = request.getfixturevalue(expected_fixture)
     assert expected == catalog._convert_schema_if_needed(schema)
 
 

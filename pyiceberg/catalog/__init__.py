@@ -523,10 +523,10 @@ class Catalog(ABC):
         try:
             import pyarrow as pa
 
-            from pyiceberg.io.pyarrow import _ConvertToIcebergWithFreshIds, pre_order_visit_pyarrow
+            from pyiceberg.io.pyarrow import _ConvertToIcebergWithNoIds, visit_pyarrow
 
             if isinstance(schema, pa.Schema):
-                schema: Schema = pre_order_visit_pyarrow(schema, _ConvertToIcebergWithFreshIds())  # type: ignore
+                schema: Schema = visit_pyarrow(schema, _ConvertToIcebergWithNoIds())  # type: ignore
                 return schema
         except ModuleNotFoundError:
             pass

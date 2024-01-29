@@ -23,9 +23,8 @@ import pytest
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
-    _ConvertToIcebergWithFreshIds,
+    _ConvertToIcebergWithNoIds,
     _HasIds,
-    pre_order_visit_pyarrow,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -480,12 +479,12 @@ def test_pyarrow_schema_to_schema_missing_ids_using_name_mapping_nested_missing_
 
 
 def test_pyarrow_schema_to_schema_fresh_ids_simple_schema(
-    pyarrow_schema_simple_without_ids: pa.Schema, iceberg_schema_simple: Schema
+    pyarrow_schema_simple_without_ids: pa.Schema, iceberg_schema_simple_no_ids: Schema
 ) -> None:
-    assert pre_order_visit_pyarrow(pyarrow_schema_simple_without_ids, _ConvertToIcebergWithFreshIds()) == iceberg_schema_simple
+    assert visit_pyarrow(pyarrow_schema_simple_without_ids, _ConvertToIcebergWithNoIds()) == iceberg_schema_simple_no_ids
 
 
 def test_pyarrow_schema_to_schema_fresh_ids_nested_schema(
-    pyarrow_schema_nested_without_ids: pa.Schema, iceberg_schema_nested: Schema
+    pyarrow_schema_nested_without_ids: pa.Schema, iceberg_schema_nested_no_ids: Schema
 ) -> None:
-    assert pre_order_visit_pyarrow(pyarrow_schema_nested_without_ids, _ConvertToIcebergWithFreshIds()) == iceberg_schema_nested
+    assert visit_pyarrow(pyarrow_schema_nested_without_ids, _ConvertToIcebergWithNoIds()) == iceberg_schema_nested_no_ids
