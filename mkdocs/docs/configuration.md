@@ -24,7 +24,7 @@ hide:
 
 # Catalogs
 
-PyIceberg currently has native support for REST, SQL, Hive, Glue and DynamoDB.
+PyIceberg currently has native support for REST, SQL, Hive, Glue, DynamoDB and In-Memory catalogs.
 
 There are three ways to pass in configuration:
 
@@ -229,6 +229,20 @@ catalog:
     aws_secret_access_key: <SECRET_ACCESS_KEY>
     aws_session_token: <SESSION_TOKEN>
     region_name: <REGION_NAME>
+```
+
+## In-Memory Catalog
+
+In-memory catalog uses in-memory data-structures to store information.
+This is useful for test, demo, and playground. Do not use in production as the data is not persisted.
+
+While you can specify In-Memory catalog in the configuration file like this, it is not recommended since information is only persisted for the duration of the function call.
+
+```yaml
+catalog:
+  default:
+    type: in_memory
+    warehouse: /tmp/warehouse # default warehouse location
 ```
 
 # Concurrency

@@ -39,7 +39,11 @@ DEFAULT_WAREHOUSE_LOCATION = "file:///tmp/warehouse"
 
 
 class InMemoryCatalog(Catalog):
-    """An in-memory catalog implementation."""
+    """
+    An in-memory catalog implementation that uses in-memory data-structures to store the namespaces and tables.
+
+    This is useful for test, demo, and playground but not in production as data is not persisted.
+    """
 
     __tables: Dict[Identifier, Table]
     __namespaces: Dict[Identifier, Properties]
