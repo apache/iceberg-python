@@ -150,8 +150,8 @@ def test_convert_schema_if_needed(
 def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_simple_without_ids: pa.Schema) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
-        location=TEST_TABLE_LOCATION,
         schema=pyarrow_schema_simple_without_ids,
+        location=TEST_TABLE_LOCATION,
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
