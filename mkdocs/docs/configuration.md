@@ -233,7 +233,7 @@ catalog:
 
 ## In-Memory Catalog
 
-In-memory catalog uses in-memory data-structures to store information.
+The In-Memory catalog uses in-memory data-structures to store information.
 This is useful for test, demo, and playground. Do not use in production as the data is not persisted.
 
 While you can specify In-Memory catalog in the configuration file like this, it is not recommended since information is only persisted for the duration of the function call.
