@@ -194,8 +194,7 @@ class AvroFile(Generic[D]):
                 raise ValueError(f"Expected sync bytes {self.header.sync!r}, but got {sync_marker!r}")
         block_records = self.decoder.read_int()
 
-        block_bytes_len = self.decoder.read_int()
-        block_bytes = self.decoder.read(block_bytes_len)
+        block_bytes = self.decoder.read_bytes()
         if codec := self.header.compression_codec():
             block_bytes = codec.decompress(block_bytes)
 
