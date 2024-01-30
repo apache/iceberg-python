@@ -58,7 +58,7 @@ from pyiceberg.exceptions import (
     UnauthorizedError,
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
@@ -447,13 +447,14 @@ class RestCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        iceberg_schema = self._convert_schema_if_needed(schema)
+        iceberg_schema = assign_fresh_schema_ids(iceberg_schema)
 
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
-            table_schema=schema,
+            table_schema=iceberg_schema,
             partition_spec=partition_spec,
             write_order=sort_order,
             properties=properties,
