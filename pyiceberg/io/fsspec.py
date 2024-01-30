@@ -99,7 +99,7 @@ SIGNERS: Dict[str, Callable[[Properties, AWSRequest], AWSRequest]] = {"S3V4RestS
 
 
 def _file(_: Properties) -> LocalFileSystem:
-    return LocalFileSystem()
+    return LocalFileSystem(auto_mkdir=True)
 
 
 def _s3(properties: Properties) -> AbstractFileSystem:
@@ -173,6 +173,7 @@ def _adlfs(properties: Properties) -> AbstractFileSystem:
 
 
 SCHEME_TO_FS = {
+    "": _file,
     "file": _file,
     "s3": _s3,
     "s3a": _s3,

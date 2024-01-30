@@ -23,7 +23,6 @@
 - [API](api.md)
 - [Contributing](contributing.md)
 - [Community](community.md)
-- [Feature support](feature-support.md)
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)

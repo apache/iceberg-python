@@ -1221,50 +1221,57 @@ def assign_fresh_schema_ids(schema_or_type: Union[Schema, IcebergType], next_id:
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
     """Traverses the schema and assigns monotonically increasing ids."""
 
-    reserved_ids: Dict[int, int]
+    old_id_to_new_id: Dict[int, int]
 
     def __init__(self, next_id_func: Optional[Callable[[], int]] = None) -> None:
-        self.reserved_ids = {}
+        self.old_id_to_new_id = {}
         counter = itertools.count(1)
         self.next_id_func = next_id_func if next_id_func is not None else lambda: next(counter)
 
-    def _get_and_increment(self) -> int:
-        return self.next_id_func()
+    def _get_and_increment(self, current_id: int) -> int:
+        new_id = self.next_id_func()
+        self.old_id_to_new_id[current_id] = new_id
+        return new_id
 
     def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
-        # First we keep the original identifier_field_ids here, we remap afterwards
-        fields = struct_result().fields
-        return Schema(*fields, identifier_field_ids=[self.reserved_ids[field_id] for field_id in schema.identifier_field_ids])
-
-    def struct(self, struct: StructType, field_results: List[Callable[[], IcebergType]]) -> StructType:
-        # assign IDs for this struct's fields first
-        self.reserved_ids.update({field.field_id: self._get_and_increment() for field in struct.fields})
-        return StructType(*[field() for field in field_results])
-
-    def field(self, field: NestedField, field_result: Callable[[], IcebergType]) -> IcebergType:
-        return NestedField(
-            field_id=self.reserved_ids[field.field_id],
-            name=field.name,
-            field_type=field_result(),
-            required=field.required,
-            doc=field.doc,
+        return Schema(
+            *struct_result().fields,
+            identifier_field_ids=[self.old_id_to_new_id[field_id] for field_id in schema.identifier_field_ids],
         )
 
+    def struct(self, struct: StructType, field_results: List[Callable[[], IcebergType]]) -> StructType:
+        new_ids = [self._get_and_increment(field.field_id) for field in struct.fields]
+        new_fields = []
+        for field_id, field, field_type in zip(new_ids, struct.fields, field_results):
+            new_fields.append(
+                NestedField(
+                    field_id=field_id,
+                    name=field.name,
+                    field_type=field_type(),
+                    required=field.required,
+                    doc=field.doc,
+                )
+            )
+        return StructType(*new_fields)
+
+    def field(self, field: NestedField, field_result: Callable[[], IcebergType]) -> IcebergType:
+        return field_result()
+
     def list(self, list_type: ListType, element_result: Callable[[], IcebergType]) -> ListType:
-        self.reserved_ids[list_type.element_id] = self._get_and_increment()
+        element_id = self._get_and_increment(list_type.element_id)
         return ListType(
-            element_id=self.reserved_ids[list_type.element_id],
+            element_id=element_id,
             element=element_result(),
             element_required=list_type.element_required,
         )
 
     def map(self, map_type: MapType, key_result: Callable[[], IcebergType], value_result: Callable[[], IcebergType]) -> MapType:
-        self.reserved_ids[map_type.key_id] = self._get_and_increment()
-        self.reserved_ids[map_type.value_id] = self._get_and_increment()
+        key_id = self._get_and_increment(map_type.key_id)
+        value_id = self._get_and_increment(map_type.value_id)
         return MapType(
-            key_id=self.reserved_ids[map_type.key_id],
+            key_id=key_id,
             key_type=key_result(),
-            value_id=self.reserved_ids[map_type.value_id],
+            value_id=value_id,
             value_type=value_result(),
             value_required=map_type.value_required,
         )
