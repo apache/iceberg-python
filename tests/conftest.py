@@ -40,7 +40,6 @@ from typing import (
     Generator,
     List,
     Optional,
-    Union,
 )
 from urllib.parse import urlparse
 
@@ -48,7 +47,6 @@ import boto3
 import pyarrow as pa
 import pytest
 from moto import mock_dynamodb, mock_glue
-from moto.server import ThreadedMotoServer  # type: ignore
 
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
@@ -87,7 +85,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
-    from pytest import ExitCode, Session
+    from moto.server import ThreadedMotoServer  # type: ignore
 
     from pyiceberg.io.pyarrow import PyArrowFile, PyArrowFileIO
 
@@ -1761,32 +1759,23 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
     os.environ.pop("AWS_DEFAULT_REGION")
 
 
-MOTO_SERVER = ThreadedMotoServer(ip_address="localhost", port=5001)
-
-
-def pytest_sessionfinish(
-    session: "Session",
-    exitstatus: Union[int, "ExitCode"],
-) -> None:
-    if MOTO_SERVER._server_ready:
-        MOTO_SERVER.stop()
-
-
 @pytest.fixture(scope="session")
-def moto_server() -> ThreadedMotoServer:
+def moto_server() -> "ThreadedMotoServer":
+    from moto.server import ThreadedMotoServer
+
+    server = ThreadedMotoServer(ip_address="localhost", port=5001)
+
     # this will throw an exception if the port is already in use
-    is_port_in_use(MOTO_SERVER._ip_address, MOTO_SERVER._port)
-    MOTO_SERVER.start()
-    return MOTO_SERVER
-
-
-def is_port_in_use(ip_address: str, port: int) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((ip_address, port))
+        s.bind((server._ip_address, server._port))
+
+    server.start()
+    yield server
+    server.stop()
 
 
 @pytest.fixture(scope="session")
-def moto_endpoint_url(moto_server: ThreadedMotoServer) -> str:
+def moto_endpoint_url(moto_server: "ThreadedMotoServer") -> str:
     _url = f"http://{moto_server._ip_address}:{moto_server._port}"
     return _url
 
