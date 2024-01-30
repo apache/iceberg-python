@@ -413,9 +413,11 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
 
     # Then
     assert response.metadata.table_uuid == given_table.metadata.table_uuid
+    assert given_table.schema().schema_id == 1
     assert given_table.metadata.current_schema_id == 1
     assert len(response.metadata.schemas) == 2
-    assert response.metadata.schemas[1] == new_schema.model_copy(update={"schema_id": 1})
+    assert response.metadata.schemas[1] == new_schema
+    assert response.metadata.schemas[1].schema_id == 1
     assert given_table.metadata.last_column_id == new_schema.highest_field_id
 
 
