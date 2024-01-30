@@ -123,16 +123,6 @@ def test_create_table(catalog: InMemoryCatalog) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        partition_spec=TEST_TABLE_PARTITION_SPEC,
-        properties=TEST_TABLE_PROPERTIES,
-    )
-    assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
-
-
-def test_create_table_override(catalog: InMemoryCatalog) -> None:
-    table = catalog.create_table(
-        identifier=TEST_TABLE_IDENTIFIER,
-        schema=TEST_TABLE_SCHEMA,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
@@ -160,6 +150,7 @@ def test_convert_schema_if_needed(
 def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_simple_without_ids: pa.Schema) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
+        location=TEST_TABLE_LOCATION,
         schema=pyarrow_schema_simple_without_ids,
         properties=TEST_TABLE_PROPERTIES,
     )
