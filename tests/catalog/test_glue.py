@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 from unittest import mock
 
 import boto3
+import pyarrow as pa
 import pytest
 from moto import mock_glue
 
@@ -95,6 +96,28 @@ def test_create_table_with_given_location(
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(
         identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
+    )
+    assert table.identifier == (catalog_name,) + identifier
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+
+@mock_glue
+def test_create_table_with_pyarrow_schema(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    pyarrow_schema_simple_without_ids: pa.Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=pyarrow_schema_simple_without_ids,
+        location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}",
     )
     assert table.identifier == (catalog_name,) + identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)

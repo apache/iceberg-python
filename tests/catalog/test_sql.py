@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 from typing import Generator, List
 
+import pyarrow as pa
 import pytest
 from pytest import TempPathFactory
 from pytest_lazyfixture import lazy_fixture
@@ -35,7 +36,10 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
     SortDirection,
@@ -80,7 +84,7 @@ def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
 @pytest.fixture(scope="module")
 def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite:////tmp/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
@@ -92,11 +96,24 @@ def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
 @pytest.fixture(scope="module")
 def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite:////tmp/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
     catalog.engine.dialect.supports_sane_rowcount = False
+    catalog.create_tables()
+    yield catalog
+    catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_sqlite_fsspec(warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+        PY_IO_IMPL: FSSPEC_FILE_IO,
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
@@ -138,6 +155,26 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
     table = catalog.create_table(random_identifier, table_schema_nested)
     assert table.sort_order().order_id == 0, "Order ID must match"
     assert table.sort_order().is_unsorted is True, "Order must be unsorted"
+    catalog.drop_table(random_identifier)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_create_table_with_pyarrow_schema(
+    catalog: SqlCatalog,
+    pyarrow_schema_simple_without_ids: pa.Schema,
+    iceberg_table_schema_simple: Schema,
+    random_identifier: Identifier,
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, pyarrow_schema_simple_without_ids)
+    assert table.schema() == iceberg_table_schema_simple
     catalog.drop_table(random_identifier)
 
 
@@ -720,6 +757,47 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_i
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture('catalog_sqlite_fsspec'),
+    ],
+)
+def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, table_schema_simple)
+
+    df = pa.Table.from_pydict(
+        {
+            "foo": ["a"],
+            "bar": [1],
+            "baz": [True],
+        },
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    table.append(df)
+
+    # new snapshot is written in APPEND mode
+    assert len(table.metadata.snapshots) == 1
+    assert table.metadata.snapshots[0].snapshot_id == table.metadata.current_snapshot_id
+    assert table.metadata.snapshots[0].parent_snapshot_id is None
+    assert table.metadata.snapshots[0].sequence_number == 1
+    assert table.metadata.snapshots[0].summary is not None
+    assert table.metadata.snapshots[0].summary.operation == Operation.APPEND
+    assert table.metadata.snapshots[0].summary['added-data-files'] == '1'
+    assert table.metadata.snapshots[0].summary['added-records'] == '1'
+    assert table.metadata.snapshots[0].summary['total-data-files'] == '1'
+    assert table.metadata.snapshots[0].summary['total-records'] == '1'
+
+    # read back the data
+    assert df == table.scan().to_arrow()
 
 
 @pytest.mark.parametrize(

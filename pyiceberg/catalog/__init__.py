@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -55,6 +56,9 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +292,7 @@ class Catalog(ABC):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -511,6 +515,22 @@ class Catalog(ABC):
             overlap = set(removals) & set(updates.keys())
             if overlap:
                 raise ValueError(f"Updates and deletes have an overlap: {overlap}")
+
+    @staticmethod
+    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
+        if isinstance(schema, Schema):
+            return schema
+        try:
+            import pyarrow as pa
+
+            from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
+
+            if isinstance(schema, pa.Schema):
+                schema: Schema = visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())  # type: ignore
+                return schema
+        except ModuleNotFoundError:
+            pass
+        raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
 
     def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
         if not location:

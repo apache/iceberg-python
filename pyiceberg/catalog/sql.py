@@ -16,6 +16,7 @@
 # under the License.
 
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Set,
@@ -64,6 +65,9 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, upda
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -140,7 +144,7 @@ class SqlCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -165,6 +169,8 @@ class SqlCatalog(Catalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         if not self._namespace_exists(database_name):
             raise NoSuchNamespaceError(f"Namespace does not exist: {database_name}")

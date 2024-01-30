@@ -22,7 +22,7 @@
 - [CLI](cli.md)
 - [API](api.md)
 - [Contributing](contributing.md)
-- [Feature support](feature-support.md)
+- [Community](community.md)
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
