@@ -48,7 +48,7 @@ boto3 = ["boto3 (>=1.33.2,<1.34.28)"]
 name = "aiohttp"
 version = "3.9.2"
 description = "Async http client/server framework (asyncio)"
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "aiohttp-3.9.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:772fbe371788e61c58d6d3d904268e48a594ba866804d08c995ad71b144f94cb"},
@@ -158,7 +158,7 @@ typing_extensions = {version = ">=4.0", markers = "python_version < \"3.10\""}
 name = "aiosignal"
 version = "1.3.1"
 description = "aiosignal: a list of registered asynchronous callbacks"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "aiosignal-1.3.1-py3-none-any.whl", hash = "sha256:f8376fb07dd1e86a584e4fcdec80b36b7f81aac666ebc724e2c090300dd83b17"},
@@ -186,7 +186,7 @@ typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.9\""}
 name = "async-timeout"
 version = "4.0.3"
 description = "Timeout context manager for asyncio programs"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "async-timeout-4.0.3.tar.gz", hash = "sha256:4640d96be84d82d02ed59ea2b7105a0f7b33abe8703703cd0ab0bf87c427522f"},
@@ -1064,7 +1064,7 @@ Flask = ">=0.9"
 name = "frozenlist"
 version = "1.4.1"
 description = "A list-like structure which implements collections.abc.MutableSequence"
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "frozenlist-1.4.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:f9aa1878d1083b276b0196f2dfbe00c9b7e752475ed3b682025ff20c1c1f51ac"},
@@ -1963,19 +1963,19 @@ files = [
 
 [[package]]
 name = "moto"
-version = "4.2.13"
+version = "5.0.0"
 description = ""
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 files = [
-    {file = "moto-4.2.13-py2.py3-none-any.whl", hash = "sha256:93e0fd13b624bd79115494f833308c3641b2be0fc9f4f18aa9264aa01f6168e0"},
-    {file = "moto-4.2.13.tar.gz", hash = "sha256:01aef6a489a725c8d725bd3dc6f70ff1bedaee3e2641752e4b471ff0ede4b4d7"},
+    {file = "moto-5.0.0-py2.py3-none-any.whl", hash = "sha256:1d01de681da1453335ec09ba43db521e577cbd58d25ddfb61e5965534b8be539"},
+    {file = "moto-5.0.0.tar.gz", hash = "sha256:4a94a147ee70e85e0842da8d1093728c66085165775d1d302f0f77538bf92b95"},
 ]
 
 [package.dependencies]
 aws-xray-sdk = {version = ">=0.93,<0.96 || >0.96", optional = true, markers = "extra == \"server\""}
 boto3 = ">=1.9.201"
-botocore = ">=1.12.201"
+botocore = ">=1.14.0"
 cfn-lint = {version = ">=0.40.0", optional = true, markers = "extra == \"server\""}
 cryptography = ">=3.3.1"
 docker = {version = ">=3.0.0", optional = true, markers = "extra == \"server\""}
@@ -1992,7 +1992,7 @@ python-dateutil = ">=2.1,<3.0.0"
 python-jose = {version = ">=3.1.0,<4.0.0", extras = ["cryptography"], optional = true, markers = "extra == \"server\""}
 PyYAML = {version = ">=5.1", optional = true, markers = "extra == \"server\""}
 requests = ">=2.5"
-responses = ">=0.13.0"
+responses = ">=0.15.0"
 setuptools = {version = "*", optional = true, markers = "extra == \"server\""}
 sshpubkeys = {version = ">=3.1.0", optional = true, markers = "extra == \"server\""}
 werkzeug = ">=0.5,<2.2.0 || >2.2.0,<2.2.1 || >2.2.1"
@@ -2007,18 +2007,13 @@ awslambda = ["docker (>=3.0.0)"]
 batch = ["docker (>=3.0.0)"]
 cloudformation = ["PyYAML (>=5.1)", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "ecdsa (!=0.15)", "graphql-core", "jsondiff (>=1.1.2)", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.0)", "pyparsing (>=3.0.7)", "python-jose[cryptography] (>=3.1.0,<4.0.0)", "setuptools", "sshpubkeys (>=3.1.0)"]
 cognitoidp = ["ecdsa (!=0.15)", "python-jose[cryptography] (>=3.1.0,<4.0.0)"]
-ds = ["sshpubkeys (>=3.1.0)"]
 dynamodb = ["docker (>=3.0.0)", "py-partiql-parser (==0.5.0)"]
 dynamodbstreams = ["docker (>=3.0.0)", "py-partiql-parser (==0.5.0)"]
-ebs = ["sshpubkeys (>=3.1.0)"]
 ec2 = ["sshpubkeys (>=3.1.0)"]
-efs = ["sshpubkeys (>=3.1.0)"]
-eks = ["sshpubkeys (>=3.1.0)"]
 glue = ["pyparsing (>=3.0.7)"]
 iotdata = ["jsondiff (>=1.1.2)"]
 proxy = ["PyYAML (>=5.1)", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=2.5.1)", "ecdsa (!=0.15)", "graphql-core", "jsondiff (>=1.1.2)", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.0)", "pyparsing (>=3.0.7)", "python-jose[cryptography] (>=3.1.0,<4.0.0)", "setuptools", "sshpubkeys (>=3.1.0)"]
-resourcegroupstaggingapi = ["PyYAML (>=5.1)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "ecdsa (!=0.15)", "graphql-core", "jsondiff (>=1.1.2)", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.0)", "pyparsing (>=3.0.7)", "python-jose[cryptography] (>=3.1.0,<4.0.0)", "sshpubkeys (>=3.1.0)"]
-route53resolver = ["sshpubkeys (>=3.1.0)"]
+resourcegroupstaggingapi = ["PyYAML (>=5.1)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "ecdsa (!=0.15)", "graphql-core", "jsondiff (>=1.1.2)", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.0)", "pyparsing (>=3.0.7)", "python-jose[cryptography] (>=3.1.0,<4.0.0)"]
 s3 = ["PyYAML (>=5.1)", "py-partiql-parser (==0.5.0)"]
 s3crc32c = ["PyYAML (>=5.1)", "crc32c", "py-partiql-parser (==0.5.0)"]
 server = ["PyYAML (>=5.1)", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "ecdsa (!=0.15)", "flask (!=2.2.0,!=2.2.1)", "flask-cors", "graphql-core", "jsondiff (>=1.1.2)", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.0)", "pyparsing (>=3.0.7)", "python-jose[cryptography] (>=3.1.0,<4.0.0)", "setuptools", "sshpubkeys (>=3.1.0)"]
@@ -2149,7 +2144,7 @@ files = [
 name = "multidict"
 version = "6.0.4"
 description = "multidict implementation"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "multidict-6.0.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:0b1a97283e0c85772d613878028fec909f003993e1007eafa715b24b377cb9b8"},
@@ -4099,7 +4094,7 @@ files = [
 name = "yarl"
 version = "1.9.4"
 description = "Yet another URL library"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "yarl-1.9.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:a8c1df72eb746f4136fe9a2e72b0c9dc1da1cbd23b5372f94b5820ff8ae30e0e"},
@@ -4293,4 +4288,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "5becf154a072fa31d9cefaee2adaacca1e2315579fd821a4567f41b075ed3b1d"
+content-hash = "c25227ab30b87c232555b6c47c7d3e12106a12f430fea8bcc910f3f331d09481"
