@@ -296,8 +296,6 @@ class PyArrowFile(InputFile, OutputFile):
         try:
             if not overwrite and self.exists() is True:
                 raise FileExistsError(f"Cannot create file, already exists: {self.location}")
-            # Some FS (such as LocalFileSystem) requires directories to exist before creating files
-            self._filesystem.create_dir(os.path.dirname(self._path), recursive=True)
             output_file = self._filesystem.open_output_stream(self._path, buffer_size=self._buffer_size)
         except PermissionError:
             raise
