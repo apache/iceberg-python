@@ -17,9 +17,10 @@
 # pylint:disable=redefined-outer-name
 
 
-import pyarrow as pa
 from pathlib import PosixPath
+from typing import Union
 
+import pyarrow as pa
 import pytest
 from pytest_lazyfixture import lazy_fixture
 
@@ -160,8 +161,6 @@ def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_si
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=pyarrow_schema_simple_without_ids,
-        location=TEST_TABLE_LOCATION,
-        partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table

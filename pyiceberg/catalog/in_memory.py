@@ -7,6 +7,8 @@ from typing import (
     Union,
 )
 
+import pyarrow as pa
+
 from pyiceberg.catalog import (
     Catalog,
     Identifier,
@@ -51,13 +53,15 @@ class InMemoryCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
         table_uuid: Optional[uuid.UUID] = None,
     ) -> Table:
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         identifier = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_from(identifier)
 
