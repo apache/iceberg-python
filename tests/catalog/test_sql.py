@@ -165,6 +165,26 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_create_table_with_pyarrow_schema(
+    catalog: SqlCatalog,
+    pyarrow_schema_simple_without_ids: pa.Schema,
+    iceberg_table_schema_simple: Schema,
+    random_identifier: Identifier,
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, pyarrow_schema_simple_without_ids)
+    assert table.schema() == iceberg_table_schema_simple
+    catalog.drop_table(random_identifier)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)

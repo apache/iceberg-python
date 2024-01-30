@@ -18,6 +18,7 @@ import getpass
 import time
 from types import TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -90,6 +91,10 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
 
 # Replace by visitor
 hive_types = {
@@ -250,7 +255,7 @@ class HiveCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -273,6 +278,8 @@ class HiveCatalog(Catalog):
             AlreadyExistsError: If a table with the name already exists.
             ValueError: If the identifier is invalid.
         """
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         properties = {**DEFAULT_PROPERTIES, **properties}
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         current_time_millis = int(time.time() * 1000)

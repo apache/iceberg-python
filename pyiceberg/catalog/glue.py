@@ -17,6 +17,7 @@
 
 
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -87,6 +88,9 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 # If Glue should skip archiving an old table version when creating a new version in a commit. By
 # default, Glue archives all old table versions after an UpdateTable call, but Glue has a default
@@ -329,7 +333,7 @@ class GlueCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -354,6 +358,8 @@ class GlueCatalog(Catalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)

@@ -24,7 +24,9 @@ from typing import (
     Union,
 )
 
+import pyarrow as pa
 import pytest
+from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
@@ -72,12 +74,14 @@ class InMemoryCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         identifier = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_from(identifier)
 
@@ -323,6 +327,34 @@ def test_create_table(catalog: InMemoryCatalog) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
+        location=TEST_TABLE_LOCATION,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        (lazy_fixture("pyarrow_schema_simple_without_ids"), lazy_fixture("iceberg_schema_simple_no_ids")),
+        (lazy_fixture("iceberg_schema_simple"), lazy_fixture("iceberg_schema_simple")),
+        (lazy_fixture("iceberg_schema_nested"), lazy_fixture("iceberg_schema_nested")),
+        (lazy_fixture("pyarrow_schema_nested_without_ids"), lazy_fixture("iceberg_schema_nested_no_ids")),
+    ],
+)
+def test_convert_schema_if_needed(
+    schema: Union[Schema, pa.Schema],
+    expected: Schema,
+    catalog: InMemoryCatalog,
+) -> None:
+    assert expected == catalog._convert_schema_if_needed(schema)
+
+
+def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_simple_without_ids: pa.Schema) -> None:
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=pyarrow_schema_simple_without_ids,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,

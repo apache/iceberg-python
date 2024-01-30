@@ -146,6 +146,25 @@ catalog.create_table(
 )
 ```
 
+To create a table using a pyarrow schema:
+
+```python
+import pyarrow as pa
+
+schema = pa.schema(
+    [
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ]
+)
+
+catalog.create_table(
+    identifier="docs_example.bids",
+    schema=schema,
+)
+```
+
 ## Load a table
 
 ### Catalog table

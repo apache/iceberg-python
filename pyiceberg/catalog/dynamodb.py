@@ -17,6 +17,7 @@
 import uuid
 from time import time
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -56,6 +57,9 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 DYNAMODB_CLIENT = "dynamodb"
 
@@ -127,7 +131,7 @@ class DynamoDbCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -152,6 +156,8 @@ class DynamoDbCatalog(Catalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)

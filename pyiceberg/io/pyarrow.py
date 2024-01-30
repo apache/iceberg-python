@@ -26,6 +26,7 @@ with the pyarrow library.
 from __future__ import annotations
 
 import concurrent.futures
+import itertools
 import logging
 import os
 import re
@@ -34,7 +35,6 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
-from itertools import chain
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -637,7 +637,7 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], rows:
     if len(positional_deletes) == 1:
         all_chunks = positional_deletes[0]
     else:
-        all_chunks = pa.chunked_array(chain(*[arr.chunks for arr in positional_deletes]))
+        all_chunks = pa.chunked_array(itertools.chain(*[arr.chunks for arr in positional_deletes]))
     return np.setdiff1d(np.arange(rows), all_chunks, assume_unique=False)
 
 
@@ -912,6 +912,21 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names.pop()
 
 
+class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
+    """
+    Converts PyArrowSchema to Iceberg Schema with all -1 ids.
+
+    The schema generated through this visitor should always be
+    used in conjunction with `new_table_metadata` function to
+    assign new field ids in order. This is currently used only
+    when creating an Iceberg Schema from a PyArrow schema when
+    creating a new Iceberg table.
+    """
+
+    def _field_id(self, field: pa.Field) -> int:
+        return -1
+
+
 def _task_to_table(
     fs: FileSystem,
     task: FileScanTask,
@@ -999,7 +1014,7 @@ def _task_to_table(
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
     deletes_per_file: Dict[str, List[ChunkedArray]] = {}
-    unique_deletes = set(chain.from_iterable([task.delete_files for task in tasks]))
+    unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
@@ -1421,7 +1436,7 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
     def struct(
         self, struct: StructType, field_results: List[Callable[[], List[StatisticsCollector]]]
     ) -> List[StatisticsCollector]:
-        return list(chain(*[result() for result in field_results]))
+        return list(itertools.chain(*[result() for result in field_results]))
 
     def field(self, field: NestedField, field_result: Callable[[], List[StatisticsCollector]]) -> List[StatisticsCollector]:
         self._field_id = field.field_id
@@ -1513,7 +1528,7 @@ class ID2ParquetPathVisitor(PreOrderSchemaVisitor[List[ID2ParquetPath]]):
         return struct_result()
 
     def struct(self, struct: StructType, field_results: List[Callable[[], List[ID2ParquetPath]]]) -> List[ID2ParquetPath]:
-        return list(chain(*[result() for result in field_results]))
+        return list(itertools.chain(*[result() for result in field_results]))
 
     def field(self, field: NestedField, field_result: Callable[[], List[ID2ParquetPath]]) -> List[ID2ParquetPath]:
         self._field_id = field.field_id
