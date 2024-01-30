@@ -2,13 +2,13 @@
 
 [[package]]
 name = "adlfs"
-version = "2023.12.0"
+version = "2024.1.0"
 description = "Access Azure Datalake Gen1 with fsspec and dask"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "adlfs-2023.12.0-py3-none-any.whl", hash = "sha256:da6e391afd002c7bb1b75dcc286b78fdf5dbf29aca0f984462033df6311b4e7e"},
-    {file = "adlfs-2023.12.0.tar.gz", hash = "sha256:a590694ed9f5a45741e82bff8bcf88c30a790da949310817330b5e7992b8a9e9"},
+    {file = "adlfs-2024.1.0-py3-none-any.whl", hash = "sha256:7f5982785c7af34da879463ab2a046b0875116c83f97ed3b810e956244276764"},
+    {file = "adlfs-2024.1.0.tar.gz", hash = "sha256:bece62abb8aa29e3a3dd2a5453de61133f481d743b6f65aab01ca1c1a0157b4c"},
 ]
 
 [package.dependencies]
@@ -4319,4 +4319,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "6d7f598c9ddb0e7565ef8af1b3270c9e5eb32718abfd0a3a7d5c192543150ba8"
+content-hash = "5becf154a072fa31d9cefaee2adaacca1e2315579fd821a4567f41b075ed3b1d"
