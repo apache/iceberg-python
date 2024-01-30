@@ -17,7 +17,7 @@
 
 <!-- prettier-ignore-start -->
 
-- [Home](index.md)
+- [Getting started](index.md)
 - [Configuration](configuration.md)
 - [CLI](cli.md)
 - [API](api.md)

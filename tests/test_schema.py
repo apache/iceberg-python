@@ -18,6 +18,7 @@
 from textwrap import dedent
 from typing import Any, Dict, List
 
+import pyarrow as pa
 import pytest
 
 from pyiceberg import schema
@@ -1579,3 +1580,23 @@ def test_append_nested_lists() -> None:
     )
 
     assert union.as_struct() == expected.as_struct()
+
+
+def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
+    base_schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True))
+
+    pa_schema = pa.schema([
+        pa.field("foo", pa.string(), nullable=False),
+        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ])
+
+    new_schema = UpdateSchema(None, schema=base_schema).union_by_name(pa_schema)._apply()
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+    )
+
+    assert new_schema == expected_schema

@@ -1477,9 +1477,11 @@ class UpdateSchema:
         self._case_sensitive = case_sensitive
         return self
 
-    def union_by_name(self, new_schema: Schema) -> UpdateSchema:
+    def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+        from pyiceberg.catalog import Catalog
+
         visit_with_partner(
-            new_schema,
+            Catalog._convert_schema_if_needed(new_schema),
             -1,
             UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
