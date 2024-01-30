@@ -89,7 +89,7 @@ catalog = load_catalog("default")
 
 table = catalog.create_table(
     "default.taxi_dataset",
-    schema=df.schema,  # Blocked by https://github.com/apache/iceberg-python/pull/305
+    schema=df.schema,
 )
 ```
 
@@ -113,11 +113,8 @@ df = df.append_column("tip_per_mile", pc.divide(df["tip_amount"], df["trip_dista
 Evolve the schema of the table with the new column:
 
 ```python
-from pyiceberg.catalog import Catalog
-
 with table.update_schema() as update_schema:
-    # Blocked by https://github.com/apache/iceberg-python/pull/305
-    update_schema.union_by_name(Catalog._convert_schema_if_needed(df.schema))
+    update_schema.union_by_name(df.schema)
 ```
 
 And now we can write the new dataframe to the Iceberg table:
