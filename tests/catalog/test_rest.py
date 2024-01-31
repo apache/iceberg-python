@@ -26,6 +26,7 @@ import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
 from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
+    AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
     NoSuchTableError,
@@ -515,6 +516,34 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             properties={"owner": "fokko"},
         )
     assert "Table already exists" in str(e.value)
+
+
+def test_create_table_419(rest_mock: Mocker, table_schema_simple: Schema) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "error": {
+                "message": "Authorization expired.",
+                "type": "AuthorizationExpiredError",
+                "code": 419,
+            }
+        },
+        status_code=419,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(AuthorizationExpiredError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            location=None,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")
+            ),
+            sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+            properties={"owner": "fokko"},
+        )
+    assert "Authorization expired" in str(e.value)
 
 
 def test_register_table_200(
