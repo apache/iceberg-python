@@ -267,6 +267,48 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_namespaces_419(rest_mock: Mocker) -> None:
+    new_token = "new_jwt_token"
+    new_header = dict(TEST_HEADERS)
+    new_header["Authorization"] = f"Bearer {new_token}"
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "error": {
+                "message": "Authorization expired.",
+                "type": "AuthorizationExpiredError",
+                "code": 419,
+            }
+        },
+        status_code=419,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": new_token,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+        status_code=200,
+        request_headers=new_header,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
+    assert catalog.list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+
+
 def test_create_namespace_200(rest_mock: Mocker) -> None:
     namespace = "leden"
     rest_mock.post(
