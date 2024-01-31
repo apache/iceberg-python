@@ -544,6 +544,7 @@ def test_create_table_419(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             properties={"owner": "fokko"},
         )
     assert "Authorization expired" in str(e.value)
+    assert rest_mock.call_count == 3
 
 
 def test_register_table_200(
