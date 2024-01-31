@@ -92,6 +92,28 @@ from pyiceberg.types import (
 )
 
 
+@pytest.fixture
+def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
+    import pyarrow as pa
+    from pyarrow import parquet as pq
+
+    table = pa.table(
+        {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
+        metadata={"iceberg.schema": table_schema_simple.model_dump_json()},
+    )
+
+    file_path = f"{tmp_path}/0000-data.parquet"
+    pq.write_table(table=table, where=file_path)
+    return file_path
+
+
+@pytest.fixture
+def example_task(data_file: str) -> FileScanTask:
+    return FileScanTask(
+        data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+    )
+
+
 def test_pyarrow_infer_local_fs_from_path() -> None:
     """Test path with `file` scheme and no scheme both use LocalFileSystem"""
     assert isinstance(PyArrowFileIO().new_output("file://tmp/warehouse")._filesystem, LocalFileSystem)
