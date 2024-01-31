@@ -276,6 +276,7 @@ class AvroOutputFile(Generic[D]):
     def write_block(self, objects: List[D]) -> None:
         in_memory = io.BytesIO()
         block_content_encoder = BinaryEncoder(output_stream=in_memory)
+
         for obj in objects:
             self.writer.write(block_content_encoder, obj)
         block_content = in_memory.getvalue()

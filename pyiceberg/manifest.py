@@ -308,6 +308,7 @@ def data_file_with_partition(partition_type: StructType, format_version: Literal
             field_id=field.field_id,
             name=field.name,
             field_type=partition_field_to_data_file_partition_field(field.field_type),
+            required=False
         )
         for field in partition_type.fields
     ])
@@ -484,6 +485,7 @@ class PartitionFieldStats:
 def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: List[Record]) -> List[PartitionFieldSummary]:
     types = [field.field_type for field in spec.partition_type(schema).fields]
     field_stats = [PartitionFieldStats(field_type) for field_type in types]
+
     for partition_keys in partitions:
         for i, field_type in enumerate(types):
             if not isinstance(field_type, PrimitiveType):

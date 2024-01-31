@@ -128,7 +128,7 @@ from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, Properties, Record
+from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1697,7 +1697,6 @@ def fill_parquet_file_metadata(
 
     lower_bounds = {}
     upper_bounds = {}
-
     for k, agg in col_aggs.items():
         _min = agg.min_as_bytes()
         if _min is not None:
@@ -1705,7 +1704,6 @@ def fill_parquet_file_metadata(
         _max = agg.max_as_bytes()
         if _max is not None:
             upper_bounds[k] = _max
-
     for field_id in invalidate_col:
         del lower_bounds[field_id]
         del upper_bounds[field_id]
@@ -1721,56 +1719,52 @@ def fill_parquet_file_metadata(
     data_file.split_offsets = split_offsets
 
 
+# write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+# write_file(io = table.io, table_metadata = table.metadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+
+
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    task = next(tasks)
+    for task in tasks:
+        parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
-    try:
-        _ = next(tasks)
-        # If there are more tasks, raise an exception
-        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
-    except StopIteration:
-        pass
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}' # generate_data_file_filename
+        schema = table_metadata.schema()
+        arrow_file_schema = schema_to_pyarrow(schema)
+        
+        fo = io.new_output(file_path)
+        row_group_size = PropertyUtil.property_as_int(
+            properties=table_metadata.properties,
+            property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+            default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
+        )
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
+                writer.write_table(task.df, row_group_size=row_group_size)
 
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=task.partition,
+            file_size_in_bytes=len(fo),
+            # After this has been fixed:
+            # https://github.com/apache/iceberg-python/issues/271
+            # sort_order_id=task.sort_order_id,
+            sort_order_id=None,
+            # Just copy these from the table for now
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+        )
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=writer.writer.metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
 
-    file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
-    schema = table_metadata.schema()
-    arrow_file_schema = schema_to_pyarrow(schema)
-
-    fo = io.new_output(file_path)
-    row_group_size = PropertyUtil.property_as_int(
-        properties=table_metadata.properties,
-        property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
-        default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
-    )
-    with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-            writer.write_table(task.df, row_group_size=row_group_size)
-
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=file_path,
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=len(fo),
-        # After this has been fixed:
-        # https://github.com/apache/iceberg-python/issues/271
-        # sort_order_id=task.sort_order_id,
-        sort_order_id=None,
-        # Just copy these from the table for now
-        spec_id=table_metadata.default_spec_id,
-        equality_ids=None,
-        key_metadata=None,
-    )
-
-    fill_parquet_file_metadata(
-        data_file=data_file,
-        parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(schema),
-    )
-    return iter([data_file])
-
+        yield data_file
+    
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
 PYARROW_UNCOMPRESSED_CODEC = "none"
