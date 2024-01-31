@@ -62,9 +62,10 @@ from pyiceberg.io import (
     load_file_io,
 )
 from pyiceberg.io.fsspec import FsspecFileIO
+from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
-from pyiceberg.table import Table
+from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
 from pyiceberg.types import (
     BinaryType,
@@ -1902,6 +1903,28 @@ def clean_up(test_catalog: Catalog) -> None:
             for identifier in test_catalog.list_tables(database_name):
                 test_catalog.purge_table(identifier)
             test_catalog.drop_namespace(database_name)
+
+
+@pytest.fixture
+def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
+    import pyarrow as pa
+    from pyarrow import parquet as pq
+
+    table = pa.table(
+        {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
+        metadata={"iceberg.schema": table_schema_simple.model_dump_json()},
+    )
+
+    file_path = f"{tmp_path}/0000-data.parquet"
+    pq.write_table(table=table, where=file_path)
+    return file_path
+
+
+@pytest.fixture
+def example_task(data_file: str) -> FileScanTask:
+    return FileScanTask(
+        data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+    )
 
 
 @pytest.fixture
