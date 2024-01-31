@@ -38,7 +38,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import WAREHOUSE
+from pyiceberg.io import WAREHOUSE, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -94,8 +94,7 @@ class InMemoryCatalog(Catalog):
             if not location:
                 location = f'{self._warehouse_location}/{"/".join(identifier)}'
 
-            metadata_location = f'{self._warehouse_location}/{"/".join(identifier)}/metadata/metadata.json'
-
+            metadata_location = self._get_metadata_location(location=location)
             metadata = new_table_metadata(
                 schema=schema,
                 partition_spec=partition_spec,
@@ -104,11 +103,14 @@ class InMemoryCatalog(Catalog):
                 properties=properties,
                 table_uuid=table_uuid,
             )
+            io = load_file_io({**self.properties, **properties}, location=location)
+            self._write_metadata(metadata, io, metadata_location)
+
             table = Table(
                 identifier=identifier,
                 metadata=metadata,
                 metadata_location=metadata_location,
-                io=self._load_file_io(properties=metadata.properties, location=metadata_location),
+                io=io,
                 catalog=self,
             )
             self.__tables[identifier] = table

@@ -17,14 +17,15 @@
 import datetime
 import os
 import uuid
+from pathlib import PosixPath
 from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
 from pytest_mock import MockFixture
 
-from pyiceberg.catalog.in_memory import DEFAULT_WAREHOUSE_LOCATION
 from pyiceberg.cli.console import run
+from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
@@ -52,8 +53,10 @@ def env_vars(mocker: MockFixture) -> None:
 
 
 @pytest.fixture(name="catalog")
-def fixture_catalog(mocker: MockFixture) -> InMemoryCatalog:
-    in_memory_catalog = InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
+def fixture_catalog(mocker: MockFixture, tmp_path: PosixPath) -> InMemoryCatalog:
+    in_memory_catalog = InMemoryCatalog(
+        "test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"}
+    )
     mocker.patch("pyiceberg.cli.console.load_catalog", return_value=in_memory_catalog)
     return in_memory_catalog
 
@@ -79,7 +82,6 @@ TEST_TABLE_SCHEMA = Schema(
     NestedField(2, "y", LongType(), doc="comment"),
     NestedField(3, "z", LongType()),
 )
-TEST_TABLE_LOCATION = "s3://bucket/test/location"
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"read.split.target.size": "134217728"}
 TEST_TABLE_UUID = uuid.UUID("d20125c8-7284-442c-9aea-15fee620737c")
@@ -101,7 +103,6 @@ def test_list_namespace(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -138,7 +139,6 @@ def test_describe_table(catalog: InMemoryCatalog, mock_datetime_now: None) -> No
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         table_uuid=TEST_TABLE_UUID,
     )
@@ -182,7 +182,6 @@ def test_schema(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -211,7 +210,6 @@ def test_spec(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -240,7 +238,6 @@ def test_uuid(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         table_uuid=TEST_TABLE_UUID,
     )
@@ -266,25 +263,10 @@ def test_location(catalog: InMemoryCatalog) -> None:
         schema=TEST_TABLE_SCHEMA,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
-
     runner = CliRunner()
     result = runner.invoke(run, ["location", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == f"""{DEFAULT_WAREHOUSE_LOCATION}/default/my_table\n"""
-
-
-def test_location_override(catalog: InMemoryCatalog) -> None:
-    catalog.create_table(
-        identifier=TEST_TABLE_IDENTIFIER,
-        schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
-        partition_spec=TEST_TABLE_PARTITION_SPEC,
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(run, ["location", "default.my_table"])
-    assert result.exit_code == 0
-    assert result.output == f"""{TEST_TABLE_LOCATION}\n"""
+    assert result.output == f"""{catalog._warehouse_location}/default/my_table\n"""
 
 
 def test_location_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -300,7 +282,6 @@ def test_drop_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -341,7 +322,6 @@ def test_rename_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -364,7 +344,6 @@ def test_properties_get_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -379,7 +358,6 @@ def test_properties_get_table_specific_property(catalog: InMemoryCatalog) -> Non
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -394,7 +372,6 @@ def test_properties_get_table_specific_property_that_doesnt_exist(catalog: InMem
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -463,7 +440,6 @@ def test_properties_set_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -504,7 +480,6 @@ def test_properties_remove_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -519,7 +494,6 @@ def test_properties_remove_table_property_does_not_exists(catalog: InMemoryCatal
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -551,7 +525,6 @@ def test_json_list_namespace(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -584,7 +557,6 @@ def test_json_describe_table(catalog: InMemoryCatalog, mock_datetime_now: None) 
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         table_uuid=TEST_TABLE_UUID,
     )
@@ -614,7 +586,6 @@ def test_json_schema(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -640,7 +611,6 @@ def test_json_spec(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -663,7 +633,6 @@ def test_json_uuid(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         table_uuid=TEST_TABLE_UUID,
     )
@@ -693,21 +662,7 @@ def test_json_location(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "location", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == f'"{DEFAULT_WAREHOUSE_LOCATION}/default/my_table"\n'
-
-
-def test_json_location_override(catalog: InMemoryCatalog) -> None:
-    catalog.create_table(
-        identifier=TEST_TABLE_IDENTIFIER,
-        schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
-        partition_spec=TEST_TABLE_PARTITION_SPEC,
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(run, ["--output=json", "location", "default.my_table"])
-    assert result.exit_code == 0
-    assert result.output == f'"{TEST_TABLE_LOCATION}"\n'
+    assert result.output == f'"{catalog._warehouse_location}/default/my_table"\n'
 
 
 def test_json_location_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -723,7 +678,6 @@ def test_json_drop_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -764,7 +718,6 @@ def test_json_rename_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
     )
 
@@ -787,7 +740,6 @@ def test_json_properties_get_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -802,7 +754,6 @@ def test_json_properties_get_table_specific_property(catalog: InMemoryCatalog) -
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -817,7 +768,6 @@ def test_json_properties_get_table_specific_property_that_doesnt_exist(catalog: 
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -891,7 +841,6 @@ def test_json_properties_set_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -937,7 +886,6 @@ def test_json_properties_remove_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
@@ -952,7 +900,6 @@ def test_json_properties_remove_table_property_does_not_exists(catalog: InMemory
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )

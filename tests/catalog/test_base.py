@@ -64,7 +64,6 @@ TEST_TABLE_SCHEMA = Schema(
     NestedField(2, "y", LongType(), doc="comment"),
     NestedField(3, "z", LongType()),
 )
-TEST_TABLE_LOCATION = "protocol://some/location"
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"key1": "value1", "key2": "value2"}
 NO_SUCH_TABLE_ERROR = "Table does not exist: \\('com', 'organization', 'department', 'my_table'\\)"
@@ -123,11 +122,23 @@ def test_create_table(catalog: InMemoryCatalog) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+
+
+def test_create_table_location_override(catalog: InMemoryCatalog) -> None:
+    new_location = f"{catalog._warehouse_location}/new_location"
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        location=new_location,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+    assert table.location() == new_location
 
 
 @pytest.mark.parametrize(
@@ -151,7 +162,6 @@ def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_si
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=pyarrow_schema_simple_without_ids,
-        location=TEST_TABLE_LOCATION,
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table

@@ -157,7 +157,7 @@ class ConsoleOutput(Output):
         Console().print(output_table)
 
     def text(self, response: str) -> None:
-        Console().print(response)
+        Console(soft_wrap=True).print(response)
 
     def schema(self, schema: Schema) -> None:
         output_table = self._table
