@@ -44,7 +44,6 @@ from typing import (
 from urllib.parse import urlparse
 
 import boto3
-import pyarrow as pa
 import pytest
 from moto import mock_dynamodb, mock_glue
 
@@ -85,6 +84,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
+    import pyarrow as pa
     from moto.server import ThreadedMotoServer  # type: ignore
 
     from pyiceberg.io.pyarrow import PyArrowFile, PyArrowFileIO
@@ -267,7 +267,9 @@ def table_schema_nested_with_struct_key_map() -> Schema:
 
 
 @pytest.fixture(scope="session")
-def pyarrow_schema_simple_without_ids() -> pa.Schema:
+def pyarrow_schema_simple_without_ids() -> "pa.Schema":
+    import pyarrow as pa
+
     return pa.schema([
         pa.field('foo', pa.string(), nullable=True),
         pa.field('bar', pa.int32(), nullable=False),
@@ -276,7 +278,9 @@ def pyarrow_schema_simple_without_ids() -> pa.Schema:
 
 
 @pytest.fixture(scope="session")
-def pyarrow_schema_nested_without_ids() -> pa.Schema:
+def pyarrow_schema_nested_without_ids() -> "pa.Schema":
+    import pyarrow as pa
+
     return pa.schema([
         pa.field('foo', pa.string(), nullable=False),
         pa.field('bar', pa.int32(), nullable=False),
