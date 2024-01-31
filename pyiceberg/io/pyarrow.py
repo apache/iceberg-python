@@ -1710,46 +1710,86 @@ def fill_parquet_file_metadata(
     data_file.split_offsets = split_offsets
 
 
+# def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+#     task = next(tasks)
+
+#     try:
+#         _ = next(tasks)
+#         # If there are more tasks, raise an exception
+#         raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
+#     except StopIteration:
+#         pass
+
+#     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
+#     file_schema = schema_to_pyarrow(table.schema())
+
+#     collected_metrics: List[pq.FileMetaData] = []
+#     fo = table.io.new_output(file_path)
+#     with fo.create(overwrite=True) as fos:
+#         with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+#             writer.write_table(task.df)
+
+#     data_file = DataFile(
+#         content=DataFileContent.DATA,
+#         file_path=file_path,
+#         file_format=FileFormat.PARQUET,
+#         partition=Record(),
+#         file_size_in_bytes=len(fo),
+#         sort_order_id=task.sort_order_id,
+#         # Just copy these from the table for now
+#         spec_id=table.spec().spec_id,
+#         equality_ids=None,
+#         key_metadata=None,
+#     )
+
+#     if len(collected_metrics) != 1:
+#         # One file has been written
+#         raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
+
+#     fill_parquet_file_metadata(
+#         data_file=data_file,
+#         parquet_metadata=collected_metrics[0],
+#         stats_columns=compute_statistics_plan(table.schema(), table.properties),
+#         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+#     )
+#     return iter([data_file])
+
+
 def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    task = next(tasks)
+    data_files = []
+    for task in tasks:
+        file_path = f'{table.location()}/data/{task.generate_data_file_path("parquet")}'
+        file_schema = schema_to_pyarrow(table.schema())
 
-    try:
-        _ = next(tasks)
-        # If there are more tasks, raise an exception
-        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
-    except StopIteration:
-        pass
+        collected_metrics: List[pq.FileMetaData] = []
+        fo = table.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+                writer.write_table(task.df)
 
-    file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
-    file_schema = schema_to_pyarrow(table.schema())
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=task.partition, 
+            file_size_in_bytes=len(fo),
+            sort_order_id=task.sort_order_id,
+            # Just copy these from the table for now
+            spec_id=table.spec().spec_id,
+            equality_ids=None,
+            key_metadata=None,
+        )
 
-    collected_metrics: List[pq.FileMetaData] = []
-    fo = table.io.new_output(file_path)
-    with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
-            writer.write_table(task.df)
+        if len(collected_metrics) != 1:
+            # One file has been written
+            raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
 
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=file_path,
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=len(fo),
-        sort_order_id=task.sort_order_id,
-        # Just copy these from the table for now
-        spec_id=table.spec().spec_id,
-        equality_ids=None,
-        key_metadata=None,
-    )
-
-    if len(collected_metrics) != 1:
-        # One file has been written
-        raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
-
-    fill_parquet_file_metadata(
-        data_file=data_file,
-        parquet_metadata=collected_metrics[0],
-        stats_columns=compute_statistics_plan(table.schema(), table.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
-    )
-    return iter([data_file])
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=collected_metrics[0],
+            stats_columns=compute_statistics_plan(table.schema(), table.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+        )
+        data_files.append(data_file)
+    # todo: make it a true iterable???? do not convert from a python list
+    return iter(data_files)
