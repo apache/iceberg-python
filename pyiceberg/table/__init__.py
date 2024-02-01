@@ -979,9 +979,6 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        if len(self.sort_order().fields) > 0:
-            raise ValueError("Cannot write to tables with a sort-order")
-
         _check_schema(self.schema(), other_schema=df.schema)
 
         data_files = _dataframe_to_data_files(self, df=df)
@@ -1013,9 +1010,6 @@ class Table:
 
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
-
-        if len(self.sort_order().fields) > 0:
-            raise ValueError("Cannot write to tables with a sort-order")
 
         _check_schema(self.schema(), other_schema=df.schema)
 
@@ -2318,9 +2312,6 @@ def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
 
     if len(table.spec().fields) > 0:
         raise ValueError("Cannot write to partitioned tables")
-
-    if len(table.sort_order().fields) > 0:
-        raise ValueError("Cannot write to tables with a sort-order")
 
     write_uuid = uuid.uuid4()
     counter = itertools.count(0)
