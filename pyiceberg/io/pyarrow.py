@@ -654,6 +654,10 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     return visit_pyarrow(schema, visitor)
 
 
+def _pyarrow_to_schema_without_ids(schema: pa.Schema) -> Schema:
+    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+
+
 @singledispatch
 def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisitor[T]) -> T:
     """Apply a pyarrow schema visitor to any point within a schema.
@@ -1725,6 +1729,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
 
     collected_metrics: List[pq.FileMetaData] = []
     fo = table.io.new_output(file_path)
+
     with fo.create(overwrite=True) as fos:
         with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
             writer.write_table(task.df)
