@@ -1339,7 +1339,10 @@ class StatsAggregator:
     def update_max(self, val: Any) -> None:
         self.current_max = val if self.current_max is None else max(val, self.current_max)
 
-    def min_as_bytes(self) -> bytes:
+    def min_as_bytes(self) -> Optional[bytes]:
+        if self.current_min is None:
+            return None
+
         return self.serialize(
             self.current_min
             if self.trunc_length is None

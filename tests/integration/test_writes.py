@@ -142,6 +142,54 @@ def arrow_table_with_null() -> pa.Table:
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
+@pytest.fixture(scope="session")
+def arrow_table_without_data() -> pa.Table:
+    """PyArrow table with all kinds of columns"""
+    pa_schema = pa.schema([
+        ("bool", pa.bool_()),
+        ("string", pa.string()),
+        ("string_long", pa.string()),
+        ("int", pa.int32()),
+        ("long", pa.int64()),
+        ("float", pa.float32()),
+        ("double", pa.float64()),
+        ("timestamp", pa.timestamp(unit="us")),
+        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ("date", pa.date32()),
+        # Not supported by Spark
+        # ("time", pa.time64("us")),
+        # Not natively supported by Arrow
+        # ("uuid", pa.fixed(16)),
+        ("binary", pa.binary()),
+        ("fixed", pa.binary(16)),
+    ])
+    return pa.Table.from_pylist([], schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_with_only_nulls() -> pa.Table:
+    """PyArrow table with all kinds of columns"""
+    pa_schema = pa.schema([
+        ("bool", pa.bool_()),
+        ("string", pa.string()),
+        ("string_long", pa.string()),
+        ("int", pa.int32()),
+        ("long", pa.int64()),
+        ("float", pa.float32()),
+        ("double", pa.float64()),
+        ("timestamp", pa.timestamp(unit="us")),
+        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ("date", pa.date32()),
+        # Not supported by Spark
+        # ("time", pa.time64("us")),
+        # Not natively supported by Arrow
+        # ("uuid", pa.fixed(16)),
+        ("binary", pa.binary()),
+        ("fixed", pa.binary(16)),
+    ])
+    return pa.Table.from_pylist([{}, {}], schema=pa_schema)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v1_with_null"
@@ -153,6 +201,36 @@ def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
     tbl.append(arrow_table_with_null)
+
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_without_data(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
+    identifier = "default.arrow_table_v1_without_data"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+    tbl.append(arrow_table_without_data)
+
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_with_only_nulls(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
+    identifier = "default.arrow_table_v1_with_only_nulls"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+    tbl.append(arrow_table_with_only_nulls)
 
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
@@ -185,6 +263,36 @@ def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
     tbl.append(arrow_table_with_null)
+
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v2_without_data(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
+    identifier = "default.arrow_table_v2_without_data"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
+    tbl.append(arrow_table_without_data)
+
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v2_with_only_nulls(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
+    identifier = "default.arrow_table_v2_with_only_nulls"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
+    tbl.append(arrow_table_with_only_nulls)
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
@@ -277,6 +385,26 @@ def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
     assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_filter_without_data(spark: SparkSession, col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v{format_version}_without_data"
+    df = spark.table(identifier)
+    assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
+    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_filter_only_nulls(spark: SparkSession, col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v{format_version}_with_only_nulls"
+    df = spark.table(identifier)
+    assert df.where(f"{col} is null").count() == 2, f"Expected 2 row for {col}"
+    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
 
 
 @pytest.mark.integration
@@ -409,3 +537,53 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
 
     with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
         tbl.append("not a df")
+
+
+@pytest.mark.integration
+def test_summaries_with_only_nulls(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_without_data: pa.Table, arrow_table_with_only_nulls: pa.Table
+) -> None:
+    identifier = "default.arrow_table_summaries_with_only_nulls"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+
+    tbl.append(arrow_table_without_data)
+    tbl.append(arrow_table_with_only_nulls)
+
+    rows = spark.sql(
+        f"""
+        SELECT operation, summary
+        FROM {identifier}.snapshots
+        ORDER BY committed_at ASC
+    """
+    ).collect()
+
+    operations = [row.operation for row in rows]
+    assert operations == ['append', 'append']
+
+    summaries = [row.summary for row in rows]
+
+    assert summaries[0] == {
+        'total-data-files': '0',
+        'total-delete-files': '0',
+        'total-equality-deletes': '0',
+        'total-files-size': '0',
+        'total-position-deletes': '0',
+        'total-records': '0',
+    }
+
+    assert summaries[1] == {
+        'added-data-files': '1',
+        'added-files-size': '4045',
+        'added-records': '2',
+        'total-data-files': '1',
+        'total-delete-files': '0',
+        'total-equality-deletes': '0',
+        'total-files-size': '4045',
+        'total-position-deletes': '0',
+        'total-records': '2',
+    }
