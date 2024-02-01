@@ -982,14 +982,14 @@ class Table:
         if len(self.sort_order().fields) > 0:
             raise ValueError("Cannot write to tables with a sort-order")
 
-        data_files = _dataframe_to_data_files(self, df=df)
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
         )
-
-        for data_file in data_files:
-            merge.append_data_file(data_file)
+        if df.shape[0] > 0:
+            data_files = _dataframe_to_data_files(self, df=df)
+            for data_file in data_files:
+                merge.append_data_file(data_file)
 
         merge.commit()
 

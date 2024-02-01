@@ -119,9 +119,8 @@ def session_catalog() -> Catalog:
 
 
 @pytest.fixture(scope="session")
-def arrow_table_with_null() -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    pa_schema = pa.schema([
+def pa_schema() -> pa.Schema:
+    return pa.schema([
         ("bool", pa.bool_()),
         ("string", pa.string()),
         ("string_long", pa.string()),
@@ -139,54 +138,23 @@ def arrow_table_with_null() -> pa.Table:
         ("binary", pa.binary()),
         ("fixed", pa.binary(16)),
     ])
+
+
+@pytest.fixture(scope="session")
+def arrow_table_with_null(pa_schema: pa.Schema) -> pa.Table:
+    """PyArrow table with all kinds of columns"""
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
 @pytest.fixture(scope="session")
-def arrow_table_without_data() -> pa.Table:
+def arrow_table_without_data(pa_schema: pa.Schema) -> pa.Table:
     """PyArrow table with all kinds of columns"""
-    pa_schema = pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.binary()),
-        ("fixed", pa.binary(16)),
-    ])
     return pa.Table.from_pylist([], schema=pa_schema)
 
 
 @pytest.fixture(scope="session")
-def arrow_table_with_only_nulls() -> pa.Table:
+def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
     """PyArrow table with all kinds of columns"""
-    pa_schema = pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.binary()),
-        ("fixed", pa.binary(16)),
-    ])
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
 
 
@@ -553,6 +521,7 @@ def test_summaries_with_only_nulls(
 
     tbl.append(arrow_table_without_data)
     tbl.append(arrow_table_with_only_nulls)
+    tbl.overwrite(arrow_table_without_data)
 
     rows = spark.sql(
         f"""
@@ -563,7 +532,7 @@ def test_summaries_with_only_nulls(
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append']
+    assert operations == ['append', 'append', 'overwrite']
 
     summaries = [row.summary for row in rows]
 
@@ -586,4 +555,13 @@ def test_summaries_with_only_nulls(
         'total-files-size': '4045',
         'total-position-deletes': '0',
         'total-records': '2',
+    }
+
+    assert summaries[0] == {
+        'total-data-files': '0',
+        'total-delete-files': '0',
+        'total-equality-deletes': '0',
+        'total-files-size': '0',
+        'total-position-deletes': '0',
+        'total-records': '0',
     }
