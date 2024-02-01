@@ -1738,7 +1738,10 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         file_format=FileFormat.PARQUET,
         partition=Record(),
         file_size_in_bytes=len(fo),
-        sort_order_id=task.sort_order_id,
+        # After this has been fixed:
+        # https://github.com/apache/iceberg-python/issues/271
+        # sort_order_id=task.sort_order_id,
+        sort_order_id=None,
         # Just copy these from the table for now
         spec_id=table.spec().spec_id,
         equality_ids=None,

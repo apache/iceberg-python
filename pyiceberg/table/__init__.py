@@ -943,9 +943,6 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        if len(self.sort_order().fields) > 0:
-            raise ValueError("Cannot write to tables with a sort-order")
-
         merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
 
         # skip writing data files if the dataframe is empty
@@ -979,13 +976,12 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        if len(self.sort_order().fields) > 0:
-            raise ValueError("Cannot write to tables with a sort-order")
-
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
         )
+
+        # skip writing data files if the dataframe is empty
         if df.shape[0] > 0:
             data_files = _dataframe_to_data_files(self, df=df)
             for data_file in data_files:
@@ -2281,9 +2277,6 @@ def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
 
     if len(table.spec().fields) > 0:
         raise ValueError("Cannot write to partitioned tables")
-
-    if len(table.sort_order().fields) > 0:
-        raise ValueError("Cannot write to tables with a sort-order")
 
     write_uuid = uuid.uuid4()
     counter = itertools.count(0)
