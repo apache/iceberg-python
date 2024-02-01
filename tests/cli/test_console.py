@@ -308,6 +308,22 @@ def test_drop_namespace_does_not_exists(catalog: InMemoryCatalog) -> None:
     assert result.output == "Namespace does not exist: ('doesnotexist',)\n"
 
 
+def test_create_namespace(catalog: InMemoryCatalog) -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["create", "namespace", TEST_TABLE_NAMESPACE])
+    assert result.exit_code == 0
+    assert result.output == """Created namespace: default\n"""
+
+
+def test_create_namespace_already_exists(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["create", "namespace", TEST_TABLE_NAMESPACE])
+    assert result.exit_code == 1
+    assert result.output == "Namespace already exists: ('default',)\n"
+
+
 def test_rename_table(catalog: InMemoryCatalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
