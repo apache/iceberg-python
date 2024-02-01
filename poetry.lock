@@ -48,7 +48,7 @@ boto3 = ["boto3 (>=1.33.2,<1.34.28)"]
 name = "aiohttp"
 version = "3.9.2"
 description = "Async http client/server framework (asyncio)"
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "aiohttp-3.9.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:772fbe371788e61c58d6d3d904268e48a594ba866804d08c995ad71b144f94cb"},
@@ -158,7 +158,7 @@ typing_extensions = {version = ">=4.0", markers = "python_version < \"3.10\""}
 name = "aiosignal"
 version = "1.3.1"
 description = "aiosignal: a list of registered asynchronous callbacks"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "aiosignal-1.3.1-py3-none-any.whl", hash = "sha256:f8376fb07dd1e86a584e4fcdec80b36b7f81aac666ebc724e2c090300dd83b17"},
@@ -186,7 +186,7 @@ typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.9\""}
 name = "async-timeout"
 version = "4.0.3"
 description = "Timeout context manager for asyncio programs"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "async-timeout-4.0.3.tar.gz", hash = "sha256:4640d96be84d82d02ed59ea2b7105a0f7b33abe8703703cd0ab0bf87c427522f"},
@@ -1064,7 +1064,7 @@ Flask = ">=0.9"
 name = "frozenlist"
 version = "1.4.1"
 description = "A list-like structure which implements collections.abc.MutableSequence"
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "frozenlist-1.4.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:f9aa1878d1083b276b0196f2dfbe00c9b7e752475ed3b682025ff20c1c1f51ac"},
@@ -2149,7 +2149,7 @@ files = [
 name = "multidict"
 version = "6.0.4"
 description = "multidict implementation"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "multidict-6.0.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:0b1a97283e0c85772d613878028fec909f003993e1007eafa715b24b377cb9b8"},
@@ -2230,13 +2230,13 @@ files = [
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.34.7"
-description = "Type annotations for boto3.Glue 1.34.7 service generated with mypy-boto3-builder 7.23.0"
+version = "1.34.32"
+description = "Type annotations for boto3.Glue 1.34.32 service generated with mypy-boto3-builder 7.23.1"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "mypy-boto3-glue-1.34.7.tar.gz", hash = "sha256:057a082527e3884ec72b499573094af9dbe0bd3639b26772ec883a17d2c22d12"},
-    {file = "mypy_boto3_glue-1.34.7-py3-none-any.whl", hash = "sha256:59e3cced5c3367f0eb2136b62efeb7914f2779a17e574e3c965d5567c7c63de1"},
+    {file = "mypy-boto3-glue-1.34.32.tar.gz", hash = "sha256:f23fddd06613d699ff7a22bb4fa79478c903e07cd5dd32e70278da49d6212e65"},
+    {file = "mypy_boto3_glue-1.34.32-py3-none-any.whl", hash = "sha256:7a1a0e4dfab2870cff5b0984c39d3fa4fd1820ea6fb40f807b7150e4d624d9c9"},
 ]
 
 [package.dependencies]
@@ -4099,7 +4099,7 @@ files = [
 name = "yarl"
 version = "1.9.4"
 description = "Yet another URL library"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "yarl-1.9.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:a8c1df72eb746f4136fe9a2e72b0c9dc1da1cbd23b5372f94b5820ff8ae30e0e"},
