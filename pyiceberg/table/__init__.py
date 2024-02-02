@@ -139,10 +139,8 @@ def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
     try:
         task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
     except ValueError as e:
-        names = itertools.chain(*[field.names for field in name_mapping])
         other_schema = _pyarrow_to_schema_without_ids(other_schema)
-        other_names = itertools.chain(*[field.names for field in other_schema.name_mapping()])
-        additional_names = set(other_names) - set(names)
+        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e

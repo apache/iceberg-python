@@ -227,6 +227,7 @@ class Schema(IcebergBaseModel):
     def highest_field_id(self) -> int:
         return max(self._lazy_id_to_name.keys(), default=0)
 
+    @cached_property
     def name_mapping(self) -> NameMapping:
         from pyiceberg.table.name_mapping import create_mapping_from_schema
 
