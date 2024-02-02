@@ -673,7 +673,7 @@ We can execute the Dataframe to preview the first few rows of the query with `df
 This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
 
 ```python
-df.show()
+df.show(2)
 ```
 
 ```
