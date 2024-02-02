@@ -2642,7 +2642,7 @@ class TablePartition:
     arrow_table_partition: pa.Table
 
 
-def get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
+def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
     order = 'ascending' if not reverse else 'descending'
     null_placement = 'at_start' if reverse else 'at_end'
     return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
@@ -2660,7 +2660,7 @@ def group_by_partition_scheme(iceberg_table_metadata: TableMetadata, arrow_table
         )
 
     # only works for identity
-    sort_options = get_partition_sort_order(partition_columns, reverse=False)
+    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
     sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
     return sorted_arrow_table
 
@@ -2678,7 +2678,7 @@ def get_partition_columns(iceberg_table_metadata: TableMetadata, arrow_table: pa
     return partition_cols
 
 
-def get_partition_key(arrow_table: pa.Table, partition_columns: list[str], offset: int) -> Record:
+def _get_partition_key(arrow_table: pa.Table, partition_columns: list[str], offset: int) -> Record:
     # todo: Instead of fetching partition keys one at a time, try filtering by a mask made of offsets, and convert to py together,
     # possibly slightly more efficient.
     return Record(**{col: arrow_table.column(col)[offset].as_py() for col in partition_columns})
@@ -2716,7 +2716,7 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
 
     arrow_table = group_by_partition_scheme(iceberg_table_metadata, arrow_table, partition_columns)
 
-    reversing_sort_order_options = get_partition_sort_order(partition_columns, reverse=True)
+    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
     reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
 
     slice_instructions = []
@@ -2732,7 +2732,7 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
 
     table_partitions: list[TablePartition] = [
         TablePartition(
-            partition_key=get_partition_key(arrow_table, partition_columns, inst["offset"]),
+            partition_key=_get_partition_key(arrow_table, partition_columns, inst["offset"]),
             arrow_table_partition=arrow_table.slice(**inst),
         )
         for inst in slice_instructions
@@ -2742,7 +2742,7 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
 
 
 
-##########################################
+
 
 class FastAppendFiles(_MergingSnapshotProducer):
     def _existing_manifests(self) -> List[ManifestFile]:
