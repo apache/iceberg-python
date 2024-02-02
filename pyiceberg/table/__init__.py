@@ -120,6 +120,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
+    import daft
     import pandas as pd
     import pyarrow as pa
     import ray
@@ -1380,6 +1381,16 @@ class DataScan(TableScan):
         import ray
 
         return ray.data.from_arrow(self.to_arrow())
+    
+    def to_daft(self) -> daft.DataFrame:
+        """Reads a Daft DataFrame lazily from this Iceberg table
+
+        Returns:
+            daft.DataFrame: Unmaterialized Daft Dataframe created from the Iceberg table
+        """
+        import daft
+
+        return daft.read_iceberg(self)
 
 
 class MoveOperation(Enum):

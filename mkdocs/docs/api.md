@@ -651,9 +651,7 @@ PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration w
 A table can be read easily into a Daft Dataframe:
 
 ```python
-import daft
-
-df = daft.read_iceberg(table)
+df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
 df = df.where(df["trip_distance"] >= 10.0)
 df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
 ```
