@@ -74,10 +74,13 @@ mkdir /tmp/warehouse
 from pyiceberg.catalog.sql import SqlCatalog
 
 warehouse_path = "/tmp/warehouse"
-catalog = SqlCatalog("default", **{
-    "uri": f"sqlite:///{warehouse_path}/pyiceberg_catalog.db",
-    "warehouse": f"file://{warehouse_path}",
-})
+catalog = SqlCatalog(
+    "default",
+    **{
+        "uri": f"sqlite:///{warehouse_path}/pyiceberg_catalog.db",
+        "warehouse": f"file://{warehouse_path}",
+    },
+)
 ```
 
 ## Write a PyArrow dataframe
@@ -175,7 +178,8 @@ len(df)
 ```
 
 ### Explore Iceberg data and metadata files
-Since the catalog was configured to use the local filesystem, we can explore how Iceberg saved data and metadata files from the above operations. 
+
+Since the catalog was configured to use the local filesystem, we can explore how Iceberg saved data and metadata files from the above operations.
 
 ```shell
 ls /tmp/warehouse/
