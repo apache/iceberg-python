@@ -62,6 +62,24 @@ You either need to install `s3fs`, `adlfs`, `gcs`, or `pyarrow` to be able to fe
 
 Iceberg leverages the [catalog to have one centralized place to organize the tables](https://iceberg.apache.org/catalog/). This can be a traditional Hive catalog to store your Iceberg tables next to the rest, a vendor solution like the AWS Glue catalog, or an implementation of Icebergs' own [REST protocol](https://github.com/apache/iceberg/tree/main/open-api). Checkout the [configuration](configuration.md) page to find all the configuration details.
 
+For the sake of demonstration, we'll configure the catalog to use the `SqlCatalog` implementation, which will store information in a local `sqlite` database. We'll also configure the catalog to store data files in the local filesystem instead of an object store.
+
+Create a temporary location for Iceberg:
+
+```shell
+mkdir /tmp/warehouse
+```
+
+```python
+from pyiceberg.catalog.sql import SqlCatalog
+
+warehouse_path = "/tmp/warehouse"
+catalog = SqlCatalog("default", **{
+    "uri": f"sqlite:///{warehouse_path}/pyiceberg_catalog.db",
+    "warehouse": f"file://{warehouse_path}",
+})
+```
+
 ## Write a PyArrow dataframe
 
 Let's take the Taxi dataset, and write this to an Iceberg table.
@@ -83,9 +101,7 @@ df = pq.read_table("/tmp/yellow_tripdata_2023-01.parquet")
 Create a new Iceberg table:
 
 ```python
-from pyiceberg.catalog import load_catalog
-
-catalog = load_catalog("default")
+catalog.create_namespace("default")
 
 table = catalog.create_table(
     "default.taxi_dataset",
@@ -156,6 +172,13 @@ And we can see that 2371784 rows have a tip-per-mile:
 ```python
 df = table.scan(row_filter="tip_per_mile > 0").to_arrow()
 len(df)
+```
+
+### Explore Iceberg data and metadata files
+Since the catalog was configured to use the local filesystem, we can explore how Iceberg saved data and metadata files from the above operations. 
+
+```shell
+ls /tmp/warehouse/
 ```
 
 ## More details
