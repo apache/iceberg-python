@@ -32,7 +32,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -111,7 +111,7 @@ class SqlCatalog(Catalog):
                 stmt = select(1).select_from(table)
                 try:
                     session.scalar(stmt)
-                except OperationalError:
+                except (OperationalError, ProgrammingError): # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
                     self.create_tables()
                     return
 
