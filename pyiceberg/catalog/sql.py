@@ -101,7 +101,8 @@ class SqlCatalog(Catalog):
 
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
-        self.engine = create_engine(uri_prop, echo=True)
+        echo = self.properties.get("echo") or False
+        self.engine = create_engine(uri_prop, echo=echo)
 
         self._ensure_tables_exist()
 
