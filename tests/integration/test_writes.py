@@ -17,9 +17,12 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from datetime import date, datetime
+from urllib.parse import urlparse
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
+from pyarrow.fs import S3FileSystem
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog, load_catalog
@@ -487,6 +490,50 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     assert [row.added_data_files_count for row in rows] == [1, 1, 0, 1, 1]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
     assert [row.deleted_data_files_count for row in rows] == [0, 0, 1, 0, 0]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("compression_codec", ["<not set>", "uncompressed", "gzip", "zstd", "snappy"])
+def test_parquet_compression(spark: SparkSession, arrow_table_with_null: pa.Table, compression_codec: str) -> None:
+    catalog_properties = {
+        "type": "rest",
+        "uri": "http://localhost:8181",
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+    }
+    if compression_codec != "<not set>":
+        catalog_properties["write.parquet.compression-codec"] = compression_codec
+    if compression_codec != "snappy":
+        catalog_properties["write.parquet.compression-level"] = "1"
+    catalog = load_catalog("local", **catalog_properties)
+
+    identifier = "default.arrow_data_files"
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+    tbl = catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+
+    tbl.overwrite(arrow_table_with_null)
+
+    data_file_paths = [task.file.file_path for task in tbl.scan().plan_files()]
+
+    fs = S3FileSystem(
+        endpoint_override=catalog.properties["s3.endpoint"],
+        access_key=catalog.properties["s3.access-key-id"],
+        secret_key=catalog.properties["s3.secret-access-key"],
+    )
+    uri = urlparse(data_file_paths[0])
+    with fs.open_input_file(f"{uri.netloc}{uri.path}") as f:
+        parquet_metadata = pq.read_metadata(f)
+        compression = parquet_metadata.row_group(0).column(0).compression
+
+    if compression_codec == "<not set>":
+        assert compression == "ZSTD"
+    else:
+        assert compression == compression_codec.upper()
 
 
 @pytest.mark.integration

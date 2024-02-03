@@ -1720,13 +1720,22 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     except StopIteration:
         pass
 
+    compression_codec = table.properties.get("write.parquet.compression-codec")
+    compression_level = table.properties.get("write.parquet.compression-level")
+    if compression_codec == "uncompressed":
+        compression_options = {"compression": "none"}
+    else:
+        compression_options = {
+            "compression": compression_codec,
+            "compression_level": None if compression_level is None else int(compression_level),
+        }
+
     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
     file_schema = schema_to_pyarrow(table.schema())
 
-    collected_metrics: List[pq.FileMetaData] = []
     fo = table.io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", **compression_options) as writer:
             writer.write_table(task.df)
 
     data_file = DataFile(
@@ -1745,13 +1754,9 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         key_metadata=None,
     )
 
-    if len(collected_metrics) != 1:
-        # One file has been written
-        raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
-
     fill_parquet_file_metadata(
         data_file=data_file,
-        parquet_metadata=collected_metrics[0],
+        parquet_metadata=writer.writer.metadata,
         stats_columns=compute_statistics_plan(table.schema(), table.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
