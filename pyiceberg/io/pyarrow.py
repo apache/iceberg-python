@@ -1758,9 +1758,11 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
 
 def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
     def _get_int(key: str) -> Optional[int]:
-        value = table_properties.get(key)
-        if value is None:
-            return None
+        if value := table_properties.get(key):
+            try:
+                return int(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {key} to an integer: {value}") from e
         else:
             return int(value)
 
