@@ -62,7 +62,16 @@ You can also set the FileIO explicitly:
 | ---------- | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | py-io-impl | pyiceberg.io.fsspec.FsspecFileIO | Sets the FileIO explicitly to an implementation, and will fail explicitly if it can't be loaded |
 
-For the FileIO there are several configuration options available:
+General configuration:
+
+| Key                               | Options                           | Default | Description                                                                                 |
+| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`   | Size in bytes                     | 1MB     | Set the dictionary page size limit per row group                                            |
+
+Below the FileIO specific configuration is shown.
 
 ### S3
 
