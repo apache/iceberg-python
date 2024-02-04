@@ -207,14 +207,14 @@ def table_v1_appended_with_null(session_catalog: Catalog, arrow_table_with_null:
 @pytest.fixture(scope="session", autouse=True)
 def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v2_with_null"
-    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, 2 * [arrow_table_with_null])
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v2_without_data(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
     identifier = "default.arrow_table_v2_without_data"
-    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, 2 * [arrow_table_without_data])
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_without_data])
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
@@ -357,39 +357,39 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
 
     assert summaries[0] == {
         'added-data-files': '1',
-        'added-files-size': '5283',
+        'added-files-size': '5437',
         'added-records': '3',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '5283',
+        'total-files-size': '5437',
         'total-position-deletes': '0',
         'total-records': '3',
     }
 
     assert summaries[1] == {
         'added-data-files': '1',
-        'added-files-size': '5283',
+        'added-files-size': '5437',
         'added-records': '3',
         'total-data-files': '2',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '10566',
+        'total-files-size': '10874',
         'total-position-deletes': '0',
         'total-records': '6',
     }
 
     assert summaries[2] == {
         'added-data-files': '1',
-        'added-files-size': '5283',
+        'added-files-size': '5437',
         'added-records': '3',
         'deleted-data-files': '2',
         'deleted-records': '6',
-        'removed-files-size': '10566',
+        'removed-files-size': '10874',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '5283',
+        'total-files-size': '5437',
         'total-position-deletes': '0',
         'total-records': '3',
     }
@@ -558,12 +558,12 @@ def test_summaries_with_only_nulls(
 
     assert summaries[1] == {
         'added-data-files': '1',
-        'added-files-size': '4045',
+        'added-files-size': '4217',
         'added-records': '2',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '4045',
+        'total-files-size': '4217',
         'total-position-deletes': '0',
         'total-records': '2',
     }

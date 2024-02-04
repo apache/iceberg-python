@@ -1774,19 +1774,14 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
         if unsupported_keys:
             raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
-    kwargs: Dict[str, Any] = {
-        "data_page_size": _get_int("write.parquet.page-size-bytes"),
-        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes"),
-    }
-
     compression_codec = table_properties.get("write.parquet.compression-codec")
     compression_level = _get_int("write.parquet.compression-level")
     if compression_codec == "uncompressed":
-        kwargs.update({"compression": "none"})
-    else:
-        kwargs.update({
-            "compression": compression_codec,
-            "compression_level": compression_level,
-        })
+        compression_codec = "none"
 
-    return kwargs
+    return {
+        "compression": compression_codec,
+        "compression_level": compression_level,
+        "data_page_size": _get_int("write.parquet.page-size-bytes"),
+        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes"),
+    }
