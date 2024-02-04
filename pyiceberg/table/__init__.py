@@ -978,11 +978,13 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema(self.schema(), other_schema=df.schema)
-
-        data_files = _dataframe_to_data_files(self, df=df)
         merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
-        for data_file in data_files:
-            merge.append_data_file(data_file)
+
+        # skip writing data files if the dataframe is empty
+        if df.shape[0] > 0:
+            data_files = _dataframe_to_data_files(self, df=df)
+            for data_file in data_files:
+                merge.append_data_file(data_file)
 
         merge.commit()
 
@@ -1010,15 +1012,17 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema(self.schema(), other_schema=df.schema)
-
-        data_files = _dataframe_to_data_files(self, df=df)
+        
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
         )
 
-        for data_file in data_files:
-            merge.append_data_file(data_file)
+        # skip writing data files if the dataframe is empty
+        if df.shape[0] > 0:
+            data_files = _dataframe_to_data_files(self, df=df)
+            for data_file in data_files:
+                merge.append_data_file(data_file)
 
         merge.commit()
 

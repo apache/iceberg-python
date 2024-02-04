@@ -815,12 +815,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names = []
         self._name_mapping = name_mapping
 
-    def _current_path(self) -> str:
-        return ".".join(self._field_names)
-
     def _field_id(self, field: pa.Field) -> int:
         if self._name_mapping:
-            return self._name_mapping.find(self._current_path()).field_id
+            return self._name_mapping.find(*self._field_names).field_id
         elif (field_id := _get_field_id(field)) is not None:
             return field_id
         else:
@@ -1343,7 +1340,10 @@ class StatsAggregator:
     def update_max(self, val: Any) -> None:
         self.current_max = val if self.current_max is None else max(val, self.current_max)
 
-    def min_as_bytes(self) -> bytes:
+    def min_as_bytes(self) -> Optional[bytes]:
+        if self.current_min is None:
+            return None
+
         return self.serialize(
             self.current_min
             if self.trunc_length is None
