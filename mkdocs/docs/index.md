@@ -62,13 +62,15 @@ You either need to install `s3fs`, `adlfs`, `gcs`, or `pyarrow` to be able to fe
 
 Iceberg leverages the [catalog to have one centralized place to organize the tables](https://iceberg.apache.org/catalog/). This can be a traditional Hive catalog to store your Iceberg tables next to the rest, a vendor solution like the AWS Glue catalog, or an implementation of Icebergs' own [REST protocol](https://github.com/apache/iceberg/tree/main/open-api). Checkout the [configuration](configuration.md) page to find all the configuration details.
 
-For the sake of demonstration, we'll configure the catalog to use the `SqlCatalog` implementation, which will store information in a local `sqlite` database. We'll also configure the catalog to store data files in the local filesystem instead of an object store.
+For the sake of demonstration, we'll configure the catalog to use the `SqlCatalog` implementation, which will store information in a local `sqlite` database. We'll also configure the catalog to store data files in the local filesystem instead of an object store. This should not be used in production due to the limited scalability.
 
 Create a temporary location for Iceberg:
 
 ```shell
 mkdir /tmp/warehouse
 ```
+
+Open a Python 3 REPL to set up the catalog:
 
 ```python
 from pyiceberg.catalog.sql import SqlCatalog
@@ -182,7 +184,7 @@ len(df)
 Since the catalog was configured to use the local filesystem, we can explore how Iceberg saved data and metadata files from the above operations.
 
 ```shell
-ls /tmp/warehouse/
+find /tmp/warehouse/
 ```
 
 ## More details
