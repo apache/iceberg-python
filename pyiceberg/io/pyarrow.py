@@ -1763,6 +1763,8 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
                 return int(value)
             except ValueError as e:
                 raise ValueError(f"Could not parse table property {key} to an integer: {value}") from e
+        else:
+            return None
 
     for key_pattern in [
         "write.parquet.row-group-size-bytes",
@@ -1770,9 +1772,8 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
         "write.parquet.bloom-filter-max-bytes",
         "write.parquet.bloom-filter-enabled.column.*",
     ]:
-        unsupported_keys = fnmatch.filter(table_properties, key_pattern)
-        if set_unsupported_keys := [table_properties[key] for key in unsupported_keys]:
-            raise NotImplementedError(f"Parquet writer option(s) {set_unsupported_keys} not implemented")
+        if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
+            raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
     compression_codec = table_properties.get("write.parquet.compression-codec")
     compression_level = _get_int("write.parquet.compression-level")

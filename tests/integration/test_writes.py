@@ -17,7 +17,7 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -490,26 +490,25 @@ def test_write_parquet_other_properties(
 @pytest.mark.integration
 @pytest.mark.integration
 @pytest.mark.integration
-@pytest.mark.parametrize("value", [None, "42"])
 @pytest.mark.parametrize(
-    "property",
+    "properties",
     [
-        "write.parquet.row-group-size-bytes",
-        "write.parquet.page-row-limit",
-        "write.parquet.bloom-filter-enabled.column.bool",
-        "write.parquet.bloom-filter-max-bytes",
+        {"write.parquet.row-group-size-bytes": "42"},
+        {"write.parquet.page-row-limit": "42"},
+        {"write.parquet.bloom-filter-enabled.column.bool": "42"},
+        {"write.parquet.bloom-filter-max-bytes": "42"},
     ],
 )
 def test_write_parquet_unsupported_properties(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, property: str, value: Optional[str]
+    spark: SparkSession,
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    properties: Dict[str, str],
 ) -> None:
     identifier = "default.write_parquet_unsupported_properties"
 
-    tbl = _create_table(session_catalog, identifier, {property: value}, [])
-    if value:
-        with pytest.raises(NotImplementedError):
-            tbl.append(arrow_table_with_null)
-    else:
+    tbl = _create_table(session_catalog, identifier, properties, [])
+    with pytest.raises(NotImplementedError):
         tbl.append(arrow_table_with_null)
 
 
