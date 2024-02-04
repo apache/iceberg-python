@@ -126,7 +126,7 @@ from pyiceberg.schema import (
 from pyiceberg.table import WriteTask
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, Properties, Record
+from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1686,7 +1686,6 @@ def fill_parquet_file_metadata(
 
     lower_bounds = {}
     upper_bounds = {}
-
     for k, agg in col_aggs.items():
         _min = agg.min_as_bytes()
         if _min is not None:
@@ -1694,7 +1693,6 @@ def fill_parquet_file_metadata(
         _max = agg.max_as_bytes()
         if _max is not None:
             upper_bounds[k] = _max
-
     for field_id in invalidate_col:
         del lower_bounds[field_id]
         del upper_bounds[field_id]
@@ -1711,48 +1709,40 @@ def fill_parquet_file_metadata(
 
 
 def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    task = next(tasks)
+    for task in tasks:
+        file_path = f'{table.location()}/data/{task.generate_data_file_path("parquet")}'
+        file_schema = schema_to_pyarrow(table.schema())
 
-    try:
-        _ = next(tasks)
-        # If there are more tasks, raise an exception
-        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
-    except StopIteration:
-        pass
+        collected_metrics: List[pq.FileMetaData] = []
+        fo = table.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+                writer.write_table(task.df)
 
-    file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
-    file_schema = schema_to_pyarrow(table.schema())
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=task.partition,
+            file_size_in_bytes=len(fo),
+            # After this has been fixed:
+            # https://github.com/apache/iceberg-python/issues/271
+            # sort_order_id=task.sort_order_id,
+            sort_order_id=None,
+            # Just copy these from the table for now
+            spec_id=table.spec().spec_id,
+            equality_ids=None,
+            key_metadata=None,
+        )
 
-    collected_metrics: List[pq.FileMetaData] = []
-    fo = table.io.new_output(file_path)
-    with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
-            writer.write_table(task.df)
+        if len(collected_metrics) != 1:
+            # One file has been written
+            raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
 
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=file_path,
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=len(fo),
-        # After this has been fixed:
-        # https://github.com/apache/iceberg-python/issues/271
-        # sort_order_id=task.sort_order_id,
-        sort_order_id=None,
-        # Just copy these from the table for now
-        spec_id=table.spec().spec_id,
-        equality_ids=None,
-        key_metadata=None,
-    )
-
-    if len(collected_metrics) != 1:
-        # One file has been written
-        raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
-
-    fill_parquet_file_metadata(
-        data_file=data_file,
-        parquet_metadata=collected_metrics[0],
-        stats_columns=compute_statistics_plan(table.schema(), table.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
-    )
-    return iter([data_file])
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=collected_metrics[0],
+            stats_columns=compute_statistics_plan(table.schema(), table.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+        )
+        yield data_file

@@ -107,6 +107,7 @@ from pyiceberg.typedef import (
     Identifier,
     KeyDefaultDict,
     Properties,
+    Record,
 )
 from pyiceberg.types import (
     IcebergType,
@@ -939,9 +940,6 @@ class Table:
 
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
-
-        if len(self.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
 
         merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
 
@@ -2253,13 +2251,27 @@ class WriteTask:
     task_id: int
     df: pa.Table
     sort_order_id: Optional[int] = None
+    partition: Optional[Record] = None
 
-    # Later to be extended with partition information
+    def generate_data_file_partition_path(self) -> str:
+        if self.partition is None:
+            raise ValueError("Cannot generate partition path based on non-partitioned WriteTask")
+        partition_strings = []
+        for field in self.partition._position_to_field_name:
+            value = getattr(self.partition, field)
+            partition_strings.append(f"{field}={value}")
+        return "/".join(partition_strings)
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+
+    def generate_data_file_path(self, extension: str) -> str:
+        if self.partition:
+            return f"{self.generate_data_file_partition_path()}/{self. generate_data_file_filename(extension)}"
+        else:
+            return self.generate_data_file_filename(extension)
 
 
 def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
@@ -2270,20 +2282,6 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
     return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
-
-
-def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
-    from pyiceberg.io.pyarrow import write_file
-
-    if len(table.spec().fields) > 0:
-        raise ValueError("Cannot write to partitioned tables")
-
-    write_uuid = uuid.uuid4()
-    counter = itertools.count(0)
-
-    # This is an iter, so we don't have to materialize everything every time
-    # This will be more relevant when we start doing partitioned writes
-    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))
 
 
 class _MergingSnapshotProducer:
@@ -2463,3 +2461,128 @@ class _MergingSnapshotProducer:
             )
 
         return snapshot
+
+
+@dataclass(frozen=True)
+class TablePartition:
+    partition_key: Record
+    arrow_table_partition: pa.Table
+
+
+def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
+    order = 'ascending' if not reverse else 'descending'
+    null_placement = 'at_start' if reverse else 'at_end'
+    return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
+
+
+def group_by_partition_scheme(iceberg_table: Table, arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
+    """Given a table sort it by current partition scheme with all transform functions supported."""
+    # todo support hidden partition transform function
+    from pyiceberg.transforms import IdentityTransform
+
+    supported = {IdentityTransform}
+    if not all(type(field.transform) in supported for field in iceberg_table.spec().fields if field in partition_columns):
+        raise ValueError(
+            f"Not all transforms are supported, get: {[transform in supported for transform in iceberg_table.spec().fields]}."
+        )
+
+    # only works for identity
+    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
+    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
+    return sorted_arrow_table
+
+
+def _get_partition_columns(iceberg_table: Table, arrow_table: pa.Table) -> list[str]:
+    arrow_table_cols = set(arrow_table.column_names)
+    partition_cols = []
+    for transform_field in iceberg_table.spec().fields:
+        column_name = iceberg_table.schema().find_column_name(transform_field.source_id)
+        if not column_name:
+            raise ValueError(f"{transform_field=} could not be found in {iceberg_table.schema()}.")
+        if column_name not in arrow_table_cols:
+            continue
+        partition_cols.append(column_name)
+    return partition_cols
+
+
+def _get_partition_key(arrow_table: pa.Table, partition_columns: list[str], offset: int) -> Record:
+    # todo: Instead of fetching partition keys one at a time, try filtering by a mask made of offsets, and convert to py together,
+    # possibly slightly more efficient.
+    return Record(**{col: arrow_table.column(col)[offset].as_py() for col in partition_columns})
+
+
+def _partition(iceberg_table: Table, arrow_table: pa.Table) -> Iterable[TablePartition]:
+    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+
+    Example:
+    Input:
+    An arrow table with partition key of ['n_legs', 'year'] and with data of
+    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
+     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
+
+    The algrithm:
+    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement of "at_end".
+    This gives the same table as raw input.
+
+    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement : "at_start".
+    This gives:
+    [8, 7, 4, 5, 6, 3, 1, 2, 0]
+
+    Based on this we get partition groups of indices:
+    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
+
+    We then retrieve the partition keys by offsets.
+    And slice the arrow table by offsets and lengths of each partition.
+    """
+    import pyarrow as pa
+
+    partition_columns = _get_partition_columns(iceberg_table, arrow_table)
+
+    arrow_table = group_by_partition_scheme(iceberg_table, arrow_table, partition_columns)
+
+    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
+    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
+
+    slice_instructions = []
+    last = len(reversed_indices)
+    reversed_indices_size = len(reversed_indices)
+    ptr = 0
+    while ptr < reversed_indices_size:
+        group_size = last - reversed_indices[ptr]
+        offset = reversed_indices[ptr]
+        slice_instructions.append({"offset": offset, "length": group_size})
+        last = reversed_indices[ptr]
+        ptr = ptr + group_size
+
+    table_partitions: list[TablePartition] = [
+        TablePartition(
+            partition_key=_get_partition_key(arrow_table, partition_columns, inst["offset"]),
+            arrow_table_partition=arrow_table.slice(**inst),
+        )
+        for inst in slice_instructions
+    ]
+    return table_partitions
+
+
+def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
+    from pyiceberg.io.pyarrow import write_file  
+
+    write_uuid = uuid.uuid4()
+    counter = itertools.count(0)
+
+    if len(table.spec().fields) > 0:
+        partitions = _partition(table, df)
+        yield from write_file(
+            table,
+            iter([
+                WriteTask(write_uuid, next(counter), partition.arrow_table_partition, partition=partition.partition_key)
+                for partition in partitions
+            ]),
+        )
+    else:
+        # This is an iter, so we don't have to materialize everything every time
+        # This will be more relevant when we start doing partitioned writes
+        yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))

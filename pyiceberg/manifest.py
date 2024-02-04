@@ -308,6 +308,7 @@ def data_file_with_partition(partition_type: StructType, format_version: Literal
             field_id=field.field_id,
             name=field.name,
             field_type=partition_field_to_data_file_partition_field(field.field_type),
+            required=False
         )
         for field in partition_type.fields
     ])
