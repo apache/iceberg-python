@@ -493,21 +493,32 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("compression_codec", ["<not set>", "uncompressed", "gzip", "zstd", "snappy"])
-def test_parquet_compression(spark: SparkSession, arrow_table_with_null: pa.Table, compression_codec: str) -> None:
-    catalog_properties = {
-        "type": "rest",
-        "uri": "http://localhost:8181",
-        "s3.endpoint": "http://localhost:9000",
-        "s3.access-key-id": "admin",
-        "s3.secret-access-key": "password",
-    }
-    if compression_codec != "<not set>":
-        catalog_properties["write.parquet.compression-codec"] = compression_codec
-    if compression_codec != "snappy":
-        catalog_properties["write.parquet.compression-level"] = "1"
-    catalog = load_catalog("local", **catalog_properties)
+@pytest.mark.parametrize(
+    "compression",
+    # List of (compression_properties, expected_compression_name)
+    [
+        # REST catalog uses Zstandard by default: https://github.com/apache/iceberg/pull/8593
+        ({}, "ZSTD"),
+        ({"write.parquet.compression-codec": "uncompressed"}, "UNCOMPRESSED"),
+        ({"write.parquet.compression-codec": "gzip", "write.parquet.compression-level": "1"}, "GZIP"),
+        ({"write.parquet.compression-codec": "zstd", "write.parquet.compression-level": "1"}, "ZSTD"),
+        ({"write.parquet.compression-codec": "snappy"}, "SNAPPY"),
+    ],
+)
+def test_parquet_compression(spark: SparkSession, arrow_table_with_null: pa.Table, compression) -> None:
+    compression_properties, expected_compression_name = compression
 
+    catalog = load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+            **compression_properties,
+        },
+    )
     identifier = "default.arrow_data_files"
 
     try:
@@ -530,10 +541,7 @@ def test_parquet_compression(spark: SparkSession, arrow_table_with_null: pa.Tabl
         parquet_metadata = pq.read_metadata(f)
         compression = parquet_metadata.row_group(0).column(0).compression
 
-    if compression_codec == "<not set>":
-        assert compression == "ZSTD"
-    else:
-        assert compression == compression_codec.upper()
+    assert compression == expected_compression_name
 
 
 @pytest.mark.integration

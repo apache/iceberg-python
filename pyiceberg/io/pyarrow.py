@@ -1722,6 +1722,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
 
     compression_codec = table.properties.get("write.parquet.compression-codec")
     compression_level = table.properties.get("write.parquet.compression-level")
+    compression_options: Dict[str, Any]
     if compression_codec == "uncompressed":
         compression_options = {"compression": "none"}
     else:
