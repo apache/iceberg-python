@@ -32,7 +32,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -101,7 +101,8 @@ class SqlCatalog(Catalog):
 
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
-        self.engine = create_engine(uri_prop, echo=True)
+        echo = bool(self.properties.get("echo", False))
+        self.engine = create_engine(uri_prop, echo=echo)
 
         self._ensure_tables_exist()
 
@@ -111,7 +112,10 @@ class SqlCatalog(Catalog):
                 stmt = select(1).select_from(table)
                 try:
                     session.scalar(stmt)
-                except OperationalError:
+                except (
+                    OperationalError,
+                    ProgrammingError,
+                ):  # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
                     self.create_tables()
                     return
 

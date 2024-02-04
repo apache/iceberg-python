@@ -811,12 +811,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names = []
         self._name_mapping = name_mapping
 
-    def _current_path(self) -> str:
-        return ".".join(self._field_names)
-
     def _field_id(self, field: pa.Field) -> int:
         if self._name_mapping:
-            return self._name_mapping.find(self._current_path()).field_id
+            return self._name_mapping.find(*self._field_names).field_id
         elif (field_id := _get_field_id(field)) is not None:
             return field_id
         else:
@@ -1339,7 +1336,10 @@ class StatsAggregator:
     def update_max(self, val: Any) -> None:
         self.current_max = val if self.current_max is None else max(val, self.current_max)
 
-    def min_as_bytes(self) -> bytes:
+    def min_as_bytes(self) -> Optional[bytes]:
+        if self.current_min is None:
+            return None
+
         return self.serialize(
             self.current_min
             if self.trunc_length is None
@@ -1735,7 +1735,10 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         file_format=FileFormat.PARQUET,
         partition=Record(),
         file_size_in_bytes=len(fo),
-        sort_order_id=task.sort_order_id,
+        # After this has been fixed:
+        # https://github.com/apache/iceberg-python/issues/271
+        # sort_order_id=task.sort_order_id,
+        sort_order_id=None,
         # Just copy these from the table for now
         spec_id=table.spec().spec_id,
         equality_ids=None,

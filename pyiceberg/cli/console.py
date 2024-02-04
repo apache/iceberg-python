@@ -207,6 +207,23 @@ def version(ctx: Context) -> None:
 
 
 @run.group()
+def create() -> None:
+    """Operation to create a namespace."""
+
+
+@create.command()
+@click.argument("identifier")
+@click.pass_context
+@catch_exception()
+def namespace(ctx: Context, identifier: str) -> None:
+    """Create a namespace."""
+    catalog, output = _catalog_and_output(ctx)
+
+    catalog.create_namespace(identifier)
+    output.text(f"Created namespace: {identifier}")
+
+
+@run.group()
 def drop() -> None:
     """Operations to drop a namespace or table."""
 
@@ -223,11 +240,11 @@ def table(ctx: Context, identifier: str) -> None:  # noqa: F811
     output.text(f"Dropped table: {identifier}")
 
 
-@drop.command()
+@drop.command()  # type: ignore
 @click.argument("identifier")
 @click.pass_context
 @catch_exception()
-def namespace(ctx: Context, identifier: str) -> None:
+def namespace(ctx: Context, identifier: str) -> None:  # noqa: F811
     """Drop a namespace."""
     catalog, output = _catalog_and_output(ctx)
 
