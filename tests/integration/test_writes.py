@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from datetime import date, datetime
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -24,8 +25,9 @@ import pyarrow.parquet as pq
 import pytest
 from pyarrow.fs import S3FileSystem
 from pyspark.sql import SparkSession
+from pytest_mock.plugin import MockerFixture
 
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
@@ -161,142 +163,79 @@ def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    identifier = "default.arrow_table_v1_with_null"
-
+def _create_table(session_catalog: Catalog, identifier: str, properties: Properties, data: List[pa.Table]) -> Table:
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-    tbl.append(arrow_table_with_null)
+    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties=properties)
+    for d in data:
+        tbl.append(d)
 
+    return tbl
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_table_v1_with_null"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v1_without_data(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
     identifier = "default.arrow_table_v1_without_data"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-    tbl.append(arrow_table_without_data)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_without_data])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v1_with_only_nulls(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
     identifier = "default.arrow_table_v1_with_only_nulls"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-    tbl.append(arrow_table_with_only_nulls)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_only_nulls])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v1_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v1_appended_with_null"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-
-    for _ in range(2):
-        tbl.append(arrow_table_with_null)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, 2 * [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v2_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v2_with_null"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
-    tbl.append(arrow_table_with_null)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, 2 * [arrow_table_with_null])
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v2_without_data(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
     identifier = "default.arrow_table_v2_without_data"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
-    tbl.append(arrow_table_without_data)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, 2 * [arrow_table_without_data])
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v2_with_only_nulls(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
     identifier = "default.arrow_table_v2_with_only_nulls"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
-    tbl.append(arrow_table_with_only_nulls)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_only_nulls])
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v2_appended_with_null"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '2'})
-
-    for _ in range(2):
-        tbl.append(arrow_table_with_null)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, 2 * [arrow_table_with_null])
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_v1_v2_appended_with_null"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-    tbl.append(arrow_table_with_null)
-
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
     with tbl.transaction() as tx:
@@ -400,15 +339,7 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
 @pytest.mark.integration
 def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_summaries"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-
-    tbl.append(arrow_table_with_null)
-    tbl.append(arrow_table_with_null)
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, 2 * [arrow_table_with_null])
     tbl.overwrite(arrow_table_with_null)
 
     rows = spark.sql(
@@ -467,12 +398,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
 @pytest.mark.integration
 def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_data_files"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
 
     tbl.overwrite(arrow_table_with_null)
     # should produce a DELETE entry
@@ -493,9 +419,9 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize(
-    "compression",
-    # List of (compression_properties, expected_compression_name)
+    "properties, expected_compression_name",
     [
         # REST catalog uses Zstandard by default: https://github.com/apache/iceberg/pull/8593
         ({}, "ZSTD"),
@@ -505,36 +431,24 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
         ({"write.parquet.compression-codec": "snappy"}, "SNAPPY"),
     ],
 )
-def test_parquet_compression(spark: SparkSession, arrow_table_with_null: pa.Table, compression) -> None:
-    compression_properties, expected_compression_name = compression
+def test_write_parquet_compression_properties(
+    spark: SparkSession,
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: str,
+    properties: Dict[str, Any],
+    expected_compression_name: str,
+) -> None:
+    identifier = "default.write_parquet_compression_properties"
 
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-            **compression_properties,
-        },
-    )
-    identifier = "default.arrow_data_files"
-
-    try:
-        catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-    tbl = catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-
-    tbl.overwrite(arrow_table_with_null)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version, **properties}, [arrow_table_with_null])
 
     data_file_paths = [task.file.file_path for task in tbl.scan().plan_files()]
 
     fs = S3FileSystem(
-        endpoint_override=catalog.properties["s3.endpoint"],
-        access_key=catalog.properties["s3.access-key-id"],
-        secret_key=catalog.properties["s3.secret-access-key"],
+        endpoint_override=session_catalog.properties["s3.endpoint"],
+        access_key=session_catalog.properties["s3.access-key-id"],
+        secret_key=session_catalog.properties["s3.secret-access-key"],
     )
     uri = urlparse(data_file_paths[0])
     with fs.open_input_file(f"{uri.netloc}{uri.path}") as f:
@@ -545,15 +459,63 @@ def test_parquet_compression(spark: SparkSession, arrow_table_with_null: pa.Tabl
 
 
 @pytest.mark.integration
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "properties, expected_kwargs",
+    [
+        ({"write.parquet.page-size-bytes": "42"}, {"data_page_size": 42}),
+        ({"write.parquet.dict-size-bytes": "42"}, {"dictionary_pagesize_limit": 42}),
+    ],
+)
+def test_write_parquet_other_properties(
+    mocker: MockerFixture,
+    spark: SparkSession,
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    properties: Dict[str, Any],
+    expected_kwargs: Dict[str, Any],
+) -> None:
+    print(type(mocker))
+    identifier = "default.test_write_parquet_other_properties"
+
+    # The properties we test cannot be checked on the resulting Parquet file, so we spy on the ParquetWriter call instead
+    ParquetWriter = mocker.spy(pq, "ParquetWriter")
+    _create_table(session_catalog, identifier, properties, [arrow_table_with_null])
+
+    call_kwargs = ParquetWriter.call_args[1]
+    for key, value in expected_kwargs.items():
+        assert call_kwargs.get(key) == value
+
+
+@pytest.mark.integration
+@pytest.mark.integration
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {"write.parquet.row-group-size-bytes": "42"},
+        {"write.parquet.page-row-limit": "42"},
+        {"write.parquet.bloom-filter-enabled.column.bool": "true"},
+        {"write.parquet.bloom-filter-max-bytes": "42"},
+    ],
+)
+def test_write_parquet_unsupported_properties(
+    spark: SparkSession,
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    properties: Dict[str, Any],
+) -> None:
+    identifier = "default.write_parquet_unsupported_properties"
+
+    tbl = _create_table(session_catalog, identifier, properties, [])
+    with pytest.raises(NotImplementedError):
+        tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
 def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_data_files"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
+    tbl = _create_table(session_catalog, identifier, {'format-version': '1'}, [])
 
     with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
         tbl.overwrite("not a df")
@@ -567,15 +529,9 @@ def test_summaries_with_only_nulls(
     spark: SparkSession, session_catalog: Catalog, arrow_table_without_data: pa.Table, arrow_table_with_only_nulls: pa.Table
 ) -> None:
     identifier = "default.arrow_table_summaries_with_only_nulls"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties={'format-version': '1'})
-
-    tbl.append(arrow_table_without_data)
-    tbl.append(arrow_table_with_only_nulls)
+    tbl = _create_table(
+        session_catalog, identifier, {'format-version': '1'}, [arrow_table_without_data, arrow_table_with_only_nulls]
+    )
     tbl.overwrite(arrow_table_without_data)
 
     rows = spark.sql(

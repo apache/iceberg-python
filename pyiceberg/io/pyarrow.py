@@ -26,6 +26,7 @@ with the pyarrow library.
 from __future__ import annotations
 
 import concurrent.futures
+import fnmatch
 import itertools
 import logging
 import os
@@ -1720,23 +1721,14 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     except StopIteration:
         pass
 
-    compression_codec = table.properties.get("write.parquet.compression-codec")
-    compression_level = table.properties.get("write.parquet.compression-level")
-    compression_options: Dict[str, Any]
-    if compression_codec == "uncompressed":
-        compression_options = {"compression": "none"}
-    else:
-        compression_options = {
-            "compression": compression_codec,
-            "compression_level": None if compression_level is None else int(compression_level),
-        }
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table.properties)
 
     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
     file_schema = schema_to_pyarrow(table.schema())
 
     fo = table.io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", **compression_options) as writer:
+        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", **parquet_writer_kwargs) as writer:
             writer.write_table(task.df)
 
     data_file = DataFile(
@@ -1762,3 +1754,39 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
     return iter([data_file])
+
+
+def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
+    def _get_int(key: str) -> Optional[int]:
+        value = table_properties.get(key)
+        if value is None:
+            return None
+        else:
+            return int(value)
+
+    for key_pattern in [
+        "write.parquet.row-group-size-bytes",
+        "write.parquet.page-row-limit",
+        "write.parquet.bloom-filter-max-bytes",
+        "write.parquet.bloom-filter-enabled.column.*",
+    ]:
+        unsupported_keys = fnmatch.filter(table_properties, key_pattern)
+        if unsupported_keys:
+            raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
+
+    kwargs: Dict[str, Any] = {
+        "data_page_size": _get_int("write.parquet.page-size-bytes"),
+        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes"),
+    }
+
+    compression_codec = table_properties.get("write.parquet.compression-codec")
+    compression_level = _get_int("write.parquet.compression-level")
+    if compression_codec == "uncompressed":
+        kwargs.update({"compression": "none"})
+    else:
+        kwargs.update({
+            "compression": compression_codec,
+            "compression_level": compression_level,
+        })
+
+    return kwargs

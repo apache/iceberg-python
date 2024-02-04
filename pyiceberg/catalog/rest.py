@@ -450,10 +450,6 @@ class RestCatalog(Catalog):
         iceberg_schema = self._convert_schema_if_needed(schema)
         iceberg_schema = assign_fresh_schema_ids(iceberg_schema)
 
-        properties = properties.copy()
-        for copy_key in ["write.parquet.compression-codec", "write.parquet.compression-level"]:
-            if copy_key in self.properties:
-                properties[copy_key] = self.properties[copy_key]
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(
             name=namespace_and_table["table"],
