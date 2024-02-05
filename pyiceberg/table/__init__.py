@@ -1383,7 +1383,7 @@ class DataScan(TableScan):
         return ray.data.from_arrow(self.to_arrow())
 
     def to_daft(self) -> daft.DataFrame:
-        """Reads a Daft DataFrame lazily from this Iceberg table
+        """Read a Daft DataFrame lazily from this Iceberg table.
 
         Returns:
             daft.DataFrame: Unmaterialized Daft Dataframe created from the Iceberg table
