@@ -26,6 +26,7 @@ with the pyarrow library.
 from __future__ import annotations
 
 import concurrent.futures
+import fnmatch
 import itertools
 import logging
 import os
@@ -811,12 +812,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names = []
         self._name_mapping = name_mapping
 
-    def _current_path(self) -> str:
-        return ".".join(self._field_names)
-
     def _field_id(self, field: pa.Field) -> int:
         if self._name_mapping:
-            return self._name_mapping.find(self._current_path()).field_id
+            return self._name_mapping.find(*self._field_names).field_id
         elif (field_id := _get_field_id(field)) is not None:
             return field_id
         else:
@@ -1339,7 +1337,10 @@ class StatsAggregator:
     def update_max(self, val: Any) -> None:
         self.current_max = val if self.current_max is None else max(val, self.current_max)
 
-    def min_as_bytes(self) -> bytes:
+    def min_as_bytes(self) -> Optional[bytes]:
+        if self.current_min is None:
+            return None
+
         return self.serialize(
             self.current_min
             if self.trunc_length is None
@@ -1720,13 +1721,14 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     except StopIteration:
         pass
 
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table.properties)
+
     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
     file_schema = schema_to_pyarrow(table.schema())
 
-    collected_metrics: List[pq.FileMetaData] = []
     fo = table.io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", metadata_collector=collected_metrics) as writer:
+        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", **parquet_writer_kwargs) as writer:
             writer.write_table(task.df)
 
     data_file = DataFile(
@@ -1735,21 +1737,52 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         file_format=FileFormat.PARQUET,
         partition=Record(),
         file_size_in_bytes=len(fo),
-        sort_order_id=task.sort_order_id,
+        # After this has been fixed:
+        # https://github.com/apache/iceberg-python/issues/271
+        # sort_order_id=task.sort_order_id,
+        sort_order_id=None,
         # Just copy these from the table for now
         spec_id=table.spec().spec_id,
         equality_ids=None,
         key_metadata=None,
     )
 
-    if len(collected_metrics) != 1:
-        # One file has been written
-        raise ValueError(f"Expected 1 entry, got: {collected_metrics}")
-
     fill_parquet_file_metadata(
         data_file=data_file,
-        parquet_metadata=collected_metrics[0],
+        parquet_metadata=writer.writer.metadata,
         stats_columns=compute_statistics_plan(table.schema(), table.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
     return iter([data_file])
+
+
+def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
+    def _get_int(key: str, default: Optional[int] = None) -> Optional[int]:
+        if value := table_properties.get(key):
+            try:
+                return int(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {key} to an integer: {value}") from e
+        else:
+            return default
+
+    for key_pattern in [
+        "write.parquet.row-group-size-bytes",
+        "write.parquet.page-row-limit",
+        "write.parquet.bloom-filter-max-bytes",
+        "write.parquet.bloom-filter-enabled.column.*",
+    ]:
+        if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
+            raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
+
+    compression_codec = table_properties.get("write.parquet.compression-codec", "zstd")
+    compression_level = _get_int("write.parquet.compression-level")
+    if compression_codec == "uncompressed":
+        compression_codec = "none"
+
+    return {
+        "compression": compression_codec,
+        "compression_level": compression_level,
+        "data_page_size": _get_int("write.parquet.page-size-bytes"),
+        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes", default=2 * 1024 * 1024),
+    }
