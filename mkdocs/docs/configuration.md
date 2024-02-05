@@ -75,6 +75,8 @@ You can also set the FileIO explicitly:
 | ---------- | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | py-io-impl | pyiceberg.io.fsspec.FsspecFileIO | Sets the FileIO explicitly to an implementation, and will fail explicitly if it can't be loaded |
 
+For the FileIO there are several configuration options available:
+
 ### S3
 
 | Key                  | Example                  | Description                                                                                                                                                                                                                                               |
