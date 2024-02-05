@@ -459,7 +459,6 @@ def test_write_parquet_compression_properties(
 
 
 @pytest.mark.integration
-@pytest.mark.integration
 @pytest.mark.parametrize(
     "properties, expected_kwargs",
     [
@@ -487,8 +486,6 @@ def test_write_parquet_other_properties(
         assert call_kwargs.get(key) == value
 
 
-@pytest.mark.integration
-@pytest.mark.integration
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "properties",

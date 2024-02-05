@@ -1775,7 +1775,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
         if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
             raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
-    compression_codec = table_properties.get("write.parquet.compression-codec")
+    compression_codec = table_properties.get("write.parquet.compression-codec", "zstd")
     compression_level = _get_int("write.parquet.compression-level")
     if compression_codec == "uncompressed":
         compression_codec = "none"
