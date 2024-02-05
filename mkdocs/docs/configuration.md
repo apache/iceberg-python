@@ -46,7 +46,20 @@ The environment variable picked up by Iceberg starts with `PYICEBERG_` and then 
 
 For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
 
-## FileIO
+# Tables
+
+Iceberg tables support table properties to configure table behavior.
+
+## Write options
+
+| Key                               | Options                           | Default | Description                                                                                 |
+| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+
+# FileIO
 
 Iceberg works with the concept of a FileIO which is a pluggable module for reading, writing, and deleting files. By default, PyIceberg will try to initialize the FileIO that's suitable for the scheme (`s3://`, `gs://`, etc.) and will use the first one that's installed.
 
