@@ -45,7 +45,7 @@ from urllib.parse import urlparse
 
 import boto3
 import pytest
-from moto import mock_dynamodb, mock_glue
+from moto import mock_aws
 
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
@@ -1793,14 +1793,14 @@ def fixture_s3(_aws_credentials: None, moto_endpoint_url: str) -> Generator[boto
 @pytest.fixture(name="_glue")
 def fixture_glue(_aws_credentials: None) -> Generator[boto3.client, None, None]:
     """Yield a mocked glue client."""
-    with mock_glue():
+    with mock_aws():
         yield boto3.client("glue", region_name="us-east-1")
 
 
 @pytest.fixture(name="_dynamodb")
 def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, None]:
     """Yield a mocked DynamoDB client."""
-    with mock_dynamodb():
+    with mock_aws():
         yield boto3.client("dynamodb", region_name="us-east-1")
 
 
