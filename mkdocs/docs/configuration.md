@@ -57,7 +57,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
 | `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
 | `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`   | Size in bytes                     | 1MB     | Set the dictionary page size limit per row group                                            |
+| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
 
 # FileIO
 
