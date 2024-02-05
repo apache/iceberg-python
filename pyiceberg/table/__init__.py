@@ -1012,7 +1012,7 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema(self.schema(), other_schema=df.schema)
-        
+
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
             table=self,
