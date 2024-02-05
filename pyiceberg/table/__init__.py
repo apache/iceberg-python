@@ -135,7 +135,7 @@ _JAVA_LONG_MAX = 9223372036854775807
 def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
     from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
 
-    name_mapping = table_schema.name_mapping()
+    name_mapping = table_schema.name_mapping
     try:
         task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
     except ValueError as e:
