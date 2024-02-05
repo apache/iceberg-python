@@ -1381,7 +1381,7 @@ class DataScan(TableScan):
         import ray
 
         return ray.data.from_arrow(self.to_arrow())
-    
+
     def to_daft(self) -> daft.DataFrame:
         """Reads a Daft DataFrame lazily from this Iceberg table
 
