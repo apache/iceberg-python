@@ -2230,13 +2230,13 @@ files = [
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.34.32"
-description = "Type annotations for boto3.Glue 1.34.32 service generated with mypy-boto3-builder 7.23.1"
+version = "1.34.35"
+description = "Type annotations for boto3.Glue 1.34.35 service generated with mypy-boto3-builder 7.23.1"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "mypy-boto3-glue-1.34.32.tar.gz", hash = "sha256:f23fddd06613d699ff7a22bb4fa79478c903e07cd5dd32e70278da49d6212e65"},
-    {file = "mypy_boto3_glue-1.34.32-py3-none-any.whl", hash = "sha256:7a1a0e4dfab2870cff5b0984c39d3fa4fd1820ea6fb40f807b7150e4d624d9c9"},
+    {file = "mypy-boto3-glue-1.34.35.tar.gz", hash = "sha256:f8abe4f2e07d299a7b9b0dec30033a9877414e790ee49f274950a5b6d9dd3036"},
+    {file = "mypy_boto3_glue-1.34.35-py3-none-any.whl", hash = "sha256:361b21c108ffae7868a25256aaeeca6f28fd1072cbeebebb9c4c4dbc3cbdc721"},
 ]
 
 [package.dependencies]
