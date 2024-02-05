@@ -224,7 +224,11 @@ def test_ray_all_types(catalog: Catalog) -> None:
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
 def test_pyarrow_to_iceberg_all_types(catalog: Catalog) -> None:
     table_test_all_types = catalog.load_table("default.test_all_types")
-    fs = S3FileSystem(endpoint_override="http://localhost:9000", access_key="admin", secret_key="password")
+    fs = S3FileSystem(
+        endpoint_override=catalog.properties["s3.endpoint"],
+        access_key=catalog.properties["s3.access-key-id"],
+        secret_key=catalog.properties["s3.secret-access-key"],
+    )
     data_file_paths = [task.file.file_path for task in table_test_all_types.scan().plan_files()]
     for data_file_path in data_file_paths:
         uri = urlparse(data_file_path)
