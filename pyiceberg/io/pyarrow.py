@@ -1757,14 +1757,14 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
 
 
 def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
-    def _get_int(key: str) -> Optional[int]:
+    def _get_int(key: str, default: Optional[int] = None) -> Optional[int]:
         if value := table_properties.get(key):
             try:
                 return int(value)
             except ValueError as e:
                 raise ValueError(f"Could not parse table property {key} to an integer: {value}") from e
         else:
-            return None
+            return default
 
     for key_pattern in [
         "write.parquet.row-group-size-bytes",
@@ -1784,5 +1784,5 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
         "compression": compression_codec,
         "compression_level": compression_level,
         "data_page_size": _get_int("write.parquet.page-size-bytes"),
-        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes"),
+        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes", default=2 * 1024 * 1024),
     }
