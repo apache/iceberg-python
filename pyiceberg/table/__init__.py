@@ -957,7 +957,7 @@ class Table:
         if name_mapping_json := self.properties.get(SCHEMA_NAME_MAPPING_DEFAULT):
             return parse_mapping_from_json(name_mapping_json)
         else:
-            return self.schema().name_mapping()
+            return self.schema().name_mapping
 
     def append(self, df: pa.Table) -> None:
         """
