@@ -1336,7 +1336,7 @@ class StatsAggregator:
             self.current_min = val
         elif val is None:
             # keep current_min
-            pass
+            return
         else:
             self.current_min = min(val, self.current_min)
 
@@ -1345,7 +1345,7 @@ class StatsAggregator:
             self.current_max = val
         elif val is None:
             # keep current_max
-            pass
+            return
         else:
             self.current_max = max(val, self.current_max)
 
