@@ -67,7 +67,7 @@ thrift = { version = ">=0.13.0,<1.0.0", optional = true }
 mypy-boto3-glue = { version = ">=1.28.18", optional = true }
 boto3 = { version = ">=1.24.59", optional = true }
 s3fs = { version = ">=2023.1.0,<2024.1.0", optional = true }
-adlfs = { version = ">=2023.1.0,<2024.2.0", optional = true }
+adlfs = { version = ">=2023.1.0,<2024.3.0", optional = true }
 gcsfs = { version = ">=2023.1.0,<2024.1.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
@@ -80,7 +80,7 @@ pre-commit = "3.5.0"
 fastavro = "1.9.3"
 coverage = { version = "^7.4.1", extras = ["toml"] }
 requests-mock = "1.11.0"
-moto = { version = "^4.2.13", extras = ["server"] }
+moto = { version = "^5.0.1", extras = ["server"] }
 typing-extensions = "4.9.0"
 pytest-mock = "3.12.0"
 pyspark = "3.5.0"

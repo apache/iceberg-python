@@ -20,7 +20,7 @@ from unittest import mock
 import boto3
 import pyarrow as pa
 import pytest
-from moto import mock_glue
+from moto import mock_aws
 
 from pyiceberg.catalog.glue import GlueCatalog
 from pyiceberg.exceptions import (
@@ -37,7 +37,7 @@ from pyiceberg.types import IntegerType
 from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_database_location(
     _glue: boto3.client,
     _bucket_initialize: None,
@@ -72,7 +72,7 @@ def test_create_table_with_database_location(
     assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_default_warehouse(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -86,7 +86,7 @@ def test_create_table_with_default_warehouse(
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_given_location(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -102,7 +102,7 @@ def test_create_table_with_given_location(
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_pyarrow_schema(
     _bucket_initialize: None,
     moto_endpoint_url: str,
@@ -124,7 +124,7 @@ def test_create_table_with_pyarrow_schema(
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_no_location(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -136,7 +136,7 @@ def test_create_table_with_no_location(
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_strips(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -150,7 +150,7 @@ def test_create_table_with_strips(
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_strips_bucket_root(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -164,7 +164,7 @@ def test_create_table_with_strips_bucket_root(
     assert test_catalog._parse_metadata_version(table_strip.metadata_location) == 0
 
 
-@mock_glue
+@mock_aws
 def test_create_table_with_no_database(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -174,7 +174,7 @@ def test_create_table_with_no_database(
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
-@mock_glue
+@mock_aws
 def test_create_duplicated_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -186,7 +186,7 @@ def test_create_duplicated_table(
         test_catalog.create_table(identifier, table_schema_nested)
 
 
-@mock_glue
+@mock_aws
 def test_load_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -201,7 +201,7 @@ def test_load_table(
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
-@mock_glue
+@mock_aws
 def test_load_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -215,7 +215,7 @@ def test_load_table_from_self_identifier(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_glue
+@mock_aws
 def test_load_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
@@ -224,7 +224,7 @@ def test_load_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, 
         test_catalog.load_table(identifier)
 
 
-@mock_glue
+@mock_aws
 def test_drop_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -241,7 +241,7 @@ def test_drop_table(
         test_catalog.load_table(identifier)
 
 
-@mock_glue
+@mock_aws
 def test_drop_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -260,7 +260,7 @@ def test_drop_table_from_self_identifier(
         test_catalog.load_table(table.identifier)
 
 
-@mock_glue
+@mock_aws
 def test_drop_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
@@ -268,7 +268,7 @@ def test_drop_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, 
         test_catalog.drop_table(identifier)
 
 
-@mock_glue
+@mock_aws
 def test_rename_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -292,7 +292,7 @@ def test_rename_table(
         test_catalog.load_table(identifier)
 
 
-@mock_glue
+@mock_aws
 def test_rename_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -317,7 +317,7 @@ def test_rename_table_from_self_identifier(
         test_catalog.load_table(table.identifier)
 
 
-@mock_glue
+@mock_aws
 def test_rename_table_no_params(
     _glue: boto3.client, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str
 ) -> None:
@@ -336,7 +336,7 @@ def test_rename_table_no_params(
         test_catalog.rename_table(identifier, new_identifier)
 
 
-@mock_glue
+@mock_aws
 def test_rename_non_iceberg_table(
     _glue: boto3.client, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str
 ) -> None:
@@ -359,7 +359,7 @@ def test_rename_non_iceberg_table(
         test_catalog.rename_table(identifier, new_identifier)
 
 
-@mock_glue
+@mock_aws
 def test_list_tables(
     _bucket_initialize: None,
     moto_endpoint_url: str,
@@ -377,7 +377,7 @@ def test_list_tables(
         assert (database_name, table_name) in loaded_table_list
 
 
-@mock_glue
+@mock_aws
 def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: List[str]) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     for database_name in database_list:
@@ -387,7 +387,7 @@ def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, datab
         assert (database_name,) in loaded_database_list
 
 
-@mock_glue
+@mock_aws
 def test_create_namespace_no_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
@@ -398,7 +398,7 @@ def test_create_namespace_no_properties(_bucket_initialize: None, moto_endpoint_
     assert properties == {}
 
 
-@mock_glue
+@mock_aws
 def test_create_namespace_with_comment_and_location(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
@@ -415,7 +415,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, mo
     assert properties["location"] == test_location
 
 
-@mock_glue
+@mock_aws
 def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
@@ -426,7 +426,7 @@ def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url
         test_catalog.create_namespace(namespace=database_name, properties={"test": "test"})
 
 
-@mock_glue
+@mock_aws
 def test_drop_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
@@ -438,7 +438,7 @@ def test_drop_namespace(_bucket_initialize: None, moto_endpoint_url: str, databa
     assert len(loaded_database_list) == 0
 
 
-@mock_glue
+@mock_aws
 def test_drop_non_empty_namespace(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -451,14 +451,14 @@ def test_drop_non_empty_namespace(
         test_catalog.drop_namespace(database_name)
 
 
-@mock_glue
+@mock_aws
 def test_drop_non_exist_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.drop_namespace(database_name)
 
 
-@mock_glue
+@mock_aws
 def test_load_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
@@ -476,14 +476,14 @@ def test_load_namespace_properties(_bucket_initialize: None, moto_endpoint_url: 
         assert v == test_properties[k]
 
 
-@mock_glue
+@mock_aws
 def test_load_non_exist_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.load_namespace_properties(database_name)
 
 
-@mock_glue
+@mock_aws
 def test_update_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
@@ -508,7 +508,7 @@ def test_update_namespace_properties(_bucket_initialize: None, moto_endpoint_url
     test_catalog.drop_namespace(database_name)
 
 
-@mock_glue
+@mock_aws
 def test_load_empty_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(database_name)
@@ -516,7 +516,7 @@ def test_load_empty_namespace_properties(_bucket_initialize: None, moto_endpoint
     assert listed_properties == {}
 
 
-@mock_glue
+@mock_aws
 def test_load_default_namespace_properties(_glue, _bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:  # type: ignore
     # simulate creating database with default settings through AWS Glue Web Console
     _glue.create_database(DatabaseInput={"Name": database_name})
@@ -525,7 +525,7 @@ def test_load_default_namespace_properties(_glue, _bucket_initialize: None, moto
     assert listed_properties == {}
 
 
-@mock_glue
+@mock_aws
 def test_update_namespace_properties_overlap_update_removal(
     _bucket_initialize: None, moto_endpoint_url: str, database_name: str
 ) -> None:
@@ -546,7 +546,7 @@ def test_update_namespace_properties_overlap_update_removal(
     assert test_catalog.load_namespace_properties(database_name) == test_properties
 
 
-@mock_glue
+@mock_aws
 def test_passing_profile_name() -> None:
     session_properties: Dict[str, Any] = {
         "aws_access_key_id": "abc",
@@ -566,7 +566,7 @@ def test_passing_profile_name() -> None:
     assert test_catalog.glue is mock_session().client()
 
 
-@mock_glue
+@mock_aws
 def test_commit_table_update_schema(
     _glue: boto3.client,
     _bucket_initialize: None,
@@ -619,7 +619,7 @@ def test_commit_table_update_schema(
     assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
 
 
-@mock_glue
+@mock_aws
 def test_commit_table_properties(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:

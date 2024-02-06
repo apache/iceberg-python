@@ -45,7 +45,7 @@ from urllib.parse import urlparse
 
 import boto3
 import pytest
-from moto import mock_dynamodb, mock_glue
+from moto import mock_aws
 
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog
@@ -1784,23 +1784,24 @@ def moto_endpoint_url(moto_server: "ThreadedMotoServer") -> str:
     return _url
 
 
-@pytest.fixture(name="_s3")
+@pytest.fixture(name="_s3", scope="function")
 def fixture_s3(_aws_credentials: None, moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
     """Yield a mocked S3 client."""
-    yield boto3.client("s3", region_name="us-east-1", endpoint_url=moto_endpoint_url)
+    with mock_aws():
+        yield boto3.client("s3", region_name="us-east-1", endpoint_url=moto_endpoint_url)
 
 
 @pytest.fixture(name="_glue")
 def fixture_glue(_aws_credentials: None) -> Generator[boto3.client, None, None]:
     """Yield a mocked glue client."""
-    with mock_glue():
+    with mock_aws():
         yield boto3.client("glue", region_name="us-east-1")
 
 
 @pytest.fixture(name="_dynamodb")
 def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, None]:
     """Yield a mocked DynamoDB client."""
-    with mock_dynamodb():
+    with mock_aws():
         yield boto3.client("dynamodb", region_name="us-east-1")
 
 
@@ -1892,7 +1893,8 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
 
 @pytest.fixture(name="s3", scope="module")
 def fixture_s3_client() -> boto3.client:
-    yield boto3.client("s3")
+    with mock_aws():
+        yield boto3.client("s3")
 
 
 def clean_up(test_catalog: Catalog) -> None:

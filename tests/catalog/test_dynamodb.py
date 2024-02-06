@@ -20,7 +20,7 @@ from unittest import mock
 import boto3
 import pyarrow as pa
 import pytest
-from moto import mock_dynamodb
+from moto import mock_aws
 
 from pyiceberg.catalog import METADATA_LOCATION, TABLE_TYPE
 from pyiceberg.catalog.dynamodb import (
@@ -45,7 +45,7 @@ from pyiceberg.schema import Schema
 from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: None) -> None:  # type: ignore
     DynamoDbCatalog("test_ddb_catalog")
     response = _dynamodb.describe_table(TableName=DYNAMODB_TABLE_NAME_DEFAULT)
@@ -59,7 +59,7 @@ def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: 
     assert response["Table"]["TableStatus"] == ACTIVE
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_database_location(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -72,7 +72,7 @@ def test_create_table_with_database_location(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_pyarrow_schema(
     _bucket_initialize: None,
     moto_endpoint_url: str,
@@ -89,7 +89,7 @@ def test_create_table_with_pyarrow_schema(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_default_warehouse(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -102,7 +102,7 @@ def test_create_table_with_default_warehouse(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_given_location(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -117,7 +117,7 @@ def test_create_table_with_given_location(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_no_location(
     _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -128,7 +128,7 @@ def test_create_table_with_no_location(
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_strips(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -141,7 +141,7 @@ def test_create_table_with_strips(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_strips_bucket_root(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -154,7 +154,7 @@ def test_create_table_with_strips_bucket_root(
     assert TABLE_METADATA_LOCATION_REGEX.match(table_strip.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_table_with_no_database(
     _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -164,7 +164,7 @@ def test_create_table_with_no_database(
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_duplicated_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -176,7 +176,7 @@ def test_create_duplicated_table(
         test_catalog.create_table(identifier, table_schema_nested)
 
 
-@mock_dynamodb
+@mock_aws
 def test_load_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -190,7 +190,7 @@ def test_load_table(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_load_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -205,7 +205,7 @@ def test_load_table_from_self_identifier(
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
-@mock_dynamodb
+@mock_aws
 def test_load_non_exist_table(_bucket_initialize: None, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", warehouse=f"s3://{BUCKET_NAME}")
@@ -214,7 +214,7 @@ def test_load_non_exist_table(_bucket_initialize: None, database_name: str, tabl
         test_catalog.load_table(identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_drop_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -231,7 +231,7 @@ def test_drop_table(
         test_catalog.load_table(identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_drop_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -250,7 +250,7 @@ def test_drop_table_from_self_identifier(
         test_catalog.load_table(table.identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_drop_non_exist_table(_bucket_initialize: None, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", warehouse=f"s3://{BUCKET_NAME}")
@@ -258,7 +258,7 @@ def test_drop_non_exist_table(_bucket_initialize: None, database_name: str, tabl
         test_catalog.drop_table(identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_rename_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -281,7 +281,7 @@ def test_rename_table(
         test_catalog.load_table(identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_rename_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -306,7 +306,7 @@ def test_rename_table_from_self_identifier(
         test_catalog.load_table(table.identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_fail_on_rename_table_with_missing_required_params(_bucket_initialize: None, database_name: str, table_name: str) -> None:
     new_database_name = f"{database_name}_new"
     new_table_name = f"{table_name}_new"
@@ -330,7 +330,7 @@ def test_fail_on_rename_table_with_missing_required_params(_bucket_initialize: N
         test_catalog.rename_table(identifier, new_identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_fail_on_rename_non_iceberg_table(
     _dynamodb: boto3.client, _bucket_initialize: None, database_name: str, table_name: str
 ) -> None:
@@ -359,7 +359,7 @@ def test_fail_on_rename_non_iceberg_table(
         test_catalog.rename_table(identifier, new_identifier)
 
 
-@mock_dynamodb
+@mock_aws
 def test_list_tables(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_list: List[str]
 ) -> None:
@@ -372,7 +372,7 @@ def test_list_tables(
         assert (database_name, table_name) in loaded_table_list
 
 
-@mock_dynamodb
+@mock_aws
 def test_list_namespaces(_bucket_initialize: None, database_list: List[str]) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     for database_name in database_list:
@@ -382,7 +382,7 @@ def test_list_namespaces(_bucket_initialize: None, database_list: List[str]) -> 
         assert (database_name,) in loaded_database_list
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_namespace_no_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
@@ -393,7 +393,7 @@ def test_create_namespace_no_properties(_bucket_initialize: None, database_name:
     assert properties == {}
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_namespace_with_comment_and_location(_bucket_initialize: None, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
@@ -410,7 +410,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, da
     assert properties["location"] == test_location
 
 
-@mock_dynamodb
+@mock_aws
 def test_create_duplicated_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
@@ -421,7 +421,7 @@ def test_create_duplicated_namespace(_bucket_initialize: None, database_name: st
         test_catalog.create_namespace(namespace=database_name, properties={"test": "test"})
 
 
-@mock_dynamodb
+@mock_aws
 def test_drop_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(namespace=database_name)
@@ -433,7 +433,7 @@ def test_drop_namespace(_bucket_initialize: None, database_name: str) -> None:
     assert len(loaded_database_list) == 0
 
 
-@mock_dynamodb
+@mock_aws
 def test_drop_non_empty_namespace(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -446,14 +446,14 @@ def test_drop_non_empty_namespace(
         test_catalog.drop_namespace(database_name)
 
 
-@mock_dynamodb
+@mock_aws
 def test_drop_non_exist_namespace(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.drop_namespace(database_name)
 
 
-@mock_dynamodb
+@mock_aws
 def test_load_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
     test_properties = {
@@ -471,14 +471,14 @@ def test_load_namespace_properties(_bucket_initialize: None, database_name: str)
         assert v == test_properties[k]
 
 
-@mock_dynamodb
+@mock_aws
 def test_load_non_exist_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.load_namespace_properties(database_name)
 
 
-@mock_dynamodb
+@mock_aws
 def test_update_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
@@ -503,7 +503,7 @@ def test_update_namespace_properties(_bucket_initialize: None, database_name: st
     test_catalog.drop_namespace(database_name)
 
 
-@mock_dynamodb
+@mock_aws
 def test_load_empty_namespace_properties(_bucket_initialize: None, database_name: str) -> None:
     test_catalog = DynamoDbCatalog("test_ddb_catalog")
     test_catalog.create_namespace(database_name)
@@ -511,7 +511,7 @@ def test_load_empty_namespace_properties(_bucket_initialize: None, database_name
     assert listed_properties == {}
 
 
-@mock_dynamodb
+@mock_aws
 def test_update_namespace_properties_overlap_update_removal(_bucket_initialize: None, database_name: str) -> None:
     test_properties = {
         "comment": "this is a test description",
