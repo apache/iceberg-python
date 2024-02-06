@@ -636,3 +636,56 @@ print(ray_dataset.take(2))
     },
 ]
 ```
+
+### Daft
+
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/latest/user_guide/integrations/iceberg.html)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [Daft to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+A table can be read easily into a Daft Dataframe:
+
+```python
+df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
+df = df.where(df["trip_distance"] >= 10.0)
+df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
+```
+
+This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(No data to display: Dataframe not materialized)
+```
+
+We can execute the Dataframe to preview the first few rows of the query with `df.show()`.
+
+This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
+
+```python
+df.show(2)
+```
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╞══════════╪═══════════════════════════════╪═══════════════════════════════╡
+│ 2        ┆ 2008-12-31T23:23:50.000000    ┆ 2009-01-01T00:34:31.000000    │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2        ┆ 2008-12-31T23:05:03.000000    ┆ 2009-01-01T16:10:18.000000    │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(Showing first 2 rows)
+```
