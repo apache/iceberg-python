@@ -85,6 +85,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
     TimeType,
     UUIDType,
 )
@@ -125,6 +126,7 @@ GLUE_PRIMITIVE_TYPES = {
     StringType: "string",
     UUIDType: "string",
     TimestampType: "timestamp",
+    TimestamptzType: "timestamp",
     FixedType: "binary",
     BinaryType: "binary",
 }
@@ -150,7 +152,7 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
         if isinstance(primitive, DecimalType):
             return f"decimal({primitive.precision},{primitive.scale})"
         if (primitive_type := type(primitive)) not in GLUE_PRIMITIVE_TYPES:
-            raise ValueError(f"Unknown primitive type: {primitive}")
+            return str(primitive_type.root)
         return GLUE_PRIMITIVE_TYPES[primitive_type]
 
 
