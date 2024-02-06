@@ -193,12 +193,12 @@ def test_pyarrow_invalid_scheme() -> None:
     with pytest.raises(ValueError) as exc_info:
         PyArrowFileIO().new_input("foo://bar/baz.txt")
 
-    assert "Unrecognized filesystem type in URI" in str(exc_info.value)
+    assert "No registered filesystem for scheme" in str(exc_info.value)
 
     with pytest.raises(ValueError) as exc_info:
         PyArrowFileIO().new_output("foo://bar/baz.txt")
 
-    assert "Unrecognized filesystem type in URI" in str(exc_info.value)
+    assert "No registered filesystem for scheme" in str(exc_info.value)
 
 
 def test_pyarrow_violating_input_stream_protocol() -> None:
@@ -301,7 +301,7 @@ def test_deleting_s3_file_no_permission() -> None:
     s3fs_mock = MagicMock()
     s3fs_mock.delete_file.side_effect = OSError("AWS Error [code 15]")
 
-    with patch.object(PyArrowFileIO, "_initialize_fs") as submocked:
+    with patch.object(PyArrowFileIO, "_get_fs") as submocked:
         submocked.return_value = s3fs_mock
 
         with pytest.raises(PermissionError) as exc_info:
@@ -316,7 +316,7 @@ def test_deleting_s3_file_not_found() -> None:
     s3fs_mock = MagicMock()
     s3fs_mock.delete_file.side_effect = OSError("Path does not exist")
 
-    with patch.object(PyArrowFileIO, "_initialize_fs") as submocked:
+    with patch.object(PyArrowFileIO, "_get_fs") as submocked:
         submocked.return_value = s3fs_mock
 
         with pytest.raises(FileNotFoundError) as exc_info:
@@ -331,7 +331,7 @@ def test_deleting_hdfs_file_not_found() -> None:
     hdfs_mock = MagicMock()
     hdfs_mock.delete_file.side_effect = OSError("Path does not exist")
 
-    with patch.object(PyArrowFileIO, "_initialize_fs") as submocked:
+    with patch.object(PyArrowFileIO, "_get_fs") as submocked:
         submocked.return_value = hdfs_mock
 
         with pytest.raises(FileNotFoundError) as exc_info:
