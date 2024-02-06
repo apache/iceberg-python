@@ -357,39 +357,39 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
 
     assert summaries[0] == {
         'added-data-files': '1',
-        'added-files-size': '5437',
+        'added-files-size': '5459',
         'added-records': '3',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '5437',
+        'total-files-size': '5459',
         'total-position-deletes': '0',
         'total-records': '3',
     }
 
     assert summaries[1] == {
         'added-data-files': '1',
-        'added-files-size': '5437',
+        'added-files-size': '5459',
         'added-records': '3',
         'total-data-files': '2',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '10874',
+        'total-files-size': '10918',
         'total-position-deletes': '0',
         'total-records': '6',
     }
 
     assert summaries[2] == {
         'added-data-files': '1',
-        'added-files-size': '5437',
+        'added-files-size': '5459',
         'added-records': '3',
         'deleted-data-files': '2',
         'deleted-records': '6',
-        'removed-files-size': '10874',
+        'removed-files-size': '10918',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '5437',
+        'total-files-size': '5459',
         'total-position-deletes': '0',
         'total-records': '3',
     }
@@ -555,12 +555,12 @@ def test_summaries_with_only_nulls(
 
     assert summaries[1] == {
         'added-data-files': '1',
-        'added-files-size': '4217',
+        'added-files-size': '4239',
         'added-records': '2',
         'total-data-files': '1',
         'total-delete-files': '0',
         'total-equality-deletes': '0',
-        'total-files-size': '4217',
+        'total-files-size': '4239',
         'total-position-deletes': '0',
         'total-records': '2',
     }
