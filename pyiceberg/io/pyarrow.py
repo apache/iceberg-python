@@ -1332,10 +1332,22 @@ class StatsAggregator:
         return to_bytes(self.primitive_type, value)
 
     def update_min(self, val: Any) -> None:
-        self.current_min = val if self.current_min is None else min(val, self.current_min)
+        if self.current_min is None:
+            self.current_min = val
+        elif val is None:
+            # keep current_min
+            pass
+        else:
+            self.current_min = min(val, self.current_min)
 
     def update_max(self, val: Any) -> None:
-        self.current_max = val if self.current_max is None else max(val, self.current_max)
+        if self.current_max is None:
+            self.current_max = val
+        elif val is None:
+            # keep current_max
+            pass
+        else:
+            self.current_max = max(val, self.current_max)
 
     def min_as_bytes(self) -> Optional[bytes]:
         if self.current_min is None:

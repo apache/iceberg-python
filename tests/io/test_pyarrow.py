@@ -18,6 +18,7 @@
 
 import os
 import tempfile
+from datetime import date
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -59,7 +60,9 @@ from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PyArrowFile,
     PyArrowFileIO,
+    StatsAggregator,
     _ConvertToArrowSchema,
+    _primitive_to_physical,
     _read_deletes,
     expression_to_pyarrow,
     project_table,
@@ -84,6 +87,7 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
     TimestampType,
@@ -1666,3 +1670,43 @@ def test_parse_location() -> None:
 def test_make_compatible_name() -> None:
     assert make_compatible_name("label/abc") == "label_x2Fabc"
     assert make_compatible_name("label?abc") == "label_x3Fabc"
+
+
+@pytest.mark.parametrize(
+    "vals, primitive_type, expected_result",
+    [
+        ([None, 2, 1], IntegerType(), 1),
+        ([1, None, 2], IntegerType(), 1),
+        ([None, None, None], IntegerType(), None),
+        ([None, date(2024, 2, 4), date(2024, 1, 2)], DateType(), date(2024, 1, 2)),
+        ([date(2024, 1, 2), None, date(2024, 2, 4)], DateType(), date(2024, 1, 2)),
+        ([None, None, None], DateType(), None),
+    ],
+)
+def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats.update_min(val)
+
+    assert stats.current_min == expected_result
+
+
+@pytest.mark.parametrize(
+    "vals, primitive_type, expected_result",
+    [
+        ([None, 2, 1], IntegerType(), 2),
+        ([1, None, 2], IntegerType(), 2),
+        ([None, None, None], IntegerType(), None),
+        ([None, date(2024, 2, 4), date(2024, 1, 2)], DateType(), date(2024, 2, 4)),
+        ([date(2024, 1, 2), None, date(2024, 2, 4)], DateType(), date(2024, 2, 4)),
+        ([None, None, None], DateType(), None),
+    ],
+)
+def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats.update_max(val)
+
+    assert stats.current_max == expected_result
