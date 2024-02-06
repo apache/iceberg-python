@@ -1025,6 +1025,16 @@ class Table:
         result_str = f"{table_name}(\n  {schema_str}\n),\n{partition_str},\n{sort_order_str},\n{snapshot_str}"
         return result_str
 
+    def to_daft(self) -> daft.DataFrame:
+        """Read a Daft DataFrame lazily from this Iceberg table.
+
+        Returns:
+            daft.DataFrame: Unmaterialized Daft Dataframe created from the Iceberg table
+        """
+        import daft
+
+        return daft.read_iceberg(self)
+
 
 class StaticTable(Table):
     """Load a table directly from a metadata file (i.e., without using a catalog)."""
@@ -1381,16 +1391,6 @@ class DataScan(TableScan):
         import ray
 
         return ray.data.from_arrow(self.to_arrow())
-
-    def to_daft(self) -> daft.DataFrame:
-        """Read a Daft DataFrame lazily from this Iceberg table.
-
-        Returns:
-            daft.DataFrame: Unmaterialized Daft Dataframe created from the Iceberg table
-        """
-        import daft
-
-        return daft.read_iceberg(self)
 
 
 class MoveOperation(Enum):
