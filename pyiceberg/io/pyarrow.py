@@ -864,7 +864,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif isinstance(primitive, pa.Decimal128Type):
             primitive = cast(pa.Decimal128Type, primitive)
             return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive):
+        elif pa.types.is_string(primitive) or pa.types.is_large_string(primitive):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
