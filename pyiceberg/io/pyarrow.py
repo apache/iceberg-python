@@ -1730,9 +1730,14 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     file_schema = schema_to_pyarrow(table.schema())
 
     fo = table.io.new_output(file_path)
+    row_group_size = PropertyUtil.property_as_int(
+        properties=table.properties,
+        property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+        default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
+    )
     with fo.create(overwrite=True) as fos:
         with pq.ParquetWriter(fos, schema=file_schema, **parquet_writer_kwargs) as writer:
-            writer.write_table(task.df)
+            writer.write_table(task.df, row_group_size=row_group_size)
 
     data_file = DataFile(
         content=DataFileContent.DATA,
@@ -1794,5 +1799,10 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
             properties=table_properties,
             property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
             default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
+        ),
+        "write_batch_size": PropertyUtil.property_as_int(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
+            default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
         ),
     }
