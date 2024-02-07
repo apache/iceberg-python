@@ -456,7 +456,7 @@ class RestCatalog(Catalog):
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
-            table_schema=iceberg_schema,
+            table_schema=fresh_schema,
             partition_spec=fresh_partition_spec,
             write_order=fresh_sort_order,
             properties=properties,
