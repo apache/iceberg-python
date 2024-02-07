@@ -181,6 +181,28 @@ def test_pyarrow_limit(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
+def test_daft_nan(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_daft()
+    assert df.count_rows() == 3
+    assert math.isnan(df.to_pydict()["col_numeric"][0])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
+def test_daft_nan_rewritten(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_daft()
+    df = df.where(df["col_numeric"].float.is_nan())
+    df = df.select("idx", "col_numeric")
+    assert df.count_rows() == 1
+    assert df.to_pydict()["idx"][0] == 1
+    assert math.isnan(df.to_pydict()["col_numeric"][0])
+
+
+@pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
 def test_ray_nan(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan().to_ray()
