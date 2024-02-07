@@ -124,7 +124,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import WriteTask
+from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
@@ -1384,10 +1384,6 @@ class MetricModeTypes(Enum):
     FULL = "full"
 
 
-DEFAULT_METRICS_MODE_KEY = "write.metadata.metrics.default"
-COLUMN_METRICS_MODE_KEY_PREFIX = "write.metadata.metrics.column"
-
-
 @dataclass(frozen=True)
 class MetricsMode(Singleton):
     type: MetricModeTypes
@@ -1430,12 +1426,14 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
     _field_id: int = 0
     _schema: Schema
     _properties: Dict[str, str]
-    _default_mode: Optional[str]
+    _default_mode: str
 
     def __init__(self, schema: Schema, properties: Dict[str, str]):
         self._schema = schema
         self._properties = properties
-        self._default_mode = self._properties.get(DEFAULT_METRICS_MODE_KEY)
+        self._default_mode = self._properties.get(
+            TableProperties.DEFAULT_WRITE_METRICS_MODE, TableProperties.DEFAULT_WRITE_METRICS_MODE_DEFAULT
+        )
 
     def schema(self, schema: Schema, struct_result: Callable[[], List[StatisticsCollector]]) -> List[StatisticsCollector]:
         return struct_result()
@@ -1470,12 +1468,9 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
         if column_name is None:
             return []
 
-        metrics_mode = _DEFAULT_METRICS_MODE
+        metrics_mode = match_metrics_mode(self._default_mode)
 
-        if self._default_mode:
-            metrics_mode = match_metrics_mode(self._default_mode)
-
-        col_mode = self._properties.get(f"{COLUMN_METRICS_MODE_KEY_PREFIX}.{column_name}")
+        col_mode = self._properties.get(f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.{column_name}")
         if col_mode:
             metrics_mode = match_metrics_mode(col_mode)
 
@@ -1762,33 +1757,40 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     return iter([data_file])
 
 
-def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
-    def _get_int(key: str, default: Optional[int] = None) -> Optional[int]:
-        if value := table_properties.get(key):
-            try:
-                return int(value)
-            except ValueError as e:
-                raise ValueError(f"Could not parse table property {key} to an integer: {value}") from e
-        else:
-            return default
+ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
+PYARROW_UNCOMPRESSED_CODEC = "none"
 
+
+def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
     for key_pattern in [
-        "write.parquet.row-group-size-bytes",
-        "write.parquet.page-row-limit",
-        "write.parquet.bloom-filter-max-bytes",
-        "write.parquet.bloom-filter-enabled.column.*",
+        TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+        TableProperties.PARQUET_PAGE_ROW_LIMIT,
+        TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES,
+        f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
         if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
             raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
-    compression_codec = table_properties.get("write.parquet.compression-codec", "zstd")
-    compression_level = _get_int("write.parquet.compression-level")
-    if compression_codec == "uncompressed":
-        compression_codec = "none"
+    compression_codec = table_properties.get(TableProperties.PARQUET_COMPRESSION, TableProperties.PARQUET_COMPRESSION_DEFAULT)
+    compression_level = PropertyUtil.property_as_int(
+        properties=table_properties,
+        property_name=TableProperties.PARQUET_COMPRESSION_LEVEL,
+        default=TableProperties.PARQUET_COMPRESSION_LEVEL_DEFAULT,
+    )
+    if compression_codec == ICEBERG_UNCOMPRESSED_CODEC:
+        compression_codec = PYARROW_UNCOMPRESSED_CODEC
 
     return {
         "compression": compression_codec,
         "compression_level": compression_level,
-        "data_page_size": _get_int("write.parquet.page-size-bytes"),
-        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes", default=2 * 1024 * 1024),
+        "data_page_size": PropertyUtil.property_as_int(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_SIZE_BYTES,
+            default=TableProperties.PARQUET_PAGE_SIZE_BYTES_DEFAULT,
+        ),
+        "dictionary_pagesize_limit": PropertyUtil.property_as_int(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
+            default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
+        ),
     }
