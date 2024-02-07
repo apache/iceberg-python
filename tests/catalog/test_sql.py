@@ -17,12 +17,11 @@
 
 import os
 from pathlib import Path
-from typing import Generator, List
+from typing import Any, Generator, List
 
 import pyarrow as pa
 import pytest
 from pytest import TempPathFactory
-from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
 from pyiceberg.catalog import Identifier
@@ -132,11 +131,12 @@ def test_creation_with_unsupported_uri() -> None:
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_tables_idempotency(catalog: SqlCatalog) -> None:
+def test_create_tables_idempotency(catalog: SqlCatalog, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     # Second initialization should not fail even if tables are already created
     catalog.create_tables()
     catalog.create_tables()
@@ -145,11 +145,17 @@ def test_create_tables_idempotency(catalog: SqlCatalog) -> None:
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_create_table_default_sort_order(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -161,8 +167,8 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
 def test_create_table_with_pyarrow_schema(
@@ -170,7 +176,9 @@ def test_create_table_with_pyarrow_schema(
     pyarrow_schema_simple_without_ids: pa.Schema,
     iceberg_table_schema_simple: Schema,
     random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, pyarrow_schema_simple_without_ids)
@@ -181,11 +189,17 @@ def test_create_table_with_pyarrow_schema(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_create_table_custom_sort_order(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     order = SortOrder(SortField(source_id=2, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
@@ -202,13 +216,18 @@ def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
 def test_create_table_with_default_warehouse_location(
-    warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+    warehouse: Path,
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     catalog.create_table(random_identifier, table_schema_nested)
@@ -222,11 +241,17 @@ def test_create_table_with_default_warehouse_location(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_create_duplicated_table(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     catalog.create_table(random_identifier, table_schema_nested)
@@ -237,11 +262,17 @@ def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schem
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_table_with_non_existing_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_name: str) -> None:
+def test_create_table_with_non_existing_namespace(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    table_name: str,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     identifier = ("invalid", table_name)
     with pytest.raises(NoSuchNamespaceError):
         catalog.create_table(identifier, table_schema_nested)
@@ -250,11 +281,17 @@ def test_create_table_with_non_existing_namespace(catalog: SqlCatalog, table_sch
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_table_without_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_name: str) -> None:
+def test_create_table_without_namespace(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    table_name: str,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     with pytest.raises(ValueError):
         catalog.create_table(table_name, table_schema_nested)
 
@@ -262,11 +299,17 @@ def test_create_table_without_namespace(catalog: SqlCatalog, table_schema_nested
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_register_table(catalog: SqlCatalog, random_identifier: Identifier, metadata_location: str) -> None:
+def test_register_table(
+    catalog: SqlCatalog,
+    random_identifier: Identifier,
+    metadata_location: str,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.register_table(random_identifier, metadata_location)
@@ -279,11 +322,17 @@ def test_register_table(catalog: SqlCatalog, random_identifier: Identifier, meta
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_register_existing_table(catalog: SqlCatalog, random_identifier: Identifier, metadata_location: str) -> None:
+def test_register_existing_table(
+    catalog: SqlCatalog,
+    random_identifier: Identifier,
+    metadata_location: str,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     catalog.register_table(random_identifier, metadata_location)
@@ -294,11 +343,17 @@ def test_register_existing_table(catalog: SqlCatalog, random_identifier: Identif
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_register_table_with_non_existing_namespace(catalog: SqlCatalog, metadata_location: str, table_name: str) -> None:
+def test_register_table_with_non_existing_namespace(
+    catalog: SqlCatalog,
+    metadata_location: str,
+    table_name: str,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     identifier = ("invalid", table_name)
     with pytest.raises(NoSuchNamespaceError):
         catalog.register_table(identifier, metadata_location)
@@ -307,11 +362,17 @@ def test_register_table_with_non_existing_namespace(catalog: SqlCatalog, metadat
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_register_table_without_namespace(catalog: SqlCatalog, metadata_location: str, table_name: str) -> None:
+def test_register_table_without_namespace(
+    catalog: SqlCatalog,
+    metadata_location: str,
+    table_name: str,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     with pytest.raises(ValueError):
         catalog.register_table(table_name, metadata_location)
 
@@ -319,11 +380,17 @@ def test_register_table_without_namespace(catalog: SqlCatalog, metadata_location
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_load_table(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -336,11 +403,17 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_load_table_from_self_identifier(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -355,12 +428,18 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
-def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_drop_table(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -373,12 +452,18 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
-def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_drop_table_from_self_identifier(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -393,12 +478,13 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
-def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: Identifier) -> None:
+def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: Identifier, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     with pytest.raises(NoSuchTableError):
         catalog.drop_table(random_identifier)
 
@@ -406,14 +492,19 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: 
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
 def test_rename_table(
-    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    another_random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     from_database_name, _from_table_name = random_identifier
     to_database_name, _to_table_name = another_random_identifier
     catalog.create_namespace(from_database_name)
@@ -431,14 +522,19 @@ def test_rename_table(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
 def test_rename_table_from_self_identifier(
-    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    another_random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     from_database_name, _from_table_name = random_identifier
     to_database_name, _to_table_name = another_random_identifier
     catalog.create_namespace(from_database_name)
@@ -458,14 +554,19 @@ def test_rename_table_from_self_identifier(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
 def test_rename_table_to_existing_one(
-    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    another_random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     from_database_name, _from_table_name = random_identifier
     to_database_name, _to_table_name = another_random_identifier
     catalog.create_namespace(from_database_name)
@@ -481,12 +582,18 @@ def test_rename_table_to_existing_one(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
-def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier, another_random_identifier: Identifier) -> None:
+def test_rename_missing_table(
+    catalog: SqlCatalog,
+    random_identifier: Identifier,
+    another_random_identifier: Identifier,
+    request: Any,
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     to_database_name, _to_table_name = another_random_identifier
     catalog.create_namespace(to_database_name)
     with pytest.raises(NoSuchTableError):
@@ -496,14 +603,19 @@ def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
 def test_rename_table_to_missing_namespace(
-    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    another_random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     from_database_name, _from_table_name = random_identifier
     catalog.create_namespace(from_database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -515,13 +627,18 @@ def test_rename_table_to_missing_namespace(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
 def test_list_tables(
-    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, another_random_identifier: Identifier
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    another_random_identifier: Identifier,
+    request: Any,
 ) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name_1, _table_name_1 = random_identifier
     database_name_2, _table_name_2 = another_random_identifier
     catalog.create_namespace(database_name_1)
@@ -540,11 +657,12 @@ def test_list_tables(
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_namespace(catalog: SqlCatalog, database_name: str) -> None:
+def test_create_namespace(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     catalog.create_namespace(database_name)
     assert (database_name,) in catalog.list_namespaces()
 
@@ -552,11 +670,12 @@ def test_create_namespace(catalog: SqlCatalog, database_name: str) -> None:
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_duplicate_namespace(catalog: SqlCatalog, database_name: str) -> None:
+def test_create_duplicate_namespace(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     catalog.create_namespace(database_name)
     with pytest.raises(NamespaceAlreadyExistsError):
         catalog.create_namespace(database_name)
@@ -565,11 +684,12 @@ def test_create_duplicate_namespace(catalog: SqlCatalog, database_name: str) -> 
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_namespaces_sharing_same_prefix(catalog: SqlCatalog, database_name: str) -> None:
+def test_create_namespaces_sharing_same_prefix(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     catalog.create_namespace(database_name + "_1")
     # Second namespace is a prefix of the first one, make sure it can be added.
     catalog.create_namespace(database_name)
@@ -578,11 +698,12 @@ def test_create_namespaces_sharing_same_prefix(catalog: SqlCatalog, database_nam
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, database_name: str) -> None:
+def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     test_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
@@ -599,12 +720,13 @@ def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, databas
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
 @pytest.mark.filterwarnings("ignore")
-def test_create_namespace_with_null_properties(catalog: SqlCatalog, database_name: str) -> None:
+def test_create_namespace_with_null_properties(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     with pytest.raises(IntegrityError):
         catalog.create_namespace(namespace=database_name, properties={None: "value"})  # type: ignore
 
@@ -615,11 +737,12 @@ def test_create_namespace_with_null_properties(catalog: SqlCatalog, database_nam
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_list_namespaces(catalog: SqlCatalog, database_list: List[str]) -> None:
+def test_list_namespaces(catalog: SqlCatalog, database_list: List[str], request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     for database_name in database_list:
         catalog.create_namespace(database_name)
     db_list = catalog.list_namespaces()
@@ -631,11 +754,12 @@ def test_list_namespaces(catalog: SqlCatalog, database_list: List[str]) -> None:
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
+def test_list_non_existing_namespaces(catalog: SqlCatalog, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     with pytest.raises(NoSuchNamespaceError):
         catalog.list_namespaces("does_not_exist")
 
@@ -643,11 +767,12 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, table_name = random_identifier
     catalog.create_namespace(database_name)
     assert (database_name,) in catalog.list_namespaces()
@@ -662,11 +787,12 @@ def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, random
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_load_namespace_properties(catalog: SqlCatalog, database_name: str) -> None:
+def test_load_namespace_properties(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     warehouse_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
@@ -686,11 +812,12 @@ def test_load_namespace_properties(catalog: SqlCatalog, database_name: str) -> N
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_load_empty_namespace_properties(catalog: SqlCatalog, database_name: str) -> None:
+def test_load_empty_namespace_properties(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     catalog.create_namespace(database_name)
     listed_properties = catalog.load_namespace_properties(database_name)
     assert listed_properties == {"exists": "true"}
@@ -699,11 +826,12 @@ def test_load_empty_namespace_properties(catalog: SqlCatalog, database_name: str
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        'catalog_memory',
+        'catalog_sqlite',
     ],
 )
-def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) -> None:
+def test_update_namespace_properties(catalog: SqlCatalog, database_name: str, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     warehouse_location = "/test/location"
     test_properties = {
         "comment": "this is a test description",
@@ -729,12 +857,13 @@ def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) ->
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
-def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_nested)
@@ -762,13 +891,14 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_i
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
-        lazy_fixture('catalog_sqlite_fsspec'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
+        'catalog_sqlite_fsspec',
     ],
 )
-def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier, request: Any) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table = catalog.create_table(random_identifier, table_schema_simple)
@@ -803,12 +933,15 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, random_i
 @pytest.mark.parametrize(
     'catalog',
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        'catalog_memory',
+        'catalog_sqlite',
+        'catalog_sqlite_without_rowcount',
     ],
 )
-def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+def test_concurrent_commit_table(
+    catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier, request: Any
+) -> None:
+    catalog = request.getfixturevalue(catalog)
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     table_a = catalog.create_table(random_identifier, table_schema_simple)
