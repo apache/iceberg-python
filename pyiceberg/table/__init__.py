@@ -1536,8 +1536,7 @@ class UpdateSchema:
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
-            # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
