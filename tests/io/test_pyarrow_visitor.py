@@ -272,6 +272,15 @@ def test_round_schema_conversion_nested(table_schema_nested: Schema) -> None:
     assert actual == expected
 
 
+def test_round_schema_large_string() -> None:
+    schema = pa.schema([pa.field("animals", pa.large_string())])
+    actual = str(pyarrow_to_schema(schema, name_mapping=NameMapping([MappedField(field_id=1, names=["animals"])])))
+    expected = """table {
+  1: animals: optional string
+}"""
+    assert actual == expected
+
+
 def test_simple_schema_has_missing_ids() -> None:
     schema = pa.schema([
         pa.field('foo', pa.string(), nullable=False),
