@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
@@ -28,6 +29,7 @@ from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
@@ -573,3 +575,57 @@ def test_summaries_with_only_nulls(
         'total-position-deletes': '0',
         'total-records': '0',
     }
+
+
+@pytest.mark.integration
+def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> None:
+    catalog = SqlCatalog("test_sql_catalog", uri="sqlite:///:memory:", warehouse=f"/{warehouse}")
+    catalog.create_namespace("default")
+
+    identifier = "default.arrow_table_v1_with_null"
+    tbl = _create_table(catalog, identifier, {}, [arrow_table_with_null])
+    location = tbl.metadata_location
+
+    import duckdb
+
+    duckdb.sql('INSTALL iceberg; LOAD iceberg;')
+    result = duckdb.sql(
+        f"""
+    SELECT *
+    FROM iceberg_scan('{location}')
+    """
+    ).fetchall()
+
+    tz = datetime.now().astimezone().tzinfo
+
+    assert result == [
+        (
+            False,
+            'a',
+            'aaaaaaaaaaaaaaaaaaaaaa',
+            1,
+            1,
+            0.0,
+            0.0,
+            datetime(2023, 1, 1, 19, 25),
+            datetime(2023, 1, 1, 20, 25, tzinfo=tz),
+            date(2023, 1, 1),
+            b'\x01',
+            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+        ),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
+        (
+            True,
+            'z',
+            'zzzzzzzzzzzzzzzzzzzzzz',
+            9,
+            9,
+            0.8999999761581421,
+            0.9,
+            datetime(2023, 3, 1, 19, 25),
+            datetime(2023, 3, 1, 20, 25, tzinfo=tz),
+            date(2023, 3, 1),
+            b'\x12',
+            b'\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11',
+        ),
+    ]
