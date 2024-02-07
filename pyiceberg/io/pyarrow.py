@@ -1390,9 +1390,6 @@ class MetricsMode(Singleton):
     length: Optional[int] = None
 
 
-_DEFAULT_METRICS_MODE = MetricsMode(MetricModeTypes.TRUNCATE, DEFAULT_TRUNCATION_LENGTH)
-
-
 def match_metrics_mode(mode: str) -> MetricsMode:
     sanitized_mode = mode.strip().lower()
     if sanitized_mode.startswith("truncate"):
