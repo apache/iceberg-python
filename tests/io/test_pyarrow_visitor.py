@@ -84,6 +84,18 @@ def test_pyarrow_boolean_to_iceberg() -> None:
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
 
 
+def test_pyarrow_int8_to_iceberg() -> None:
+    pyarrow_type = pa.int8()
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    assert converted_iceberg_type == IntegerType()
+
+
+def test_pyarrow_int16_to_iceberg() -> None:
+    pyarrow_type = pa.int16()
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    assert converted_iceberg_type == IntegerType()
+
+
 def test_pyarrow_int32_to_iceberg() -> None:
     pyarrow_type = pa.int32()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
