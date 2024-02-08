@@ -43,7 +43,7 @@ def test_breaking_change() -> None:
         check=False,
     )
     if fetch_tags.returncode != 0:
-        raise GitError("Cannot fetch Git tags from upstream")
+        raise GitError(f"Cannot fetch Git tags with command: {fetch_cmd} from origin: {check_if_upstream.stdout}")
 
     list_tags = subprocess.run(
         ["git", "tag", "-l", "--sort=-version:refname"],
@@ -55,7 +55,7 @@ def test_breaking_change() -> None:
     )
     output = list_tags.stdout
     if list_tags.returncode != 0 or not output:
-        raise GitError(f"Cannot list Git tags from upstream: {output or 'no tags'}")
+        raise GitError(f"Cannot list Git tags: {output or 'no tags'}")
     tags = output.split("\n")
 
     p = re.compile(r"^pyiceberg-\d+.\d+.\d+$")
