@@ -23,14 +23,29 @@ from griffe.exceptions import GitError
 
 
 def test_breaking_change() -> None:
-    fetch_process = subprocess.run(
-        ["git", "fetch", "--tags", "upstream"],
+    check_if_upstream = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+        encoding='utf-8',
+    )
+    if check_if_upstream.returncode != 0:
+        raise GitError("This is not a git repository")
+
+    fetch_cmd = ["git", "fetch", "--tags"]
+    if not check_if_upstream.stdout == "https://github.com/apache/iceberg-python.git":
+        fetch_cmd.append("upstream")
+
+    fetch_tags = subprocess.run(
+        fetch_cmd,
         check=False,
     )
-    if fetch_process.returncode != 0:
+    if fetch_tags.returncode != 0:
         raise GitError("Cannot fetch Git tags from upstream")
 
-    tag_process = subprocess.run(
+    list_tags = subprocess.run(
         ["git", "tag", "-l", "--sort=-version:refname"],
         text=True,
         stdout=subprocess.PIPE,
@@ -38,8 +53,8 @@ def test_breaking_change() -> None:
         check=False,
         encoding='utf-8',
     )
-    output = tag_process.stdout.strip()
-    if tag_process.returncode != 0 or not output:
+    output = list_tags.stdout
+    if list_tags.returncode != 0 or not output:
         raise GitError(f"Cannot list Git tags from upstream: {output or 'no tags'}")
     tags = output.split("\n")
 
@@ -55,4 +70,4 @@ def test_breaking_change() -> None:
     for breakage in griffe.find_breaking_changes(previous, current):
         breaking_changes.append(breakage.as_dict())
 
-    assert not breaking_changes
+    assert not breaking_changes, f"Total of {len(breaking_changes)} breaking API changes since {releases[0]}"
