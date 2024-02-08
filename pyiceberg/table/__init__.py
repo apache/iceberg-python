@@ -137,6 +137,9 @@ class TableProperties:
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
+    PARQUET_ROW_GROUP_LIMIT = "write.parquet.row-group-limit"
+    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
     PARQUET_PAGE_SIZE_BYTES = "write.parquet.page-size-bytes"
     PARQUET_PAGE_SIZE_BYTES_DEFAULT = 1024 * 1024  # 1 MB
 
