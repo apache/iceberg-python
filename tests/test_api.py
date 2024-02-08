@@ -34,8 +34,9 @@ def test_breaking_change() -> None:
     if check_if_upstream.returncode != 0:
         raise GitError("This is not a git repository")
 
+    origin = check_if_upstream.stdout.strip()
     fetch_cmd = ["git", "fetch", "--tags"]
-    if not check_if_upstream.stdout == "https://github.com/apache/iceberg-python":
+    if not origin == "https://github.com/apache/iceberg-python":
         fetch_cmd.append("upstream")
 
     fetch_tags = subprocess.run(
@@ -43,7 +44,7 @@ def test_breaking_change() -> None:
         check=False,
     )
     if fetch_tags.returncode != 0:
-        raise GitError(f"Cannot fetch Git tags with command: {fetch_cmd} from origin: {check_if_upstream.stdout}")
+        raise GitError(f"Cannot fetch Git tags with command: {fetch_cmd} from origin: {origin}")
 
     list_tags = subprocess.run(
         ["git", "tag", "-l", "--sort=-version:refname"],
@@ -53,7 +54,7 @@ def test_breaking_change() -> None:
         check=False,
         encoding='utf-8',
     )
-    output = list_tags.stdout
+    output = list_tags.stdout.strip()
     if list_tags.returncode != 0 or not output:
         raise GitError(f"Cannot list Git tags: {output or 'no tags'}")
     tags = output.split("\n")
