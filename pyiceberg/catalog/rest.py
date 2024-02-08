@@ -57,7 +57,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     UnauthorizedError,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
@@ -66,7 +66,7 @@ from pyiceberg.table import (
     TableIdentifier,
     TableMetadata,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
 
 if TYPE_CHECKING:
@@ -448,15 +448,17 @@ class RestCatalog(Catalog):
         properties: Properties = EMPTY_DICT,
     ) -> Table:
         iceberg_schema = self._convert_schema_if_needed(schema)
-        iceberg_schema = assign_fresh_schema_ids(iceberg_schema)
+        fresh_schema = assign_fresh_schema_ids(iceberg_schema)
+        fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
+        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
-            table_schema=iceberg_schema,
-            partition_spec=partition_spec,
-            write_order=sort_order,
+            table_schema=fresh_schema,
+            partition_spec=fresh_partition_spec,
+            write_order=fresh_sort_order,
             properties=properties,
         )
         serialized_json = request.model_dump_json().encode(UTF8)

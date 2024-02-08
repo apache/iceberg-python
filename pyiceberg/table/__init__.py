@@ -85,7 +85,6 @@ from pyiceberg.table.metadata import (
     TableMetadataUtil,
 )
 from pyiceberg.table.name_mapping import (
-    SCHEMA_NAME_MAPPING_DEFAULT,
     NameMapping,
     create_mapping_from_schema,
     parse_mapping_from_json,
@@ -132,6 +131,53 @@ ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
 
 _JAVA_LONG_MAX = 9223372036854775807
+
+
+class TableProperties:
+    PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
+    PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    PARQUET_ROW_GROUP_LIMIT = "write.parquet.row-group-limit"
+    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    PARQUET_PAGE_SIZE_BYTES = "write.parquet.page-size-bytes"
+    PARQUET_PAGE_SIZE_BYTES_DEFAULT = 1024 * 1024  # 1 MB
+
+    PARQUET_PAGE_ROW_LIMIT = "write.parquet.page-row-limit"
+    PARQUET_PAGE_ROW_LIMIT_DEFAULT = 20000
+
+    PARQUET_DICT_SIZE_BYTES = "write.parquet.dict-size-bytes"
+    PARQUET_DICT_SIZE_BYTES_DEFAULT = 2 * 1024 * 1024  # 2 MB
+
+    PARQUET_COMPRESSION = "write.parquet.compression-codec"
+    PARQUET_COMPRESSION_DEFAULT = "zstd"
+
+    PARQUET_COMPRESSION_LEVEL = "write.parquet.compression-level"
+    PARQUET_COMPRESSION_LEVEL_DEFAULT = None
+
+    PARQUET_BLOOM_FILTER_MAX_BYTES = "write.parquet.bloom-filter-max-bytes"
+    PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT = 1024 * 1024
+
+    PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
+
+    DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
+    DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
+
+    METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
+
+    DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
+
+
+class PropertyUtil:
+    @staticmethod
+    def property_as_int(properties: Dict[str, str], property_name: str, default: Optional[int] = None) -> Optional[int]:
+        if value := properties.get(property_name):
+            try:
+                return int(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
+        else:
+            return default
 
 
 class Transaction:
@@ -921,7 +967,7 @@ class Table:
 
     def name_mapping(self) -> NameMapping:
         """Return the table's field-id NameMapping."""
-        if name_mapping_json := self.properties.get(SCHEMA_NAME_MAPPING_DEFAULT):
+        if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
             return parse_mapping_from_json(name_mapping_json)
         else:
             return create_mapping_from_schema(self.schema())
