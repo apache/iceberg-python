@@ -35,7 +35,7 @@ def test_breaking_change() -> None:
         raise GitError("This is not a git repository")
 
     fetch_cmd = ["git", "fetch", "--tags"]
-    if not check_if_upstream.stdout == "https://github.com/apache/iceberg-python.git":
+    if not check_if_upstream.stdout == "https://github.com/apache/iceberg-python":
         fetch_cmd.append("upstream")
 
     fetch_tags = subprocess.run(
