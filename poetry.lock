@@ -1211,17 +1211,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.12"
+version = "0.2.13"
 description = "A Distributed DataFrame library for large scale complex data processing."
 optional = true
 python-versions = ">=3.7"
 files = [
-    {file = "getdaft-0.2.12-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:ec3d9693e6d859a7604e7597695e51383bdd4a0100fa892a030510c81dc7a214"},
-    {file = "getdaft-0.2.12-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:44f12f57b8dfd35c6a8ff9da749f4243c9558403e0c65720298f65079436e505"},
-    {file = "getdaft-0.2.12-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:565713fa393970b3a891e9c02e8fb20ebce9b7b1278a00299e5159b71a76fac7"},
-    {file = "getdaft-0.2.12-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ed061e93c55cb757061eac48675f4d9bb8960ed3ee1b2df64ade848946875f2f"},
-    {file = "getdaft-0.2.12-cp37-abi3-win_amd64.whl", hash = "sha256:7970903d4986acbf0a99e812d71fd12c9b63911cb7b601085354864e032dfa94"},
-    {file = "getdaft-0.2.12.tar.gz", hash = "sha256:9a8698cf04b8e6ed11c1cc960498d438748e8d1a316b4da2e7faed62e90f00b8"},
+    {file = "getdaft-0.2.13-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:e7b7648642ddafeb34f9f91e1f847ed9b21244c33c05f98e63b77ef241c3672e"},
+    {file = "getdaft-0.2.13-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:7bdeb828a20d9e2507a378ae3312a9071da166df1ab6ef3a4d8b6073eff685ad"},
+    {file = "getdaft-0.2.13-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c20447188e83a1fd9b5e8edbe75b0435d08299dca00e8106ebb5c39b66e5f47c"},
+    {file = "getdaft-0.2.13-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ef015020b9de596d5ebfe2855f55ce56f8fb44ff2ed003f803e14fc4163a3638"},
+    {file = "getdaft-0.2.13-cp37-abi3-win_amd64.whl", hash = "sha256:82a3bb1d08f8dad9a87c33445b87a16fbad253507e055a0dd7a16574d230b7b1"},
+    {file = "getdaft-0.2.13.tar.gz", hash = "sha256:a814012436513becfdb8bd173868a5fb7d7582085d4be4d782703f9219add786"},
 ]
 
 [package.dependencies]
