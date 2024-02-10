@@ -882,13 +882,11 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     return TimestamptzType()
                 elif primitive.tz is None:
                     return TimestampType()
-        elif pa.types.is_binary(primitive):
+        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
-        elif pa.types.is_large_binary(primitive):
-            return BinaryType()
 
         raise TypeError(f"Unsupported type: {primitive}")
 
