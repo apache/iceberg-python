@@ -479,8 +479,8 @@ def test_hive_locking(catalog_hive: HiveCatalog) -> None:
     table_name: str
     _, database_name, table_name = table.identifier
 
-    hive_client: _HiveClient = catalog._client
-    blocking_lock_request: LockRequest = catalog._create_lock_request(database_name, table_name)
+    hive_client: _HiveClient = catalog_hive._client
+    blocking_lock_request: LockRequest = catalog_hive._create_lock_request(database_name, table_name)
 
     with hive_client as open_client:
         # Force a lock on the test table
