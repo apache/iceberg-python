@@ -479,16 +479,15 @@ def test_hive_locking(catalog_hive: HiveCatalog) -> None:
     table_name: str
     _, database_name, table_name = table.identifier
 
-    hive_client: _HiveClient = catalog_hive._client
+    hive_client: _HiveClient = _HiveClient(catalog_hive.properties["uri"])
     blocking_lock_request: LockRequest = catalog_hive._create_lock_request(database_name, table_name)
 
     with hive_client as open_client:
         # Force a lock on the test table
         lock: LockResponse = open_client.lock(blocking_lock_request)
         assert lock.state == LockState.ACQUIRED
-
-    with pytest.raises(CommitFailedException, match="(Failed to acquire lock for).*"):
-        table.transaction().set_properties(lock="fail").commit_transaction()
-
-    with hive_client as open_client:
-        open_client.unlock(UnlockRequest(lock.lockid))
+        try:
+            with pytest.raises(CommitFailedException, match="(Failed to acquire lock for).*",):
+                table.transaction().set_properties(lock="fail").commit_transaction()
+        finally:
+            open_client.unlock(UnlockRequest(lock.lockid))
