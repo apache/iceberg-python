@@ -487,8 +487,8 @@ def test_hive_locking(catalog_hive: HiveCatalog) -> None:
         lock: LockResponse = open_client.lock(blocking_lock_request)
         assert lock.state == LockState.ACQUIRED
 
-        try:
-            with pytest.raises(CommitFailedException, match="Cannot acquire lock"):
-                table.transaction().set_properties(lock="fail").commit_transaction()
-        finally:
-            open_client.unlock(UnlockRequest(lock.lockid))
+    with pytest.raises(CommitFailedException, match="Cannot acquire lock"):
+        table.transaction().set_properties(lock="fail").commit_transaction()
+
+    with hive_client as open_client:
+        open_client.unlock(UnlockRequest(lock.lockid))
