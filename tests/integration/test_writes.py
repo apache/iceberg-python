@@ -140,7 +140,7 @@ def pa_schema() -> pa.Schema:
         # ("time", pa.time64("us")),
         # Not natively supported by Arrow
         # ("uuid", pa.fixed(16)),
-        ("binary", pa.binary()),
+        ("binary", pa.large_binary()),
         ("fixed", pa.binary(16)),
     ])
 
