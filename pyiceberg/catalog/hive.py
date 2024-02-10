@@ -164,7 +164,7 @@ PROP_EXTERNAL = "EXTERNAL"
 PROP_TABLE_TYPE = "table_type"
 PROP_METADATA_LOCATION = "metadata_location"
 PROP_PREVIOUS_METADATA_LOCATION = "previous_metadata_location"
-DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
+DEFAULT_PROPERTIES = {TableProperties.PARQUET_COMPRESSION: TableProperties.PARQUET_COMPRESSION_DEFAULT}
 
 
 def _construct_parameters(metadata_location: str, previous_metadata_location: Optional[str] = None) -> Dict[str, Any]:
