@@ -472,13 +472,12 @@ def test_null_list_and_map(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive')])
-def test_hive_locking(catalog: HiveCatalog) -> None:
-    table = create_table(catalog)
+def test_hive_locking(catalog_hive: HiveCatalog) -> None:
+    table = create_table(catalog_hive)
 
     database_name: str
     table_name: str
-    _ignored, database_name, table_name = table.identifier
+    _, database_name, table_name = table.identifier
 
     hive_client: _HiveClient = catalog._client
     blocking_lock_request: LockRequest = catalog._create_lock_request(database_name, table_name)
