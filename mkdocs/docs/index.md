@@ -55,9 +55,9 @@ You can mix and match optional dependencies depending on your needs:
 | s3fs         | S3FS as a FileIO implementation to interact with the object store    |
 | adlfs        | ADLFS as a FileIO implementation to interact with the object store   |
 | snappy       | Support for snappy Avro compression                                  |
-| gcs          | GCS as the FileIO implementation to interact with the object store   |
+| gcsfs        | GCSFS as a FileIO implementation to interact with the object store   |
 
-You either need to install `s3fs`, `adlfs`, `gcs`, or `pyarrow` to be able to fetch files from an object store.
+You either need to install `s3fs`, `adlfs`, `gcsfs`, or `pyarrow` to be able to fetch files from an object store.
 
 ## Connecting to a catalog
 
