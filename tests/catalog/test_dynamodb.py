@@ -14,7 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import List
+from typing import List, Type
 from unittest import mock
 
 import boto3
@@ -164,16 +164,33 @@ def test_create_table_with_no_database(
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
+@pytest.mark.parametrize(
+    "fail_if_exists, expected_exception",
+    [
+        (True, TableAlreadyExistsError),
+        (False, None),
+    ],
+)
 @mock_aws
 def test_create_duplicated_table(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+    fail_if_exists: bool,
+    expected_exception: Type[Exception],
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
-    with pytest.raises(TableAlreadyExistsError):
-        test_catalog.create_table(identifier, table_schema_nested)
+    if fail_if_exists:
+        with pytest.raises(expected_exception):
+            test_catalog.create_table(identifier, table_schema_nested, fail_if_exists=fail_if_exists)
+    else:
+        table = test_catalog.create_table(identifier, table_schema_nested, fail_if_exists=fail_if_exists)
+        assert table.identifier == ("test_ddb_catalog",) + identifier
 
 
 @mock_aws

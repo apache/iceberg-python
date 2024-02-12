@@ -17,7 +17,7 @@
 
 import os
 from pathlib import Path
-from typing import Generator, List
+from typing import Generator, List, Type
 
 import pyarrow as pa
 import pytest
@@ -245,12 +245,29 @@ def test_create_table_with_default_warehouse_location(
         lazy_fixture('catalog_sqlite'),
     ],
 )
-def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+@pytest.mark.parametrize(
+    'fail_if_exists, expected_exception',
+    [
+        (True, TableAlreadyExistsError),
+        (False, None),
+    ],
+)
+def test_create_duplicated_table(
+    catalog: SqlCatalog,
+    table_schema_nested: Schema,
+    random_identifier: Identifier,
+    fail_if_exists: bool,
+    expected_exception: Type[Exception],
+) -> None:
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
     catalog.create_table(random_identifier, table_schema_nested)
-    with pytest.raises(TableAlreadyExistsError):
-        catalog.create_table(random_identifier, table_schema_nested)
+    if expected_exception:
+        with pytest.raises(expected_exception):
+            catalog.create_table(random_identifier, table_schema_nested, fail_if_exists=fail_if_exists)
+    else:
+        table = catalog.create_table(random_identifier, table_schema_nested, fail_if_exists=fail_if_exists)
+        assert table.identifier == (catalog.name,) + random_identifier
 
 
 @pytest.mark.parametrize(

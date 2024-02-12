@@ -297,6 +297,7 @@ class Catalog(ABC):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        fail_if_exists: bool = True,
     ) -> Table:
         """Create a table.
 
@@ -307,6 +308,7 @@ class Catalog(ABC):
             partition_spec (PartitionSpec): PartitionSpec for the table.
             sort_order (SortOrder): SortOrder for the table.
             properties (Properties): Table properties that can be a string based dictionary.
+            fail_if_exists (bool): If True, raise an error if the table already exists.
 
         Returns:
             Table: the created table instance.

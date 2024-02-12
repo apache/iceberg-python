@@ -79,6 +79,7 @@ class InMemoryCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        fail_if_exists: bool = True,
     ) -> Table:
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
@@ -86,7 +87,10 @@ class InMemoryCatalog(Catalog):
         namespace = Catalog.namespace_from(identifier)
 
         if identifier in self.__tables:
-            raise TableAlreadyExistsError(f"Table already exists: {identifier}")
+            if fail_if_exists:
+                raise TableAlreadyExistsError(f"Table already exists: {identifier}")
+            else:
+                return self.__tables[identifier]
         else:
             if namespace not in self.__namespaces:
                 self.__namespaces[namespace] = {}

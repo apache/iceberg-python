@@ -16,7 +16,7 @@
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
 import os
-from typing import Any, Dict, cast
+from typing import Any, Dict, Type, cast
 from unittest import mock
 
 import pytest
@@ -489,7 +489,20 @@ def test_create_table_200(
     assert actual == expected
 
 
-def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize(
+    "fail_if_exists, expected_exception",
+    [
+        (True, TableAlreadyExistsError),
+        (False, None),
+    ],
+)
+def test_create_table_409(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any],
+    table_schema_simple: Schema,
+    fail_if_exists: bool,
+    expected_exception: Type[Exception],
+) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
         json={
@@ -502,9 +515,15 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
         status_code=409,
         request_headers=TEST_HEADERS,
     )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
 
-    with pytest.raises(TableAlreadyExistsError) as e:
-        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(
+    def _create_table(_fail_if_exists: bool) -> Table:
+        return RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(
             identifier=("fokko", "fokko2"),
             schema=table_schema_simple,
             location=None,
@@ -513,8 +532,16 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             ),
             sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
             properties={"owner": "fokko"},
+            fail_if_exists=_fail_if_exists,
         )
-    assert "Table already exists" in str(e.value)
+
+    if expected_exception:
+        with pytest.raises(expected_exception) as e:
+            _create_table(_fail_if_exists=fail_if_exists)
+        assert "Table already exists" in str(e.value)
+    else:
+        table = _create_table(_fail_if_exists=fail_if_exists)
+        assert table.identifier == ("rest", "fokko", "fokko2")
 
 
 def test_register_table_200(

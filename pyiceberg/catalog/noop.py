@@ -47,6 +47,7 @@ class NoopCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        fail_if_exists: bool = True,
     ) -> Table:
         raise NotImplementedError
 

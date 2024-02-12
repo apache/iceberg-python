@@ -15,7 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
-from typing import Generator, List
+from typing import Generator, List, Type
 
 import boto3
 import pytest
@@ -89,11 +89,29 @@ def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_
         test_catalog.create_table(identifier, table_schema_nested)
 
 
-def test_create_duplicated_table(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
+@pytest.mark.parametrize(
+    "fail_if_exists, expected_exception",
+    [
+        (True, TableAlreadyExistsError),
+        (False, None),
+    ],
+)
+def test_create_duplicated_table(
+    test_catalog: Catalog,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+    fail_if_exists: bool,
+    expected_exception: Type[Exception],
+) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_table((database_name, table_name), table_schema_nested)
-    with pytest.raises(TableAlreadyExistsError):
-        test_catalog.create_table((database_name, table_name), table_schema_nested)
+    if expected_exception:
+        with pytest.raises(expected_exception):
+            test_catalog.create_table((database_name, table_name), table_schema_nested, fail_if_exists=fail_if_exists)
+    else:
+        table = test_catalog.create_table((database_name, table_name), table_schema_nested, fail_if_exists=fail_if_exists)
+        assert table.identifier == (test_catalog.name, database_name, table_name)
 
 
 def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:

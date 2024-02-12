@@ -269,6 +269,7 @@ class HiveCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        fail_if_exists: bool = True,
     ) -> Table:
         """Create a table.
 
@@ -279,6 +280,7 @@ class HiveCatalog(Catalog):
             partition_spec: PartitionSpec for the table.
             sort_order: SortOrder for the table.
             properties: Table properties that can be a string based dictionary.
+            fail_if_exists: If True, raise an error if the table already exists.
 
         Returns:
             Table: the created table instance.
@@ -321,7 +323,10 @@ class HiveCatalog(Catalog):
                 open_client.create_table(tbl)
                 hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
         except AlreadyExistsException as e:
-            raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+            if fail_if_exists:
+                raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+            else:
+                hive_table = self.load_table(identifier)
 
         return self._convert_hive_into_iceberg(hive_table, io)
 
