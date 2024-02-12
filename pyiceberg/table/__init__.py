@@ -166,6 +166,8 @@ class TableProperties:
     METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
+    FORMAT_VERSION = "format-version"
+    DEFAULT_FORMAT_VERSION = 2
 
 
 class PropertyUtil:
