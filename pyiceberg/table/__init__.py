@@ -974,7 +974,7 @@ class Table:
         else:
             return create_mapping_from_schema(self.schema())
 
-    def append(self, df: pa.Table, **snapshot_properties) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Append data to the table.
 
