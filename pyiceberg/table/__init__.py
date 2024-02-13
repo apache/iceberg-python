@@ -16,13 +16,13 @@
 # under the License.
 from __future__ import annotations
 
-import datetime
 import itertools
 import uuid
 import warnings
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
+from datetime import date, datetime
 from enum import Enum
 from functools import cached_property, singledispatch
 from itertools import chain
@@ -128,7 +128,7 @@ from pyiceberg.types import (
     StructType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
-from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, datetime_to_millis
 
 if TYPE_CHECKING:
     import daft
@@ -691,7 +691,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if update.ref_name == MAIN_BRANCH:
         metadata_updates["current_snapshot_id"] = snapshot_ref.snapshot_id
         if "last_updated_ms" not in metadata_updates:
-            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.now().astimezone())
 
         metadata_updates["snapshot_log"] = base_metadata.snapshot_log + [
             SnapshotLogEntry(
@@ -2419,17 +2419,14 @@ class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
     df: pa.Table
+    schema: Schema
     sort_order_id: Optional[int] = None
-    partition: Optional[Record] = None
+    partition_key: Optional[PartitionKey] = None
 
     def generate_data_file_partition_path(self) -> str:
-        if self.partition is None:
+        if self.partition_key is None:
             raise ValueError("Cannot generate partition path based on non-partitioned WriteTask")
-        partition_strings = []
-        for field in self.partition._position_to_field_name:
-            value = getattr(self.partition, field)
-            partition_strings.append(f"{field}={value}")
-        return "/".join(partition_strings)
+        return self.partition_key.to_path(self.schema)
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
@@ -2437,8 +2434,9 @@ class WriteTask:
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
     def generate_data_file_path(self, extension: str) -> str:
-        if self.partition:
-            return f"{self.generate_data_file_partition_path()}/{self. generate_data_file_filename(extension)}"
+        if self.partition_key:
+            file_path = f"{self.generate_data_file_partition_path()}/{self. generate_data_file_filename(extension)}"
+            return file_path
         else:
             return self.generate_data_file_filename(extension)
 
@@ -2619,7 +2617,6 @@ def _dataframe_to_data_files(
     from pyiceberg.io.pyarrow import write_file
 
     counter = itertools.count(0)
-    #one
     write_uuid = write_uuid or uuid.uuid4()
 
     if any(len(spec.fields) > 0 for spec in table_metadata.partition_specs):
@@ -2628,18 +2625,53 @@ def _dataframe_to_data_files(
             io=io, 
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), df = partition.arrow_table_partition, partition=partition.partition_key)
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), df = partition.arrow_table_partition, partition_key=partition.partition_key, schema=table_metadata.schema())
                 for partition in partitions
             ]),
         )
     else:
-        yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid =write_uuid, task_id = next(counter), df = df)]))
+        yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid =write_uuid, task_id = next(counter), df = df, schema=table_metadata.schema())]))
 
 
 @dataclass(frozen=True)
 class TablePartition:
-    partition_key: Record
+    partition_key: PartitionKey
     arrow_table_partition: pa.Table
+
+
+@dataclass(frozen=True)
+class PartitionKey:
+    raw_partition_key: Record  # partition key in raw python type
+    partition_spec: PartitionSpec
+
+    # this only supports identity transform now
+    @property
+    def partition(self) -> Record:  # partition key in iceberg type
+        iceberg_typed_key_values = {
+            field_name: iceberg_typed_value(getattr(self.raw_partition_key, field_name, None))
+            for field_name in self.raw_partition_key._position_to_field_name
+        }
+
+        return Record(**iceberg_typed_key_values)
+
+    def to_path(self, schema: Schema) -> str:
+        return self.partition_spec.partition_to_path(self.partition, schema)
+
+
+@singledispatch
+def iceberg_typed_value(value: Any) -> Any:
+    return value
+
+
+@iceberg_typed_value.register(datetime)
+def _(value: Any) -> int:
+    val = datetime_to_micros(value)
+    return val
+
+
+@iceberg_typed_value.register(date)
+def _(value: Any) -> int:
+    return date_to_days(value)
 
 
 def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
@@ -2678,10 +2710,15 @@ def get_partition_columns(iceberg_table_metadata: TableMetadata, arrow_table: pa
     return partition_cols
 
 
-def _get_partition_key(arrow_table: pa.Table, partition_columns: list[str], offset: int) -> Record:
+def _get_partition_key(
+    arrow_table: pa.Table, partition_columns: list[str], offset: int, partition_spec: PartitionSpec
+) -> PartitionKey:
     # todo: Instead of fetching partition keys one at a time, try filtering by a mask made of offsets, and convert to py together,
     # possibly slightly more efficient.
-    return Record(**{col: arrow_table.column(col)[offset].as_py() for col in partition_columns})
+    return PartitionKey(
+        raw_partition_key=Record(**{col: arrow_table.column(col)[offset].as_py() for col in partition_columns}),
+        partition_spec=partition_spec,
+    )
 
 
 def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> Iterable[TablePartition]:
@@ -2732,16 +2769,12 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
 
     table_partitions: list[TablePartition] = [
         TablePartition(
-            partition_key=_get_partition_key(arrow_table, partition_columns, inst["offset"]),
+            partition_key=_get_partition_key(arrow_table, partition_columns, inst["offset"], iceberg_table_metadata.spec()),
             arrow_table_partition=arrow_table.slice(**inst),
         )
         for inst in slice_instructions
     ]
     return table_partitions
-
-
-
-
 
 
 class FastAppendFiles(_MergingSnapshotProducer):
@@ -3078,3 +3111,4 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
         return partition_field.field_id not in self._deletes and partition_field.transform == transform
+
