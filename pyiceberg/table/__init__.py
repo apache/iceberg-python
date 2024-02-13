@@ -974,7 +974,7 @@ class Table:
         else:
             return create_mapping_from_schema(self.schema())
 
-    def append(self, df: pa.Table) -> None:
+    def append(self, df: pa.Table, **snapshot_properties) -> None:
         """
         Append data to the table.
 
@@ -1000,9 +1000,9 @@ class Table:
             for data_file in data_files:
                 merge.append_data_file(data_file)
 
-        merge.commit()
+        merge.commit(**snapshot_properties)
 
-    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, **snapshot_properties) -> None:
         """
         Overwrite all the data in the table.
 
@@ -1036,7 +1036,7 @@ class Table:
             for data_file in data_files:
                 merge.append_data_file(data_file)
 
-        merge.commit()
+        merge.commit(**snapshot_properties)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -2474,7 +2474,7 @@ class _MergingSnapshotProducer:
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
 
-    def _summary(self) -> Summary:
+    def _summary(self, **snapshot_properties) -> Summary:
         ssc = SnapshotSummaryCollector()
 
         for data_file in self._added_data_files:
@@ -2483,16 +2483,16 @@ class _MergingSnapshotProducer:
         previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
 
         return update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **ssc.build()),
+            summary=Summary(operation=self._operation, **ssc.build(), **snapshot_properties),
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def commit(self) -> Snapshot:
+    def commit(self, **snapshot_properties) -> Snapshot:
         new_manifests = self._manifests()
         next_sequence_number = self._table.next_sequence_number()
 
-        summary = self._summary()
+        summary = self._summary(**snapshot_properties)
 
         manifest_list_file_path = _generate_manifest_list_path(
             location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid

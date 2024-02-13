@@ -23,7 +23,6 @@ import pytest
 from moto import mock_aws
 
 from pyiceberg.catalog.glue import GlueCatalog
-from pyiceberg.table.snapshots import Snapshot, Summary, Operation
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -33,6 +32,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
 from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
@@ -675,31 +675,25 @@ def test_commit_table_properties(
 
 @mock_aws
 def test_commit_table_snapshot_properties(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
 
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
-    new_snapshot = Snapshot(
-        snapshot_id=25,
-        parent_snapshot_id=19,
-        sequence_number=200,
-        timestamp_ms=1602638573590,
-        manifest_list="s3:/a/b/c.avro",
-        summary=Summary(Operation.APPEND, data={"test_a": "test_a"}),
-        schema_id=3,
+    table.append(
+        pa.Table.from_pylist(
+            [{"foo": "foo_val", "bar": 1, "baz": False}],
+            schema=schema_to_pyarrow(table_schema_simple),
+        ),
+        snapshot_prop_a="test_prop_a",
     )
-
-    transaction = table.transaction()
-    transaction.add_snapshot(new_snapshot)
-    transaction.commit_transaction()
 
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.snapshots[-1].summary == new_snapshot.summary
-
+    assert updated_table_metadata.snapshots[-1].summary.get("snapshot_prop_a") == "test_prop_a"
+    
