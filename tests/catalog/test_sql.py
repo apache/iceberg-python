@@ -21,7 +21,6 @@ from typing import Generator, List
 
 import pyarrow as pa
 import pytest
-from pytest import TempPathFactory
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
@@ -49,11 +48,6 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType
-
-
-@pytest.fixture(name="warehouse", scope="session")
-def fixture_warehouse(tmp_path_factory: TempPathFactory) -> Path:
-    return tmp_path_factory.mktemp("test_sql")
 
 
 @pytest.fixture(name="random_identifier")
