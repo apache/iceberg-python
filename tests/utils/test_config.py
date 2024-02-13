@@ -41,9 +41,15 @@ def test_from_environment_variables_uppercase() -> None:
     assert Config().get_catalog_config("PRODUCTION") == {"uri": "https://service.io/api"}
 
 
-@mock.patch.dict(os.environ, {"PYICEBERG_CATALOG__PRODUCTION__S3__REGION": "eu-north-1"})
+@mock.patch.dict(os.environ, {
+    "PYICEBERG_CATALOG__PRODUCTION__S3__REGION": "eu-north-1",
+    "PYICEBERG_CATALOG__PRODUCTION__S3__ACCESS_KEY_ID": "username",
+})
 def test_fix_nested_objects_from_environment_variables() -> None:
-    assert Config().get_catalog_config("PRODUCTION") == {'s3.region': 'eu-north-1'}
+    assert Config().get_catalog_config("PRODUCTION") == {
+        's3.region': 'eu-north-1',
+        's3.access-key-id': 'username',
+    }
 
 
 def test_from_configuration_files(tmp_path_factory: pytest.TempPathFactory) -> None:
