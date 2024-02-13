@@ -695,5 +695,5 @@ def test_commit_table_snapshot_properties(
 
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.snapshots[-1].summary.get("snapshot_prop_a") == "test_prop_a"
+    assert updated_table_metadata.snapshots[-1].summary["snapshot_prop_a"] == "test_prop_a"
     
