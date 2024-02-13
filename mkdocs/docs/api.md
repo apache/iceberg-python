@@ -446,6 +446,20 @@ table = table.transaction().remove_properties("abc").commit_transaction()
 assert table.properties == {}
 ```
 
+## Snapshot properties
+
+Optionally, Snapshot properties can be set while writing to a table using `append` or `overwrite` API:
+
+```python
+tbl.append(df, snapshot_properties={"abc": "def"})
+
+or 
+
+tbl.overwrite(df, snapshot_properties={"abc": "def"})
+
+assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
+```
+
 ## Query the data
 
 To query a table, a table scan is needed. A table scan accepts a filter, columns, optionally a limit and a snapshot ID:

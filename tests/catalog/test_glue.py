@@ -674,7 +674,7 @@ def test_commit_table_properties(
     assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
 
 @mock_aws
-def test_commit_table_snapshot_properties(
+def test_commit_append_table_snapshot_properties(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
 ) -> None:
     catalog_name = "glue"
@@ -690,10 +690,46 @@ def test_commit_table_snapshot_properties(
             [{"foo": "foo_val", "bar": 1, "baz": False}],
             schema=schema_to_pyarrow(table_schema_simple),
         ),
-        snapshot_prop_a="test_prop_a",
+        snapshot_properties={"snapshot_prop_a":"test_prop_a"},
     )
 
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.snapshots[-1].summary["snapshot_prop_a"] == "test_prop_a"
+
+@mock_aws
+def test_commit_overwrite_table_snapshot_properties(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    table.append(
+        pa.Table.from_pylist(
+            [{"foo": "foo_val", "bar": 1, "baz": False}],
+            schema=schema_to_pyarrow(table_schema_simple),
+        ),
+        snapshot_properties={"snapshot_prop_a":"test_prop_a"},
+    )
+    
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+
+    table.overwrite(
+        pa.Table.from_pylist(
+            [{"foo": "foo_val", "bar": 2, "baz": True}],
+            schema=schema_to_pyarrow(table_schema_simple),
+        ),
+        snapshot_properties={"snapshot_prop_b":"test_prop_b"},
+    )
+
+    updated_table_metadata = table.metadata
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 2
+    print(updated_table_metadata.snapshots[-1].summary.additional_properties)
+    assert updated_table_metadata.snapshots[-1].summary["snapshot_prop_a"] is None
+    assert updated_table_metadata.snapshots[-1].summary["snapshot_prop_b"] == "test_prop_b"
     

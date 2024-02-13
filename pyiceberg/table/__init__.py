@@ -980,6 +980,7 @@ class Table:
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
             import pyarrow as pa
@@ -1000,9 +1001,9 @@ class Table:
             for data_file in data_files:
                 merge.append_data_file(data_file)
 
-        merge.commit(**snapshot_properties)
+        merge.commit(snapshot_properties)
 
-    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, **snapshot_properties) -> None:
+    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Overwrite all the data in the table.
 
@@ -1010,6 +1011,7 @@ class Table:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
+            snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
             import pyarrow as pa
@@ -1036,7 +1038,7 @@ class Table:
             for data_file in data_files:
                 merge.append_data_file(data_file)
 
-        merge.commit(**snapshot_properties)
+        merge.commit(snapshot_properties)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -2474,7 +2476,7 @@ class _MergingSnapshotProducer:
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
 
-    def _summary(self, **snapshot_properties) -> Summary:
+    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         ssc = SnapshotSummaryCollector()
 
         for data_file in self._added_data_files:
@@ -2488,11 +2490,11 @@ class _MergingSnapshotProducer:
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def commit(self, **snapshot_properties) -> Snapshot:
+    def commit(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Snapshot:
         new_manifests = self._manifests()
         next_sequence_number = self._table.next_sequence_number()
 
-        summary = self._summary(**snapshot_properties)
+        summary = self._summary(snapshot_properties)
 
         manifest_list_file_path = _generate_manifest_list_path(
             location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
