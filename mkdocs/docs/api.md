@@ -453,7 +453,7 @@ Optionally, Snapshot properties can be set while writing to a table using `appen
 ```python
 tbl.append(df, snapshot_properties={"abc": "def"})
 
-or 
+or
 
 tbl.overwrite(df, snapshot_properties={"abc": "def"})
 
