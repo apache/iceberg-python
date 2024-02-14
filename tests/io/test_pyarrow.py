@@ -467,7 +467,7 @@ def test_string_type_to_pyarrow() -> None:
 
 def test_binary_type_to_pyarrow() -> None:
     iceberg_type = BinaryType()
-    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.binary()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:

@@ -29,7 +29,17 @@ Make sure that the version is correct in `pyproject.toml` and `pyiceberg/__init_
 
 ### Setting the tag
 
-First set the tag on the commit:
+Make sure that you're on the right branch, and the latest branch:
+
+For a Major/Minor release, make sure that you're on `main`, for patch versions the branch corresponding to the version that you want to patch, i.e. `pyiceberg-0.6.x`.
+
+```bash
+git checkout <branch>
+git fetch --all
+git reset --hard apache/<branch>
+```
+
+Set the tag on the last commit:
 
 ```bash
 export RC=rc1

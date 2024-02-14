@@ -533,7 +533,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(16)
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
-        return pa.binary()
+        return pa.large_binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
@@ -882,7 +882,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     return TimestamptzType()
                 elif primitive.tz is None:
                     return TimestampType()
-        elif pa.types.is_binary(primitive):
+        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)

@@ -43,7 +43,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -293,6 +293,59 @@ def test_create_table(table_schema_simple: Schema, hive_database: HiveDatabase, 
     )
 
     assert metadata.model_dump() == expected.model_dump()
+
+
+@patch("time.time", MagicMock(return_value=12345))
+def test_create_v1_table(table_schema_simple: Schema, hive_database: HiveDatabase, hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().create_table.return_value = None
+    catalog._client.__enter__().get_table.return_value = hive_table
+    catalog._client.__enter__().get_database.return_value = hive_database
+    catalog.create_table(
+        ("default", "table"), schema=table_schema_simple, properties={"owner": "javaberg", "format-version": "1"}
+    )
+
+    # Test creating V1 table
+    called_v1_table: HiveTable = catalog._client.__enter__().create_table.call_args[0][0]
+    metadata_location = called_v1_table.parameters["metadata_location"]
+    with open(metadata_location, encoding=UTF8) as f:
+        payload = f.read()
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[2],
+    )
+    actual_v1_metadata = TableMetadataUtil.parse_raw(payload)
+    expected_spec = PartitionSpec()
+    expected_v1_metadata = TableMetadataV1(
+        location=actual_v1_metadata.location,
+        table_uuid=actual_v1_metadata.table_uuid,
+        last_updated_ms=actual_v1_metadata.last_updated_ms,
+        last_column_id=3,
+        schema=expected_schema,
+        schemas=[expected_schema],
+        current_schema_id=0,
+        last_partition_id=1000,
+        properties={"owner": "javaberg", "write.parquet.compression-codec": "zstd"},
+        partition_spec=[],
+        partition_specs=[expected_spec],
+        default_spec_id=0,
+        current_snapshot_id=None,
+        snapshots=[],
+        snapshot_log=[],
+        metadata_log=[],
+        sort_orders=[SortOrder(order_id=0)],
+        default_sort_order_id=0,
+        refs={},
+        format_version=1,
+    )
+
+    assert actual_v1_metadata.model_dump() == expected_v1_metadata.model_dump()
 
 
 def test_load_table(hive_table: HiveTable) -> None:

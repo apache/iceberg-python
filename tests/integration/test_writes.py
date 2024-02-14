@@ -15,19 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import os
+import time
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+import pytz
 from pyarrow.fs import S3FileSystem
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
@@ -140,7 +145,7 @@ def pa_schema() -> pa.Schema:
         # ("time", pa.time64("us")),
         # Not natively supported by Arrow
         # ("uuid", pa.fixed(16)),
-        ("binary", pa.binary()),
+        ("binary", pa.large_binary()),
         ("fixed", pa.binary(16)),
     ])
 
@@ -573,3 +578,59 @@ def test_summaries_with_only_nulls(
         'total-position-deletes': '0',
         'total-records': '0',
     }
+
+
+@pytest.mark.integration
+def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> None:
+    os.environ['TZ'] = 'Etc/UTC'
+    time.tzset()
+    tz = pytz.timezone(os.environ['TZ'])
+
+    catalog = SqlCatalog("test_sql_catalog", uri="sqlite:///:memory:", warehouse=f"/{warehouse}")
+    catalog.create_namespace("default")
+
+    identifier = "default.arrow_table_v1_with_null"
+    tbl = _create_table(catalog, identifier, {}, [arrow_table_with_null])
+    location = tbl.metadata_location
+
+    import duckdb
+
+    duckdb.sql('INSTALL iceberg; LOAD iceberg;')
+    result = duckdb.sql(
+        f"""
+    SELECT *
+    FROM iceberg_scan('{location}')
+    """
+    ).fetchall()
+
+    assert result == [
+        (
+            False,
+            'a',
+            'aaaaaaaaaaaaaaaaaaaaaa',
+            1,
+            1,
+            0.0,
+            0.0,
+            datetime(2023, 1, 1, 19, 25),
+            datetime(2023, 1, 1, 19, 25, tzinfo=tz),
+            date(2023, 1, 1),
+            b'\x01',
+            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+        ),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
+        (
+            True,
+            'z',
+            'zzzzzzzzzzzzzzzzzzzzzz',
+            9,
+            9,
+            0.8999999761581421,
+            0.9,
+            datetime(2023, 3, 1, 19, 25),
+            datetime(2023, 3, 1, 19, 25, tzinfo=tz),
+            date(2023, 3, 1),
+            b'\x12',
+            b'\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11',
+        ),
+    ]

@@ -21,7 +21,6 @@ from typing import Generator, List
 
 import pyarrow as pa
 import pytest
-from pytest import TempPathFactory
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
@@ -38,6 +37,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
@@ -48,11 +48,6 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType
-
-
-@pytest.fixture(name="warehouse", scope="session")
-def fixture_warehouse(tmp_path_factory: TempPathFactory) -> Path:
-    return tmp_path_factory.mktemp("test_sql")
 
 
 @pytest.fixture(name="random_identifier")
@@ -155,6 +150,24 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
     table = catalog.create_table(random_identifier, table_schema_nested)
     assert table.sort_order().order_id == 0, "Order ID must match"
     assert table.sort_order().is_unsorted is True, "Order must be unsorted"
+    catalog.drop_table(random_identifier)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, table_schema_nested, properties={"format-version": "1"})
+    assert table.sort_order().order_id == 0, "Order ID must match"
+    assert table.sort_order().is_unsorted is True, "Order must be unsorted"
+    assert table.format_version == 1
+    assert table.spec() == UNPARTITIONED_PARTITION_SPEC
     catalog.drop_table(random_identifier)
 
 

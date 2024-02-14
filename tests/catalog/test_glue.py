@@ -73,6 +73,38 @@ def test_create_table_with_database_location(
 
 
 @mock_aws
+def test_create_v1_table(
+    _bucket_initialize: None,
+    _glue: boto3.client,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    catalog_name = "glue"
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
+    table = test_catalog.create_table((database_name, table_name), table_schema_nested, properties={"format-version": "1"})
+    assert table.format_version == 1
+
+    table_info = _glue.get_table(
+        DatabaseName=database_name,
+        Name=table_name,
+    )
+
+    storage_descriptor = table_info["Table"]["StorageDescriptor"]
+    columns = storage_descriptor["Columns"]
+    assert len(columns) == len(table_schema_nested.fields)
+    assert columns[0] == {
+        "Name": "foo",
+        "Type": "string",
+        "Parameters": {"iceberg.field.id": "1", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
+    }
+
+    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
+
+
+@mock_aws
 def test_create_table_with_default_warehouse(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
