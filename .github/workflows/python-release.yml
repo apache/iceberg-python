@@ -82,5 +82,5 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: "release-${{ matrix.os }}"
+          name: "release-${{ github.event.inputs.version }}"
           path: ./wheelhouse/*
