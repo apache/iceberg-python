@@ -242,6 +242,14 @@ class RestCatalog(Catalog):
         if str(self.properties.get(SIGV4, False)).lower() == "true":
             self._init_sigv4(session)
 
+        # Mount custom adapters
+        if session_adapters := self.properties.get("session_adapters"):
+            for prefix, adapter in session_adapters.items():  # type: ignore
+                session.mount(prefix, adapter)
+        # Add custom auth
+        if session_auth := self.properties.get("session_auth"):
+            session.auth = session_auth  # type: ignore
+
         return session
 
     def _check_valid_namespace_identifier(self, identifier: Union[str, Identifier]) -> Identifier:
