@@ -1227,7 +1227,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
 
     def __init__(self, visiting_schema: Optional[Schema] = None, base_schema: Optional[Schema] = None, next_id_func: Optional[Callable[[], int]] = None) -> None:
         self.name_to_id = {}
-        self.visiting_schema = visiting_schema
+        self.visiting_schema: Schema = visiting_schema
         self.base_schema: Schema = base_schema
         counter = itertools.count(1 + (base_schema.highest_field_id if base_schema is not None else 0))
         self.next_id_func = next_id_func if next_id_func is not None else lambda: next(counter)

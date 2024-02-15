@@ -329,14 +329,14 @@ class Transaction:
         """
         return UpdateSchema(self._table, self)
     
-    def replace_table_with(self, table: Table) -> Transaction:
-        """Replaces the table metadata with the new one.
+    def replace_table_with(self, new_table: Table) -> Transaction:
+        """Replaces the table metadata with the new table.
 
         Returns:
             The alter table builder.
         """
         # Replace schema while retaining the old Schema IDs 
-        new_schema = assign_fresh_schema_ids(schema_or_type=table.schema(), base_schema=self._table.schema())
+        new_schema = assign_fresh_schema_ids(schema_or_type=new_table.schema(), base_schema=self._table.schema())
         self._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
         self._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
         # TODO
@@ -389,7 +389,6 @@ class TableUpdateAction(Enum):
     upgrade_format_version = "upgrade-format-version"
     add_schema = "add-schema"
     set_current_schema = "set-current-schema"
-    set_fresh_schema_ids = "set-fresh-schema-ids"
     add_spec = "add-spec"
     set_default_spec = "set-default-spec"
     add_sort_order = "add-sort-order"
@@ -1562,13 +1561,6 @@ class UpdateSchema:
             UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
-        return self
-
-    def assign_fresh_ids(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
-        """
-        Replace the schema with the new one. This 
-        """
-        self._schema = Catalog._convert_schema_if_needed(new_schema)
         return self
 
     def add_column(
