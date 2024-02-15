@@ -1241,7 +1241,8 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
                 pass  # field not found, generate new ID below
         
         new_id = field.field_id if field is not None else self.next_id_func()
-        self.name_to_id[full_name] = new_id
+        if full_name is not None:
+            self.name_to_id[full_name] = new_id
         return new_id
 
     def _name(self, id: int) -> Optional[str]:
