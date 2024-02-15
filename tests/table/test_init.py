@@ -53,12 +53,14 @@ from pyiceberg.table import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    CommitTableRequest,
     RemovePropertiesUpdate,
     SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     StaticTable,
     Table,
+    TableIdentifier,
     UpdateSchema,
     _apply_table_update,
     _check_schema,
@@ -1113,3 +1115,12 @@ def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[s
     with pytest.raises(ValidationError) as exc_info:
         TableMetadataV2(**example_table_metadata_v2)
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+def test_serialize_commit_table_request():
+    request = CommitTableRequest(
+        requirements=(AssertTableUUID(uuid='4bfd18a3-74c6-478e-98b1-71c4c32f4163'),),
+        identifier=TableIdentifier(namespace=['a'], name='b'),
+    )
+
+    deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
+    assert request == deserialized_request
