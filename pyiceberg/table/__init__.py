@@ -372,6 +372,7 @@ class TableUpdateAction(Enum):
     upgrade_format_version = "upgrade-format-version"
     add_schema = "add-schema"
     set_current_schema = "set-current-schema"
+    set_fresh_schema_ids = "set-fresh-schema-ids"
     add_spec = "add-spec"
     set_default_spec = "set-default-spec"
     add_sort_order = "add-sort-order"
@@ -407,6 +408,11 @@ class SetCurrentSchemaUpdate(TableUpdate):
         alias="schema-id", description="Schema ID to set as current, or -1 to set last added schema", default=-1
     )
 
+class SetFreshSchemaIDsUpdate(TableUpdate):
+    action: TableUpdateAction = TableUpdateAction.set_fresh_schema_ids
+    base_schema: int = Field(
+        alias="base_schema", description="Sets Fresh Schema IDs based on the base_schema or assigns monotonically increasing ids ", default=None
+    )
 
 class AddPartitionSpecUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.add_spec
@@ -1546,6 +1552,13 @@ class UpdateSchema:
         )
         return self
 
+    def assign_fresh_ids(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+        """
+        Replace the schema with the new one. This 
+        """
+        self._schema = Catalog._convert_schema_if_needed(new_schema)
+        return self
+
     def add_column(
         self, path: Union[str, Tuple[str, ...]], field_type: IcebergType, doc: Optional[str] = None, required: bool = False
     ) -> UpdateSchema:
@@ -1611,7 +1624,7 @@ class UpdateSchema:
         self._added_name_to_id[full_name] = new_id
         self._id_to_parent[new_id] = parent_full_path
 
-        new_type = assign_fresh_schema_ids(field_type, self.assign_new_column_id)
+        new_type = assign_fresh_schema_ids(schema_or_type=field_type, next_id=self.assign_new_column_id)
         field = NestedField(field_id=new_id, name=name, field_type=new_type, required=required, doc=doc)
 
         if parent_id in self._adds:
