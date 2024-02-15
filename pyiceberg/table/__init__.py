@@ -22,7 +22,7 @@ import warnings
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from enum import Enum
 from functools import cached_property, singledispatch
 from itertools import chain
@@ -77,6 +77,8 @@ from pyiceberg.partitioning import (
     PartitionSpec,
     _PartitionNameGenerator,
     _visit_partition_field,
+    PartitionFieldValue,
+    PartitionKey
 )
 from pyiceberg.schema import (
     PartnerAccessor,
@@ -117,7 +119,6 @@ from pyiceberg.typedef import (
     Identifier,
     KeyDefaultDict,
     Properties,
-    Record,
 )
 from pyiceberg.types import (
     IcebergType,
@@ -128,7 +129,7 @@ from pyiceberg.types import (
     StructType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, datetime_to_millis
+from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import daft
@@ -2426,7 +2427,7 @@ class WriteTask:
     def generate_data_file_partition_path(self) -> str:
         if self.partition_key is None:
             raise ValueError("Cannot generate partition path based on non-partitioned WriteTask")
-        return self.partition_key.to_path(self.schema)
+        return self.partition_key.to_path()
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
@@ -2639,41 +2640,6 @@ class TablePartition:
     arrow_table_partition: pa.Table
 
 
-@dataclass(frozen=True)
-class PartitionKey:
-    raw_partition_key: Record  # partition key in raw python type
-    partition_spec: PartitionSpec
-
-    # this only supports identity transform now
-    @property
-    def partition(self) -> Record:  # partition key in iceberg type
-        iceberg_typed_key_values = {
-            field_name: iceberg_typed_value(getattr(self.raw_partition_key, field_name, None))
-            for field_name in self.raw_partition_key._position_to_field_name
-        }
-
-        return Record(**iceberg_typed_key_values)
-
-    def to_path(self, schema: Schema) -> str:
-        return self.partition_spec.partition_to_path(self.partition, schema)
-
-
-@singledispatch
-def iceberg_typed_value(value: Any) -> Any:
-    return value
-
-
-@iceberg_typed_value.register(datetime)
-def _(value: Any) -> int:
-    val = datetime_to_micros(value)
-    return val
-
-
-@iceberg_typed_value.register(date)
-def _(value: Any) -> int:
-    return date_to_days(value)
-
-
 def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
     order = 'ascending' if not reverse else 'descending'
     null_placement = 'at_start' if reverse else 'at_end'
@@ -2710,15 +2676,35 @@ def get_partition_columns(iceberg_table_metadata: TableMetadata, arrow_table: pa
     return partition_cols
 
 
-def _get_partition_key(
-    arrow_table: pa.Table, partition_columns: list[str], offset: int, partition_spec: PartitionSpec
-) -> PartitionKey:
-    # todo: Instead of fetching partition keys one at a time, try filtering by a mask made of offsets, and convert to py together,
-    # possibly slightly more efficient.
-    return PartitionKey(
-        raw_partition_key=Record(**{col: arrow_table.column(col)[offset].as_py() for col in partition_columns}),
-        partition_spec=partition_spec,
-    )
+def _get_table_partitions(
+    arrow_table: pa.Table,
+    partition_spec: PartitionSpec,
+    schema: Schema,
+    slice_instructions: list[dict[str, Any]],
+) -> list[TablePartition]:
+    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x['offset'])
+
+    partition_fields = partition_spec.fields
+
+    offsets = [inst["offset"] for inst in sorted_slice_instructions]
+    projected_and_filtered = {
+        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
+        .take(offsets)
+        .to_pylist()
+        for partition_field in partition_fields
+    }
+
+    table_partitions = []
+    for inst in sorted_slice_instructions:
+        partition_slice = arrow_table.slice(**inst)
+        fieldvalues = [
+            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][inst["offset"]])
+            for partition_field in partition_fields
+        ]
+        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
+        table_partitions.append(TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
+
+    return table_partitions
 
 
 def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> Iterable[TablePartition]:
@@ -2756,7 +2742,7 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
     reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
     reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
 
-    slice_instructions = []
+    slice_instructions: list[dict[str, Any]] = []
     last = len(reversed_indices)
     reversed_indices_size = len(reversed_indices)
     ptr = 0
@@ -2767,13 +2753,10 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
         last = reversed_indices[ptr]
         ptr = ptr + group_size
 
-    table_partitions: list[TablePartition] = [
-        TablePartition(
-            partition_key=_get_partition_key(arrow_table, partition_columns, inst["offset"], iceberg_table_metadata.spec()),
-            arrow_table_partition=arrow_table.slice(**inst),
-        )
-        for inst in slice_instructions
-    ]
+    table_partitions: list[TablePartition] = _get_table_partitions(
+        arrow_table, iceberg_table_metadata.spec(), iceberg_table_metadata.schema(), slice_instructions
+    )
+
     return table_partitions
 
 

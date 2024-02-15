@@ -360,9 +360,6 @@ def test_query_filter_null_partitioned(spark: SparkSession, part_col: str, forma
     for col in TEST_DATA_WITH_NULL.keys():
         assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
 
-    spark.sql(f"select path from {identifier}.manifests").show(20, False)
-    spark.sql(f"select path from {identifier}.manifests").collect()
-
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
