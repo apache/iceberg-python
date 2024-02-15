@@ -328,6 +328,23 @@ class Transaction:
             A new UpdateSchema.
         """
         return UpdateSchema(self._table, self)
+    
+    def replace_table_with(self, table: Table) -> Transaction:
+        """Replaces the table metadata with the new one.
+
+        Returns:
+            The alter table builder.
+        """
+        # Replace schema while retaining the old Schema IDs 
+        new_schema = assign_fresh_schema_ids(schema_or_type=table.schema(), base_schema=self._table.schema())
+        self._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
+        self._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
+        # TODO
+        # Update partition spec
+        # Update sort order
+        # Update table properties
+        self._append_requirements(AssertTableUUID(uuid=self._table.metadata.table_uuid))
+        return self
 
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
@@ -408,11 +425,6 @@ class SetCurrentSchemaUpdate(TableUpdate):
         alias="schema-id", description="Schema ID to set as current, or -1 to set last added schema", default=-1
     )
 
-class SetFreshSchemaIDsUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_fresh_schema_ids
-    base_schema: int = Field(
-        alias="base_schema", description="Sets Fresh Schema IDs based on the base_schema or assigns monotonically increasing ids ", default=None
-    )
 
 class AddPartitionSpecUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.add_spec

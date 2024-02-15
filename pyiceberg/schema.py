@@ -1214,14 +1214,14 @@ def build_position_accessors(schema_or_type: Union[Schema, IcebergType]) -> Dict
 
 
 def assign_fresh_schema_ids(schema_or_type: Union[Schema, IcebergType], base_schema: Schema = None, next_id: Optional[Callable[[], int]] = None) -> Schema:
-    """Traverses the schema, and sets new IDs."""
+    """Traverses the schema and assigns IDs from the base_schema, and fresh IDs from either the next_id function 
+    or monotonically increasing IDs"""
     visiting_schema = schema_or_type if isinstance(schema_or_type, Schema) else None
     return pre_order_visit(schema_or_type, _SetFreshIDs(visiting_schema=visiting_schema, base_schema=base_schema, next_id_func=next_id))
 
 
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
-    """Sets IDs to match a given schema if provided else generates IDs from either the next_id_func  
-    or simply assigns monotonically increasing IDs"""
+    """Assigns IDs from the base_schema, and fresh IDs from either the next_id function or monotonically increasing IDs"""
 
     name_to_id: Dict[str, int]
 
