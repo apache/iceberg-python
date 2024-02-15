@@ -1251,7 +1251,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
     def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
         return Schema(
             *struct_result().fields,
-            identifier_field_ids=[self.name_to_id[field_names] for field_names in schema.identifier_field_names()],
+            identifier_field_ids=[self.name_to_id[field_name] for field_name in schema.identifier_field_names()],
         )
 
     def struct(self, struct: StructType, field_results: List[Callable[[], IcebergType]]) -> StructType:
