@@ -768,6 +768,10 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
 class TableRequirement(IcebergBaseModel):
     type: str
 
+    @classmethod
+    def get_subclasses(cls):
+        return tuple(cls.__subclasses__())
+
     @abstractmethod
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         """Validate the requirement against the base metadata.
@@ -925,7 +929,9 @@ class TableIdentifier(IcebergBaseModel):
 
 class CommitTableRequest(IcebergBaseModel):
     identifier: TableIdentifier = Field()
-    requirements: Tuple[SerializeAsAny[TableRequirement], ...] = Field(default_factory=tuple)
+    requirements: Tuple[Annotated[Union[TableRequirement.get_subclasses()], Field(discriminator='type')], ...] = Field(
+        default_factory=tuple
+    )
     updates: Tuple[SerializeAsAny[TableUpdate], ...] = Field(default_factory=tuple)
 
 
