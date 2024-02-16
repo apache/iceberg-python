@@ -328,23 +328,6 @@ class Transaction:
             A new UpdateSchema.
         """
         return UpdateSchema(self._table, self)
-    
-    def replace_table_with(self, new_table: Table) -> Transaction:
-        """Replaces the table metadata with the new table.
-
-        Returns:
-            The alter table builder.
-        """
-        # Replace schema while retaining the old Schema IDs 
-        new_schema = assign_fresh_schema_ids(schema_or_type=new_table.schema(), base_schema=self._table.schema())
-        self._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
-        self._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
-        # TODO
-        # Update partition spec
-        # Update sort order
-        # Update table properties
-        self._append_requirements(AssertTableUUID(uuid=self._table.metadata.table_uuid))
-        return self
 
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.

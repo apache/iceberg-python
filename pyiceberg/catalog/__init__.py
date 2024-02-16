@@ -40,11 +40,14 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInst
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
+    AddSchemaUpdate,
+    AssertTableUUID,
     CommitTableRequest,
     CommitTableResponse,
+    SetCurrentSchemaUpdate,
     Table,
     TableMetadata,
 )
@@ -616,6 +619,47 @@ class Catalog(ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
+    def create_or_replace_table(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        """Creates a new table or replaces an existing one. Replacing the table reatains the table metadata history
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            Table: the new table instance.
+        """
+        try:
+            return self._replace_table(
+                identifier=identifier,
+                new_schema=schema,
+                new_location=location,
+                new_partition_spec=partition_spec,
+                new_sort_order=sort_order,
+                new_properties=properties,
+            )
+        except NoSuchTableError:
+            return self.create_table(
+                identifier=identifier,
+                schema=schema,
+                location=location,
+                partition_spec=partition_spec,
+                sort_order=sort_order,
+                properties=properties,
+            )
+
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
@@ -679,6 +723,29 @@ class Catalog(ABC):
         )
 
         return properties_update_summary, updated_properties
+
+    def _replace_table(
+        self,
+        identifier: Union[str, Identifier],
+        new_schema: Optional[Union[Schema, "pa.Schema"]] = None,
+        new_location: Optional[str] = None,
+        new_partition_spec: Optional[PartitionSpec] = None,
+        new_sort_order: Optional[SortOrder] = None,
+        new_properties: Optional[Properties] = None,
+    ) -> Table:
+        table = self.load_table(identifier)
+        with table.transaction() as tx:
+            if new_schema is not None:
+                new_schema = assign_fresh_schema_ids(schema_or_type=new_schema, base_schema=table.schema())
+                tx._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
+                tx._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
+            if new_location is not None:
+                tx.update_location(new_location)
+            # TODO Update partition spec
+            # TODO Update sort order
+            if new_properties is not None:
+                tx.set_properties(**new_properties)
+            tx._append_requirements(AssertTableUUID(uuid=table.metadata.table_uuid))
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""
