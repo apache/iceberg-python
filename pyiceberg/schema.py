@@ -1268,7 +1268,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         return field_result()
 
     def list(self, list_type: ListType, element_result: Callable[[], IcebergType]) -> ListType:
-        element_id = self._generate_id(self._name(list_type.element_field.name))
+        element_id = self._generate_id(list_type.element_field.name)
         return ListType(
             element_id=element_id,
             element=element_result(),
