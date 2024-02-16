@@ -1213,20 +1213,21 @@ def build_position_accessors(schema_or_type: Union[Schema, IcebergType]) -> Dict
     return visit(schema_or_type, _BuildPositionAccessors())
 
 
-def assign_fresh_schema_ids(schema_or_type: Union[Schema, IcebergType], base_schema: Schema = None, next_id: Optional[Callable[[], int]] = None) -> Schema:
-    """Traverses the schema and assigns IDs from the base_schema, or the next_id function."""
+def assign_fresh_schema_ids(
+    schema_or_type: Union[Schema, IcebergType], base_schema: Optional[Schema] = None, next_id: Optional[Callable[[], int]] = None
+) -> Schema:
+    """Traverse the schema and assign IDs from the base_schema, or the next_id function."""
     return pre_order_visit(schema_or_type, _SetFreshIDs(base_schema=base_schema, next_id_func=next_id))
 
 
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
-    """Assigns IDs from the base_schema, or generates fresh IDs from either the next_id function 
-    or monotonically increasing IDs starting from schema's hightst level ID.
-    """
+    """Assign IDs from the base_schema, or generate fresh IDs from either the next_id function or monotonically increasing IDs starting from schema's highest ID."""
+
     name_to_id: Dict[str, int]
 
     def __init__(self, base_schema: Optional[Schema] = None, next_id_func: Optional[Callable[[], int]] = None) -> None:
         self.name_to_id = {}
-        self.base_schema: Schema = base_schema
+        self.base_schema = base_schema
         counter = itertools.count(1 + (base_schema.highest_field_id if base_schema is not None else 0))
         self.next_id_func = next_id_func if next_id_func is not None else lambda: next(counter)
 
@@ -1235,13 +1236,13 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         if self.base_schema is not None and field_name is not None:
             try:
                 field = self.base_schema.find_field(field_name)
-            except ValueError as e:
+            except ValueError:
                 pass  # field not found, generate new ID below
-        
+
         new_id = field.field_id if field is not None else self.next_id_func()
         if field_name is not None:
             self.name_to_id[field_name] = new_id
-        return new_id        
+        return new_id
 
     def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
         return Schema(
