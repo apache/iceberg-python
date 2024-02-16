@@ -746,6 +746,7 @@ class Catalog(ABC):
             if new_properties is not None:
                 tx.set_properties(**new_properties)
             tx._append_requirements(AssertTableUUID(uuid=table.metadata.table_uuid))
+        return table
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""
