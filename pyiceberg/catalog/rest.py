@@ -237,6 +237,7 @@ class RestCatalog(Catalog):
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials,remote-signing"
 
         # Configure SigV4 Request Signing
         if str(self.properties.get(SIGV4, False)).lower() == "true":
