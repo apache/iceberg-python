@@ -1219,17 +1219,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.14"
+version = "0.2.15"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.7"
 files = [
-    {file = "getdaft-0.2.14-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:01754aa7f6059cfec363eff9a8e46197bbbc65634da9c12cd998ce2223fb8c45"},
-    {file = "getdaft-0.2.14-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:8cf445538b7e0d5016c548b0e951dab3f5cf2fe6303bddd09d9c5ff5747894e1"},
-    {file = "getdaft-0.2.14-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3add9d73702765e261d3e88ef04099d6a9c95f90d19c96ff4e014f4d9ed6433e"},
-    {file = "getdaft-0.2.14-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:110b0b35bc9732926f9a8b9c3f6996d834a0f24ccb0c400f9b03d580dcd90096"},
-    {file = "getdaft-0.2.14-cp37-abi3-win_amd64.whl", hash = "sha256:34ebbbf040982f219c3bae5e2046322150332a3e65ad67ba71985db59b2fff68"},
-    {file = "getdaft-0.2.14.tar.gz", hash = "sha256:07cd349fe961536c6bd172b6cf02217fb1fd23a2a021571f6a5c6f0dddb184ec"},
+    {file = "getdaft-0.2.15-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:95c16b0f25a78a13cab21128bcd0b5e7af65a14b12fd037ef8ec8aee5b7ac911"},
+    {file = "getdaft-0.2.15-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:6afb66507ae899fb32adc8532b25ddd245a14d695a099ceb594afcb24848adb0"},
+    {file = "getdaft-0.2.15-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:580a9971807e30a21136ae10eeb39cb2c880ab6eb87a464447206e4d36d52e2b"},
+    {file = "getdaft-0.2.15-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:44424e2adc80f12e3a404cc389a1b37eabbd1c8a3f0345d218852a65a7c3593d"},
+    {file = "getdaft-0.2.15-cp37-abi3-win_amd64.whl", hash = "sha256:10103355c8a48455a1b2262bc1b7eca6b495059da7f2d220758bc273b734b898"},
+    {file = "getdaft-0.2.15.tar.gz", hash = "sha256:5729915db8e15b6d42568cceef4a588ecdc5ce1a29f52c362e41d789bffb32e7"},
 ]
 
 [package.dependencies]
