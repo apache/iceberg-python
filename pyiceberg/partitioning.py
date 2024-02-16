@@ -17,8 +17,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import date, datetime
 from functools import cached_property, singledispatch
-from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+)
 
 from pydantic import (
     BeforeValidator,
@@ -41,8 +51,9 @@ from pyiceberg.transforms import (
     YearTransform,
     parse_transform,
 )
-from pyiceberg.typedef import IcebergBaseModel
-from pyiceberg.types import NestedField, StructType
+from pyiceberg.typedef import IcebergBaseModel, Record
+from pyiceberg.types import DateType, IcebergType, NestedField, PrimitiveType, StructType, TimestampType, TimestamptzType
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -199,6 +210,28 @@ class PartitionSpec(IcebergBaseModel):
             nested_fields.append(NestedField(field.field_id, field.name, result_type, required=False))
         return StructType(*nested_fields)
 
+    def partition_to_path(self, data: Record, schema: Schema) -> str:
+        partition_type = self.partition_type(schema)
+        field_types = partition_type.fields
+
+        pos = 0
+        field_strs = []
+        value_strs = []
+        for field_name in data._position_to_field_name:
+            value = getattr(data, field_name)
+
+            partition_field = self.fields[pos]  # partition field
+            value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=value)
+            from urllib.parse import quote
+
+            value_str = quote(value_str, safe='')
+            value_strs.append(value_str)
+            field_strs.append(partition_field.name)
+            pos += 1
+
+        path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
+        return path
+
 
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)
 
@@ -326,3 +359,54 @@ def _visit_partition_field(schema: Schema, field: PartitionField, visitor: Parti
         return visitor.unknown(field.field_id, source_name, field.source_id, repr(transform))
     else:
         raise ValueError(f"Unknown transform {transform}")
+
+
+@dataclass(frozen=True)
+class PartitionFieldValue:
+    field: PartitionField
+    value: Any
+
+
+@dataclass(frozen=True)
+class PartitionKey:
+    raw_partition_field_values: list[PartitionFieldValue]
+    partition_spec: PartitionSpec
+    schema: Schema
+    from functools import cached_property
+
+    @cached_property
+    def partition(self) -> Record:  # partition key in iceberg type
+        iceberg_typed_key_values = {}
+        for raw_partition_field_value in self.raw_partition_field_values:
+            partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
+            assert len(partition_fields) == 1
+            partition_field = partition_fields[0]
+            iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
+            _iceberg_typed_value = iceberg_typed_value(iceberg_type, raw_partition_field_value.value)
+            transformed_value = partition_field.transform.transform(iceberg_type)(_iceberg_typed_value)
+            iceberg_typed_key_values[partition_field.name] = transformed_value
+        return Record(**iceberg_typed_key_values)
+
+    def to_path(self) -> str:
+        return self.partition_spec.partition_to_path(self.partition, self.schema)
+
+
+@singledispatch
+def iceberg_typed_value(type: IcebergType, value: Any) -> Any:
+    return TypeError(f"Unsupported partition field type: {type}")
+
+
+@iceberg_typed_value.register(TimestampType)
+@iceberg_typed_value.register(TimestamptzType)
+def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
+    return datetime_to_micros(value) if value is not None else None
+
+
+@iceberg_typed_value.register(DateType)
+def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
+    return date_to_days(value) if value is not None else None
+
+
+@iceberg_typed_value.register(PrimitiveType)
+def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
+    return value
