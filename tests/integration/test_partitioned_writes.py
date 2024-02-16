@@ -408,7 +408,7 @@ def spark() -> SparkSession:
     return spark
 
 
-@pytest.mark.integeration
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
