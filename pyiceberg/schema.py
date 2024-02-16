@@ -1215,8 +1215,7 @@ def build_position_accessors(schema_or_type: Union[Schema, IcebergType]) -> Dict
 
 def assign_fresh_schema_ids(schema_or_type: Union[Schema, IcebergType], base_schema: Schema = None, next_id: Optional[Callable[[], int]] = None) -> Schema:
     """Traverses the schema and assigns IDs from the base_schema, or the next_id function."""
-    visiting_schema = schema_or_type if isinstance(schema_or_type, Schema) else None
-    return pre_order_visit(schema_or_type, _SetFreshIDs(visiting_schema=visiting_schema, base_schema=base_schema, next_id_func=next_id))
+    return pre_order_visit(schema_or_type, _SetFreshIDs(base_schema=base_schema, next_id_func=next_id))
 
 
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
@@ -1225,29 +1224,24 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
     """
     name_to_id: Dict[str, int]
 
-    def __init__(self, visiting_schema: Optional[Schema] = None, base_schema: Optional[Schema] = None, next_id_func: Optional[Callable[[], int]] = None) -> None:
+    def __init__(self, base_schema: Optional[Schema] = None, next_id_func: Optional[Callable[[], int]] = None) -> None:
         self.name_to_id = {}
-        self.visiting_schema: Schema = visiting_schema
         self.base_schema: Schema = base_schema
         counter = itertools.count(1 + (base_schema.highest_field_id if base_schema is not None else 0))
         self.next_id_func = next_id_func if next_id_func is not None else lambda: next(counter)
 
-    def _id_for(self, full_name: Optional[str]) -> int:
+    def _generate_id(self, field_name: Optional[str] = None) -> int:
         field = None
-        if self.base_schema is not None and full_name is not None:
+        if self.base_schema is not None and field_name is not None:
             try:
-                field = self.base_schema.find_field(full_name)
+                field = self.base_schema.find_field(field_name)
             except ValueError as e:
                 pass  # field not found, generate new ID below
         
         new_id = field.field_id if field is not None else self.next_id_func()
-        if full_name is not None:
-            self.name_to_id[full_name] = new_id
-        return new_id
-
-    def _name(self, id: int) -> Optional[str]:
-        return self.visiting_schema.find_column_name(id) if self.visiting_schema is not None else None
-        
+        if field_name is not None:
+            self.name_to_id[field_name] = new_id
+        return new_id        
 
     def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
         return Schema(
@@ -1256,7 +1250,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         )
 
     def struct(self, struct: StructType, field_results: List[Callable[[], IcebergType]]) -> StructType:
-        new_ids = [self._id_for(self._name(field.field_id)) for field in struct.fields]
+        new_ids = [self._generate_id(field.name) for field in struct.fields]
         new_fields = []
         for field_id, field, field_type in zip(new_ids, struct.fields, field_results):
             new_fields.append(
@@ -1274,7 +1268,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         return field_result()
 
     def list(self, list_type: ListType, element_result: Callable[[], IcebergType]) -> ListType:
-        element_id = self._id_for(self._name(list_type.element_id))
+        element_id = self._generate_id(self._name(list_type.element_field.name))
         return ListType(
             element_id=element_id,
             element=element_result(),
@@ -1282,8 +1276,8 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         )
 
     def map(self, map_type: MapType, key_result: Callable[[], IcebergType], value_result: Callable[[], IcebergType]) -> MapType:
-        key_id = self._id_for(self._name(map_type.key_id))
-        value_id = self._id_for(self._name(map_type.value_id))
+        key_id = self._generate_id(map_type.key_field.name)
+        value_id = self._generate_id(map_type.value_field.name)
         return MapType(
             key_id=key_id,
             key_type=key_result(),
