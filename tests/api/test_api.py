@@ -15,12 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pytest
 import re
 import subprocess
 
 import griffe
-from griffe.enumerations import BreakageKind
+import pytest
 from griffe.exceptions import GitError
 
 
