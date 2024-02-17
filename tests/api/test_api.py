@@ -15,13 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pytest
 import re
 import subprocess
 
 import griffe
+from griffe.enumerations import BreakageKind
 from griffe.exceptions import GitError
 
 
+@pytest.mark.api
 def test_breaking_change() -> None:
     check_if_upstream = subprocess.run(
         ["git", "remote", "get-url", "origin"],

@@ -129,7 +129,8 @@ markers = [
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
   "adlfs: marks a test as requiring access to adlfs compliant storage (use with --adlfs.account-name, --adlfs.account-key, and --adlfs.endpoint args)",
   "integration: marks integration tests against Apache Spark",
-  "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)"
+  "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
+  "api: marks a test as as a API backwards compatibility test"
 ]
 
 # Turns a warning into an error
