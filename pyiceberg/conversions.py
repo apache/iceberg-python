@@ -267,7 +267,7 @@ def _(primitive_type: DecimalType, value: Decimal) -> bytes:
     return decimal_to_bytes(value)
 
 
-@singledispatch
+@singledispatch  # type: ignore
 def from_bytes(primitive_type: PrimitiveType, b: bytes) -> L:  # type: ignore
     """Convert bytes to a built-in python value.
 
