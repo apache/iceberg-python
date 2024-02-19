@@ -45,7 +45,7 @@ class MappedField(IcebergBaseModel):
     def convert_null_to_empty_List(cls, v: Any) -> Any:
         return v or []
 
-    @field_validator('names', mode='before')
+    @field_validator('names', mode='after')
     @classmethod
     def check_at_least_one(cls, v: List[str]) -> Any:
         """
