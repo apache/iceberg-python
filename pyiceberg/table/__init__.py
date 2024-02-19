@@ -335,7 +335,7 @@ class Transaction:
         Returns:
             A new UpdateSnapshot
         """
-        return UpdateSnapshot(self._table)
+        return UpdateSnapshot(self._table, self)
 
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
@@ -358,6 +358,12 @@ class Transaction:
             The alter table builder.
         """
         raise NotImplementedError("Not yet implemented")
+
+    def schema(self) -> Schema:
+        try:
+            return next(update for update in self._updates if isinstance(update, AddSchemaUpdate)).schema_
+        except StopIteration:
+            return self._table.schema()
 
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
@@ -973,7 +979,20 @@ class Table:
         return self.metadata.snapshot_log
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
+        """Create a new UpdateSchema to alter the columns of this table.
+
+        Returns:
+            A new UpdateSchema.
+        """
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+
+    def update_snapshot(self) -> UpdateSnapshot:
+        """Create a new UpdateSnapshot to produce a new snapshot for the table.
+
+        Returns:
+            A new UpdateSnapshot
+        """
+        return UpdateSnapshot(self)
 
     def name_mapping(self) -> NameMapping:
         """Return the table's field-id NameMapping."""
@@ -1000,7 +1019,7 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        with self.transaction().update_snapshot().fast_append() as update_snapshot:
+        with self.update_snapshot().fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(self, df=df)
@@ -1030,7 +1049,7 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        with self.transaction().update_snapshot().overwrite() as update_snapshot:
+        with self.update_snapshot().overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(self, df=df)
@@ -1540,7 +1559,7 @@ class UpdateSchema:
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive), # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
@@ -2330,7 +2349,7 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
 
 
-def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
+def _dataframe_to_data_files(table: Table, df: pa.Table, file_schema: Optional[Schema] = None) -> Iterable[DataFile]:
     """Convert a PyArrow table into a DataFile.
 
     Returns:
@@ -2346,7 +2365,7 @@ def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))
+    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]), file_schema=file_schema)
 
 
 class _MergingSnapshotProducer:
@@ -2356,8 +2375,9 @@ class _MergingSnapshotProducer:
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
     _commit_uuid: uuid.UUID
+    _transaction: Optional[Transaction]
 
-    def __init__(self, operation: Operation, table: Table) -> None:
+    def __init__(self, operation: Operation, table: Table, transaction: Optional[Transaction] = None) -> None:
         self._operation = operation
         self._table = table
         self._snapshot_id = table.new_snapshot_id()
@@ -2365,6 +2385,7 @@ class _MergingSnapshotProducer:
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_data_files = []
         self._commit_uuid = uuid.uuid4()
+        self._transaction = transaction
 
     def __enter__(self) -> _MergingSnapshotProducer:
         """Start a transaction to update the table."""
@@ -2427,14 +2448,11 @@ class _MergingSnapshotProducer:
             else:
                 return []
 
-        def _fetch_existing_manifests() -> List[ManifestFile]:
-            return self._existing_manifests()
-
         executor = ExecutorFactory.get_or_create()
 
         added_manifests = executor.submit(_write_added_manifest)
         delete_manifests = executor.submit(_write_delete_manifest)
-        existing_manifests = executor.submit(_fetch_existing_manifests)
+        existing_manifests = executor.submit(self._existing_manifests)
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
 
@@ -2479,11 +2497,17 @@ class _MergingSnapshotProducer:
             schema_id=self._table.schema().schema_id,
         )
 
-        with self._table.transaction() as tx:
-            tx.add_snapshot(snapshot=snapshot)
-            tx.set_ref_snapshot(
+        if self._transaction is not None:
+            self._transaction.add_snapshot(snapshot=snapshot)
+            self._transaction.set_ref_snapshot(
                 snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
             )
+        else:
+            with self._table.transaction() as tx:
+                tx.add_snapshot(snapshot=snapshot)
+                tx.set_ref_snapshot(
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                )
 
         return snapshot
 
@@ -2562,14 +2586,18 @@ class OverwriteFiles(_MergingSnapshotProducer):
 
 class UpdateSnapshot:
     _table: Table
+    _transaction: Optional[Transaction]
 
-    def __init__(self, table: Table):
+    def __init__(self, table: Table, transaction: Optional[Transaction] = None) -> None:
         self._table = table
+        self._transaction = transaction
 
     def fast_append(self) -> FastAppendFiles:
-        return FastAppendFiles(table=self._table, operation=Operation.APPEND)
+        return FastAppendFiles(table=self._table, operation=Operation.APPEND, transaction=self._transaction)
 
     def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(
-            table=self._table, operation=Operation.OVERWRITE if self._table.current_snapshot() is not None else Operation.APPEND
+            table=self._table,
+            operation=Operation.OVERWRITE if self._table.current_snapshot() is not None else Operation.APPEND,
+            transaction=self._transaction,
         )
