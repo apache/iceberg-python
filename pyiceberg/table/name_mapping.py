@@ -224,8 +224,7 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
                 updated_field
                 for field in mapped_fields
                 if (updated_field := self._remove_reassigned_names(field, reassignments)) is not None
-            ]
-            fields.extend(new_fields)
+            ] + new_fields
             return fields
         else:
             return mapped_fields
