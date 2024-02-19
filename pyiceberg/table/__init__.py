@@ -1933,7 +1933,6 @@ class UpdateSchema:
                 updates += (  # type: ignore
                     SetPropertiesUpdate(updates={TableProperties.DEFAULT_NAME_MAPPING: updated_name_mapping.model_dump_json()}),
                 )
-                print(f"DEBUG: {updates=}")
 
             if self._transaction is not None:
                 self._transaction._append_updates(*updates)  # pylint: disable=W0212
