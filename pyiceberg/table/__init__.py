@@ -1022,7 +1022,7 @@ class Table:
         with self.update_snapshot().fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(self, write_uuid=merge.commit_uuid, df=df)
+                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
@@ -1052,7 +1052,7 @@ class Table:
         with self.update_snapshot().overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(self, write_uuid=merge.commit_uuid, df=df)
+                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
@@ -2349,7 +2349,9 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
 
 
-def _dataframe_to_data_files(table: Table, df: pa.Table, write_uuid: uuid.UUID, file_schema: Optional[Schema] = None) -> Iterable[DataFile]:
+def _dataframe_to_data_files(
+    table: Table, df: pa.Table, write_uuid: Optional[uuid.UUID] = None, file_schema: Optional[Schema] = None
+) -> Iterable[DataFile]:
     """Convert a PyArrow table into a DataFile.
 
     Returns:
@@ -2361,6 +2363,7 @@ def _dataframe_to_data_files(table: Table, df: pa.Table, write_uuid: uuid.UUID, 
         raise ValueError("Cannot write to partitioned tables")
 
     counter = itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
