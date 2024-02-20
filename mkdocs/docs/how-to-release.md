@@ -146,11 +146,37 @@ cat release-announcement-email.txt
 
 ## Vote has passed
 
-Once the vote has been passed, the latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
+Once the vote has been passed, you can close the vote thread by concluding it:
+
+```
+Thanks everyone for voting! The 72 hours have passed, and a minimum of 3 binding votes have been cast:
+
++1 Foo Bar (non-binding)
+...
++1 Fokko Driesprong (binding)
+
+The release candidate has been accepted as PyIceberg <VERSION>. Thanks everyone, when all artifacts are published the announcement will be sent out.
+
+Kind regards,
+```
+
+### Copy the artifacts to the release dist
+
+```
+svn checkout https://dist.apache.org/repos/dist/dev/iceberg /tmp/iceberg-dist-dev
+svn checkout https://dist.apache.org/repos/dist/release/iceberg/ /tmp/iceberg-dist-release
+
+mkdir -p /tmp/iceberg-dist-release/pyiceberg-<VERSION>
+cp -r /tmp/iceberg-dist-dev/pyiceberg-<VERSION>rcN/* /tmp/iceberg-dist-release/pyiceberg-<VERSION>
+
+svn add /tmp/iceberg-dist-release/
+svn ci -m "PyIceberg <VERSION>" /tmp/iceberg-dist-release/
+```
+
+The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
 
 ```bash
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg /tmp/
-twine upload -s /tmp/iceberg/pyiceberg-0.1.0rc1
+twine upload -s /tmp/iceberg-dist-release/pyiceberg-<VERSION>/*
 ```
 
 Send out an announcement on the dev mail list:
