@@ -245,6 +245,26 @@ def test_pyarrow_list_to_iceberg() -> None:
     assert visit_pyarrow(pyarrow_list, _ConvertToIceberg()) == expected
 
 
+def test_pyarrow_large_list_to_iceberg() -> None:
+    pyarrow_list = pa.large_list(pa.field("element", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "1"}))
+    expected = ListType(
+        element_id=1,
+        element_type=IntegerType(),
+        element_required=True,
+    )
+    assert visit_pyarrow(pyarrow_list, _ConvertToIceberg()) == expected
+
+
+def test_pyarrow_fixed_size_list_to_iceberg() -> None:
+    pyarrow_list = pa.list_(pa.field("element", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "1"}), 1)
+    expected = ListType(
+        element_id=1,
+        element_type=IntegerType(),
+        element_required=True,
+    )
+    assert visit_pyarrow(pyarrow_list, _ConvertToIceberg()) == expected
+
+
 def test_pyarrow_map_to_iceberg() -> None:
     pyarrow_map = pa.map_(
         pa.field("key", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "1"}),
