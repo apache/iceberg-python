@@ -254,6 +254,23 @@ def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schem
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_create_table_if_not_exists_duplicated_table(
+    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table1 = catalog.create_table(random_identifier, table_schema_nested)
+    table2 = catalog.create_table_if_not_exists(random_identifier, table_schema_nested)
+    assert table1.identifier == table2.identifier
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_table_with_non_existing_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_name: str) -> None:
     identifier = ("invalid", table_name)
     with pytest.raises(NoSuchNamespaceError):
