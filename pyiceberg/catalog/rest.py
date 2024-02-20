@@ -446,7 +446,6 @@ class RestCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
-        fail_if_exists: bool = True,
     ) -> Table:
         iceberg_schema = self._convert_schema_if_needed(schema)
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
@@ -469,16 +468,11 @@ class RestCatalog(Catalog):
         )
         try:
             response.raise_for_status()
-            table_response = TableResponse(**response.json())
-            return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
         except HTTPError as exc:
-            try:
-                self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
-            except TableAlreadyExistsError:
-                if fail_if_exists:
-                    raise
-                return self.load_table(identifier)
-            raise
+            self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
+
+        table_response = TableResponse(**response.json())
+        return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.

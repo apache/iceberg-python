@@ -302,18 +302,11 @@ class GlueCatalog(Catalog):
             catalog=self,
         )
 
-    def _create_glue_table(
-        self,
-        database_name: str,
-        table_name: str,
-        table_input: TableInputTypeDef,
-        fail_if_exists: bool = True,
-    ) -> None:
+    def _create_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef) -> None:
         try:
             self.glue.create_table(DatabaseName=database_name, TableInput=table_input)
         except self.glue.exceptions.AlreadyExistsException as e:
-            if fail_if_exists:
-                raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+            raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database {database_name} does not exist") from e
 
@@ -347,7 +340,6 @@ class GlueCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
-        fail_if_exists: bool = True,
     ) -> Table:
         """
         Create an Iceberg table.
@@ -359,7 +351,6 @@ class GlueCatalog(Catalog):
             partition_spec: PartitionSpec for the table.
             sort_order: SortOrder for the table.
             properties: Table properties that can be a string based dictionary.
-            fail_if_exists: If True, raise an error if the table already exists.
 
         Returns:
             Table: the created table instance.
@@ -383,9 +374,7 @@ class GlueCatalog(Catalog):
 
         table_input = _construct_table_input(table_name, metadata_location, properties, metadata)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
-        self._create_glue_table(
-            database_name=database_name, table_name=table_name, table_input=table_input, fail_if_exists=fail_if_exists
-        )
+        self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
         return self.load_table(identifier=identifier)
 

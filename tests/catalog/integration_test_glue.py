@@ -16,7 +16,7 @@
 #  under the License.
 
 import time
-from typing import Any, Dict, Generator, List, Type
+from typing import Any, Dict, Generator, List
 from uuid import uuid4
 
 import boto3
@@ -193,29 +193,20 @@ def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_
         test_catalog.create_table(identifier, table_schema_nested)
 
 
-@pytest.mark.parametrize(
-    "fail_if_exists, expected_exception",
-    [
-        (True, TableAlreadyExistsError),
-        (False, None),
-    ],
-)
-def test_create_duplicated_table(
-    test_catalog: Catalog,
-    table_schema_nested: Schema,
-    table_name: str,
-    database_name: str,
-    fail_if_exists: bool,
-    expected_exception: Type[Exception],
-) -> None:
+def test_create_duplicated_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_table((database_name, table_name), table_schema_nested)
-    if expected_exception:
-        with pytest.raises(expected_exception):
-            test_catalog.create_table((database_name, table_name), table_schema_nested, fail_if_exists=fail_if_exists)
-    else:
-        table = test_catalog.create_table((database_name, table_name), table_schema_nested, fail_if_exists=fail_if_exists)
-        assert table.identifier == (CATALOG_NAME, database_name, table_name)
+    with pytest.raises(TableAlreadyExistsError):
+        test_catalog.create_table((database_name, table_name), table_schema_nested)
+
+
+def test_create_table_if_not_exists_duplicated_table(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    test_catalog.create_namespace(database_name)
+    table1 = test_catalog.create_table((database_name, table_name), table_schema_nested)
+    table2 = test_catalog.create_table_if_not_exists((database_name, table_name), table_schema_nested)
+    assert table1.identifier == table2.identifier
 
 
 def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:

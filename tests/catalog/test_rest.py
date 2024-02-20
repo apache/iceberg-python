@@ -16,7 +16,7 @@
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
 import os
-from typing import Any, Dict, Type, cast
+from typing import Any, Dict, cast
 from unittest import mock
 
 import pytest
@@ -489,19 +489,36 @@ def test_create_table_200(
     assert actual == expected
 
 
-@pytest.mark.parametrize(
-    "fail_if_exists, expected_exception",
-    [
-        (True, TableAlreadyExistsError),
-        (False, None),
-    ],
-)
-def test_create_table_409(
-    rest_mock: Mocker,
-    example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any],
-    table_schema_simple: Schema,
-    fail_if_exists: bool,
-    expected_exception: Type[Exception],
+def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "error": {
+                "message": "Table already exists: fokko.already_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(TableAlreadyExistsError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            location=None,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")
+            ),
+            sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+            properties={"owner": "fokko"},
+        )
+    assert "Table already exists" in str(e.value)
+
+
+def test_create_table_if_not_exists_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -515,33 +532,24 @@ def test_create_table_409(
         status_code=409,
         request_headers=TEST_HEADERS,
     )
-    rest_mock.get(
-        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
-        json=example_table_metadata_with_snapshot_v1_rest_json,
-        status_code=200,
-        request_headers=TEST_HEADERS,
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.create_table_if_not_exists(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=None,
+        partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
     )
-
-    def _create_table(_fail_if_exists: bool) -> Table:
-        return RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(
-            identifier=("fokko", "fokko2"),
-            schema=table_schema_simple,
-            location=None,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")
-            ),
-            sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
-            properties={"owner": "fokko"},
-            fail_if_exists=_fail_if_exists,
-        )
-
-    if expected_exception:
-        with pytest.raises(expected_exception) as e:
-            _create_table(_fail_if_exists=fail_if_exists)
-        assert "Table already exists" in str(e.value)
-    else:
-        table = _create_table(_fail_if_exists=fail_if_exists)
-        assert table.identifier == ("rest", "fokko", "fokko2")
+    expected = Table(
+        identifier=("rest", "fokko", "fokko2"),
+        metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    assert actual == expected
 
 
 def test_register_table_200(
