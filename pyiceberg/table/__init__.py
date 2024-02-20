@@ -84,11 +84,7 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
 )
-from pyiceberg.table.name_mapping import (
-    NameMapping,
-    create_mapping_from_schema,
-    parse_mapping_from_json,
-)
+from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json, update_mapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
     Operation,
@@ -994,12 +990,12 @@ class Table:
         """
         return UpdateSnapshot(self)
 
-    def name_mapping(self) -> NameMapping:
+    def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
         if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
             return parse_mapping_from_json(name_mapping_json)
         else:
-            return create_mapping_from_schema(self.schema())
+            return None
 
     def append(self, df: pa.Table) -> None:
         """
@@ -1949,6 +1945,12 @@ class UpdateSchema:
                 )
             else:
                 updates = (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)  # type: ignore
+
+            if name_mapping := self._table.name_mapping():
+                updated_name_mapping = update_mapping(name_mapping, self._updates, self._adds)
+                updates += (  # type: ignore
+                    SetPropertiesUpdate(updates={TableProperties.DEFAULT_NAME_MAPPING: updated_name_mapping.model_dump_json()}),
+                )
 
             if self._transaction is not None:
                 self._transaction._append_updates(*updates)  # pylint: disable=W0212
