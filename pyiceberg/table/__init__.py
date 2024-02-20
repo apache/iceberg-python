@@ -1022,7 +1022,7 @@ class Table:
         with self.update_snapshot().fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot._commit_uuid, df=df)
+                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
@@ -2377,7 +2377,6 @@ class _MergingSnapshotProducer:
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
-    _commit_uuid: uuid.UUID
     _transaction: Optional[Transaction]
 
     def __init__(
@@ -2387,13 +2386,13 @@ class _MergingSnapshotProducer:
         commit_uuid: Optional[uuid.UUID] = None,
         transaction: Optional[Transaction] = None,
     ) -> None:
+        self.commit_uuid = commit_uuid or uuid.uuid4()
         self._operation = operation
         self._table = table
         self._snapshot_id = table.new_snapshot_id()
         # Since we only support the main branch for now
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_data_files = []
-        self._commit_uuid = commit_uuid or uuid.uuid4()
         self._transaction = transaction
 
     def __enter__(self) -> _MergingSnapshotProducer:
@@ -2417,7 +2416,7 @@ class _MergingSnapshotProducer:
     def _manifests(self) -> List[ManifestFile]:
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
-                output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
+                output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self.commit_uuid)
                 with write_manifest(
                     format_version=self._table.format_version,
                     spec=self._table.spec(),
@@ -2443,7 +2442,7 @@ class _MergingSnapshotProducer:
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
-                output_file_location = _new_manifest_path(location=self._table.location(), num=1, commit_uuid=self._commit_uuid)
+                output_file_location = _new_manifest_path(location=self._table.location(), num=1, commit_uuid=self.commit_uuid)
 
                 with write_manifest(
                     format_version=self._table.format_version,
@@ -2487,7 +2486,7 @@ class _MergingSnapshotProducer:
         summary = self._summary()
 
         manifest_list_file_path = _generate_manifest_list_path(
-            location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
+            location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self.commit_uuid
         )
         with write_manifest_list(
             format_version=self._table.metadata.format_version,
