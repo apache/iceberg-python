@@ -563,10 +563,10 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
 def test_create_table_if_not_exists_200(
     rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
 ) -> None:
-    def json_callback() -> Callable[[Any, Any], dict[str, Any]]:
+    def json_callback() -> Callable[[Any, Any], Dict[str, Any]]:
         call_count = 0
 
-        def callback(request: Any, context: Any) -> dict[str, Any]:
+        def callback(request: Any, context: Any) -> Dict[str, Any]:
             nonlocal call_count
             call_count += 1
 
