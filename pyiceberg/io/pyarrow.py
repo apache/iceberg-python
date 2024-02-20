@@ -1714,7 +1714,7 @@ def fill_parquet_file_metadata(
     data_file.split_offsets = split_offsets
 
 
-def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+def write_file(table: Table, tasks: Iterator[WriteTask], file_schema: Optional[Schema] = None) -> Iterator[DataFile]:
     task = next(tasks)
 
     try:
@@ -1727,7 +1727,8 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table.properties)
 
     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
-    file_schema = schema_to_pyarrow(table.schema())
+    file_schema = file_schema or table.schema()
+    arrow_file_schema = schema_to_pyarrow(file_schema)
 
     fo = table.io.new_output(file_path)
     row_group_size = PropertyUtil.property_as_int(
@@ -1736,7 +1737,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
         default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
     )
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, **parquet_writer_kwargs) as writer:
+        with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
             writer.write_table(task.df, row_group_size=row_group_size)
 
     data_file = DataFile(
@@ -1758,8 +1759,8 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     fill_parquet_file_metadata(
         data_file=data_file,
         parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(table.schema(), table.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+        stats_columns=compute_statistics_plan(file_schema, table.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
     )
     return iter([data_file])
 
