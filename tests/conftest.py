@@ -31,6 +31,7 @@ import socket
 import string
 import uuid
 from datetime import datetime
+from pathlib import Path
 from random import choice
 from tempfile import TemporaryDirectory
 from typing import (
@@ -1927,6 +1928,11 @@ def example_task(data_file: str) -> FileScanTask:
     return FileScanTask(
         data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
     )
+
+
+@pytest.fixture(scope="session")
+def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("test_sql")
 
 
 @pytest.fixture

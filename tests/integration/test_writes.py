@@ -15,21 +15,27 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import os
+import time
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+import pytz
 from pyarrow.fs import S3FileSystem
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
+from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -573,3 +579,100 @@ def test_summaries_with_only_nulls(
         'total-position-deletes': '0',
         'total-records': '0',
     }
+
+
+@pytest.mark.integration
+def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> None:
+    os.environ['TZ'] = 'Etc/UTC'
+    time.tzset()
+    tz = pytz.timezone(os.environ['TZ'])
+
+    catalog = SqlCatalog("test_sql_catalog", uri="sqlite:///:memory:", warehouse=f"/{warehouse}")
+    catalog.create_namespace("default")
+
+    identifier = "default.arrow_table_v1_with_null"
+    tbl = _create_table(catalog, identifier, {}, [arrow_table_with_null])
+    location = tbl.metadata_location
+
+    import duckdb
+
+    duckdb.sql('INSTALL iceberg; LOAD iceberg;')
+    result = duckdb.sql(
+        f"""
+    SELECT *
+    FROM iceberg_scan('{location}')
+    """
+    ).fetchall()
+
+    assert result == [
+        (
+            False,
+            'a',
+            'aaaaaaaaaaaaaaaaaaaaaa',
+            1,
+            1,
+            0.0,
+            0.0,
+            datetime(2023, 1, 1, 19, 25),
+            datetime(2023, 1, 1, 19, 25, tzinfo=tz),
+            date(2023, 1, 1),
+            b'\x01',
+            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+        ),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
+        (
+            True,
+            'z',
+            'zzzzzzzzzzzzzzzzzzzzzz',
+            9,
+            9,
+            0.8999999761581421,
+            0.9,
+            datetime(2023, 3, 1, 19, 25),
+            datetime(2023, 3, 1, 19, 25, tzinfo=tz),
+            date(2023, 3, 1),
+            b'\x12',
+            b'\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11',
+        ),
+    ]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    pa_table = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+        },
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+    )
+
+    tbl = session_catalog.create_table(
+        identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)}
+    )
+
+    pa_table_with_column = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+            'bar': [19, None, 25],
+        },
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
+    )
+
+    with tbl.transaction() as txn:
+        with txn.update_schema() as schema_txn:
+            schema_txn.union_by_name(pa_table_with_column.schema)
+
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(table=tbl, df=pa_table_with_column, file_schema=txn.schema()):
+                snapshot_update.append_data_file(data_file)
