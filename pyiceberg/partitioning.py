@@ -29,6 +29,7 @@ from typing import (
     Tuple,
     TypeVar,
 )
+from urllib.parse import quote
 
 from pydantic import (
     BeforeValidator,
@@ -222,7 +223,6 @@ class PartitionSpec(IcebergBaseModel):
 
             partition_field = self.fields[pos]  # partition field
             value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=value)
-            from urllib.parse import quote
 
             value_str = quote(value_str, safe='')
             value_strs.append(value_str)
@@ -369,10 +369,9 @@ class PartitionFieldValue:
 
 @dataclass(frozen=True)
 class PartitionKey:
-    raw_partition_field_values: list[PartitionFieldValue]
+    raw_partition_field_values: List[PartitionFieldValue]
     partition_spec: PartitionSpec
     schema: Schema
-    from functools import cached_property
 
     @cached_property
     def partition(self) -> Record:  # partition key in iceberg type
@@ -382,8 +381,8 @@ class PartitionKey:
             assert len(partition_fields) == 1
             partition_field = partition_fields[0]
             iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
-            _iceberg_typed_value = iceberg_typed_value(iceberg_type, raw_partition_field_value.value)
-            transformed_value = partition_field.transform.transform(iceberg_type)(_iceberg_typed_value)
+            iceberg_typed_value = _to_iceberg_type(iceberg_type, raw_partition_field_value.value)
+            transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
             iceberg_typed_key_values[partition_field.name] = transformed_value
         return Record(**iceberg_typed_key_values)
 
@@ -392,21 +391,21 @@ class PartitionKey:
 
 
 @singledispatch
-def iceberg_typed_value(type: IcebergType, value: Any) -> Any:
+def _to_iceberg_type(type: IcebergType, value: Any) -> Any:
     return TypeError(f"Unsupported partition field type: {type}")
 
 
-@iceberg_typed_value.register(TimestampType)
-@iceberg_typed_value.register(TimestamptzType)
+@_to_iceberg_type.register(TimestampType)
+@_to_iceberg_type.register(TimestamptzType)
 def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
     return datetime_to_micros(value) if value is not None else None
 
 
-@iceberg_typed_value.register(DateType)
+@_to_iceberg_type.register(DateType)
 def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
     return date_to_days(value) if value is not None else None
 
 
-@iceberg_typed_value.register(PrimitiveType)
+@_to_iceberg_type.register(PrimitiveType)
 def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
     return value

@@ -16,11 +16,13 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 from datetime import date, datetime
-from typing import Any
+from decimal import Decimal
+from typing import Any, List
 
 import pytest
 import pytz
 from pyspark.sql import SparkSession
+from pyspark.sql.utils import AnalysisException
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError
@@ -40,6 +42,7 @@ from pyiceberg.types import (
     BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
     FixedType,
     FloatType,
@@ -136,6 +139,7 @@ TABLE_SCHEMA = Schema(
     # NestedField(field_id=12, name="uuid", field_type=UuidType(), required=False),
     NestedField(field_id=11, name="binary_field", field_type=BinaryType(), required=False),
     NestedField(field_id=12, name="fixed_field", field_type=FixedType(16), required=False),
+    NestedField(field_id=13, name="decimal", field_type=DecimalType(5, 2), required=False),
 )
 
 
@@ -330,6 +334,25 @@ identifier = "default.test_table"
             f"""INSERT INTO {identifier}
             VALUES
             (CAST('example' AS BINARY), 'Associated string value for binary `example`')
+            """,
+        ),
+        (
+            [PartitionField(source_id=13, field_id=1001, transform=IdentityTransform(), name="decimal_field")],
+            [Decimal('123.45')],
+            Record(decimal_field=Decimal('123.45')),
+            "decimal_field=123.45",
+            f"""CREATE TABLE {identifier} (
+                decimal_field decimal(5,2),
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(decimal_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (123.45, 'Associated string value for decimal 123.45')
             """,
         ),
         # Year Month Day Hour Transform
@@ -533,7 +556,7 @@ identifier = "default.test_table"
             "bigint_field_trunc=4294967296",
             f"""CREATE TABLE {identifier} (
                 bigint_field bigint,
-                other_data string
+                string_field string
             )
             USING iceberg
             PARTITIONED BY (
@@ -552,7 +575,7 @@ identifier = "default.test_table"
             "string_field_trunc=abc",
             f"""CREATE TABLE {identifier} (
                 string_field string,
-                other_data string
+                another_string_field string
             )
             USING iceberg
             PARTITIONED BY (
@@ -564,7 +587,25 @@ identifier = "default.test_table"
             ('abcdefg', 'Another sample for string');
             """,
         ),
-        # it seems the transform.tohumanstring does take a bytes type which means i do not need to do extra conversion in iceberg_typed_value() for BinaryType
+        (
+            [PartitionField(source_id=13, field_id=1001, transform=TruncateTransform(width=5), name="decimal_field_trunc")],
+            [Decimal('678.93')],
+            Record(decimal_field_trunc=Decimal('678.90')),
+            "decimal_field_trunc=678.90",  # Assuming truncation width of 1 leads to truncating to 670
+            f"""CREATE TABLE {identifier} (
+                decimal_field decimal(5,2),
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                truncate(decimal_field, 2)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (678.90, 'Associated string value for decimal 678.90')
+            """,
+        ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(10), name="binary_field_trunc")],
             [b'HELLOICEBERG'],
@@ -572,7 +613,7 @@ identifier = "default.test_table"
             "binary_field_trunc=SEVMTE9JQ0VCRQ%3D%3D",
             f"""CREATE TABLE {identifier} (
                 binary_field binary,
-                other_data string
+                string_field string
             )
             USING iceberg
             PARTITIONED BY (
@@ -592,7 +633,7 @@ identifier = "default.test_table"
             "int_field_bucket=0",
             f"""CREATE TABLE {identifier} (
                 int_field int,
-                other_data string
+                string_field string
             )
             USING iceberg
             PARTITIONED BY (
@@ -638,8 +679,8 @@ identifier = "default.test_table"
 def test_partition_key(
     session_catalog: Catalog,
     spark: SparkSession,
-    partition_fields: list[PartitionField],
-    partition_values: list[Any],
+    partition_fields: List[PartitionField],
+    partition_values: List[Any],
     expected_partition_record: Record,
     expected_hive_partition_path_slice: str,
     spark_create_table_sql_for_justification: str,
@@ -653,16 +694,12 @@ def test_partition_key(
         partition_spec=spec,
         schema=TABLE_SCHEMA,
     )
-    # print(f"{key.partition=}")
-    # print(f"{key.to_path()=}")
-    # this affects the metadata in DataFile and all above layers
+    # key.partition is used to write the metadata in DataFile, ManifestFile and all above layers
     assert key.partition == expected_partition_record
-    # this affects the hive partitioning part in the parquet file path
+    # key.to_path() generates the hive partitioning part of the to-write parquet file path
     assert key.to_path() == expected_hive_partition_path_slice
 
-    from pyspark.sql.utils import AnalysisException
-
-    # verify expected values are not made up but conform to spark behaviors
+    # Justify expected values are not made up but conform to spark behaviors
     if spark_create_table_sql_for_justification is not None and spark_data_insert_sql_for_justification is not None:
         try:
             spark.sql(f"drop table {identifier}")
@@ -675,9 +712,11 @@ def test_partition_key(
         iceberg_table = session_catalog.load_table(identifier=identifier)
         snapshot = iceberg_table.current_snapshot()
         assert snapshot
-        verify_partition = snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.partition
-        verify_path = snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
-        # print(f"{verify_partition=}")
-        # print(f"{verify_path=}")
-        assert verify_partition == expected_partition_record
-        assert expected_hive_partition_path_slice in verify_path
+        spark_partition_for_justification = (
+            snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.partition
+        )
+        spark_path_for_justification = (
+            snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
+        )
+        assert spark_partition_for_justification == expected_partition_record
+        assert expected_hive_partition_path_slice in spark_path_for_justification
