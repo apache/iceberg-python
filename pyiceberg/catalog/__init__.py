@@ -767,6 +767,10 @@ class Catalog(ABC):
             new_schema = assign_fresh_schema_ids(schema_or_type=new_schema, base_schema=table.schema())
             tx._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
             tx._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
+            # TODO Update sort order
+            # new_sort_order = assign_fresh_sort_order_ids(sort_order=new_sort_order, old_schema=base_schema, fresh_schema=new_schema, sort_order_id=table.sort_order().order_id + 1)
+            # tx._append_updates(AddSortOrderUpdate(sort_order=new_sort_order))
+            # tx._append_updates(SetDefaultSortOrderUpdate(sort_order_id=-1))
             # Update table properties
             tx.set_properties(**new_properties)
             # Update table location
