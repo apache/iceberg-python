@@ -689,26 +689,15 @@ def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
     return visitor.struct(obj, results)
 
 
-def process_list_type(obj: Union[pa.ListType, pa.LargeListType, pa.FixedSizeListType], visitor: PyArrowSchemaVisitor[T]) -> T:
+@visit_pyarrow.register(pa.ListType)
+@visit_pyarrow.register(pa.FixedSizeListType)
+@visit_pyarrow.register(pa.LargeListType)
+def _(obj: Union[pa.ListType, pa.LargeListType, pa.FixedSizeListType], visitor: PyArrowSchemaVisitor[T]) -> T:
     visitor.before_list_element(obj.value_field)
     result = visit_pyarrow(obj.value_type, visitor)
     visitor.after_list_element(obj.value_field)
+
     return visitor.list(obj, result)
-
-
-@visit_pyarrow.register(pa.ListType)
-def _(obj: pa.ListType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    return process_list_type(obj, visitor)
-
-
-@visit_pyarrow.register(pa.LargeListType)
-def _(obj: pa.LargeListType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    return process_list_type(obj, visitor)
-
-
-@visit_pyarrow.register(pa.FixedSizeListType)
-def _(obj: pa.FixedSizeListType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    return process_list_type(obj, visitor)
 
 
 @visit_pyarrow.register(pa.MapType)
