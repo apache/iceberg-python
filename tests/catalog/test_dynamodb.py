@@ -177,6 +177,18 @@ def test_create_duplicated_table(
 
 
 @mock_aws
+def test_create_table_if_not_exists_duplicated_table(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    table1 = test_catalog.create_table(identifier, table_schema_nested)
+    table2 = test_catalog.create_table_if_not_exists(identifier, table_schema_nested)
+    assert table1.identifier == table2.identifier
+
+
+@mock_aws
 def test_load_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:

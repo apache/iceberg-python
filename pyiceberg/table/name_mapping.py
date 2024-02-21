@@ -26,7 +26,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import ChainMap
 from functools import cached_property, singledispatch
-from typing import Any, Dict, Generic, List, TypeVar, Union
+from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 
 from pydantic import Field, conlist, field_validator, model_serializer
 
@@ -44,6 +44,18 @@ class MappedField(IcebergBaseModel):
     @classmethod
     def convert_null_to_empty_List(cls, v: Any) -> Any:
         return v or []
+
+    @field_validator('names', mode='after')
+    @classmethod
+    def check_at_least_one(cls, v: List[str]) -> Any:
+        """
+        Conlist constraint does not seem to be validating the class on instantiation.
+
+        Adding a custom validator to enforce min_length=1 constraint.
+        """
+        if len(v) < 1:
+            raise ValueError("At least one mapped name must be provided for the field")
+        return v
 
     @model_serializer
     def ser_model(self) -> Dict[str, Any]:
@@ -93,24 +105,25 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
             return "[\n  " + "\n  ".join([str(e) for e in self.root]) + "\n]"
 
 
+S = TypeVar('S')
 T = TypeVar("T")
 
 
-class NameMappingVisitor(Generic[T], ABC):
+class NameMappingVisitor(Generic[S, T], ABC):
     @abstractmethod
-    def mapping(self, nm: NameMapping, field_results: T) -> T:
+    def mapping(self, nm: NameMapping, field_results: S) -> S:
         """Visit a NameMapping."""
 
     @abstractmethod
-    def fields(self, struct: List[MappedField], field_results: List[T]) -> T:
+    def fields(self, struct: List[MappedField], field_results: List[T]) -> S:
         """Visit a List[MappedField]."""
 
     @abstractmethod
-    def field(self, field: MappedField, field_result: T) -> T:
+    def field(self, field: MappedField, field_result: S) -> T:
         """Visit a MappedField."""
 
 
-class _IndexByName(NameMappingVisitor[Dict[str, MappedField]]):
+class _IndexByName(NameMappingVisitor[Dict[str, MappedField], Dict[str, MappedField]]):
     def mapping(self, nm: NameMapping, field_results: Dict[str, MappedField]) -> Dict[str, MappedField]:
         return field_results
 
@@ -129,18 +142,18 @@ class _IndexByName(NameMappingVisitor[Dict[str, MappedField]]):
 
 
 @singledispatch
-def visit_name_mapping(obj: Union[NameMapping, List[MappedField], MappedField], visitor: NameMappingVisitor[T]) -> T:
+def visit_name_mapping(obj: Union[NameMapping, List[MappedField], MappedField], visitor: NameMappingVisitor[S, T]) -> S:
     """Traverse the name mapping in post-order traversal."""
     raise NotImplementedError(f"Cannot visit non-type: {obj}")
 
 
 @visit_name_mapping.register(NameMapping)
-def _(obj: NameMapping, visitor: NameMappingVisitor[T]) -> T:
+def _(obj: NameMapping, visitor: NameMappingVisitor[S, T]) -> S:
     return visitor.mapping(obj, visit_name_mapping(obj.root, visitor))
 
 
 @visit_name_mapping.register(list)
-def _(fields: List[MappedField], visitor: NameMappingVisitor[T]) -> T:
+def _(fields: List[MappedField], visitor: NameMappingVisitor[S, T]) -> S:
     results = [visitor.field(field, visit_name_mapping(field.fields, visitor)) for field in fields]
     return visitor.fields(fields, results)
 
@@ -175,5 +188,71 @@ class _CreateMapping(SchemaVisitor[List[MappedField]]):
         return []
 
 
+class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
+    _updates: Dict[int, NestedField]
+    _adds: Dict[int, List[NestedField]]
+
+    def __init__(self, updates: Dict[int, NestedField], adds: Dict[int, List[NestedField]]):
+        self._updates = updates
+        self._adds = adds
+
+    @staticmethod
+    def _remove_reassigned_names(field: MappedField, assignments: Dict[str, int]) -> Optional[MappedField]:
+        removed_names = set()
+        for name in field.names:
+            if (assigned_id := assignments.get(name)) and assigned_id != field.field_id:
+                removed_names.add(name)
+
+        remaining_names = [f for f in field.names if f not in removed_names]
+        if remaining_names:
+            return MappedField(field_id=field.field_id, names=remaining_names, fields=field.fields)
+        else:
+            return None
+
+    def _add_new_fields(self, mapped_fields: List[MappedField], parent_id: int) -> List[MappedField]:
+        if fields_to_add := self._adds.get(parent_id):
+            fields: List[MappedField] = []
+            new_fields: List[MappedField] = []
+
+            for add in fields_to_add:
+                new_fields.append(
+                    MappedField(field_id=add.field_id, names=[add.name], fields=visit(add.field_type, _CreateMapping()))
+                )
+
+            reassignments = {f.name: f.field_id for f in fields_to_add}
+            fields = [
+                updated_field
+                for field in mapped_fields
+                if (updated_field := self._remove_reassigned_names(field, reassignments)) is not None
+            ] + new_fields
+            return fields
+        else:
+            return mapped_fields
+
+    def mapping(self, nm: NameMapping, field_results: List[MappedField]) -> List[MappedField]:
+        return self._add_new_fields(field_results, -1)
+
+    def fields(self, struct: List[MappedField], field_results: List[MappedField]) -> List[MappedField]:
+        reassignments: Dict[str, int] = {
+            update.name: update.field_id for f in field_results if (update := self._updates.get(f.field_id))
+        }
+        return [
+            updated_field
+            for field in field_results
+            if (updated_field := self._remove_reassigned_names(field, reassignments)) is not None
+        ]
+
+    def field(self, field: MappedField, field_result: List[MappedField]) -> MappedField:
+        field_names = field.names
+        if (update := self._updates.get(field.field_id)) is not None and update.name not in field_names:
+            field_names.append(update.name)
+
+        return MappedField(field_id=field.field_id, names=field_names, fields=self._add_new_fields(field_result, field.field_id))
+
+
 def create_mapping_from_schema(schema: Schema) -> NameMapping:
     return NameMapping(visit(schema, _CreateMapping()))
+
+
+def update_mapping(mapping: NameMapping, updates: Dict[int, NestedField], adds: Dict[int, List[NestedField]]) -> NameMapping:
+    return NameMapping(visit_name_mapping(mapping, _UpdateMapping(updates, adds)))
