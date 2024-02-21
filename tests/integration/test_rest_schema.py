@@ -22,7 +22,8 @@ from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError, ValidationError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, prune_columns
-from pyiceberg.table import Table, UpdateSchema
+from pyiceberg.table import Table, TableProperties, UpdateSchema
+from pyiceberg.table.name_mapping import MappedField, NameMapping, create_mapping_from_schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
@@ -73,7 +74,11 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema) -> Table:
         catalog.drop_table(tbl_name)
     except NoSuchTableError:
         pass
-    return catalog.create_table(identifier=tbl_name, schema=schema)
+    return catalog.create_table(
+        identifier=tbl_name,
+        schema=schema,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
 
 
 @pytest.mark.integration
@@ -674,6 +679,13 @@ def test_rename_simple(simple_table: Table) -> None:
         identifier_field_ids=[2],
     )
 
+    # Check that the name mapping gets updated
+    assert simple_table.name_mapping() == NameMapping([
+        MappedField(field_id=1, names=['foo', 'vo']),
+        MappedField(field_id=2, names=['bar']),
+        MappedField(field_id=3, names=['baz']),
+    ])
+
 
 @pytest.mark.integration
 def test_rename_simple_nested(catalog: Catalog) -> None:
@@ -700,6 +712,11 @@ def test_rename_simple_nested(catalog: Catalog) -> None:
             required=True,
         ),
     )
+
+    # Check that the name mapping gets updated
+    assert tbl.name_mapping() == NameMapping([
+        MappedField(field_id=1, names=['foo'], fields=[MappedField(field_id=2, names=['bar', 'vo'])]),
+    ])
 
 
 @pytest.mark.integration
