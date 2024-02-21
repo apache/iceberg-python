@@ -168,7 +168,7 @@ UNSORTED_SORT_ORDER_ID = 0
 UNSORTED_SORT_ORDER = SortOrder(order_id=UNSORTED_SORT_ORDER_ID)
 
 
-def assign_fresh_sort_order_ids(sort_order: SortOrder, old_schema: Schema, fresh_schema: Schema) -> SortOrder:
+def assign_fresh_sort_order_ids(sort_order: SortOrder, old_schema: Schema, fresh_schema: Schema, sort_order_id: Optional[int] = None) -> SortOrder:
     if sort_order.is_unsorted:
         return UNSORTED_SORT_ORDER
 
@@ -189,4 +189,4 @@ def assign_fresh_sort_order_ids(sort_order: SortOrder, old_schema: Schema, fresh
             )
         )
 
-    return SortOrder(*fresh_fields, order_id=INITIAL_SORT_ORDER_ID)
+    return SortOrder(*fresh_fields, order_id=sort_order_id if sort_order_id is not None else INITIAL_SORT_ORDER_ID)
