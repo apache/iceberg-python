@@ -3960,6 +3960,20 @@ files = [
 mpmath = ">=0.19"
 
 [[package]]
+name = "tenacity"
+version = "8.2.3"
+description = "Retry code until it succeeds"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "tenacity-8.2.3-py3-none-any.whl", hash = "sha256:ce510e327a630c9e1beaf17d42e6ffacc88185044ad85cf74c0a8887c6a0f88c"},
+    {file = "tenacity-8.2.3.tar.gz", hash = "sha256:5398ef0d78e63f40007c1fb4c0bff96e1911394d2fa8d194f77619c05ff6cc8a"},
+]
+
+[package.extras]
+doc = ["reno", "sphinx", "tornado (>=4.5)"]
+
+[[package]]
 name = "thrift"
 version = "0.16.0"
 description = "Python bindings for the Apache Thrift RPC system"
@@ -4389,4 +4403,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "66aa829e7154eccfc288017b07e1ee26fa460d8d81048d7a45ede9eb1a09d347"
+content-hash = "e56883bd2961705dffa548c4a32f2d4215a646de149e12aa519df336ede48076"

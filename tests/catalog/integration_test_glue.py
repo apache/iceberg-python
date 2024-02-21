@@ -200,6 +200,15 @@ def test_create_duplicated_table(test_catalog: Catalog, table_schema_nested: Sch
         test_catalog.create_table((database_name, table_name), table_schema_nested)
 
 
+def test_create_table_if_not_exists_duplicated_table(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    test_catalog.create_namespace(database_name)
+    table1 = test_catalog.create_table((database_name, table_name), table_schema_nested)
+    table2 = test_catalog.create_table_if_not_exists((database_name, table_name), table_schema_nested)
+    assert table1.identifier == table2.identifier
+
+
 def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
