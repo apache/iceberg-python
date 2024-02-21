@@ -116,7 +116,7 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
 
-NAMESPACE_SEPARATOR = b"\x1F".decode(UTF8)
+NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
 
 def _retry_hook(retry_state: RetryCallState) -> None:
