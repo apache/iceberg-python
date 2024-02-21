@@ -739,10 +739,9 @@ class Catalog(ABC):
             new_schema = assign_fresh_schema_ids(schema_or_type=new_schema, base_schema=table.schema())
             tx._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
             tx._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
-            # TODO Update partition spec
-            # TODO Update sort order
             # Update table properties
             tx.set_properties(**new_properties)
+            # Update table location
             if new_location is not None:
                 tx.update_location(new_location)
             tx._append_requirements(AssertTableUUID(uuid=table.metadata.table_uuid))

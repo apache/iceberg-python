@@ -52,12 +52,13 @@ from pyiceberg.table import (
     SetCurrentSchemaUpdate,
     Table,
     TableIdentifier,
+    update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
+from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT
-from pyiceberg.types import IntegerType, LongType, NestedField
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, LongType, MapType, NestedField, StringType, StructType
 
 
 class InMemoryCatalog(Catalog):
@@ -99,6 +100,7 @@ class InMemoryCatalog(Catalog):
                 "last-updated-ms": 1602638573874,
                 "last-column-id": schema.highest_field_id,
                 "schema": schema.model_dump(),
+                "current_schema_id": schema.schema_id,
                 "partition-spec": partition_spec.model_dump()["fields"],
                 "properties": properties,
                 "current-snapshot-id": -1,
@@ -118,36 +120,12 @@ class InMemoryCatalog(Catalog):
         raise NotImplementedError
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        new_metadata: Optional[TableMetadata] = None
-        metadata_location = ""
-        for update in table_request.updates:
-            if isinstance(update, AddSchemaUpdate):
-                add_schema_update: AddSchemaUpdate = update
-                identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
-                table = self.__tables[identifier]
-                new_metadata = new_table_metadata(
-                    add_schema_update.schema_,
-                    table.metadata.partition_specs[0],
-                    table.sort_order(),
-                    table.location(),
-                    table.properties,
-                    table.metadata.table_uuid,
-                )
-
-                table = Table(
-                    identifier=identifier,
-                    metadata=new_metadata,
-                    metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                    io=load_file_io(),
-                    catalog=self,
-                )
-
-                self.__tables[identifier] = table
-                metadata_location = f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json'
-
+        identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
+        table = self.__tables[identifier]
+        table.metadata = update_table_metadata(base_metadata=table.metadata, updates=table_request.updates)
         return CommitTableResponse(
-            metadata=new_metadata.model_dump() if new_metadata else {},
-            metadata_location=metadata_location if metadata_location else "",
+            metadata=table.metadata.model_dump(),
+            metadata_location=table.location(),
         )
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -617,8 +595,9 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
 
     # Then
     assert response.metadata.table_uuid == given_table.metadata.table_uuid
-    assert len(response.metadata.schemas) == 1
-    assert response.metadata.schemas[0] == new_schema
+    assert len(response.metadata.schemas) == 2
+    assert response.metadata.schemas[1] == new_schema
+    assert response.metadata.current_schema_id == new_schema.schema_id
 
 
 def test_add_column(catalog: InMemoryCatalog) -> None:
@@ -682,3 +661,77 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
     assert s == "test.in.memory.catalog (<class 'test_base.InMemoryCatalog'>)"
+
+
+def test_catalog_create_or_replace_table(catalog: InMemoryCatalog, table_schema_nested: Schema) -> None:
+    # Given
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=table_schema_nested,
+        location=TEST_TABLE_LOCATION,
+        partition_spec=PartitionSpec(PartitionField(name="foo", transform=IdentityTransform(), source_id=1, field_id=1000)),
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    highest_field_id = table_schema_nested.highest_field_id
+    # new schema with all IntergerType changed to LongType, added new field 'another_person'
+    new_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=4,
+            name="qux",
+            field_type=ListType(element_id=5, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=6,
+            name="quux",
+            field_type=MapType(
+                key_id=7,
+                key_type=StringType(),
+                value_id=8,
+                value_type=MapType(key_id=9, key_type=StringType(), value_id=10, value_type=LongType(), value_required=True),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=11,
+            name="location",
+            field_type=ListType(
+                element_id=12,
+                element_type=StructType(
+                    NestedField(field_id=13, name="latitude", field_type=FloatType(), required=False),
+                    NestedField(field_id=14, name="longitude", field_type=FloatType(), required=False),
+                ),
+                element_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=highest_field_id + 1,
+            name="another_person",
+            field_type=StructType(
+                NestedField(field_id=highest_field_id + 2, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=highest_field_id + 3, name="age", field_type=LongType(), required=True),
+            ),
+            required=False,
+        ),
+        schema_id=table_schema_nested.schema_id + 1,
+        identifier_field_ids=[2],
+    )
+
+    # When
+    new_table = catalog.create_or_replace_table(
+        identifier=table.identifier,
+        schema=new_schema,
+        partition_spec=table.spec(),
+        sort_order=table.sort_order(),
+        properties=table.properties,
+    )
+    # Then
+    assert new_table.schema() == new_schema
+    assert new_table.spec() == table.spec()
+    assert new_table.sort_order() == table.sort_order()
+    assert new_table.properties == table.properties
