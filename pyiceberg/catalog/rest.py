@@ -132,19 +132,6 @@ _RETRY_ARGS = {
 }
 
 
-def _retry_hook(retry_state: RetryCallState) -> None:
-    rest_catalog: RestCatalog = retry_state.args[0]
-    rest_catalog._refresh_token()  # pylint: disable=protected-access
-
-
-_RETRY_ARGS = {
-    "retry": retry_if_exception_type(AuthorizationExpiredError),
-    "stop": stop_after_attempt(2),
-    "before": _retry_hook,
-    "reraise": True,
-}
-
-
 class TableResponse(IcebergBaseModel):
     metadata_location: str = Field(alias="metadata-location")
     metadata: TableMetadata
