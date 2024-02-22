@@ -1,0 +1,5 @@
+exclude:
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder
+  kind: CLASS_REMOVED_BASE
+- obj_path: pyiceberg.table.create_mapping_from_schema
+  kind: OBJECT_REMOVED

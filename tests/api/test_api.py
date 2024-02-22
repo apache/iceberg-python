@@ -17,14 +17,18 @@
 
 import re
 import subprocess
+from collections import namedtuple
+from importlib import resources
 
 import griffe
 import pytest
+import yaml
 from griffe.exceptions import GitError
 
+Exclusion = namedtuple('Exclusion', 'obj_path, kind')
 
-@pytest.mark.api
-def test_breaking_change() -> None:
+
+def fetch_tags() -> None:
     check_if_upstream = subprocess.run(
         ["git", "remote", "get-url", "origin"],
         text=True,
@@ -48,6 +52,8 @@ def test_breaking_change() -> None:
     if fetch_tags.returncode != 0:
         raise GitError(f"Cannot fetch Git tags with command: {fetch_cmd} from origin: {origin}")
 
+
+def get_latest_release() -> str:
     list_tags = subprocess.run(
         ["git", "tag", "-l", "--sort=-version:refname"],
         text=True,
@@ -64,13 +70,40 @@ def test_breaking_change() -> None:
     p = re.compile(r"^pyiceberg-\d+.\d+.\d+$")
 
     releases = [t for t in tags if p.match(t)]
+    return releases[0]
 
-    previous = griffe.load_git("pyiceberg", ref=releases[0])
-    current = griffe.load_git("pyiceberg")
+
+@pytest.mark.api
+def test_breaking_change() -> None:
+    """
+    Check for breaking changes since the latest release.
+
+    We first fetch the tags from the parent repository, to get
+    the commit reference of the latest release. Then, we check for
+    breaking changes that aren't specified in the exclusion list.
+
+    If a breaking change is intended, the Exclusion can be added as:
+    ```
+    - obj_path: pyiceberg.path_to_object
+      kind: griffe.enumerations.BreakageKind.name
+    ```
+    to the corresponding "tests.api.exclude.<release>.yaml" file.
+    """
+    fetch_tags()
+    latest_release = get_latest_release()
+
+    previous = griffe.load_git("pyiceberg", ref=latest_release)
+    current = griffe.load("pyiceberg")
+
+    with resources.files("tests.api.exclude").joinpath(f"{latest_release}.yaml").open("r") as exclude_file:
+        exclusion_list = yaml.safe_load(exclude_file)["exclude"]
+
+    exclusion_set = {Exclusion(**x) for x in exclusion_list}
 
     breaking_changes = []
 
     for breakage in griffe.find_breaking_changes(previous, current):
-        breaking_changes.append(breakage.as_dict())
+        if Exclusion(obj_path=breakage.obj.path, kind=breakage.kind.name) not in exclusion_set:
+            breaking_changes.append(breakage.as_dict())
 
-    assert not breaking_changes, f"Total of {len(breaking_changes)} breaking API changes since {releases[0]}"
+    assert not breaking_changes, f"Total of {len(breaking_changes)} breaking API changes since {latest_release}"
