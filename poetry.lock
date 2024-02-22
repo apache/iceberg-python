@@ -1591,21 +1591,21 @@ testing = ["flufl.flake8", "importlib-resources (>=1.3)", "packaging", "pyfakefs
 
 [[package]]
 name = "importlib-resources"
-version = "5.13.0"
+version = "6.1.1"
 description = "Read resources from Python packages"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "importlib_resources-5.13.0-py3-none-any.whl", hash = "sha256:9f7bd0c97b79972a6cce36a366356d16d5e13b09679c11a58f1014bfdf8e64b2"},
-    {file = "importlib_resources-5.13.0.tar.gz", hash = "sha256:82d5c6cca930697dbbd86c93333bb2c2e72861d4789a11c2662b933e5ad2b528"},
+    {file = "importlib_resources-6.1.1-py3-none-any.whl", hash = "sha256:e8bf90d8213b486f428c9c39714b920041cb02c184686a3dee24905aaa8105d6"},
+    {file = "importlib_resources-6.1.1.tar.gz", hash = "sha256:3893a00122eafde6894c59914446a512f728a0c1a45f9bb9b63721b6bacf0b4a"},
 ]
 
 [package.dependencies]
 zipp = {version = ">=3.1.0", markers = "python_version < \"3.10\""}
 
 [package.extras]
-docs = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-lint"]
-testing = ["pytest (>=6)", "pytest-black (>=0.3.7)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=2.2)", "pytest-mypy (>=0.9.1)", "pytest-ruff"]
+docs = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "rst.linker (>=1.9)", "sphinx (<7.2.5)", "sphinx (>=3.5)", "sphinx-lint"]
+testing = ["pytest (>=6)", "pytest-black (>=0.3.7)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=2.2)", "pytest-mypy (>=0.9.1)", "pytest-ruff", "zipp (>=3.17)"]
 
 [[package]]
 name = "iniconfig"
@@ -1780,21 +1780,21 @@ format = ["fqdn", "idna", "isoduration", "jsonpointer (>1.13)", "rfc3339-validat
 format-nongpl = ["fqdn", "idna", "isoduration", "jsonpointer (>1.13)", "rfc3339-validator", "rfc3986-validator (>0.1.0)", "uri-template", "webcolors (>=1.11)"]
 
 [[package]]
-name = "jsonschema-spec"
-version = "0.1.3"
+name = "jsonschema-path"
+version = "0.3.2"
 description = "JSONSchema Spec with object-oriented paths"
 optional = false
-python-versions = ">=3.7.0,<4.0.0"
+python-versions = ">=3.8.0,<4.0.0"
 files = [
-    {file = "jsonschema_spec-0.1.3-py3-none-any.whl", hash = "sha256:b3cde007ad65c2e631e2f8653cf187124a2c714d02d9fafbab68ad64bf5745d6"},
-    {file = "jsonschema_spec-0.1.3.tar.gz", hash = "sha256:8d8db7c255e524fab1016a952a9143e5b6e3c074f4ed25d1878f8e97806caec0"},
+    {file = "jsonschema_path-0.3.2-py3-none-any.whl", hash = "sha256:271aedfefcd161a0f467bdf23e1d9183691a61eaabf4b761046a914e369336c7"},
+    {file = "jsonschema_path-0.3.2.tar.gz", hash = "sha256:4d0dababf341e36e9b91a5fb2a3e3fd300b0150e7fe88df4e55cc8253c5a3989"},
 ]
 
 [package.dependencies]
-jsonschema = ">=4.0.0,<5.0.0"
 pathable = ">=0.4.1,<0.5.0"
 PyYAML = ">=5.1"
-typing-extensions = ">=4.3.0,<5.0.0"
+referencing = ">=0.28.0,<0.32.0"
+requests = ">=2.31.0,<3.0.0"
 
 [[package]]
 name = "jsonschema-specifications"
@@ -2439,39 +2439,37 @@ signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
 
 [[package]]
 name = "openapi-schema-validator"
-version = "0.4.3"
+version = "0.6.2"
 description = "OpenAPI schema validation for Python"
 optional = false
-python-versions = ">=3.7.0,<4.0.0"
+python-versions = ">=3.8.0,<4.0.0"
 files = [
-    {file = "openapi_schema_validator-0.4.3-py3-none-any.whl", hash = "sha256:f1eff2a7936546a3ce62b88a17d09de93c9bd229cbc43cb696c988a61a382548"},
-    {file = "openapi_schema_validator-0.4.3.tar.gz", hash = "sha256:6940dba9f4906c97078fea6fd9d5a3a3384207db368c4e32f6af6abd7c5c560b"},
+    {file = "openapi_schema_validator-0.6.2-py3-none-any.whl", hash = "sha256:c4887c1347c669eb7cded9090f4438b710845cd0f90d1fb9e1b3303fb37339f8"},
+    {file = "openapi_schema_validator-0.6.2.tar.gz", hash = "sha256:11a95c9c9017912964e3e5f2545a5b11c3814880681fcacfb73b1759bb4f2804"},
 ]
 
 [package.dependencies]
-jsonschema = ">=4.0.0,<5.0.0"
+jsonschema = ">=4.19.1,<5.0.0"
+jsonschema-specifications = ">=2023.5.2,<2024.0.0"
 rfc3339-validator = "*"
 
 [[package]]
 name = "openapi-spec-validator"
-version = "0.5.5"
+version = "0.7.1"
 description = "OpenAPI 2.0 (aka Swagger) and OpenAPI 3 spec validator"
 optional = false
-python-versions = ">=3.7.0,<4.0.0"
+python-versions = ">=3.8.0,<4.0.0"
 files = [
-    {file = "openapi_spec_validator-0.5.5-py3-none-any.whl", hash = "sha256:93ba247f585e1447214b4207728a7cce3726d148238217be69e6b8725c118fbe"},
-    {file = "openapi_spec_validator-0.5.5.tar.gz", hash = "sha256:3010df5237748e25d7fac2b2aaf13457c1afd02735b2bd6f008a10079c8f443a"},
+    {file = "openapi_spec_validator-0.7.1-py3-none-any.whl", hash = "sha256:3c81825043f24ccbcd2f4b149b11e8231abce5ba84f37065e14ec947d8f4e959"},
+    {file = "openapi_spec_validator-0.7.1.tar.gz", hash = "sha256:8577b85a8268685da6f8aa30990b83b7960d4d1117e901d451b5d572605e5ec7"},
 ]
 
 [package.dependencies]
-importlib-resources = {version = ">=5.8.0,<6.0.0", markers = "python_version < \"3.9\""}
-jsonschema = ">=4.0.0,<5.0.0"
-jsonschema-spec = ">=0.1.1,<0.2.0"
+importlib-resources = {version = ">=5.8,<7.0", markers = "python_version < \"3.9\""}
+jsonschema = ">=4.18.0,<5.0.0"
+jsonschema-path = ">=0.3.1,<0.4.0"
 lazy-object-proxy = ">=1.7.1,<2.0.0"
-openapi-schema-validator = ">=0.4.2,<0.5.0"
-
-[package.extras]
-requests = ["requests"]
+openapi-schema-validator = ">=0.6.0,<0.7.0"
 
 [[package]]
 name = "packaging"
@@ -3377,13 +3375,13 @@ tune = ["fsspec", "pandas", "pyarrow (>=6.0.1)", "requests", "tensorboardX (>=1.
 
 [[package]]
 name = "referencing"
-version = "0.33.0"
+version = "0.31.1"
 description = "JSON Referencing + Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "referencing-0.33.0-py3-none-any.whl", hash = "sha256:39240f2ecc770258f28b642dd47fd74bc8b02484de54e1882b74b35ebd779bd5"},
-    {file = "referencing-0.33.0.tar.gz", hash = "sha256:c775fedf74bc0f9189c2a3be1c12fd03e8c23f4d371dce795df44e06c5b412f7"},
+    {file = "referencing-0.31.1-py3-none-any.whl", hash = "sha256:c19c4d006f1757e3dd75c4f784d38f8698d87b649c54f9ace14e5e8c9667c01d"},
+    {file = "referencing-0.31.1.tar.gz", hash = "sha256:81a1471c68c9d5e3831c30ad1dd9815c45b558e596653db751a2bfdd17b3b9ec"},
 ]
 
 [package.dependencies]
@@ -4373,4 +4371,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "ae2bc43b1789ecb1b25661e80d9e127fff7e80019ce67206cfa253c8a4dbb397"
+content-hash = "b89fff652fddccff644fab9f6524227187866bbfa05183101c68d1121f4e0fa0"

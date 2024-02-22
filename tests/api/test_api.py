@@ -18,9 +18,9 @@
 import re
 import subprocess
 from collections import namedtuple
-from importlib import resources
 
 import griffe
+import importlib_resources as resources
 import pytest
 import yaml
 from griffe.exceptions import GitError

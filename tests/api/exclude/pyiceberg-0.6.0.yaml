@@ -25,3 +25,23 @@ exclude:
   kind: CLASS_REMOVED_BASE
 - obj_path: pyiceberg.table.create_mapping_from_schema
   kind: OBJECT_REMOVED
+- obj_path: pyiceberg.avro.decoder_fast.BinaryDecoder
+  kind: OBJECT_REMOVED
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.tell
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read_int
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read_float
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read_double
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read_utf8
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read_int_bytes_dict
+  kind: RETURN_CHANGED_TYPE
+- obj_path: CythonBinaryDecoder.read_int_bytes_dict
+  kind: RETURN_CHANGED_TYPE
+- obj_path: pyiceberg.avro.decoder_fast.CythonBinaryDecoder.read_bytes
+  kind: RETURN_CHANGED_TYPE
