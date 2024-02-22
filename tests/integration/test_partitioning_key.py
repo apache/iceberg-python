@@ -15,17 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, List
 
 import pytest
-import pytz
 from pyspark.sql import SparkSession
 from pyspark.sql.utils import AnalysisException
 
-from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError
+from pyiceberg.catalog import Catalog
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
@@ -54,74 +52,52 @@ from pyiceberg.types import (
     TimestamptzType,
 )
 
-
-@pytest.fixture()
-def catalog() -> Catalog:
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-    try:
-        catalog.create_namespace("default")
-    except NamespaceAlreadyExistsError:
-        pass
-
-    return catalog
+# @pytest.fixture(scope="session")
+# def session_catalog() -> Catalog:
+#     return load_catalog(
+#         "local",
+#         **{
+#             "type": "rest",
+#             "uri": "http://localhost:8181",
+#             "s3.endpoint": "http://localhost:9000",
+#             "s3.access-key-id": "admin",
+#             "s3.secret-access-key": "password",
+#         },
+#     )
 
 
-@pytest.fixture(scope="session")
-def session_catalog() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
+# @pytest.fixture(scope="session")
+# def spark() -> SparkSession:
+#     import importlib.metadata
+#     import os
 
+#     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
+#     scala_version = "2.12"
+#     iceberg_version = "1.4.3"
 
-@pytest.fixture(scope="session")
-def spark() -> SparkSession:
-    import importlib.metadata
-    import os
+#     os.environ["PYSPARK_SUBMIT_ARGS"] = (
+#         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+#         f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
+#     )
+#     os.environ["AWS_REGION"] = "us-east-1"
+#     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+#     os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
 
-    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-    scala_version = "2.12"
-    iceberg_version = "1.4.3"
+#     spark = (
+#         SparkSession.builder.appName("PyIceberg integration test")
+#         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+#         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
+#         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+#         .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
+#         .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+#         .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
+#         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
+#         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
+#         .config("spark.sql.defaultCatalog", "integration")
+#         .getOrCreate()
+#     )
 
-    os.environ["PYSPARK_SUBMIT_ARGS"] = (
-        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
-    )
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
-
-    spark = (
-        SparkSession.builder.appName("PyIceberg integration test")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
-        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
-        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.defaultCatalog", "integration")
-        .getOrCreate()
-    )
-
-    return spark
+#     return spark
 
 
 TABLE_SCHEMA = Schema(
@@ -149,28 +125,25 @@ identifier = "default.test_table"
 @pytest.mark.parametrize(
     "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification",
     [
-        # Identity Transform
+        # # Identity Transform
         (
             [PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="boolean_field")],
             [False],
             Record(boolean_field=False),
-            "boolean_field=False",
-            # pyiceberg writes False while spark writes false, so justification (compare expected value with spark behavior) would fail.
-            None,
-            None,
-            # f"""CREATE TABLE {identifier} (
-            #     boolean_field boolean,
-            #     string_field string
-            # )
-            # USING iceberg
-            # PARTITIONED BY (
-            #     identity(boolean_field)  -- Partitioning by 'boolean_field'
-            # )
-            # """,
-            # f"""INSERT INTO {identifier}
-            # VALUES
-            # (false, 'Boolean field set to false');
-            # """
+            "boolean_field=false",
+            f"""CREATE TABLE {identifier} (
+                boolean_field boolean,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(boolean_field)  -- Partitioning by 'boolean_field'
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (false, 'Boolean field set to false');
+            """,
         ),
         (
             [PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="string_field")],
@@ -277,15 +250,54 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
+            [datetime(2023, 1, 1, 12, 0, 1, 999)],
+            Record(timestamp_field=1672574401000999),
+            "timestamp_field=2023-01-01T12%3A00%3A01.000999",
+            f"""CREATE TABLE {identifier} (
+                timestamp_field timestamp_ntz,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(timestamp_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (CAST('2023-01-01 12:00:01.000999' AS TIMESTAMP_NTZ), 'Associated string value for timestamp 2023-01-01T12:00:00')
+            """,
+        ),
+        (
+            [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
+            [datetime(2023, 1, 1, 12, 0, 1)],
+            Record(timestamp_field=1672574401000000),
+            "timestamp_field=2023-01-01T12%3A00%3A01",
+            f"""CREATE TABLE {identifier} (
+                timestamp_field timestamp_ntz,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(timestamp_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (CAST('2023-01-01 12:00:01' AS TIMESTAMP_NTZ), 'Associated string value for timestamp 2023-01-01T12:00:00')
+            """,
+        ),
+        (
+            [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
             [datetime(2023, 1, 1, 12, 0, 0)],
             Record(timestamp_field=1672574400000000),
             "timestamp_field=2023-01-01T12%3A00%3A00",
-            # spark writes differently as pyiceberg, Record[timestamp_field=1672574400000000] path:timestamp_field=2023-01-01T12%3A00Z  (the Z is the difference)
-            # so justification (compare expected value with spark behavior) would fail.
+            # Spark writes differently as pyiceberg, so justification (compare expected value with spark behavior) would fail
+            # AssertionError: assert 'timestamp_field=2023-01-01T12%3A00%3A00' in 's3://warehouse/default/test_table/data/timestamp_field=2023-01-01T12%3A00/00000-5-f9dca69a-9fb7-4830-9ef6-62d3d7afc09e-00001.parquet'
+            # TLDR: CAST('2023-01-01 12:00:00' AS TIMESTAMP_NTZ) becomes 2023-01-01T12:00 in the hive partition path when spark writes it (without the seconds).
             None,
             None,
             # f"""CREATE TABLE {identifier} (
-            #     timestamp_field timestamp,
+            #     timestamp_field timestamp_ntz,
             #     string_field string
             # )
             # USING iceberg
@@ -295,7 +307,31 @@ identifier = "default.test_table"
             # """,
             # f"""INSERT INTO {identifier}
             # VALUES
-            # (CAST('2023-01-01 12:00:00' AS TIMESTAMP), 'Associated string value for timestamp 2023-01-01T12:00:00')
+            # (CAST('2023-01-01 12:00:00' AS TIMESTAMP_NTZ), 'Associated string value for timestamp 2023-01-01T12:00:00')
+            # """
+        ),
+        (
+            [PartitionField(source_id=9, field_id=1001, transform=IdentityTransform(), name="timestamptz_field")],
+            [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
+            Record(timestamptz_field=1672563601000999),
+            "timestamptz_field=2023-01-01T09%3A00%3A01.000999%2B00%3A00",
+            # Spark writes differently as pyiceberg, so justification (compare expected value with spark behavior) would fail
+            # AssertionError: assert 'timestamptz_field=2023-01-01T09%3A00%3A01.000999%2B00%3A00' in 's3://warehouse/default/test_table/data/timestamptz_field=2023-01-01T09%3A00%3A01.000999Z/00000-5-b710fc4d-66b6-47f1-b8ae-6208f8aaa2d4-00001.parquet'
+            # TLDR: CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP) becomes 2023-01-01T09:00:01.000999Z in the hive partition path when spark writes it (while iceberg: timestamptz_field=2023-01-01T09:00:01.000999+00:00).
+            None,
+            None,
+            # f"""CREATE TABLE {identifier} (
+            #     timestamptz_field timestamp,
+            #     string_field string
+            # )
+            # USING iceberg
+            # PARTITIONED BY (
+            #     identity(timestamptz_field)
+            # )
+            # """,
+            # f"""INSERT INTO {identifier}
+            # VALUES
+            # (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Associated string value for timestamp 2023-01-01 12:00:01.000999+03:00')
             # """
         ),
         (
@@ -355,7 +391,7 @@ identifier = "default.test_table"
             (123.45, 'Associated string value for decimal 123.45')
             """,
         ),
-        # Year Month Day Hour Transform
+        # # Year Month Day Hour Transform
         # Month Transform
         (
             [PartitionField(source_id=8, field_id=1001, transform=MonthTransform(), name="timestamp_field_month")],
@@ -363,7 +399,7 @@ identifier = "default.test_table"
             Record(timestamp_field_month=((2023 - 1970) * 12)),
             "timestamp_field_month=2023-01",
             f"""CREATE TABLE {identifier} (
-                timestamp_field timestamp,
+                timestamp_field timestamp_ntz,
                 string_field string
             )
             USING iceberg
@@ -373,17 +409,27 @@ identifier = "default.test_table"
             """,
             f"""INSERT INTO {identifier}
             VALUES
-            (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), 'Event at 2023-01-01 11:55:59.999999');
+            (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP_NTZ), 'Event at 2023-01-01 11:55:59.999999');
             """,
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=MonthTransform(), name="timestamptz_field_month")],
-            [datetime(2023, 1, 1, 11, 55, 59, 999999, tzinfo=pytz.timezone('America/New_York'))],
-            Record(timestamptz_field_month=((2023 - 1970) * 12)),
+            [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
+            Record(timestamptz_field_month=((2023 - 1970) * 12 + 1 - 1)),
             "timestamptz_field_month=2023-01",
-            # Spark does not support timestamptz type, so skip justification (compare expected value with spark behavior).
-            None,
-            None,
+            f"""CREATE TABLE {identifier} (
+                timestamptz_field timestamp,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                month(timestamptz_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
+            """,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=MonthTransform(), name="date_field_month")],
@@ -426,12 +472,22 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=YearTransform(), name="timestamptz_field_year")],
-            [datetime(2023, 1, 1, 11, 55, 59, 999999, tzinfo=pytz.timezone('America/New_York'))],
+            [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
             Record(timestamptz_field_year=53),
             "timestamptz_field_year=2023",
-            # Spark does not support timestamptz type, so skip justification (compare expected value with spark behavior).
-            None,
-            None,
+            f"""CREATE TABLE {identifier} (
+                timestamptz_field timestamp,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                year(timestamptz_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
+            """,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=YearTransform(), name="date_field_year")],
@@ -474,12 +530,22 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=DayTransform(), name="timestamptz_field_day")],
-            [datetime(2023, 1, 1, 11, 55, 59, 999999, tzinfo=pytz.timezone('America/New_York'))],
+            [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
             Record(timestamptz_field_day=19358),
             "timestamptz_field_day=2023-01-01",
-            # Spark does not support timestamptz type, so skip justification (compare expected value with spark behavior).
-            None,
-            None,
+            f"""CREATE TABLE {identifier} (
+                timestamptz_field timestamp,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                day(timestamptz_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
+            """,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=DayTransform(), name="date_field_day")],
@@ -522,12 +588,22 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=HourTransform(), name="timestamptz_field_hour")],
-            [datetime(2023, 1, 1, 11, 55, 59, 999999, tzinfo=pytz.timezone('America/New_York'))],
-            Record(timestamptz_field_hour=464608),  # 464608 = 464603 + 5, new york winter day light saving time
-            "timestamptz_field_hour=2023-01-01-16",
-            # Spark does not support timestamptz type, so skip justification (compare expected value with spark behavior).
-            None,
-            None,
+            [datetime(2023, 1, 1, 12, 0, 1, 999, tzinfo=timezone(timedelta(hours=3)))],
+            Record(timestamptz_field_hour=464601),
+            "timestamptz_field_hour=2023-01-01-09",
+            f"""CREATE TABLE {identifier} (
+                timestamptz_field timestamp,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                hour(timestamptz_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
+            """,
         ),
         # Truncate Transform
         (

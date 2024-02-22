@@ -215,19 +215,15 @@ class PartitionSpec(IcebergBaseModel):
         partition_type = self.partition_type(schema)
         field_types = partition_type.fields
 
-        pos = 0
         field_strs = []
         value_strs = []
-        for field_name in data._position_to_field_name:
-            value = getattr(data, field_name)
-
+        for pos, value in enumerate(data.record_fields()):
             partition_field = self.fields[pos]  # partition field
             value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=value)
 
             value_str = quote(value_str, safe='')
             value_strs.append(value_str)
             field_strs.append(partition_field.name)
-            pos += 1
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
         return path
@@ -378,7 +374,8 @@ class PartitionKey:
         iceberg_typed_key_values = {}
         for raw_partition_field_value in self.raw_partition_field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
-            assert len(partition_fields) == 1
+            if len(partition_fields) != 1:
+                raise ValueError("partition_fields must contain exactly one field.")
             partition_field = partition_fields[0]
             iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
             iceberg_typed_value = _to_iceberg_type(iceberg_type, raw_partition_field_value.value)
