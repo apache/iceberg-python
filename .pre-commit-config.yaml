@@ -36,13 +36,13 @@ repos:
       - id: ruff-format
         args: [ --preview ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.6.1
+    rev: v1.8.0
     hooks:
       - id: mypy
         args:
           [--install-types, --non-interactive, --config=pyproject.toml]
   - repo: https://github.com/hadialqattan/pycln
-    rev: v2.3.0
+    rev: v2.4.0
     hooks:
       - id: pycln
         args: [--config=pyproject.toml]

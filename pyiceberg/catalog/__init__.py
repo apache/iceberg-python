@@ -413,6 +413,8 @@ class Catalog(ABC):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
+            CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
 
     @abstractmethod
