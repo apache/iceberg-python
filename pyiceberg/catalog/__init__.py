@@ -568,14 +568,18 @@ class Catalog(ABC):
         return location
 
     def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
+        def remove_protocol(uri: str) -> str:
+            parsed_uri = uri.split("://")
+            return parsed_uri[1] if len(parsed_uri) > 1 else parsed_uri[0]
+
         database_properties = self.load_namespace_properties(database_name)
         if database_location := database_properties.get(LOCATION):
             database_location = database_location.rstrip("/")
-            return f"{database_location}/{table_name}"
+            return remove_protocol(f"{database_location}/{table_name}")
 
         if warehouse_path := self.properties.get(WAREHOUSE_LOCATION):
             warehouse_path = warehouse_path.rstrip("/")
-            return f"{warehouse_path}/{database_name}.db/{table_name}"
+            return remove_protocol(f"{warehouse_path}/{database_name}.db/{table_name}")
 
         raise ValueError("No default path is set, please specify a location when creating a table")
 
