@@ -46,9 +46,10 @@ from typing import (
 import boto3
 import pytest
 from moto import mock_aws
+from pyspark.sql import SparkSession
 
 from pyiceberg import schema
-from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
@@ -1925,3 +1926,51 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 @pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture(scope="session")
+def session_catalog() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+@pytest.fixture(scope="session")
+def spark() -> SparkSession:
+    import importlib.metadata
+    import os
+
+    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
+    scala_version = "2.12"
+    iceberg_version = "1.4.3"
+
+    os.environ["PYSPARK_SUBMIT_ARGS"] = (
+        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
+    )
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
+
+    spark = (
+        SparkSession.builder.appName("PyIceberg integration test")
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
+        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
+        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
+        .config("spark.sql.defaultCatalog", "integration")
+        .getOrCreate()
+    )
+
+    return spark

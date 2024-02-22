@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from datetime import date, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import (
@@ -78,7 +77,7 @@ Properties = Dict[str, str]
 RecursiveDict = Dict[str, Union[str, "RecursiveDict"]]
 
 # Represents the literal value
-L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, date, datetime, covariant=True)
+L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, covariant=True)
 
 
 @runtime_checkable
