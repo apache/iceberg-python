@@ -1731,8 +1731,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
     )
-    data_files = []
-    for task in tasks:
+
+    def write_parquet(task: WriteTask) -> DataFile:
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
@@ -1760,7 +1760,11 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             stats_columns=compute_statistics_plan(schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(schema),
         )
-        data_files.append(data_file)
+        return data_file
+
+    executor = ExecutorFactory.get_or_create()
+    data_files = executor.map(write_parquet, tasks)
+
     return iter(data_files)
 
 
