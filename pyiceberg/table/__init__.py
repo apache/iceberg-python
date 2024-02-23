@@ -207,6 +207,9 @@ class TableProperties:
 
     PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
 
+    WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
+    WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
+
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
 
@@ -2471,7 +2474,9 @@ def _dataframe_to_data_files(
     yield from write_file(
         io=io,
         table_metadata=table_metadata,
-        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df)]),
+        tasks=iter([
+            WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, table_metadata.properties)
+        ]),
     )
 
 

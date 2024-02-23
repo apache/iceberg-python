@@ -1765,14 +1765,23 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     return iter(data_files)
 
 
-def bin_pack_arrow_table(tbl: pa.Table) -> Iterator[List[pa.RecordBatch]]:
-    # bin-pack the table into 256 MB chunks
+def bin_pack_arrow_table(tbl: pa.Table, table_properties: Properties) -> Iterator[List[pa.RecordBatch]]:
     from pyiceberg.utils.bin_packing import PackingIterator
 
-    splits = tbl.to_batches()
-    target_weight = 2 << 27  # 256 MB
-    bin_packed = PackingIterator(splits, target_weight, lookback=2, weight_func=lambda x: x.nbytes, largest_bin_first=True)
-    return bin_packed
+    target_file_size = PropertyUtil.property_as_int(
+        properties=table_properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+    assert isinstance(target_file_size, int)
+    bin_packed_record_batches = PackingIterator(
+        items=tbl.to_batches(),
+        target_weight=target_file_size,
+        lookback=2,
+        weight_func=lambda x: x.nbytes,
+        largest_bin_first=True,
+    )
+    return bin_packed_record_batches
 
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
