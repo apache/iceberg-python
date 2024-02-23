@@ -2429,7 +2429,7 @@ def _add_and_move_fields(
 class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
-    df: pa.Table
+    record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
 
     # Later to be extended with partition information
@@ -2458,7 +2458,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.io.pyarrow import write_file
+    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
 
     if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
         raise ValueError("Cannot write to partitioned tables")
@@ -2468,7 +2468,11 @@ def _dataframe_to_data_files(
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+    yield from write_file(
+        io=io,
+        table_metadata=table_metadata,
+        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df)]),
+    )
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):

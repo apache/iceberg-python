@@ -1722,54 +1722,57 @@ def fill_parquet_file_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    task = next(tasks)
-
-    try:
-        _ = next(tasks)
-        # If there are more tasks, raise an exception
-        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
-    except StopIteration:
-        pass
-
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
-
-    file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
     schema = table_metadata.schema()
     arrow_file_schema = schema_to_pyarrow(schema)
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
-    fo = io.new_output(file_path)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
     )
-    with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-            writer.write_table(task.df, row_group_size=row_group_size)
+    data_files = []
+    for task in tasks:
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
+        fo = io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
+                for batch in task.record_batches:
+                    writer.write_batch(batch, row_group_size=row_group_size)
 
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=file_path,
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=len(fo),
-        # After this has been fixed:
-        # https://github.com/apache/iceberg-python/issues/271
-        # sort_order_id=task.sort_order_id,
-        sort_order_id=None,
-        # Just copy these from the table for now
-        spec_id=table_metadata.default_spec_id,
-        equality_ids=None,
-        key_metadata=None,
-    )
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            file_size_in_bytes=len(fo),
+            # After this has been fixed:
+            # https://github.com/apache/iceberg-python/issues/271
+            # sort_order_id=task.sort_order_id,
+            sort_order_id=None,
+            # Just copy these from the table for now
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+        )
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=writer.writer.metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+        data_files.append(data_file)
+    return iter(data_files)
 
-    fill_parquet_file_metadata(
-        data_file=data_file,
-        parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(schema),
-    )
-    return iter([data_file])
+
+def bin_pack_arrow_table(tbl: pa.Table) -> Iterator[List[pa.RecordBatch]]:
+    # bin-pack the table into 256 MB chunks
+    from pyiceberg.utils.bin_packing import PackingIterator
+
+    splits = tbl.to_batches()
+    target_weight = 2 << 27  # 256 MB
+    bin_packed = PackingIterator(splits, target_weight, lookback=2, weight_func=lambda x: x.nbytes, largest_bin_first=True)
+    return bin_packed
 
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
