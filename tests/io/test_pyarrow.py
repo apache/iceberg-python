@@ -64,6 +64,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _primitive_to_physical,
     _read_deletes,
+    bin_pack_arrow_table,
     expression_to_pyarrow,
     project_table,
     schema_to_pyarrow,
@@ -71,7 +72,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, Table
+from pyiceberg.table import FileScanTask, Table, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
@@ -1710,3 +1711,25 @@ def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveT
         stats.update_max(val)
 
     assert stats.current_max == expected_result
+
+
+def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
+    # default packs to 1 bin since the table is small
+    bin_packed = bin_pack_arrow_table(arrow_table_with_null, {})
+    assert len(list(bin_packed)) == 1
+
+    # as long as table is smaller than default target size, it should pack to 1 bin
+    bigger_arrow_tbl = pa.concat_tables([arrow_table_with_null] * 10)
+    assert bigger_arrow_tbl.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, {})
+    assert len(list(bin_packed)) == 1
+
+    # unless we override the target size to be smaller
+    target_file_size = arrow_table_with_null.nbytes
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size})
+    assert len(list(bin_packed)) == 10
+
+    # and will produce half the number of files if we double the target size
+    target_file_size = arrow_table_with_null.nbytes * 2
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size})
+    assert len(list(bin_packed)) == 5
