@@ -380,6 +380,33 @@ def test_python_writes_with_spark_snapshot_reads(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
+def test_write_multiple_data_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.write_multiple_arrow_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [])
+
+    def get_data_files_count(identifier: str) -> int:
+        return spark.sql(
+            f"""
+            SELECT *
+            FROM {identifier}.all_data_files
+        """
+        ).count()
+
+    # writes to 1 data file since the table is small
+    tbl.overwrite(arrow_table_with_null)
+    assert get_data_files_count(identifier) == 1
+
+    # writes to 1 data file as long as table is smaller than default target file size
+    bigger_arrow_tbl = pa.concat_tables([arrow_table_with_null] * 10)
+    tbl.overwrite(bigger_arrow_tbl)
+    assert bigger_arrow_tbl.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    assert get_data_files_count(identifier) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize(
     "properties, expected_compression_name",
     [
