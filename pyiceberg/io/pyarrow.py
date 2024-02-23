@@ -1737,8 +1737,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-                for batch in task.record_batches:
-                    writer.write_batch(batch, row_group_size=row_group_size)
+                writer.write(pa.Table.from_batches(task.record_batches), row_group_size=row_group_size)
 
         data_file = DataFile(
             content=DataFileContent.DATA,
