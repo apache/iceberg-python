@@ -157,7 +157,7 @@ class TokenResponse(IcebergBaseModel):
     access_token: str = Field()
     token_type: str = Field()
     expires_in: int = Field()
-    issued_token_type: str = Field()
+    issued_token_type: Optional[str] = None
 
 
 class ConfigResponse(IcebergBaseModel):
