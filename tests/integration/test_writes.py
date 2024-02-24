@@ -33,7 +33,7 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import NoSuchTableError, ServerError
 from pyiceberg.schema import Schema
 from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.types import (
@@ -654,3 +654,37 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
         with txn.update_snapshot().fast_append() as snapshot_update:
             for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
                 snapshot_update.append_data_file(data_file)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_properties_int_value(
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: str,
+) -> None:
+    # table properties can be set to int, but still serialized to string
+    property_with_int = {"property_name": 42}
+    identifier = "default.test_table_properties_int_value"
+
+    tbl = _create_table(
+        session_catalog, identifier, {"format-version": format_version, **property_with_int}, [arrow_table_with_null]
+    )
+    assert isinstance(tbl.properties["property_name"], str)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_properties_raise_for_none_value(
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: str,
+) -> None:
+    property_with_none = {"property_name": None}
+    identifier = "default.test_table_properties_raise_for_none_value"
+
+    with pytest.raises(ServerError) as exc_info:
+        _ = _create_table(
+            session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
+        )
+    assert "NullPointerException: null value in entry: property_name=null" in str(exc_info.value)
