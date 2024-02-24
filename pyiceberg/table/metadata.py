@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
@@ -177,6 +177,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
     control settings that affect reading and writing and is not intended
     to be used for arbitrary metadata. For example, commit.retry.num-retries
     is used to control the number of commit retries."""
+
+    @field_validator("properties", mode='before')
+    @classmethod
+    def transform_dict_value_to_str(cls, dict: Dict[str, Any]) -> Dict[str, str]:
+        assert None not in dict.values(), "None type is not a supported value in properties"
+        return {k: str(v) for k, v in dict.items()}
 
     current_snapshot_id: Optional[int] = Field(alias="current-snapshot-id", default=None)
     """ID of the current table snapshot."""
