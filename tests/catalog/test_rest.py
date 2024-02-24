@@ -166,6 +166,42 @@ def test_config_200(requests_mock: Mocker) -> None:
     assert history[1].method == "GET"
     assert history[1].url == "https://iceberg-test-catalog/v1/config?warehouse=s3%3A%2F%2Fsome-bucket"
 
+def test_properties_sets_headers(requests_mock: Mocker) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket",
+                          **{"header.Content-Type": "application/vnd.api+json"})
+
+    assert catalog._session.headers.get("Content-type") == "application/vnd.api+json", \
+        "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+
+    assert requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json", \
+        "Config request did not include expected 'Content-Type' header"
+
+def test_config_sets_headers(requests_mock: Mocker) -> None:
+    namespace = "leden"
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {"header.Content-Type": "application/vnd.api+json"}, "overrides": {}},
+        status_code=200,
+    )
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespace": [namespace], "properties": {}},
+        status_code=200
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+    catalog.create_namespace(namespace)
+
+    assert catalog._session.headers.get("Content-type") == "application/vnd.api+json", \
+        "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+    assert requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json", \
+        "Create namespace request did not include expected 'Content-Type' header"
+
 
 def test_token_400(rest_mock: Mocker) -> None:
     rest_mock.post(

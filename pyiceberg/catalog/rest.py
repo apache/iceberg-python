@@ -115,6 +115,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
+HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -242,10 +243,7 @@ class RestCatalog(Catalog):
         self._refresh_token(session, self.properties.get(TOKEN))
 
         # Set HTTP headers
-        session.headers["Content-type"] = "application/json"
-        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
-        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
-        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
+        self._config_headers(session)
 
         # Configure SigV4 Request Signing
         if str(self.properties.get(SIGV4, False)).lower() == "true":
@@ -457,6 +455,17 @@ class RestCatalog(Catalog):
         # Set Auth token for subsequent calls in the session
         if token := self.properties.get(TOKEN):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
+
+    def _config_headers(self, session: Session) -> None:
+        session.headers["Content-type"] = "application/json"
+        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
+        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
+        header_properties = self._extract_headers_from_properties()
+        session.headers.update(header_properties)
+
+    def _extract_headers_from_properties(self) -> Dict[str, str]:
+        return {key[len(HEADER_PREFIX):]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
     @retry(**_RETRY_ARGS)
     def create_table(
