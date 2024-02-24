@@ -117,6 +117,7 @@ def test_token_200(rest_mock: Mocker) -> None:
         == f"Bearer {TEST_TOKEN}"
     )
 
+
 def test_token_200_without_issued_token_type(rest_mock: Mocker) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -132,6 +133,7 @@ def test_token_200_without_issued_token_type(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
         == f"Bearer {TEST_TOKEN}"
     )
+
 
 def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     rest_mock.post(
