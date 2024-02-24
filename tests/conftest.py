@@ -1456,40 +1456,6 @@ def simple_map() -> MapType:
     return MapType(key_id=19, key_type=StringType(), value_id=25, value_type=DoubleType(), value_required=False)
 
 
-class LocalOutputFile(OutputFile):
-    """An OutputFile implementation for local files (for test use only)."""
-
-    def __init__(self, location: str) -> None:
-        parsed_location = urlparse(location)  # Create a ParseResult from the uri
-        if (
-            parsed_location.scheme and parsed_location.scheme != "file"
-        ):  # Validate that an uri is provided with a scheme of `file`
-            raise ValueError("LocalOutputFile location must have a scheme of `file`")
-        elif parsed_location.netloc:
-            raise ValueError(f"Network location is not allowed for LocalOutputFile: {parsed_location.netloc}")
-
-        super().__init__(location=location)
-        self._path = parsed_location.path
-
-    def __len__(self) -> int:
-        """Return the length of an instance of the LocalOutputFile class."""
-        return os.path.getsize(self._path)
-
-    def exists(self) -> bool:
-        return os.path.exists(self._path)
-
-    def to_input_file(self) -> "PyArrowFile":
-        from pyiceberg.io.pyarrow import PyArrowFileIO
-
-        return PyArrowFileIO().new_input(location=self.location)
-
-    def create(self, overwrite: bool = False) -> OutputStream:
-        output_file = open(self._path, "wb" if overwrite else "xb")
-        if not issubclass(type(output_file), OutputStream):
-            raise TypeError("Object returned from LocalOutputFile.create(...) does not match the OutputStream protocol.")
-        return output_file
-
-
 @pytest.fixture(scope="session")
 def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
