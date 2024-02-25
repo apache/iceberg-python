@@ -1729,7 +1729,7 @@ class UpdateSchema:
         from_field_correct_casing = self._schema.find_column_name(field_from.field_id)
         if from_field_correct_casing in self._identifier_field_names:
             self._identifier_field_names.remove(from_field_correct_casing)
-            new_identifier_path = f"{from_field_correct_casing[:-len(field_from.name)]}{new_name}"
+            new_identifier_path = f"{from_field_correct_casing[: -len(field_from.name)]}{new_name}"
             self._identifier_field_names.add(new_identifier_path)
 
         return self
