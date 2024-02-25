@@ -22,6 +22,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property, partial, singledispatch
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -61,6 +62,11 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+
+if TYPE_CHECKING:
+    from pyiceberg.table.name_mapping import (
+        NameMapping,
+    )
 
 T = TypeVar("T")
 P = TypeVar("P")
@@ -220,6 +226,12 @@ class Schema(IcebergBaseModel):
     @property
     def highest_field_id(self) -> int:
         return max(self._lazy_id_to_name.keys(), default=0)
+
+    @cached_property
+    def name_mapping(self) -> NameMapping:
+        from pyiceberg.table.name_mapping import create_mapping_from_schema
+
+        return create_mapping_from_schema(self)
 
     def find_column_name(self, column_id: int) -> Optional[str]:
         """Find a column name given a column ID.

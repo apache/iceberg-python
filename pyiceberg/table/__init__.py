@@ -133,6 +133,41 @@ TABLE_ROOT_ID = -1
 _JAVA_LONG_MAX = 9223372036854775807
 
 
+def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
+    from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
+
+    name_mapping = table_schema.name_mapping
+    try:
+        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
+    except ValueError as e:
+        other_schema = _pyarrow_to_schema_without_ids(other_schema)
+        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
+        raise ValueError(
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+        ) from e
+
+    if table_schema.as_struct() != task_schema.as_struct():
+        from rich.console import Console
+        from rich.table import Table as RichTable
+
+        console = Console(record=True)
+
+        rich_table = RichTable(show_header=True, header_style="bold")
+        rich_table.add_column("")
+        rich_table.add_column("Table field")
+        rich_table.add_column("Dataframe field")
+
+        for lhs in table_schema.fields:
+            try:
+                rhs = task_schema.find_field(lhs.field_id)
+                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
+            except ValueError:
+                rich_table.add_row("❌", str(lhs), "Missing")
+
+        console.print(rich_table)
+        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+
+
 class TableProperties:
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
@@ -1010,6 +1045,8 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
+        _check_schema(self.schema(), other_schema=df.schema)
+
         merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
 
         # skip writing data files if the dataframe is empty
@@ -1042,6 +1079,8 @@ class Table:
 
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
+
+        _check_schema(self.schema(), other_schema=df.schema)
 
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
