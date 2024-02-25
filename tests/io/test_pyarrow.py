@@ -1715,21 +1715,21 @@ def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveT
 
 def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
     # default packs to 1 bin since the table is small
-    bin_packed = bin_pack_arrow_table(arrow_table_with_null, {})
+    bin_packed = bin_pack_arrow_table(
+        arrow_table_with_null, target_file_size=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    )
     assert len(list(bin_packed)) == 1
 
     # as long as table is smaller than default target size, it should pack to 1 bin
     bigger_arrow_tbl = pa.concat_tables([arrow_table_with_null] * 10)
     assert bigger_arrow_tbl.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
-    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, {})
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT)
     assert len(list(bin_packed)) == 1
 
     # unless we override the target size to be smaller
-    target_file_size = arrow_table_with_null.nbytes
-    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size})
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=arrow_table_with_null.nbytes)
     assert len(list(bin_packed)) == 10
 
     # and will produce half the number of files if we double the target size
-    target_file_size = arrow_table_with_null.nbytes * 2
-    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size})
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=arrow_table_with_null.nbytes * 2)
     assert len(list(bin_packed)) == 5

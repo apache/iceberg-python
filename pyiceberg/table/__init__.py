@@ -2469,14 +2469,19 @@ def _dataframe_to_data_files(
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
 
+    target_file_size = PropertyUtil.property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+    assert isinstance(target_file_size, int)
+
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
     yield from write_file(
         io=io,
         table_metadata=table_metadata,
-        tasks=iter([
-            WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, table_metadata.properties)
-        ]),
+        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, target_file_size)]),
     )
 
 
