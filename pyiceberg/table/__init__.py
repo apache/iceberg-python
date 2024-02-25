@@ -31,6 +31,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generic,
     Iterable,
     List,
     Literal,
@@ -180,18 +181,17 @@ class PropertyUtil:
 
 class Transaction:
     _table: Table
+    _table_metadata: TableMetadata
+    _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
 
-    def __init__(
-        self,
-        table: Table,
-        actions: Optional[Tuple[TableUpdate, ...]] = None,
-        requirements: Optional[Tuple[TableRequirement, ...]] = None,
-    ):
+    def __init__(self, table: Table, autocommit: bool = False):
         self._table = table
-        self._updates = actions or ()
-        self._requirements = requirements or ()
+        self._table_metadata = table.metadata
+        self._autocommit = autocommit
+        self._updates = ()
+        self._requirements = ()
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
@@ -199,49 +199,23 @@ class Transaction:
 
     def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
         """Close and commit the transaction."""
-        fresh_table = self.commit_transaction()
-        # Update the new data in place
-        self._table.metadata = fresh_table.metadata
-        self._table.metadata_location = fresh_table.metadata_location
+        self.commit_transaction()
 
-    def _append_updates(self, *new_updates: TableUpdate) -> Transaction:
-        """Append updates to the set of staged updates.
+    def _apply(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...] = ()) -> Transaction:
+        """Check if the requirements are met, and applies the updates to the metadata."""
+        for requirement in requirements:
+            requirement.validate(self._table_metadata)
 
-        Args:
-            *new_updates: Any new updates.
+        self._updates += updates
+        self._requirements += requirements
 
-        Raises:
-            ValueError: When the type of update is not unique.
+        self._table_metadata = update_table_metadata(self._table_metadata, updates)
 
-        Returns:
-            Transaction object with the new updates appended.
-        """
-        for new_update in new_updates:
-            # explicitly get type of new_update as new_update is an instantiated class
-            type_new_update = type(new_update)
-            if any(isinstance(update, type_new_update) for update in self._updates):
-                raise ValueError(f"Updates in a single commit need to be unique, duplicate: {type_new_update}")
-        self._updates = self._updates + new_updates
-        return self
+        if self._autocommit:
+            self.commit_transaction()
+            self._updates = ()
+            self._requirements = ()
 
-    def _append_requirements(self, *new_requirements: TableRequirement) -> Transaction:
-        """Append requirements to the set of staged requirements.
-
-        Args:
-            *new_requirements: Any new requirements.
-
-        Raises:
-            ValueError: When the type of requirement is not unique.
-
-        Returns:
-            Transaction object with the new requirements appended.
-        """
-        for new_requirement in new_requirements:
-            # explicitly get type of new_update as requirement is an instantiated class
-            type_new_requirement = type(new_requirement)
-            if any(isinstance(requirement, type_new_requirement) for requirement in self._requirements):
-                raise ValueError(f"Requirements in a single commit need to be unique, duplicate: {type_new_requirement}")
-        self._requirements = self._requirements + new_requirements
         return self
 
     def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
@@ -258,10 +232,11 @@ class Transaction:
 
         if format_version < self._table.metadata.format_version:
             raise ValueError(f"Cannot downgrade v{self._table.metadata.format_version} table to v{format_version}")
+
         if format_version > self._table.metadata.format_version:
-            return self._append_updates(UpgradeFormatVersionUpdate(format_version=format_version))
-        else:
-            return self
+            return self._apply((UpgradeFormatVersionUpdate(format_version=format_version),))
+
+        return self
 
     def set_properties(self, **updates: str) -> Transaction:
         """Set properties.
@@ -274,48 +249,7 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        return self._append_updates(SetPropertiesUpdate(updates=updates))
-
-    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
-        """Add a new snapshot to the table.
-
-        Returns:
-            The transaction with the add-snapshot staged.
-        """
-        self._append_updates(AddSnapshotUpdate(snapshot=snapshot))
-        self._append_requirements(AssertTableUUID(uuid=self._table.metadata.table_uuid))
-
-        return self
-
-    def set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        parent_snapshot_id: Optional[int],
-        ref_name: str,
-        type: str,
-        max_age_ref_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
-    ) -> Transaction:
-        """Update a ref to a snapshot.
-
-        Returns:
-            The transaction with the set-snapshot-ref staged
-        """
-        self._append_updates(
-            SetSnapshotRefUpdate(
-                snapshot_id=snapshot_id,
-                parent_snapshot_id=parent_snapshot_id,
-                ref_name=ref_name,
-                type=type,
-                max_age_ref_ms=max_age_ref_ms,
-                max_snapshot_age_ms=max_snapshot_age_ms,
-                min_snapshots_to_keep=min_snapshots_to_keep,
-            )
-        )
-
-        self._append_requirements(AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"))
-        return self
+        return self._apply((SetPropertiesUpdate(updates=updates),))
 
     def update_schema(self) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -323,7 +257,7 @@ class Transaction:
         Returns:
             A new UpdateSchema.
         """
-        return UpdateSchema(self._table, self)
+        return UpdateSchema(self, self._table_metadata)
 
     def update_snapshot(self) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
@@ -331,7 +265,7 @@ class Transaction:
         Returns:
             A new UpdateSnapshot
         """
-        return UpdateSnapshot(self._table, self)
+        return UpdateSnapshot(self, self._table_metadata, self._table.io)
 
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
@@ -342,7 +276,7 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        return self._append_updates(RemovePropertiesUpdate(removals=removals))
+        return self._apply((RemovePropertiesUpdate(removals=removals),))
 
     def update_location(self, location: str) -> Transaction:
         """Set the new table location.
@@ -355,19 +289,12 @@ class Transaction:
         """
         raise NotImplementedError("Not yet implemented")
 
-    def schema(self) -> Schema:
-        try:
-            return next(update for update in self._updates if isinstance(update, AddSchemaUpdate)).schema_
-        except StopIteration:
-            return self._table.schema()
-
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
 
         Returns:
             The table with the updates applied.
         """
-        # Strip the catalog name
         if len(self._updates) > 0:
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
@@ -943,17 +870,6 @@ class Table:
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
 
-    def next_sequence_number(self) -> int:
-        return self.last_sequence_number + 1 if self.metadata.format_version > 1 else INITIAL_SEQUENCE_NUMBER
-
-    def new_snapshot_id(self) -> int:
-        """Generate a new snapshot-id that's not in use."""
-        snapshot_id = _generate_snapshot_id()
-        while self.snapshot_by_id(snapshot_id) is not None:
-            snapshot_id = _generate_snapshot_id()
-
-        return snapshot_id
-
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.metadata.current_snapshot_id is not None:
@@ -980,15 +896,12 @@ class Table:
         Returns:
             A new UpdateSchema.
         """
-        return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
-
-    def update_snapshot(self) -> UpdateSnapshot:
-        """Create a new UpdateSnapshot to produce a new snapshot for the table.
-
-        Returns:
-            A new UpdateSnapshot
-        """
-        return UpdateSnapshot(self)
+        return UpdateSchema(
+            Transaction(self, autocommit=True),
+            self.metadata,
+            allow_incompatible_changes=allow_incompatible_changes,
+            case_sensitive=case_sensitive,
+        )
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
@@ -1015,12 +928,15 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        with self.update_snapshot().fast_append() as update_snapshot:
-            # skip writing data files if the dataframe is empty
-            if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
-                for data_file in data_files:
-                    update_snapshot.append_data_file(data_file)
+        with self.transaction() as txn:
+            with txn.update_snapshot().fast_append() as update_snapshot:
+                # skip writing data files if the dataframe is empty
+                if df.shape[0] > 0:
+                    data_files = _dataframe_to_data_files(
+                        table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                    )
+                    for data_file in data_files:
+                        update_snapshot.append_data_file(data_file)
 
     def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
         """
@@ -1045,12 +961,15 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        with self.update_snapshot().overwrite() as update_snapshot:
-            # skip writing data files if the dataframe is empty
-            if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
-                for data_file in data_files:
-                    update_snapshot.append_data_file(data_file)
+        with self.transaction() as txn:
+            with txn.update_snapshot().overwrite() as update_snapshot:
+                # skip writing data files if the dataframe is empty
+                if df.shape[0] > 0:
+                    data_files = _dataframe_to_data_files(
+                        table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                    )
+                    for data_file in data_files:
+                        update_snapshot.append_data_file(data_file)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -1469,8 +1388,33 @@ class Move:
     other_field_id: Optional[int] = None
 
 
-class UpdateSchema:
-    _table: Optional[Table]
+U = TypeVar('U')
+
+
+class TableMetadataUpdate(ABC, Generic[U]):
+    _transaction: Transaction
+    _table_metadata: TableMetadata
+
+    def __init__(self, transaction: Transaction, table_metadata: TableMetadata) -> None:
+        self._transaction = transaction
+        self._table_metadata = table_metadata
+
+    @abstractmethod
+    def _commit(self) -> Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]: ...
+
+    def commit(self) -> None:
+        self._transaction._apply(*self._commit())
+
+    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
+        """Close and commit the change."""
+        self.commit()
+
+    def __enter__(self) -> U:
+        """Update the table."""
+        return self  # type: ignore
+
+
+class UpdateSchema(TableMetadataUpdate["UpdateSchema"]):
     _schema: Schema
     _last_column_id: itertools.count[int]
     _identifier_field_names: Set[str]
@@ -1485,27 +1429,26 @@ class UpdateSchema:
     _id_to_parent: Dict[int, str] = {}
     _allow_incompatible_changes: bool
     _case_sensitive: bool
-    _transaction: Optional[Transaction]
 
     def __init__(
         self,
-        table: Optional[Table],
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction,
+        table_metadata: TableMetadata,
         allow_incompatible_changes: bool = False,
         case_sensitive: bool = True,
         schema: Optional[Schema] = None,
+        name_mapping: Optional[NameMapping] = None,
     ) -> None:
-        self._table = table
+        super().__init__(transaction, table_metadata)
 
         if isinstance(schema, Schema):
             self._schema = schema
             self._last_column_id = itertools.count(1 + schema.highest_field_id)
-        elif table is not None:
-            self._schema = table.schema()
-            self._last_column_id = itertools.count(1 + table.metadata.last_column_id)
         else:
-            raise ValueError("Either provide a table or a schema")
+            self._schema = table_metadata.schema()
+            self._last_column_id = itertools.count(1 + table_metadata.last_column_id)
 
+        self._name_mapping = name_mapping
         self._identifier_field_names = self._schema.identifier_field_names()
 
         self._adds = {}
@@ -1528,14 +1471,6 @@ class UpdateSchema:
         self._allow_incompatible_changes = allow_incompatible_changes
         self._case_sensitive = case_sensitive
         self._transaction = transaction
-
-    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
-        """Close and commit the change."""
-        return self.commit()
-
-    def __enter__(self) -> UpdateSchema:
-        """Update the table."""
-        return self
 
     def case_sensitive(self, case_sensitive: bool) -> UpdateSchema:
         """Determine if the case of schema needs to be considered when comparing column names.
@@ -1925,38 +1860,34 @@ class UpdateSchema:
 
         return self
 
-    def commit(self) -> None:
+    def _commit(self) -> Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]:
         """Apply the pending changes and commit."""
-        if self._table is None:
-            raise ValueError("Requires a table to commit to")
-
         new_schema = self._apply()
 
-        existing_schema_id = next((schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema), None)
+        existing_schema_id = next((schema.schema_id for schema in self._table_metadata.schemas if schema == new_schema), None)
+
+        requirements: Tuple[TableRequirement, ...] = ()
+        updates: Tuple[TableUpdate, ...] = ()
 
         # Check if it is different current schema ID
-        if existing_schema_id != self._table.schema().schema_id:
-            requirements = (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
+        if existing_schema_id != self._schema.schema_id:
+            requirements += (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
             if existing_schema_id is None:
-                last_column_id = max(self._table.metadata.last_column_id, new_schema.highest_field_id)
-                updates = (
+                last_column_id = max(self._table_metadata.last_column_id, new_schema.highest_field_id)
+                updates += (
                     AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
                     SetCurrentSchemaUpdate(schema_id=-1),
                 )
             else:
-                updates = (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)  # type: ignore
+                updates += (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)
 
-            if name_mapping := self._table.name_mapping():
+            if name_mapping := self._name_mapping:
                 updated_name_mapping = update_mapping(name_mapping, self._updates, self._adds)
-                updates += (  # type: ignore
+                updates += (
                     SetPropertiesUpdate(updates={TableProperties.DEFAULT_NAME_MAPPING: updated_name_mapping.model_dump_json()}),
                 )
 
-            if self._transaction is not None:
-                self._transaction._append_updates(*updates)  # pylint: disable=W0212
-                self._transaction._append_requirements(*requirements)  # pylint: disable=W0212
-            else:
-                self._table._do_commit(updates=updates, requirements=requirements)  # pylint: disable=W0212
+        return updates, requirements
 
     def _apply(self) -> Schema:
         """Apply the pending changes to the original schema and returns the result.
@@ -1982,7 +1913,12 @@ class UpdateSchema:
 
             field_ids.add(field.field_id)
 
-        next_schema_id = 1 + (max(self._table.schemas().keys()) if self._table is not None else self._schema.schema_id)
+        max_schema_id = (
+            max(schema.schema_id for schema in self._table_metadata.schemas) if self._table_metadata is not None else 0
+        )
+
+        next_schema_id = max_schema_id + 1
+
         return Schema(*struct.fields, schema_id=next_schema_id, identifier_field_ids=field_ids)
 
     def assign_new_column_id(self) -> int:
@@ -2312,20 +2248,6 @@ def _add_and_move_fields(
     return None if len(adds) == 0 else tuple(*fields, *adds)
 
 
-def _generate_snapshot_id() -> int:
-    """Generate a new Snapshot ID from a UUID.
-
-    Returns: An 64 bit long
-    """
-    rnd_uuid = uuid.uuid4()
-    snapshot_id = int.from_bytes(
-        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
-    )
-    snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
-
-    return snapshot_id
-
-
 @dataclass(frozen=True)
 class WriteTask:
     write_uuid: uuid.UUID
@@ -2352,7 +2274,7 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
 
 
 def _dataframe_to_data_files(
-    table: Table, df: pa.Table, write_uuid: Optional[uuid.UUID] = None, file_schema: Optional[Schema] = None
+    table_metadata: TableMetadata, df: pa.Table, io: FileIO, write_uuid: Optional[uuid.UUID] = None
 ) -> Iterable[DataFile]:
     """Convert a PyArrow table into a DataFile.
 
@@ -2361,7 +2283,7 @@ def _dataframe_to_data_files(
     """
     from pyiceberg.io.pyarrow import write_file
 
-    if len(table.spec().fields) > 0:
+    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
         raise ValueError("Cannot write to partitioned tables")
 
     counter = itertools.count(0)
@@ -2369,41 +2291,33 @@ def _dataframe_to_data_files(
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]), file_schema=file_schema)
+    yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
 
 
-class _MergingSnapshotProducer:
+class _MergingSnapshotProducer(TableMetadataUpdate["_MergingSnapshotProducer"]):
     commit_uuid: uuid.UUID
     _operation: Operation
-    _table: Table
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
-    _transaction: Optional[Transaction]
 
     def __init__(
         self,
         operation: Operation,
-        table: Table,
+        transaction: Transaction,
+        table_metadata: TableMetadata,
+        io: FileIO,
         commit_uuid: Optional[uuid.UUID] = None,
-        transaction: Optional[Transaction] = None,
     ) -> None:
+        super().__init__(transaction, table_metadata)
+        self._io = io
         self.commit_uuid = commit_uuid or uuid.uuid4()
         self._operation = operation
-        self._table = table
-        self._snapshot_id = table.new_snapshot_id()
+        self._snapshot_id = table_metadata.new_snapshot_id()
         # Since we only support the main branch for now
-        self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
+        self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table_metadata.current_snapshot()) else None
         self._added_data_files = []
         self._transaction = transaction
-
-    def __enter__(self) -> _MergingSnapshotProducer:
-        """Start a transaction to update the table."""
-        return self
-
-    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
-        """Close and commit the transaction."""
-        self.commit()
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
@@ -2418,12 +2332,14 @@ class _MergingSnapshotProducer:
     def _manifests(self) -> List[ManifestFile]:
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
-                output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self.commit_uuid)
+                output_file_location = _new_manifest_path(
+                    location=self._table_metadata.location, num=0, commit_uuid=self.commit_uuid
+                )
                 with write_manifest(
-                    format_version=self._table.format_version,
-                    spec=self._table.spec(),
-                    schema=self._table.schema(),
-                    output_file=self._table.io.new_output(output_file_location),
+                    format_version=self._table_metadata.format_version,
+                    spec=self._table_metadata.spec(),
+                    schema=self._table_metadata.schema(),
+                    output_file=self._io.new_output(output_file_location),
                     snapshot_id=self._snapshot_id,
                 ) as writer:
                     for data_file in self._added_data_files:
@@ -2444,13 +2360,15 @@ class _MergingSnapshotProducer:
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
-                output_file_location = _new_manifest_path(location=self._table.location(), num=1, commit_uuid=self.commit_uuid)
+                output_file_location = _new_manifest_path(
+                    location=self._table_metadata.location, num=1, commit_uuid=self.commit_uuid
+                )
 
                 with write_manifest(
-                    format_version=self._table.format_version,
-                    spec=self._table.spec(),
-                    schema=self._table.schema(),
-                    output_file=self._table.io.new_output(output_file_location),
+                    format_version=self._table_metadata.format_version,
+                    spec=self._table_metadata.spec(),
+                    schema=self._table_metadata.schema(),
+                    output_file=self._io.new_output(output_file_location),
                     snapshot_id=self._snapshot_id,
                 ) as writer:
                     for delete_entry in deleted_entries:
@@ -2473,7 +2391,9 @@ class _MergingSnapshotProducer:
         for data_file in self._added_data_files:
             ssc.add_file(data_file=data_file)
 
-        previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
+        previous_snapshot = (
+            self._table_metadata.snapshot_by_id(self._parent_snapshot_id) if self._parent_snapshot_id is not None else None
+        )
 
         return update_snapshot_summaries(
             summary=Summary(operation=self._operation, **ssc.build()),
@@ -2481,18 +2401,18 @@ class _MergingSnapshotProducer:
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def commit(self) -> Snapshot:
+    def _commit(self) -> Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]:
         new_manifests = self._manifests()
-        next_sequence_number = self._table.next_sequence_number()
+        next_sequence_number = self._table_metadata.next_sequence_number()
 
         summary = self._summary()
 
         manifest_list_file_path = _generate_manifest_list_path(
-            location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self.commit_uuid
+            location=self._table_metadata.location, snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self.commit_uuid
         )
         with write_manifest_list(
-            format_version=self._table.metadata.format_version,
-            output_file=self._table.io.new_output(manifest_list_file_path),
+            format_version=self._table_metadata.format_version,
+            output_file=self._io.new_output(manifest_list_file_path),
             snapshot_id=self._snapshot_id,
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
@@ -2505,22 +2425,21 @@ class _MergingSnapshotProducer:
             manifest_list=manifest_list_file_path,
             sequence_number=next_sequence_number,
             summary=summary,
-            schema_id=self._table.schema().schema_id,
+            schema_id=self._table_metadata.current_schema_id,
         )
 
-        if self._transaction is not None:
-            self._transaction.add_snapshot(snapshot=snapshot)
-            self._transaction.set_ref_snapshot(
-                snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
-            )
-        else:
-            with self._table.transaction() as tx:
-                tx.add_snapshot(snapshot=snapshot)
-                tx.set_ref_snapshot(
+        return (
+            (
+                AddSnapshotUpdate(snapshot=snapshot),
+                SetSnapshotRefUpdate(
                     snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
-                )
-
-        return snapshot
+                ),
+            ),
+            (
+                AssertTableUUID(uuid=self._table_metadata.table_uuid),
+                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
+            ),
+        )
 
 
 class FastAppendFiles(_MergingSnapshotProducer):
@@ -2533,12 +2452,12 @@ class FastAppendFiles(_MergingSnapshotProducer):
         existing_manifests = []
 
         if self._parent_snapshot_id is not None:
-            previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
+            previous_snapshot = self._table_metadata.snapshot_by_id(self._parent_snapshot_id)
 
             if previous_snapshot is None:
                 raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
 
-            for manifest in previous_snapshot.manifests(io=self._table.io):
+            for manifest in previous_snapshot.manifests(io=self._table_metadata.io):
                 if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
                     existing_manifests.append(manifest)
 
@@ -2569,7 +2488,7 @@ class OverwriteFiles(_MergingSnapshotProducer):
         which entries are affected.
         """
         if self._parent_snapshot_id is not None:
-            previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
+            previous_snapshot = self._table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if previous_snapshot is None:
                 # This should never happen since you cannot overwrite an empty table
                 raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
@@ -2585,30 +2504,35 @@ class OverwriteFiles(_MergingSnapshotProducer):
                         file_sequence_number=entry.file_sequence_number,
                         data_file=entry.data_file,
                     )
-                    for entry in manifest.fetch_manifest_entry(self._table.io, discard_deleted=True)
+                    for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True)
                     if entry.data_file.content == DataFileContent.DATA
                 ]
 
-            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._table.io))
+            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
             return list(chain(*list_of_entries))
         else:
             return []
 
 
 class UpdateSnapshot:
-    _table: Table
-    _transaction: Optional[Transaction]
+    _transaction: Transaction
+    _table_metadata: TableMetadata
+    _io: FileIO
 
-    def __init__(self, table: Table, transaction: Optional[Transaction] = None) -> None:
-        self._table = table
+    def __init__(self, transaction: Transaction, table_metadata: TableMetadata, io: FileIO) -> None:
         self._transaction = transaction
+        self._table_metadata = table_metadata
+        self._io = io
 
     def fast_append(self) -> FastAppendFiles:
-        return FastAppendFiles(table=self._table, operation=Operation.APPEND, transaction=self._transaction)
+        return FastAppendFiles(
+            operation=Operation.APPEND, transaction=self._transaction, table_metadata=self._table_metadata, io=self._io
+        )
 
     def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(
-            table=self._table,
-            operation=Operation.OVERWRITE if self._table.current_snapshot() is not None else Operation.APPEND,
+            table_metadata=self._table_metadata,
+            operation=Operation.OVERWRITE if self._table_metadata.current_snapshot() is not None else Operation.APPEND,
             transaction=self._transaction,
+            io=self._io,
         )
