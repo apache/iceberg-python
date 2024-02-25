@@ -144,13 +144,13 @@ def test_read_single_byte_at_the_time(decoder_class: Callable[[bytes], BinaryDec
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_read_float(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
-    decoder = decoder_class(b"\x00\x00\x9A\x41")
+    decoder = decoder_class(b"\x00\x00\x9a\x41")
     assert decoder.read_float() == 19.25
 
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_skip_float(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
-    decoder = decoder_class(b"\x00\x00\x9A\x41")
+    decoder = decoder_class(b"\x00\x00\x9a\x41")
     assert decoder.tell() == 0
     decoder.skip_float()
     assert decoder.tell() == 4
@@ -179,13 +179,13 @@ def test_read_bytes(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_read_utf8(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
-    decoder = decoder_class(b"\x04\x76\x6F")
+    decoder = decoder_class(b"\x04\x76\x6f")
     assert decoder.read_utf8() == "vo"
 
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_skip_utf8(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
-    decoder = decoder_class(b"\x04\x76\x6F")
+    decoder = decoder_class(b"\x04\x76\x6f")
     assert decoder.tell() == 0
     decoder.skip_utf8()
     assert decoder.tell() == 3
@@ -193,7 +193,7 @@ def test_skip_utf8(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_read_int_as_float(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
-    decoder = decoder_class(b"\x00\x00\x9A\x41")
+    decoder = decoder_class(b"\x00\x00\x9a\x41")
     reader = resolve_reader(FloatType(), DoubleType())
     assert reader.read(decoder) == 19.25
 
