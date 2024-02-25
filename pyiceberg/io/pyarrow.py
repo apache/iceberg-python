@@ -1771,8 +1771,11 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[pa.RecordBatch]]:
     from pyiceberg.utils.bin_packing import PackingIterator
 
+    avg_row_size_bytes = tbl.nbytes / tbl.num_rows
+    max_chunksize = target_file_size // avg_row_size_bytes
+    batches = tbl.to_batches(max_chunksize)
     bin_packed_record_batches = PackingIterator(
-        items=tbl.to_batches(),
+        items=batches,
         target_weight=target_file_size,
         lookback=2,
         weight_func=lambda x: x.nbytes,
