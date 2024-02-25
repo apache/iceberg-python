@@ -502,11 +502,14 @@ class _TableMetadataUpdateContext:
         return any(
             update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
         )
-    
+
     def is_added_sort_order(self, sort_order_id: int) -> bool:
         return any(
-            update.sort_order.order_id == sort_order_id for update in self._updates if update.action == TableUpdateAction.add_sort_order
+            update.sort_order.order_id == sort_order_id
+            for update in self._updates
+            if update.action == TableUpdateAction.add_sort_order
         )
+
 
 @singledispatch
 def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
