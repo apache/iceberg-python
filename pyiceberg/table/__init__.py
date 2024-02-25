@@ -85,9 +85,9 @@ from pyiceberg.table.metadata import (
     TableMetadataUtil,
 )
 from pyiceberg.table.name_mapping import (
-    SCHEMA_NAME_MAPPING_DEFAULT,
     NameMapping,
     parse_mapping_from_json,
+    update_mapping,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
@@ -119,6 +119,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
+    import daft
     import pandas as pd
     import pyarrow as pa
     import ray
@@ -165,6 +166,55 @@ def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
 
         console.print(rich_table)
         raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+
+
+class TableProperties:
+    PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
+    PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    PARQUET_ROW_GROUP_LIMIT = "write.parquet.row-group-limit"
+    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    PARQUET_PAGE_SIZE_BYTES = "write.parquet.page-size-bytes"
+    PARQUET_PAGE_SIZE_BYTES_DEFAULT = 1024 * 1024  # 1 MB
+
+    PARQUET_PAGE_ROW_LIMIT = "write.parquet.page-row-limit"
+    PARQUET_PAGE_ROW_LIMIT_DEFAULT = 20000
+
+    PARQUET_DICT_SIZE_BYTES = "write.parquet.dict-size-bytes"
+    PARQUET_DICT_SIZE_BYTES_DEFAULT = 2 * 1024 * 1024  # 2 MB
+
+    PARQUET_COMPRESSION = "write.parquet.compression-codec"
+    PARQUET_COMPRESSION_DEFAULT = "zstd"
+
+    PARQUET_COMPRESSION_LEVEL = "write.parquet.compression-level"
+    PARQUET_COMPRESSION_LEVEL_DEFAULT = None
+
+    PARQUET_BLOOM_FILTER_MAX_BYTES = "write.parquet.bloom-filter-max-bytes"
+    PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT = 1024 * 1024
+
+    PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
+
+    DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
+    DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
+
+    METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
+
+    DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
+    FORMAT_VERSION = "format-version"
+    DEFAULT_FORMAT_VERSION = 2
+
+
+class PropertyUtil:
+    @staticmethod
+    def property_as_int(properties: Dict[str, str], property_name: str, default: Optional[int] = None) -> Optional[int]:
+        if value := properties.get(property_name):
+            try:
+                return int(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
+        else:
+            return default
 
 
 class Transaction:
@@ -314,6 +364,14 @@ class Transaction:
         """
         return UpdateSchema(self._table, self)
 
+    def update_snapshot(self) -> UpdateSnapshot:
+        """Create a new UpdateSnapshot to produce a new snapshot for the table.
+
+        Returns:
+            A new UpdateSnapshot
+        """
+        return UpdateSnapshot(self._table, self)
+
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
 
@@ -335,6 +393,12 @@ class Transaction:
             The alter table builder.
         """
         raise NotImplementedError("Not yet implemented")
+
+    def schema(self) -> Schema:
+        try:
+            return next(update for update in self._updates if isinstance(update, AddSchemaUpdate)).schema_
+        except StopIteration:
+            return self._table.schema()
 
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
@@ -950,18 +1014,31 @@ class Table:
         return self.metadata.snapshot_log
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
+        """Create a new UpdateSchema to alter the columns of this table.
+
+        Returns:
+            A new UpdateSchema.
+        """
         return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
 
-    def name_mapping(self) -> NameMapping:
+    def update_snapshot(self) -> UpdateSnapshot:
+        """Create a new UpdateSnapshot to produce a new snapshot for the table.
+
+        Returns:
+            A new UpdateSnapshot
+        """
+        return UpdateSnapshot(self)
+
+    def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
-        if name_mapping_json := self.properties.get(SCHEMA_NAME_MAPPING_DEFAULT):
+        if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
             return parse_mapping_from_json(name_mapping_json)
         else:
-            return self.schema().name_mapping
+            return None
 
     def append(self, df: pa.Table) -> None:
         """
-        Append data to the table.
+        Shorthand API for appending a PyArrow table to the table.
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
@@ -978,19 +1055,17 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema(self.schema(), other_schema=df.schema)
-        merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
 
-        # skip writing data files if the dataframe is empty
-        if df.shape[0] > 0:
-            data_files = _dataframe_to_data_files(self, df=df)
-            for data_file in data_files:
-                merge.append_data_file(data_file)
-
-        merge.commit()
+        with self.update_snapshot().fast_append() as update_snapshot:
+            # skip writing data files if the dataframe is empty
+            if df.shape[0] > 0:
+                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
+                for data_file in data_files:
+                    update_snapshot.append_data_file(data_file)
 
     def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
         """
-        Overwrite all the data in the table.
+        Shorthand for overwriting the table with a PyArrow table.
 
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
@@ -1013,18 +1088,12 @@ class Table:
 
         _check_schema(self.schema(), other_schema=df.schema)
 
-        merge = _MergingSnapshotProducer(
-            operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
-            table=self,
-        )
-
-        # skip writing data files if the dataframe is empty
-        if df.shape[0] > 0:
-            data_files = _dataframe_to_data_files(self, df=df)
-            for data_file in data_files:
-                merge.append_data_file(data_file)
-
-        merge.commit()
+        with self.update_snapshot().overwrite() as update_snapshot:
+            # skip writing data files if the dataframe is empty
+            if df.shape[0] > 0:
+                data_files = _dataframe_to_data_files(self, write_uuid=update_snapshot.commit_uuid, df=df)
+                for data_file in data_files:
+                    update_snapshot.append_data_file(data_file)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -1060,6 +1129,16 @@ class Table:
         snapshot_str = f"snapshot: {str(self.current_snapshot()) if self.current_snapshot() else 'null'}"
         result_str = f"{table_name}(\n  {schema_str}\n),\n{partition_str},\n{sort_order_str},\n{snapshot_str}"
         return result_str
+
+    def to_daft(self) -> daft.DataFrame:
+        """Read a Daft DataFrame lazily from this Iceberg table.
+
+        Returns:
+            daft.DataFrame: Unmaterialized Daft Dataframe created from the Iceberg table
+        """
+        import daft
+
+        return daft.read_iceberg(self)
 
 
 class StaticTable(Table):
@@ -1659,7 +1738,7 @@ class UpdateSchema:
         from_field_correct_casing = self._schema.find_column_name(field_from.field_id)
         if from_field_correct_casing in self._identifier_field_names:
             self._identifier_field_names.remove(from_field_correct_casing)
-            new_identifier_path = f"{from_field_correct_casing[:-len(field_from.name)]}{new_name}"
+            new_identifier_path = f"{from_field_correct_casing[: -len(field_from.name)]}{new_name}"
             self._identifier_field_names.add(new_identifier_path)
 
         return self
@@ -1909,6 +1988,12 @@ class UpdateSchema:
                 )
             else:
                 updates = (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)  # type: ignore
+
+            if name_mapping := self._table.name_mapping():
+                updated_name_mapping = update_mapping(name_mapping, self._updates, self._adds)
+                updates += (  # type: ignore
+                    SetPropertiesUpdate(updates={TableProperties.DEFAULT_NAME_MAPPING: updated_name_mapping.model_dump_json()}),
+                )
 
             if self._transaction is not None:
                 self._transaction._append_updates(*updates)  # pylint: disable=W0212
@@ -2309,81 +2394,74 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
 
 
-def _dataframe_to_data_files(table: Table, df: pa.Table) -> Iterable[DataFile]:
+def _dataframe_to_data_files(
+    table: Table, df: pa.Table, write_uuid: Optional[uuid.UUID] = None, file_schema: Optional[Schema] = None
+) -> Iterable[DataFile]:
+    """Convert a PyArrow table into a DataFile.
+
+    Returns:
+        An iterable that supplies datafiles that represent the table.
+    """
     from pyiceberg.io.pyarrow import write_file
 
     if len(table.spec().fields) > 0:
         raise ValueError("Cannot write to partitioned tables")
 
-    write_uuid = uuid.uuid4()
     counter = itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
 
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]))
+    yield from write_file(table, iter([WriteTask(write_uuid, next(counter), df)]), file_schema=file_schema)
 
 
 class _MergingSnapshotProducer:
+    commit_uuid: uuid.UUID
     _operation: Operation
     _table: Table
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
-    _commit_uuid: uuid.UUID
+    _transaction: Optional[Transaction]
 
-    def __init__(self, operation: Operation, table: Table) -> None:
+    def __init__(
+        self,
+        operation: Operation,
+        table: Table,
+        commit_uuid: Optional[uuid.UUID] = None,
+        transaction: Optional[Transaction] = None,
+    ) -> None:
+        self.commit_uuid = commit_uuid or uuid.uuid4()
         self._operation = operation
         self._table = table
         self._snapshot_id = table.new_snapshot_id()
         # Since we only support the main branch for now
         self._parent_snapshot_id = snapshot.snapshot_id if (snapshot := self._table.current_snapshot()) else None
         self._added_data_files = []
-        self._commit_uuid = uuid.uuid4()
+        self._transaction = transaction
+
+    def __enter__(self) -> _MergingSnapshotProducer:
+        """Start a transaction to update the table."""
+        return self
+
+    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
+        """Close and commit the transaction."""
+        self.commit()
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
         return self
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        """To determine if we need to record any deleted entries.
+    @abstractmethod
+    def _deleted_entries(self) -> List[ManifestEntry]: ...
 
-        With partial overwrites we have to use the predicate to evaluate
-        which entries are affected.
-        """
-        if self._operation == Operation.OVERWRITE:
-            if self._parent_snapshot_id is not None:
-                previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
-                if previous_snapshot is None:
-                    # This should never happen since you cannot overwrite an empty table
-                    raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
-
-                executor = ExecutorFactory.get_or_create()
-
-                def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
-                    return [
-                        ManifestEntry(
-                            status=ManifestEntryStatus.DELETED,
-                            snapshot_id=entry.snapshot_id,
-                            data_sequence_number=entry.data_sequence_number,
-                            file_sequence_number=entry.file_sequence_number,
-                            data_file=entry.data_file,
-                        )
-                        for entry in manifest.fetch_manifest_entry(self._table.io, discard_deleted=True)
-                        if entry.data_file.content == DataFileContent.DATA
-                    ]
-
-                list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._table.io))
-                return list(chain(*list_of_entries))
-            return []
-        elif self._operation == Operation.APPEND:
-            return []
-        else:
-            raise ValueError(f"Not implemented for: {self._operation}")
+    @abstractmethod
+    def _existing_manifests(self) -> List[ManifestFile]: ...
 
     def _manifests(self) -> List[ManifestFile]:
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
-                output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self._commit_uuid)
+                output_file_location = _new_manifest_path(location=self._table.location(), num=0, commit_uuid=self.commit_uuid)
                 with write_manifest(
                     format_version=self._table.format_version,
                     spec=self._table.spec(),
@@ -2408,8 +2486,9 @@ class _MergingSnapshotProducer:
         def _write_delete_manifest() -> List[ManifestFile]:
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
-            if deleted_entries:
-                output_file_location = _new_manifest_path(location=self._table.location(), num=1, commit_uuid=self._commit_uuid)
+            if len(deleted_entries) > 0:
+                output_file_location = _new_manifest_path(location=self._table.location(), num=1, commit_uuid=self.commit_uuid)
+
                 with write_manifest(
                     format_version=self._table.format_version,
                     spec=self._table.spec(),
@@ -2423,32 +2502,11 @@ class _MergingSnapshotProducer:
             else:
                 return []
 
-        def _fetch_existing_manifests() -> List[ManifestFile]:
-            existing_manifests = []
-
-            # Add existing manifests
-            if self._operation == Operation.APPEND and self._parent_snapshot_id is not None:
-                # In case we want to append, just add the existing manifests
-                previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
-
-                if previous_snapshot is None:
-                    raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
-
-                for manifest in previous_snapshot.manifests(io=self._table.io):
-                    if (
-                        manifest.has_added_files()
-                        or manifest.has_existing_files()
-                        or manifest.added_snapshot_id == self._snapshot_id
-                    ):
-                        existing_manifests.append(manifest)
-
-            return existing_manifests
-
         executor = ExecutorFactory.get_or_create()
 
         added_manifests = executor.submit(_write_added_manifest)
         delete_manifests = executor.submit(_write_delete_manifest)
-        existing_manifests = executor.submit(_fetch_existing_manifests)
+        existing_manifests = executor.submit(self._existing_manifests)
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
 
@@ -2473,7 +2531,7 @@ class _MergingSnapshotProducer:
         summary = self._summary()
 
         manifest_list_file_path = _generate_manifest_list_path(
-            location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self._commit_uuid
+            location=self._table.location(), snapshot_id=self._snapshot_id, attempt=0, commit_uuid=self.commit_uuid
         )
         with write_manifest_list(
             format_version=self._table.metadata.format_version,
@@ -2493,10 +2551,107 @@ class _MergingSnapshotProducer:
             schema_id=self._table.schema().schema_id,
         )
 
-        with self._table.transaction() as tx:
-            tx.add_snapshot(snapshot=snapshot)
-            tx.set_ref_snapshot(
+        if self._transaction is not None:
+            self._transaction.add_snapshot(snapshot=snapshot)
+            self._transaction.set_ref_snapshot(
                 snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
             )
+        else:
+            with self._table.transaction() as tx:
+                tx.add_snapshot(snapshot=snapshot)
+                tx.set_ref_snapshot(
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                )
 
         return snapshot
+
+
+class FastAppendFiles(_MergingSnapshotProducer):
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        A fast append will add another ManifestFile to the ManifestList.
+        All the existing manifest files are considered existing.
+        """
+        existing_manifests = []
+
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
+
+            if previous_snapshot is None:
+                raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
+
+            for manifest in previous_snapshot.manifests(io=self._table.io):
+                if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
+                    existing_manifests.append(manifest)
+
+        return existing_manifests
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to record any deleted manifest entries.
+
+        In case of an append, nothing is deleted.
+        """
+        return []
+
+
+class OverwriteFiles(_MergingSnapshotProducer):
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        In the of a full overwrite, all the previous manifests are
+        considered deleted.
+        """
+        return []
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to record any deleted entries.
+
+        With a full overwrite all the entries are considered deleted.
+        With partial overwrites we have to use the predicate to evaluate
+        which entries are affected.
+        """
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
+            if previous_snapshot is None:
+                # This should never happen since you cannot overwrite an empty table
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+            executor = ExecutorFactory.get_or_create()
+
+            def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+                return [
+                    ManifestEntry(
+                        status=ManifestEntryStatus.DELETED,
+                        snapshot_id=entry.snapshot_id,
+                        data_sequence_number=entry.data_sequence_number,
+                        file_sequence_number=entry.file_sequence_number,
+                        data_file=entry.data_file,
+                    )
+                    for entry in manifest.fetch_manifest_entry(self._table.io, discard_deleted=True)
+                    if entry.data_file.content == DataFileContent.DATA
+                ]
+
+            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._table.io))
+            return list(chain(*list_of_entries))
+        else:
+            return []
+
+
+class UpdateSnapshot:
+    _table: Table
+    _transaction: Optional[Transaction]
+
+    def __init__(self, table: Table, transaction: Optional[Transaction] = None) -> None:
+        self._table = table
+        self._transaction = transaction
+
+    def fast_append(self) -> FastAppendFiles:
+        return FastAppendFiles(table=self._table, operation=Operation.APPEND, transaction=self._transaction)
+
+    def overwrite(self) -> OverwriteFiles:
+        return OverwriteFiles(
+            table=self._table,
+            operation=Operation.OVERWRITE if self._table.current_snapshot() is not None else Operation.APPEND,
+            transaction=self._transaction,
+        )

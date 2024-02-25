@@ -199,6 +199,75 @@ def test_migrate_v1_partition_specs(example_table_metadata_v1: Dict[str, Any]) -
     ]
 
 
+def test_new_table_metadata_with_explicit_v1_format() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=33, name="baz", field_type=BooleanType(), required=False),
+        schema_id=10,
+        identifier_field_ids=[22],
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=22, field_id=1022, transform=IdentityTransform(), name="bar"), spec_id=10
+    )
+
+    sort_order = SortOrder(
+        SortField(source_id=10, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=10,
+    )
+
+    actual = new_table_metadata(
+        schema=schema,
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+        location="s3://some_v1_location/",
+        properties={'format-version': "1"},
+    )
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[2],
+    )
+
+    expected_spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bar"))
+
+    expected = TableMetadataV1(
+        location="s3://some_v1_location/",
+        table_uuid=actual.table_uuid,
+        last_updated_ms=actual.last_updated_ms,
+        last_column_id=3,
+        schemas=[expected_schema],
+        schema_=expected_schema,
+        current_schema_id=0,
+        partition_spec=[field.model_dump() for field in expected_spec.fields],
+        partition_specs=[expected_spec],
+        default_spec_id=0,
+        last_partition_id=1000,
+        properties={},
+        current_snapshot_id=None,
+        snapshots=[],
+        snapshot_log=[],
+        metadata_log=[],
+        sort_orders=[
+            SortOrder(
+                SortField(
+                    source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST
+                ),
+                order_id=1,
+            )
+        ],
+        default_sort_order_id=1,
+        refs={},
+        format_version=1,
+    )
+
+    assert actual.model_dump() == expected.model_dump()
+
+
 def test_invalid_format_version(example_table_metadata_v1: Dict[str, Any]) -> None:
     """Test the exception when trying to load an unknown version"""
 

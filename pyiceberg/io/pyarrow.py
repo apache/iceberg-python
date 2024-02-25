@@ -124,7 +124,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import WriteTask
+from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
@@ -533,7 +533,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(16)
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
-        return pa.binary()
+        return pa.large_binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
@@ -694,7 +694,9 @@ def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 
 @visit_pyarrow.register(pa.ListType)
-def _(obj: pa.ListType, visitor: PyArrowSchemaVisitor[T]) -> T:
+@visit_pyarrow.register(pa.FixedSizeListType)
+@visit_pyarrow.register(pa.LargeListType)
+def _(obj: Union[pa.ListType, pa.LargeListType, pa.FixedSizeListType], visitor: PyArrowSchemaVisitor[T]) -> T:
     visitor.before_list_element(obj.value_field)
     result = visit_pyarrow(obj.value_type, visitor)
     visitor.after_list_element(obj.value_field)
@@ -857,10 +859,15 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
         if pa.types.is_boolean(primitive):
             return BooleanType()
-        elif pa.types.is_int32(primitive):
-            return IntegerType()
-        elif pa.types.is_int64(primitive):
-            return LongType()
+        elif pa.types.is_integer(primitive):
+            width = primitive.bit_width
+            if width <= 32:
+                return IntegerType()
+            elif width <= 64:
+                return LongType()
+            else:
+                # Does not exist (yet)
+                raise TypeError(f"Unsupported integer type: {primitive}")
         elif pa.types.is_float32(primitive):
             return FloatType()
         elif pa.types.is_float64(primitive):
@@ -868,7 +875,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif isinstance(primitive, pa.Decimal128Type):
             primitive = cast(pa.Decimal128Type, primitive)
             return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive):
+        elif pa.types.is_string(primitive) or pa.types.is_large_string(primitive):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
@@ -881,7 +888,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     return TimestamptzType()
                 elif primitive.tz is None:
                     return TimestampType()
-        elif pa.types.is_binary(primitive):
+        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
@@ -1335,11 +1342,17 @@ class StatsAggregator:
     def serialize(self, value: Any) -> bytes:
         return to_bytes(self.primitive_type, value)
 
-    def update_min(self, val: Any) -> None:
-        self.current_min = val if self.current_min is None else min(val, self.current_min)
+    def update_min(self, val: Optional[Any]) -> None:
+        if self.current_min is None:
+            self.current_min = val
+        elif val is not None:
+            self.current_min = min(val, self.current_min)
 
-    def update_max(self, val: Any) -> None:
-        self.current_max = val if self.current_max is None else max(val, self.current_max)
+    def update_max(self, val: Optional[Any]) -> None:
+        if self.current_max is None:
+            self.current_max = val
+        elif val is not None:
+            self.current_max = max(val, self.current_max)
 
     def min_as_bytes(self) -> Optional[bytes]:
         if self.current_min is None:
@@ -1382,17 +1395,10 @@ class MetricModeTypes(Enum):
     FULL = "full"
 
 
-DEFAULT_METRICS_MODE_KEY = "write.metadata.metrics.default"
-COLUMN_METRICS_MODE_KEY_PREFIX = "write.metadata.metrics.column"
-
-
 @dataclass(frozen=True)
 class MetricsMode(Singleton):
     type: MetricModeTypes
     length: Optional[int] = None
-
-
-_DEFAULT_METRICS_MODE = MetricsMode(MetricModeTypes.TRUNCATE, DEFAULT_TRUNCATION_LENGTH)
 
 
 def match_metrics_mode(mode: str) -> MetricsMode:
@@ -1428,12 +1434,14 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
     _field_id: int = 0
     _schema: Schema
     _properties: Dict[str, str]
-    _default_mode: Optional[str]
+    _default_mode: str
 
     def __init__(self, schema: Schema, properties: Dict[str, str]):
         self._schema = schema
         self._properties = properties
-        self._default_mode = self._properties.get(DEFAULT_METRICS_MODE_KEY)
+        self._default_mode = self._properties.get(
+            TableProperties.DEFAULT_WRITE_METRICS_MODE, TableProperties.DEFAULT_WRITE_METRICS_MODE_DEFAULT
+        )
 
     def schema(self, schema: Schema, struct_result: Callable[[], List[StatisticsCollector]]) -> List[StatisticsCollector]:
         return struct_result()
@@ -1468,12 +1476,9 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
         if column_name is None:
             return []
 
-        metrics_mode = _DEFAULT_METRICS_MODE
+        metrics_mode = match_metrics_mode(self._default_mode)
 
-        if self._default_mode:
-            metrics_mode = match_metrics_mode(self._default_mode)
-
-        col_mode = self._properties.get(f"{COLUMN_METRICS_MODE_KEY_PREFIX}.{column_name}")
+        col_mode = self._properties.get(f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.{column_name}")
         if col_mode:
             metrics_mode = match_metrics_mode(col_mode)
 
@@ -1715,7 +1720,7 @@ def fill_parquet_file_metadata(
     data_file.split_offsets = split_offsets
 
 
-def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+def write_file(table: Table, tasks: Iterator[WriteTask], file_schema: Optional[Schema] = None) -> Iterator[DataFile]:
     task = next(tasks)
 
     try:
@@ -1728,13 +1733,18 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table.properties)
 
     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
-    file_schema = schema_to_pyarrow(table.schema())
+    file_schema = file_schema or table.schema()
+    arrow_file_schema = schema_to_pyarrow(file_schema)
 
     fo = table.io.new_output(file_path)
-
+    row_group_size = PropertyUtil.property_as_int(
+        properties=table.properties,
+        property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+        default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
+    )
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=file_schema, version="1.0", **parquet_writer_kwargs) as writer:
-            writer.write_table(task.df)
+        with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
+            writer.write_table(task.df, row_group_size=row_group_size)
 
     data_file = DataFile(
         content=DataFileContent.DATA,
@@ -1755,39 +1765,51 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     fill_parquet_file_metadata(
         data_file=data_file,
         parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(table.schema(), table.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+        stats_columns=compute_statistics_plan(file_schema, table.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
     )
     return iter([data_file])
 
 
-def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
-    def _get_int(key: str, default: Optional[int] = None) -> Optional[int]:
-        if value := table_properties.get(key):
-            try:
-                return int(value)
-            except ValueError as e:
-                raise ValueError(f"Could not parse table property {key} to an integer: {value}") from e
-        else:
-            return default
+ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
+PYARROW_UNCOMPRESSED_CODEC = "none"
 
+
+def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
     for key_pattern in [
-        "write.parquet.row-group-size-bytes",
-        "write.parquet.page-row-limit",
-        "write.parquet.bloom-filter-max-bytes",
-        "write.parquet.bloom-filter-enabled.column.*",
+        TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+        TableProperties.PARQUET_PAGE_ROW_LIMIT,
+        TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES,
+        f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
         if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
             raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
-    compression_codec = table_properties.get("write.parquet.compression-codec", "zstd")
-    compression_level = _get_int("write.parquet.compression-level")
-    if compression_codec == "uncompressed":
-        compression_codec = "none"
+    compression_codec = table_properties.get(TableProperties.PARQUET_COMPRESSION, TableProperties.PARQUET_COMPRESSION_DEFAULT)
+    compression_level = PropertyUtil.property_as_int(
+        properties=table_properties,
+        property_name=TableProperties.PARQUET_COMPRESSION_LEVEL,
+        default=TableProperties.PARQUET_COMPRESSION_LEVEL_DEFAULT,
+    )
+    if compression_codec == ICEBERG_UNCOMPRESSED_CODEC:
+        compression_codec = PYARROW_UNCOMPRESSED_CODEC
 
     return {
         "compression": compression_codec,
         "compression_level": compression_level,
-        "data_page_size": _get_int("write.parquet.page-size-bytes"),
-        "dictionary_pagesize_limit": _get_int("write.parquet.dict-size-bytes", default=2 * 1024 * 1024),
+        "data_page_size": PropertyUtil.property_as_int(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_SIZE_BYTES,
+            default=TableProperties.PARQUET_PAGE_SIZE_BYTES_DEFAULT,
+        ),
+        "dictionary_pagesize_limit": PropertyUtil.property_as_int(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
+            default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
+        ),
+        "write_batch_size": PropertyUtil.property_as_int(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
+            default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
+        ),
     }

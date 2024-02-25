@@ -16,7 +16,7 @@
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
 import os
-from typing import Any, Dict, cast
+from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
@@ -26,6 +26,7 @@ import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
 from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
+    AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
     NoSuchTableError,
@@ -263,6 +264,48 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     )
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)) == [
         ("accounting", "tax"),
+    ]
+
+
+def test_list_namespaces_419(rest_mock: Mocker) -> None:
+    new_token = "new_jwt_token"
+    new_header = dict(TEST_HEADERS)
+    new_header["Authorization"] = f"Bearer {new_token}"
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "error": {
+                "message": "Authorization expired.",
+                "type": "AuthorizationExpiredError",
+                "code": 419,
+            }
+        },
+        status_code=419,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": new_token,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+        status_code=200,
+        request_headers=new_header,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
+    assert catalog.list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
     ]
 
 
@@ -515,6 +558,93 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             properties={"owner": "fokko"},
         )
     assert "Table already exists" in str(e.value)
+
+
+def test_create_table_if_not_exists_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    def json_callback() -> Callable[[Any, Any], Dict[str, Any]]:
+        call_count = 0
+
+        def callback(request: Any, context: Any) -> Dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                context.status_code = 200
+                return example_table_metadata_no_snapshot_v1_rest_json
+            else:
+                context.status_code = 409
+                return {
+                    "error": {
+                        "message": "Table already exists: fokko.already_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                        "type": "AlreadyExistsException",
+                        "code": 409,
+                    }
+                }
+
+        return callback
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json=json_callback(),
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table1 = catalog.create_table(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=None,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+        ),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    table2 = catalog.create_table_if_not_exists(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=None,
+        partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    assert table1 == table2
+
+
+def test_create_table_419(rest_mock: Mocker, table_schema_simple: Schema) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "error": {
+                "message": "Authorization expired.",
+                "type": "AuthorizationExpiredError",
+                "code": 419,
+            }
+        },
+        status_code=419,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(AuthorizationExpiredError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            location=None,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")
+            ),
+            sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+            properties={"owner": "fokko"},
+        )
+    assert "Authorization expired" in str(e.value)
+    assert rest_mock.call_count == 3
 
 
 def test_register_table_200(

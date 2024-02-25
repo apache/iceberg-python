@@ -84,6 +84,18 @@ def test_pyarrow_boolean_to_iceberg() -> None:
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
 
 
+def test_pyarrow_int8_to_iceberg() -> None:
+    pyarrow_type = pa.int8()
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    assert converted_iceberg_type == IntegerType()
+
+
+def test_pyarrow_int16_to_iceberg() -> None:
+    pyarrow_type = pa.int16()
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    assert converted_iceberg_type == IntegerType()
+
+
 def test_pyarrow_int32_to_iceberg() -> None:
     pyarrow_type = pa.int32()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -203,7 +215,7 @@ def test_pyarrow_string_to_iceberg() -> None:
 
 
 def test_pyarrow_variable_binary_to_iceberg() -> None:
-    pyarrow_type = pa.binary()
+    pyarrow_type = pa.large_binary()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == BinaryType()
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
@@ -225,6 +237,26 @@ def test_pyarrow_struct_to_iceberg() -> None:
 
 def test_pyarrow_list_to_iceberg() -> None:
     pyarrow_list = pa.list_(pa.field("element", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "1"}))
+    expected = ListType(
+        element_id=1,
+        element_type=IntegerType(),
+        element_required=True,
+    )
+    assert visit_pyarrow(pyarrow_list, _ConvertToIceberg()) == expected
+
+
+def test_pyarrow_large_list_to_iceberg() -> None:
+    pyarrow_list = pa.large_list(pa.field("element", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "1"}))
+    expected = ListType(
+        element_id=1,
+        element_type=IntegerType(),
+        element_required=True,
+    )
+    assert visit_pyarrow(pyarrow_list, _ConvertToIceberg()) == expected
+
+
+def test_pyarrow_fixed_size_list_to_iceberg() -> None:
+    pyarrow_list = pa.list_(pa.field("element", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "1"}), 1)
     expected = ListType(
         element_id=1,
         element_type=IntegerType(),
@@ -268,6 +300,15 @@ def test_round_schema_conversion_nested(table_schema_nested: Schema) -> None:
   6: quux: required map<string, map<string, int>>
   11: location: required list<struct<13: latitude: optional float, 14: longitude: optional float>>
   15: person: optional struct<16: name: optional string, 17: age: required int>
+}"""
+    assert actual == expected
+
+
+def test_round_schema_large_string() -> None:
+    schema = pa.schema([pa.field("animals", pa.large_string())])
+    actual = str(pyarrow_to_schema(schema, name_mapping=NameMapping([MappedField(field_id=1, names=["animals"])])))
+    expected = """table {
+  1: animals: optional string
 }"""
     assert actual == expected
 

@@ -125,8 +125,8 @@ class Config:
             env_var_lower = env_var.lower()
             if env_var_lower.startswith(PYICEBERG.lower()):
                 key = env_var_lower[len(PYICEBERG) :]
-                parts = key.split("__")
-                parts_normalized = [part.replace("_", "-") for part in parts]
+                parts = key.split("__", maxsplit=2)
+                parts_normalized = [part.replace('__', '.').replace("_", "-") for part in parts]
                 set_property(config, parts_normalized, config_value)
 
         return config

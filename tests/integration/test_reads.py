@@ -22,10 +22,12 @@ from urllib.parse import urlparse
 
 import pyarrow.parquet as pq
 import pytest
+from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
 from pyarrow.fs import S3FileSystem
 
 from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.catalog.hive import HiveCatalog, _HiveClient
+from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import (
     And,
     EqualTo,
@@ -176,6 +178,28 @@ def test_pyarrow_limit(catalog: Catalog) -> None:
 
     full_result = table_test_limit.scan(selected_fields=("idx",), limit=999).to_arrow()
     assert len(full_result) == 10
+
+
+@pytest.mark.integration
+@pytest.mark.filterwarnings("ignore")
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
+def test_daft_nan(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_daft()
+    assert df.count_rows() == 3
+    assert math.isnan(df.to_pydict()["col_numeric"][0])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
+def test_daft_nan_rewritten(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    df = table_test_null_nan_rewritten.to_daft()
+    df = df.where(df["col_numeric"].float.is_nan())
+    df = df.select("idx", "col_numeric")
+    assert df.count_rows() == 1
+    assert df.to_pydict()["idx"][0] == 1
+    assert math.isnan(df.to_pydict()["col_numeric"][0])
 
 
 @pytest.mark.integration
@@ -445,3 +469,25 @@ def test_null_list_and_map(catalog: Catalog) -> None:
     # assert arrow_table["col_list_with_struct"].to_pylist() == [None, [{'test': 1}]]
     # Once https://github.com/apache/arrow/issues/38809 has been fixed
     assert arrow_table["col_list_with_struct"].to_pylist() == [[], [{'test': 1}]]
+
+
+@pytest.mark.integration
+def test_hive_locking(catalog_hive: HiveCatalog) -> None:
+    table = create_table(catalog_hive)
+
+    database_name: str
+    table_name: str
+    _, database_name, table_name = table.identifier
+
+    hive_client: _HiveClient = _HiveClient(catalog_hive.properties["uri"])
+    blocking_lock_request: LockRequest = catalog_hive._create_lock_request(database_name, table_name)
+
+    with hive_client as open_client:
+        # Force a lock on the test table
+        lock: LockResponse = open_client.lock(blocking_lock_request)
+        assert lock.state == LockState.ACQUIRED
+        try:
+            with pytest.raises(CommitFailedException, match="(Failed to acquire lock for).*"):
+                table.transaction().set_properties(lock="fail").commit_transaction()
+        finally:
+            open_client.unlock(UnlockRequest(lock.lockid))
