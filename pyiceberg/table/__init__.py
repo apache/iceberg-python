@@ -897,10 +897,11 @@ class Table:
             A new UpdateSchema.
         """
         return UpdateSchema(
-            Transaction(self, autocommit=True),
-            self.metadata,
+            transaction=Transaction(self, autocommit=True),
+            table_metadata=self.metadata,
             allow_incompatible_changes=allow_incompatible_changes,
             case_sensitive=case_sensitive,
+            name_mapping=self.name_mapping(),
         )
 
     def name_mapping(self) -> Optional[NameMapping]:
@@ -2457,7 +2458,7 @@ class FastAppendFiles(_MergingSnapshotProducer):
             if previous_snapshot is None:
                 raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
 
-            for manifest in previous_snapshot.manifests(io=self._table_metadata.io):
+            for manifest in previous_snapshot.manifests(io=self._io):
                 if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
                     existing_manifests.append(manifest)
 

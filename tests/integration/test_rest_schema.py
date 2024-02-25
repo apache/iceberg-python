@@ -1088,8 +1088,9 @@ def test_add_required_column_case_insensitive(catalog: Catalog) -> None:
     table = _create_table_with_schema(catalog, schema_)
 
     with pytest.raises(ValueError) as exc_info:
-        with UpdateSchema(transaction=None, table_metadata=table.metadata, allow_incompatible_changes=True) as update:  # type: ignore
-            update.case_sensitive(False).add_column(path="ID", field_type=IntegerType(), required=True)
+        with table.transaction() as txn:
+            with UpdateSchema(transaction=txn, table_metadata=table.metadata, allow_incompatible_changes=True) as update:
+                update.case_sensitive(False).add_column(path="ID", field_type=IntegerType(), required=True)
     assert "already exists: ID" in str(exc_info.value)
 
     new_schema = (
@@ -2507,16 +2508,14 @@ def test_two_add_schemas_in_a_single_transaction(catalog: Catalog) -> None:
         ),
     )
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(CommitFailedException) as exc_info:
         with tbl.transaction() as tr:
             with tr.update_schema() as update:
                 update.add_column("bar", field_type=StringType())
             with tr.update_schema() as update:
                 update.add_column("baz", field_type=StringType())
 
-    assert "Updates in a single commit need to be unique, duplicate: <class 'pyiceberg.table.AddSchemaUpdate'>" in str(
-        exc_info.value
-    )
+    assert "CommitFailedException: Requirement failed: current schema changed: expected id 1 != 0" in str(exc_info.value)
 
 
 @pytest.mark.integration
