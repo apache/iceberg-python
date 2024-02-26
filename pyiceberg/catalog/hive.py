@@ -130,9 +130,9 @@ class _HiveClient:
 
     _transport: TTransport
     _client: Client
-    _ugi: list
+    _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: str = None):
+    def __init__(self, uri: str, ugi: Optional[str] = None):
         url_parts = urlparse(uri)
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
         self._transport = TTransport.TBufferedTransport(transport)
