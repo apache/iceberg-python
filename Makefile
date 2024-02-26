@@ -30,7 +30,7 @@ lint:
 	poetry run pre-commit run --all-files
 
 test:
-	poetry run pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+	poetry run pytest tests/ -m "(unmarked or parametrize) and not integration" -vv ${PYTEST_ARGS}
 
 test-s3:
 	sh ./dev/run-minio.sh

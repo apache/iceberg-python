@@ -77,7 +77,7 @@ def cleanup_snapshot_id(data: Dict[str, Any]) -> Dict[str, Any]:
     if CURRENT_SNAPSHOT_ID in data and data[CURRENT_SNAPSHOT_ID] == -1:
         # We treat -1 and None the same, by cleaning this up
         # in a pre-validator, we can simplify the logic later on
-        data[CURRENT_SNAPSHOT_ID] = None
+        data[CURRENT_SNAPSHOT_ID] = -1
     return data
 
 
@@ -120,7 +120,7 @@ def check_sort_orders(table_metadata: TableMetadata) -> TableMetadata:
 
 def construct_refs(table_metadata: TableMetadata) -> TableMetadata:
     """Set the main branch if missing."""
-    if table_metadata.current_snapshot_id is not None:
+    if table_metadata.current_snapshot_id is not None and table_metadata.current_snapshot_id != -1:
         if MAIN_BRANCH not in table_metadata.refs:
             table_metadata.refs[MAIN_BRANCH] = SnapshotRef(
                 snapshot_id=table_metadata.current_snapshot_id, snapshot_ref_type=SnapshotRefType.BRANCH
