@@ -42,7 +42,6 @@ from typing import (
     List,
     Optional,
 )
-from urllib.parse import urlparse
 
 import boto3
 import pytest
@@ -57,8 +56,6 @@ from pyiceberg.io import (
     GCS_PROJECT_ID,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
-    OutputFile,
-    OutputStream,
     fsspec,
     load_file_io,
 )
@@ -88,7 +85,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     from moto.server import ThreadedMotoServer  # type: ignore
 
-    from pyiceberg.io.pyarrow import PyArrowFile, PyArrowFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
 def pytest_collection_modifyitems(items: List[pytest.Item]) -> None:
