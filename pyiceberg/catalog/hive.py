@@ -144,6 +144,8 @@ class _HiveClient:
 
     def __enter__(self) -> Client:
         self._transport.open()
+        if self._ugi:
+            self._client.set_ugi(*self._ugi)
         return self._client
 
     def __exit__(
