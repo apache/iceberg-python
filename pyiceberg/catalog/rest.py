@@ -156,8 +156,10 @@ class RegisterTableRequest(IcebergBaseModel):
 class TokenResponse(IcebergBaseModel):
     access_token: str = Field()
     token_type: str = Field()
-    expires_in: int = Field()
+    expires_in: Optional[int] = None
     issued_token_type: Optional[str] = None
+    refresh_token: Optional[str] = None
+    scope: Optional[str] = None
 
 
 class ConfigResponse(IcebergBaseModel):
