@@ -63,8 +63,15 @@ def catch_exception() -> Callable:  # type: ignore
 @click.option("--uri")
 @click.option("--credential")
 @click.pass_context
-def run(ctx: Context, catalog: Optional[str], verbose: bool, output: str, ugi: Optional[str], uri: Optional[str],
-        credential: Optional[str]) -> None:
+def run(
+    ctx: Context,
+    catalog: Optional[str],
+    verbose: bool,
+    output: str,
+    ugi: Optional[str],
+    uri: Optional[str],
+    credential: Optional[str],
+) -> None:
     properties = {}
     if ugi:
         properties["ugi"] = ugi
