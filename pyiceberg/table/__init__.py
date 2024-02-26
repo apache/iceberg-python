@@ -1120,9 +1120,6 @@ class Table:
         if overwrite_filter != AlwaysTrue():
             raise NotImplementedError("Cannot overwrite a subset of a table")
 
-        if len(self.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
-
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:

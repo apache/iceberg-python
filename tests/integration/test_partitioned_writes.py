@@ -437,6 +437,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
 
     tbl.append(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
+    tbl.overwrite(arrow_table_with_null)
 
     rows = spark.sql(
         f"""
@@ -447,10 +448,10 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append']
+    assert operations == ['append', 'append', 'overwrite']
 
     summaries = [row.summary for row in rows]
-    
+    print("this is it", summaries)
     assert summaries[0] == {
         'added-data-files': '3',
         'added-files-size': '15029',
@@ -474,6 +475,20 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         'total-position-deletes': '0',
         'total-records': '6',
     }
+    assert summaries[2] == {
+        'removed-files-size': '30058',
+        'added-data-files': '3',
+        'total-equality-deletes': '0',
+        'added-records': '3',
+        'total-position-deletes': '0',
+        'deleted-data-files': '6',
+        'added-files-size': '15029',
+        'total-delete-files': '0',
+        'total-files-size': '15029',
+        'deleted-records': '6',
+        'total-records': '3',
+        'total-data-files': '3',
+    }
 
 
 @pytest.mark.integration
@@ -495,6 +510,7 @@ def test_data_files_with_table_partitioned_with_null(
 
     tbl.append(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
+    tbl.overwrite(arrow_table_with_null)
 
     # added_data_files_count, existing_data_files_count, deleted_data_files_count
     rows = spark.sql(
@@ -504,13 +520,9 @@ def test_data_files_with_table_partitioned_with_null(
     """
     ).collect()
 
-    assert [row.added_data_files_count for row in rows] == [3, 3, 3]
-    assert [row.existing_data_files_count for row in rows] == [
-        0,
-        0,
-        0,
-    ]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0]
+    assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6]
 
 
 @pytest.mark.integration
@@ -528,6 +540,9 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
         partition_spec=PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="int")),
         properties={'format-version': '1'},
     )
+
+    with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
+        tbl.overwrite("not a df")
 
     with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
         tbl.append("not a df")
