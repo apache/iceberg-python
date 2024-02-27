@@ -139,8 +139,7 @@ class _HiveClient:
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
         self._client = Client(protocol)
-        if ugi:
-            self._ugi = ugi.split(':')
+        self._ugi = ugi.split(':') if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
