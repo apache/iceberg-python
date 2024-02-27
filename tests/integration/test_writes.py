@@ -403,7 +403,7 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize(
     "properties, expected_compression_name",
     [
@@ -419,7 +419,7 @@ def test_write_parquet_compression_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: str,
+    format_version: int,
     properties: Dict[str, Any],
     expected_compression_name: str,
 ) -> None:
@@ -661,7 +661,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 def test_table_properties_int_value(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: str,
+    format_version: int,
 ) -> None:
     # table properties can be set to int, but still serialized to string
     property_with_int = {"property_name": 42}
@@ -678,7 +678,7 @@ def test_table_properties_int_value(
 def test_table_properties_raise_for_none_value(
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: str,
+    format_version: int,
 ) -> None:
     property_with_none = {"property_name": None}
     identifier = "default.test_table_properties_raise_for_none_value"

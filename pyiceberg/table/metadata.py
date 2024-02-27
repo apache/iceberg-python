@@ -181,7 +181,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
     @field_validator("properties", mode='before')
     @classmethod
     def transform_dict_value_to_str(cls, dict: Dict[str, Any]) -> Dict[str, str]:
-        assert None not in dict.values(), "None type is not a supported value in properties"
+        """Transform all values in the dictionary to string. Raise an error if any value is None."""
+        for value in dict.values():
+            if value is None:
+                raise ValueError("None type is not a supported value in properties")
         return {k: str(v) for k, v in dict.items()}
 
     current_snapshot_id: Optional[int] = Field(alias="current-snapshot-id", default=None)
