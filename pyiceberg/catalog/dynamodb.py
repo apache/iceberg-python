@@ -57,6 +57,7 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -81,6 +82,10 @@ ACTIVE = "ACTIVE"
 ITEM = "Item"
 
 
+@deprecated(
+    deprecated_in="0.6.0",
+    removed_in="1.0.0",
+)
 class DynamoDbCatalog(Catalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
