@@ -148,6 +148,7 @@ catalog:
 | Key                    | Example                 | Description                                                                                        |
 | ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
 | uri                    | https://rest-catalog/ws | URI identifying the REST Server                                                                    |
+| ugi                    | t-1234:secret           | Hadoop UGI for Hive client.                                                                        |
 | credential             | t-1234:secret           | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | token                  | FEW23.DFSDF.FSDF        | Bearer token value to use for `Authorization` header                                               |
 | rest.sigv4-enabled     | true                    | Sign requests to the REST Server using AWS SigV4 protocol                                          |
