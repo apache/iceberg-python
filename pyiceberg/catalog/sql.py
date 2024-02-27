@@ -567,7 +567,9 @@ class SqlCatalog(Catalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        database_name = self.identifier_to_database(namespace)
+        if not self._namespace_exists(database_name):
+            raise NoSuchNamespaceError(f"Database {database_name} does not exists")
 
         stmt = select(IcebergNamespaceProperties).where(
             IcebergNamespaceProperties.catalog_name == self.name, IcebergNamespaceProperties.namespace == database_name
