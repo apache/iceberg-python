@@ -679,18 +679,12 @@ def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
 
 def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
     with pytest.raises(ValueError, match="Cannot set current sort order to the last added one when no sort order has been added"):
-        update_table_metadata(
-            table_v2.metadata,
-            (SetDefaultSortOrderUpdate(sort_order_id=-1),)
-        )
-    
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=-1),))
+
     invalid_order_id = 10
     with pytest.raises(ValueError, match=f"Sort order with id {invalid_order_id} does not exist"):
-        update_table_metadata(
-            table_v2.metadata,
-            (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),)
-        )
-    
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),))
+
 
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     base_metadata = table_v1.metadata
