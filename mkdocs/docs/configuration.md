@@ -156,6 +156,19 @@ catalog:
 | rest.signing-name      | execute-api             | The service signing name to use when SigV4 signing a request                                       |
 | rest.authorization-url | https://auth-service/cc | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
 
+### Headers in RESTCatalog
+
+To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+ensures that all HTTP requests to the REST service include the specified headers.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    credential: t-1234:secret
+    header.content-type: application/vnd.api+json
+```
+
 ## SQL Catalog
 
 The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
