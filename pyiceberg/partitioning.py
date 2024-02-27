@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -53,7 +54,16 @@ from pyiceberg.transforms import (
     parse_transform,
 )
 from pyiceberg.typedef import IcebergBaseModel, Record
-from pyiceberg.types import DateType, IcebergType, NestedField, PrimitiveType, StructType, TimestampType, TimestamptzType
+from pyiceberg.types import (
+    DateType,
+    IcebergType,
+    NestedField,
+    PrimitiveType,
+    StructType,
+    TimestampType,
+    TimestamptzType,
+    UUIDType,
+)
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
@@ -370,7 +380,7 @@ class PartitionKey:
     schema: Schema
 
     @cached_property
-    def partition(self) -> Record:  # partition key in iceberg type
+    def partition(self) -> Record:  # partition key transformed with iceberg internal representation as input
         iceberg_typed_key_values = {}
         for raw_partition_field_value in self.raw_partition_field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
@@ -378,7 +388,7 @@ class PartitionKey:
                 raise ValueError("partition_fields must contain exactly one field.")
             partition_field = partition_fields[0]
             iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
-            iceberg_typed_value = _to_iceberg_type(iceberg_type, raw_partition_field_value.value)
+            iceberg_typed_value = _to_iceberg_internal_representation(iceberg_type, raw_partition_field_value.value)
             transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
             iceberg_typed_key_values[partition_field.name] = transformed_value
         return Record(**iceberg_typed_key_values)
@@ -388,21 +398,26 @@ class PartitionKey:
 
 
 @singledispatch
-def _to_iceberg_type(type: IcebergType, value: Any) -> Any:
+def _to_iceberg_internal_representation(type: IcebergType, value: Any) -> Any:
     return TypeError(f"Unsupported partition field type: {type}")
 
 
-@_to_iceberg_type.register(TimestampType)
-@_to_iceberg_type.register(TimestamptzType)
+@_to_iceberg_internal_representation.register(TimestampType)
+@_to_iceberg_internal_representation.register(TimestamptzType)
 def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
     return datetime_to_micros(value) if value is not None else None
 
 
-@_to_iceberg_type.register(DateType)
+@_to_iceberg_internal_representation.register(DateType)
 def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
     return date_to_days(value) if value is not None else None
 
 
-@_to_iceberg_type.register(PrimitiveType)
+@_to_iceberg_internal_representation.register(UUIDType)
+def _(type: IcebergType, value: Optional[uuid.UUID]) -> Optional[str]:
+    return str(value) if value is not None else None
+
+
+@_to_iceberg_internal_representation.register(PrimitiveType)
 def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
     return value

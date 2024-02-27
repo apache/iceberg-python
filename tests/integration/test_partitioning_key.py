@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, List
@@ -50,55 +51,8 @@ from pyiceberg.types import (
     StringType,
     TimestampType,
     TimestamptzType,
+    UUIDType,
 )
-
-# @pytest.fixture(scope="session")
-# def session_catalog() -> Catalog:
-#     return load_catalog(
-#         "local",
-#         **{
-#             "type": "rest",
-#             "uri": "http://localhost:8181",
-#             "s3.endpoint": "http://localhost:9000",
-#             "s3.access-key-id": "admin",
-#             "s3.secret-access-key": "password",
-#         },
-#     )
-
-
-# @pytest.fixture(scope="session")
-# def spark() -> SparkSession:
-#     import importlib.metadata
-#     import os
-
-#     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-#     scala_version = "2.12"
-#     iceberg_version = "1.4.3"
-
-#     os.environ["PYSPARK_SUBMIT_ARGS"] = (
-#         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-#         f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
-#     )
-#     os.environ["AWS_REGION"] = "us-east-1"
-#     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-#     os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
-
-#     spark = (
-#         SparkSession.builder.appName("PyIceberg integration test")
-#         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-#         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-#         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
-#         .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-#         .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-#         .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
-#         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
-#         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-#         .config("spark.sql.defaultCatalog", "integration")
-#         .getOrCreate()
-#     )
-
-#     return spark
-
 
 TABLE_SCHEMA = Schema(
     NestedField(field_id=1, name="boolean_field", field_type=BooleanType(), required=False),
@@ -112,10 +66,10 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=9, name="timestamptz_field", field_type=TimestamptzType(), required=False),
     NestedField(field_id=10, name="date_field", field_type=DateType(), required=False),
     # NestedField(field_id=11, name="time", field_type=TimeType(), required=False),
-    # NestedField(field_id=12, name="uuid", field_type=UuidType(), required=False),
     NestedField(field_id=11, name="binary_field", field_type=BinaryType(), required=False),
     NestedField(field_id=12, name="fixed_field", field_type=FixedType(16), required=False),
-    NestedField(field_id=13, name="decimal", field_type=DecimalType(5, 2), required=False),
+    NestedField(field_id=13, name="decimal_field", field_type=DecimalType(5, 2), required=False),
+    NestedField(field_id=14, name="uuid_field", field_type=UUIDType(), required=False),
 )
 
 
@@ -351,6 +305,25 @@ identifier = "default.test_table"
             f"""INSERT INTO {identifier}
             VALUES
             (CAST('2023-01-01' AS DATE), 'Associated string value for date 2023-01-01')
+            """,
+        ),
+        (
+            [PartitionField(source_id=14, field_id=1001, transform=IdentityTransform(), name="uuid_field")],
+            [uuid.UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")],
+            Record(uuid_field="f47ac10b-58cc-4372-a567-0e02b2c3d479"),
+            "uuid_field=f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            f"""CREATE TABLE {identifier} (
+                uuid_field string,
+                string_field string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(uuid_field)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Associated string value for UUID f47ac10b-58cc-4372-a567-0e02b2c3d479')
             """,
         ),
         (
@@ -770,6 +743,7 @@ def test_partition_key(
         partition_spec=spec,
         schema=TABLE_SCHEMA,
     )
+
     # key.partition is used to write the metadata in DataFile, ManifestFile and all above layers
     assert key.partition == expected_partition_record
     # key.to_path() generates the hive partitioning part of the to-write parquet file path
