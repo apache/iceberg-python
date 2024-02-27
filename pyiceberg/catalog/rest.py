@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 from requests import HTTPError, Session
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
@@ -69,6 +69,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
+from pyiceberg.types import transform_dict_value_to_str
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -147,6 +148,8 @@ class CreateTableRequest(IcebergBaseModel):
     write_order: Optional[SortOrder] = Field(alias="write-order")
     stage_create: bool = Field(alias="stage-create", default=False)
     properties: Properties = Field(default_factory=dict)
+    # validators
+    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
 
 
 class RegisterTableRequest(IcebergBaseModel):

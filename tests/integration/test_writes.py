@@ -28,12 +28,13 @@ import pyarrow.parquet as pq
 import pytest
 import pytz
 from pyarrow.fs import S3FileSystem
+from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NoSuchTableError, ServerError
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.types import (
@@ -683,8 +684,8 @@ def test_table_properties_raise_for_none_value(
     property_with_none = {"property_name": None}
     identifier = "default.test_table_properties_raise_for_none_value"
 
-    with pytest.raises(ServerError) as exc_info:
+    with pytest.raises(ValidationError) as exc_info:
         _ = _create_table(
             session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
         )
-    assert "NullPointerException: null value in entry: property_name=null" in str(exc_info.value)
+    assert "None type is not a supported value in properties" in str(exc_info.value)

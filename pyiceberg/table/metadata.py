@@ -49,6 +49,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
+from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.datetime import datetime_to_millis
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
@@ -178,15 +179,6 @@ class TableMetadataCommonFields(IcebergBaseModel):
     to be used for arbitrary metadata. For example, commit.retry.num-retries
     is used to control the number of commit retries."""
 
-    @field_validator("properties", mode='before')
-    @classmethod
-    def transform_dict_value_to_str(cls, dict: Dict[str, Any]) -> Dict[str, str]:
-        """Transform all values in the dictionary to string. Raise an error if any value is None."""
-        for value in dict.values():
-            if value is None:
-                raise ValueError("None type is not a supported value in properties")
-        return {k: str(v) for k, v in dict.items()}
-
     current_snapshot_id: Optional[int] = Field(alias="current-snapshot-id", default=None)
     """ID of the current table snapshot."""
 
@@ -226,6 +218,9 @@ class TableMetadataCommonFields(IcebergBaseModel):
     and the map values are snapshot reference objects.
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
+
+    # validators
+    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot by snapshot_id."""
