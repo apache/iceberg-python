@@ -465,7 +465,7 @@ class RestCatalog(Catalog):
         session.headers.update(header_properties)
 
     def _extract_headers_from_properties(self) -> Dict[str, str]:
-        return {key[len(HEADER_PREFIX):]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
+        return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
     @retry(**_RETRY_ARGS)
     def create_table(
