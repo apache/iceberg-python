@@ -228,7 +228,7 @@ class PartitionSpec(IcebergBaseModel):
         field_strs = []
         value_strs = []
         for pos, value in enumerate(data.record_fields()):
-            partition_field = self.fields[pos]  # partition field
+            partition_field = self.fields[pos]
             value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=value)
 
             value_str = quote(value_str, safe='')
@@ -388,7 +388,7 @@ class PartitionKey:
                 raise ValueError("partition_fields must contain exactly one field.")
             partition_field = partition_fields[0]
             iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
-            iceberg_typed_value = _to_iceberg_internal_representation(iceberg_type, raw_partition_field_value.value)
+            iceberg_typed_value = _to_partition_representation(iceberg_type, raw_partition_field_value.value)
             transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
             iceberg_typed_key_values[partition_field.name] = transformed_value
         return Record(**iceberg_typed_key_values)
@@ -398,26 +398,26 @@ class PartitionKey:
 
 
 @singledispatch
-def _to_iceberg_internal_representation(type: IcebergType, value: Any) -> Any:
+def _to_partition_representation(type: IcebergType, value: Any) -> Any:
     return TypeError(f"Unsupported partition field type: {type}")
 
 
-@_to_iceberg_internal_representation.register(TimestampType)
-@_to_iceberg_internal_representation.register(TimestamptzType)
+@_to_partition_representation.register(TimestampType)
+@_to_partition_representation.register(TimestamptzType)
 def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
     return datetime_to_micros(value) if value is not None else None
 
 
-@_to_iceberg_internal_representation.register(DateType)
+@_to_partition_representation.register(DateType)
 def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
     return date_to_days(value) if value is not None else None
 
 
-@_to_iceberg_internal_representation.register(UUIDType)
+@_to_partition_representation.register(UUIDType)
 def _(type: IcebergType, value: Optional[uuid.UUID]) -> Optional[str]:
     return str(value) if value is not None else None
 
 
-@_to_iceberg_internal_representation.register(PrimitiveType)
+@_to_partition_representation.register(PrimitiveType)
 def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
     return value
