@@ -1,6 +1,9 @@
 name: Check Markdown links
 
-on: push
+on: 
+  push:
+    paths:
+      - mkdocs/**
 
 jobs:
   markdown-link-check:
