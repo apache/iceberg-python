@@ -310,7 +310,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
 
         data[LAST_PARTITION_ID] = max(
-            [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]], default=PARTITION_FIELD_ID_START
+            [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]],
+            default=PARTITION_FIELD_ID_START - 1,
         )
 
         return data
