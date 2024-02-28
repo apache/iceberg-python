@@ -290,8 +290,9 @@ class RestCatalog(Catalog):
         else:
             client_id, client_secret = None, credential
         data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: CATALOG_SCOPE}
-        # Uses application/x-www-form-urlencoded by default
-        response = session.post(url=self.auth_url, data=data)
+        response = session.post(
+            url=self.auth_url, data=data, headers={**session.headers, "Content-type": "application/x-www-form-urlencoded"}
+        )
         try:
             response.raise_for_status()
         except HTTPError as exc:
