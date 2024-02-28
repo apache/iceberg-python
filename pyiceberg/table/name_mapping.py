@@ -26,7 +26,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import ChainMap
 from functools import cached_property, singledispatch
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
 
 from pydantic import Field, conlist, field_validator, model_serializer
 
@@ -96,6 +96,10 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
     def __len__(self) -> int:
         """Return the number of mappings."""
         return len(self.root)
+
+    def __iter__(self) -> Iterator[MappedField]:
+        """Iterate over the mapped fields."""
+        return iter(self.root)
 
     def __str__(self) -> str:
         """Convert the name-mapping into a nicely formatted string."""

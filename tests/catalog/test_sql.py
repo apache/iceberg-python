@@ -733,6 +733,18 @@ def test_load_empty_namespace_properties(catalog: SqlCatalog, database_name: str
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_load_namespace_properties_non_existing_namespace(catalog: SqlCatalog) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.load_namespace_properties("does_not_exist")
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) -> None:
     warehouse_location = "/test/location"
     test_properties = {

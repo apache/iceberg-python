@@ -148,12 +148,26 @@ catalog:
 | Key                    | Example                 | Description                                                                                        |
 | ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
 | uri                    | https://rest-catalog/ws | URI identifying the REST Server                                                                    |
+| ugi                    | t-1234:secret           | Hadoop UGI for Hive client.                                                                        |
 | credential             | t-1234:secret           | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | token                  | FEW23.DFSDF.FSDF        | Bearer token value to use for `Authorization` header                                               |
 | rest.sigv4-enabled     | true                    | Sign requests to the REST Server using AWS SigV4 protocol                                          |
 | rest.signing-region    | us-east-1               | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name      | execute-api             | The service signing name to use when SigV4 signing a request                                       |
 | rest.authorization-url | https://auth-service/cc | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+
+### Headers in RESTCatalog
+
+To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+ensures that all HTTP requests to the REST service include the specified headers.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    credential: t-1234:secret
+    header.content-type: application/vnd.api+json
+```
 
 ## SQL Catalog
 
