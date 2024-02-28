@@ -333,7 +333,7 @@ class Transaction:
         Returns:
             A new UpdateSpec.
         """
-        return UpdateSpec(self._table, self)
+        return UpdateSpec(self)
 
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
@@ -814,7 +814,7 @@ class AssertLastAssignedPartitionId(TableRequirement):
     """The table's last assigned partition id must match the requirement's `last-assigned-partition-id`."""
 
     type: Literal["assert-last-assigned-partition-id"] = Field(default="assert-last-assigned-partition-id")
-    last_assigned_partition_id: int = Field(..., alias="last-assigned-partition-id")
+    last_assigned_partition_id: Optional[int] = Field(..., alias="last-assigned-partition-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
@@ -1099,7 +1099,7 @@ class Table:
                         update_snapshot.append_data_file(data_file)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
-        return UpdateSpec(self, case_sensitive=case_sensitive)
+        return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -2670,8 +2670,8 @@ class UpdateSnapshot:
         )
 
 
-class UpdateSpec:
-    _table: Table
+class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
+    _transaction: Transaction
     _name_to_field: Dict[str, PartitionField] = {}
     _name_to_added_field: Dict[str, PartitionField] = {}
     _transform_to_field: Dict[Tuple[int, str], PartitionField] = {}
@@ -2682,17 +2682,18 @@ class UpdateSpec:
     _adds: List[PartitionField]
     _deletes: Set[int]
     _last_assigned_partition_id: int
-    _transaction: Optional[Transaction]
 
-    def __init__(self, table: Table, transaction: Optional[Transaction] = None, case_sensitive: bool = True) -> None:
-        self._table = table
-        self._name_to_field = {field.name: field for field in table.spec().fields}
+    def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
+        super().__init__(transaction)
+        self._name_to_field = {field.name: field for field in transaction.table_metadata.spec().fields}
         self._name_to_added_field = {}
-        self._transform_to_field = {(field.source_id, repr(field.transform)): field for field in table.spec().fields}
+        self._transform_to_field = {
+            (field.source_id, repr(field.transform)): field for field in transaction.table_metadata.spec().fields
+        }
         self._transform_to_added_field = {}
         self._adds = []
         self._deletes = set()
-        self._last_assigned_partition_id = table.last_partition_id()
+        self._last_assigned_partition_id = transaction.table_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1
         self._renames = {}
         self._transaction = transaction
         self._case_sensitive = case_sensitive
@@ -2705,7 +2706,7 @@ class UpdateSpec:
         partition_field_name: Optional[str] = None,
     ) -> UpdateSpec:
         ref = Reference(source_column_name)
-        bound_ref = ref.bind(self._table.schema(), self._case_sensitive)
+        bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
         # verify transform can actually bind it
         output_type = bound_ref.field.field_type
         if not transform.can_transform(output_type):
@@ -2776,31 +2777,24 @@ class UpdateSpec:
         self._renames[name] = new_name
         return self
 
-    def commit(self) -> None:
+    def _commit(self) -> UpdatesAndRequirements:
         new_spec = self._apply()
-        if self._table.metadata.default_spec_id != new_spec.spec_id:
-            if new_spec.spec_id not in self._table.specs():
-                updates = [AddPartitionSpecUpdate(spec=new_spec), SetDefaultSpecUpdate(spec_id=-1)]
+        updates: Tuple[TableUpdate, ...] = ()
+        requirements: Tuple[TableRequirement, ...] = ()
+
+        if self._transaction.table_metadata.default_spec_id != new_spec.spec_id:
+            if new_spec.spec_id not in self._transaction.table_metadata.specs():
+                updates = (
+                    AddPartitionSpecUpdate(spec=new_spec),
+                    SetDefaultSpecUpdate(spec_id=-1),
+                )
             else:
-                updates = [SetDefaultSpecUpdate(spec_id=new_spec.spec_id)]
+                updates = (SetDefaultSpecUpdate(spec_id=new_spec.spec_id),)
 
-            required_last_assigned_partitioned_id = self._table.last_partition_id()
-            requirements = [AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id)]
+            required_last_assigned_partitioned_id = self._transaction.table_metadata.last_partition_id
+            requirements = (AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),)
 
-            if self._transaction is not None:
-                self._transaction._append_updates(*updates)  # pylint: disable=W0212
-                self._transaction._append_requirements(*requirements)  # pylint: disable=W0212
-            else:
-                requirements.append(AssertDefaultSpecId(default_spec_id=self._table.spec().spec_id))
-                self._table._do_commit(updates=tuple(updates), requirements=tuple(requirements))  # pylint: disable=W0212
-
-    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
-        """Close and commit the change."""
-        return self.commit()
-
-    def __enter__(self) -> UpdateSpec:
-        """Update the table."""
-        return self
+        return updates, requirements
 
     def _apply(self) -> PartitionSpec:
         def _check_and_add_partition_name(schema: Schema, name: str, source_id: int, partition_names: Set[str]) -> None:
@@ -2827,27 +2821,47 @@ class UpdateSpec:
 
         partition_fields = []
         partition_names: Set[str] = set()
-        for field in self._table.spec().fields:
+        for field in self._transaction.table_metadata.spec().fields:
             if field.field_id not in self._deletes:
                 renamed = self._renames.get(field.name)
                 if renamed:
                     new_field = _add_new_field(
-                        self._table.schema(), field.source_id, field.field_id, renamed, field.transform, partition_names
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        renamed,
+                        field.transform,
+                        partition_names,
                     )
                 else:
                     new_field = _add_new_field(
-                        self._table.schema(), field.source_id, field.field_id, field.name, field.transform, partition_names
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        field.name,
+                        field.transform,
+                        partition_names,
                     )
                 partition_fields.append(new_field)
-            elif self._table.format_version == 1:
+            elif self._transaction.table_metadata.format_version == 1:
                 renamed = self._renames.get(field.name)
                 if renamed:
                     new_field = _add_new_field(
-                        self._table.schema(), field.source_id, field.field_id, renamed, VoidTransform(), partition_names
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        renamed,
+                        VoidTransform(),
+                        partition_names,
                     )
                 else:
                     new_field = _add_new_field(
-                        self._table.schema(), field.source_id, field.field_id, field.name, VoidTransform(), partition_names
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        field.name,
+                        VoidTransform(),
+                        partition_names,
                     )
 
                 partition_fields.append(new_field)
@@ -2864,7 +2878,7 @@ class UpdateSpec:
         # Reuse spec id or create a new one.
         new_spec = PartitionSpec(*partition_fields)
         new_spec_id = INITIAL_PARTITION_SPEC_ID
-        for spec in self._table.specs().values():
+        for spec in self._transaction.table_metadata.specs().values():
             if new_spec.compatible_with(spec):
                 new_spec_id = spec.spec_id
                 break
@@ -2873,10 +2887,10 @@ class UpdateSpec:
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
     def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
-        if self._table.metadata.format_version == 2:
+        if self._transaction.table_metadata.format_version == 2:
             source_id, transform = transform_key
             historical_fields = []
-            for spec in self._table.specs().values():
+            for spec in self._transaction.table_metadata.specs().values():
                 for field in spec.fields:
                     historical_fields.append((field.source_id, field.field_id, repr(field.transform), field.name))
 
@@ -2888,7 +2902,7 @@ class UpdateSpec:
         new_field_id = self._new_field_id()
         if name is None:
             tmp_field = PartitionField(transform_key[0], new_field_id, transform_key[1], 'unassigned_field_name')
-            name = _visit_partition_field(self._table.schema(), tmp_field, _PartitionNameGenerator())
+            name = _visit_partition_field(self._transaction.table_metadata.schema(), tmp_field, _PartitionNameGenerator())
         return PartitionField(transform_key[0], new_field_id, transform_key[1], name)
 
     def _new_field_id(self) -> int:

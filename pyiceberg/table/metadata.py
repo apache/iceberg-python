@@ -234,6 +234,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return the partition spec of this table."""
         return next(spec for spec in self.partition_specs if spec.spec_id == self.default_spec_id)
 
+    def specs(self) -> Dict[int, PartitionSpec]:
+        """Return a dict the partition specs this table."""
+        return {spec.spec_id: spec for spec in self.partition_specs}
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
