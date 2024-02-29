@@ -191,4 +191,4 @@ def assign_fresh_sort_order_ids(
             )
         )
 
-    return SortOrder(*fresh_fields, order_id=sort_order_id if sort_order_id is not None else INITIAL_SORT_ORDER_ID)
+    return SortOrder(*fresh_fields, order_id=sort_order_id)
