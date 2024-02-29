@@ -226,7 +226,6 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
-<<<<<<< HEAD
     def schema(self) -> Schema:
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
