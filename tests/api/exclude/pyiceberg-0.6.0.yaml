@@ -17,8 +17,6 @@
 # under the License.
 #
 
-# The format of this file is documented at
-# https://cwiki.apache.org/confluence/display/INFRA/Git+-+.asf.yaml+features
 
 exclude:
 - pyiceberg.table.create_mapping_from_schema

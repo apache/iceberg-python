@@ -17,9 +17,6 @@
 # under the License.
 #
 
-# The format of this file is documented at
-# https://cwiki.apache.org/confluence/display/INFRA/Git+-+.asf.yaml+features
-
 
 # `griffe.load_git` and `griffe.load` functions seem to read .pyi vs .so
 # when interpreting the members of a Cython class. Until this issue is
