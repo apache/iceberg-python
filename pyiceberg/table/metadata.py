@@ -226,6 +226,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
+    def sort_order_by_id(self, sort_order_id: int) -> Optional[SortOrder]:
+        """Get the sort order by sort_order_id."""
+        return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
+
 
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """Represents version 1 of the Table Metadata.

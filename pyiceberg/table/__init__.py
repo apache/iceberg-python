@@ -560,6 +560,13 @@ class _TableMetadataUpdateContext:
             update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
         )
 
+    def is_added_sort_order(self, sort_order_id: int) -> bool:
+        return any(
+            update.sort_order.order_id == sort_order_id
+            for update in self._updates
+            if update.action == TableUpdateAction.add_sort_order
+        )
+
 
 @singledispatch
 def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
@@ -757,6 +764,36 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     metadata_updates["refs"] = {**base_metadata.refs, update.ref_name: snapshot_ref}
     context.add_update(update)
     return base_metadata.model_copy(update=metadata_updates)
+
+
+@_apply_table_update.register(AddSortOrderUpdate)
+def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+    return base_metadata.model_copy(
+        update={
+            "sort_orders": base_metadata.sort_orders + [update.sort_order],
+        }
+    )
+
+
+@_apply_table_update.register(SetDefaultSortOrderUpdate)
+def _(update: SetDefaultSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    new_sort_order_id = update.sort_order_id
+    if new_sort_order_id == -1:
+        # The last added sort order should be in base_metadata.sort_orders at this point
+        new_sort_order_id = max(sort_order.order_id for sort_order in base_metadata.sort_orders)
+        if not context.is_added_sort_order(new_sort_order_id):
+            raise ValueError("Cannot set current sort order to the last added one when no sort order has been added")
+
+    if new_sort_order_id == base_metadata.default_sort_order_id:
+        return base_metadata
+
+    sort_order = base_metadata.sort_order_by_id(new_sort_order_id)
+    if sort_order is None:
+        raise ValueError(f"Sort order with id {new_sort_order_id} does not exist")
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
 
 
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:

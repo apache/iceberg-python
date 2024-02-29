@@ -43,6 +43,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     AddSnapshotUpdate,
+    AddSortOrderUpdate,
     AssertCreate,
     AssertCurrentSchemaId,
     AssertDefaultSortOrderId,
@@ -52,6 +53,7 @@ from pyiceberg.table import (
     AssertRefSnapshotId,
     AssertTableUUID,
     RemovePropertiesUpdate,
+    SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SnapshotRef,
@@ -662,6 +664,26 @@ def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
         max_snapshot_age_ms=12312312312,
         max_ref_age_ms=123123123,
     )
+
+
+def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
+    new_sort_order = SortOrder(order_id=table_v2.sort_order().order_id + 1)
+    new_metadata = update_table_metadata(
+        table_v2.metadata,
+        (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1)),
+    )
+    assert len(new_metadata.sort_orders) == 2
+    assert new_metadata.sort_orders[-1] == new_sort_order
+    assert new_metadata.default_sort_order_id == new_sort_order.order_id
+
+
+def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot set current sort order to the last added one when no sort order has been added"):
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=-1),))
+
+    invalid_order_id = 10
+    with pytest.raises(ValueError, match=f"Sort order with id {invalid_order_id} does not exist"):
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),))
 
 
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
