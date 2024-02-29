@@ -951,4 +951,4 @@ def test_table_properties_raise_for_none_value(
     property_with_none = {"property_name": None}
     with pytest.raises(ValidationError) as exc_info:
         _ = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_none)
-    assert "None type is not a supported value in properties" in str(exc_info.value)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

@@ -64,9 +64,9 @@ FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
 def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
     """Transform all values in the dictionary to string. Raise an error if any value is None."""
-    for value in dict.values():
+    for key, value in dict.items():
         if value is None:
-            raise ValueError("None type is not a supported value in properties")
+            raise ValueError(f"None type is not a supported value in properties: {key}")
     return {k: str(v) for k, v in dict.items()}
 
 

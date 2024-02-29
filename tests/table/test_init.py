@@ -1107,4 +1107,4 @@ def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[s
     example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_none}
     with pytest.raises(ValidationError) as exc_info:
         TableMetadataV2(**example_table_metadata_v2)
-    assert "None type is not a supported value in properties" in str(exc_info.value)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

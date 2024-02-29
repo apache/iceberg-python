@@ -688,4 +688,4 @@ def test_table_properties_raise_for_none_value(
         _ = _create_table(
             session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
         )
-    assert "None type is not a supported value in properties" in str(exc_info.value)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
