@@ -21,6 +21,7 @@ from typing import Generator, List
 
 import pyarrow as pa
 import pytest
+from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
@@ -39,6 +40,7 @@ from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -639,7 +641,7 @@ def test_create_namespace_with_null_properties(catalog: SqlCatalog, database_nam
         catalog.create_namespace(namespace=database_name, properties={None: "value"})  # type: ignore
 
     with pytest.raises(IntegrityError):
-        catalog.create_namespace(namespace=database_name, properties={"key": None})  # type: ignore
+        catalog.create_namespace(namespace=database_name, properties={"key": None})
 
 
 @pytest.mark.parametrize(
@@ -724,6 +726,18 @@ def test_load_empty_namespace_properties(catalog: SqlCatalog, database_name: str
     catalog.create_namespace(database_name)
     listed_properties = catalog.load_namespace_properties(database_name)
     assert listed_properties == {"exists": "true"}
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_load_namespace_properties_non_existing_namespace(catalog: SqlCatalog) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.load_namespace_properties("does_not_exist")
 
 
 @pytest.mark.parametrize(
@@ -851,3 +865,90 @@ def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schem
         # This one should fail since it already has been updated
         with table_b.update_schema() as update:
             update.add_column(path="c", field_type=IntegerType())
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
+    identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
+
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    pa_table = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+        },
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+    )
+
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
+
+    pa_table_with_column = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+            'bar': [19, None, 25],
+        },
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
+    )
+
+    with tbl.transaction() as txn:
+        with txn.update_schema() as schema_txn:
+            schema_txn.union_by_name(pa_table_with_column.schema)
+
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
+                snapshot_update.append_data_file(data_file)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    # table properties can be set to int, but still serialized to string
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    property_with_int = {"property_name": 42}
+    table = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_int)
+    assert isinstance(table.properties["property_name"], str)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_table_properties_raise_for_none_value(
+    catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    property_with_none = {"property_name": None}
+    with pytest.raises(ValidationError) as exc_info:
+        _ = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_none)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

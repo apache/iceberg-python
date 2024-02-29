@@ -26,6 +26,7 @@ from typing import (
 
 import pyarrow as pa
 import pytest
+from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
@@ -255,13 +256,16 @@ NO_SUCH_NAMESPACE_ERROR = "Namespace does not exist: \\('com', 'organization', '
 NAMESPACE_NOT_EMPTY_ERROR = "Namespace is not empty: \\('com', 'organization', 'department'\\)"
 
 
-def given_catalog_has_a_table(catalog: InMemoryCatalog) -> Table:
+def given_catalog_has_a_table(
+    catalog: InMemoryCatalog,
+    properties: Properties = EMPTY_DICT,
+) -> Table:
     return catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
         location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
-        properties=TEST_TABLE_PROPERTIES,
+        properties=properties or TEST_TABLE_PROPERTIES,
     )
 
 
@@ -661,3 +665,17 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
     assert s == "test.in.memory.catalog (<class 'test_base.InMemoryCatalog'>)"
+
+
+def test_table_properties_int_value(catalog: InMemoryCatalog) -> None:
+    # table properties can be set to int, but still serialized to string
+    property_with_int = {"property_name": 42}
+    given_table = given_catalog_has_a_table(catalog, properties=property_with_int)
+    assert isinstance(given_table.properties["property_name"], str)
+
+
+def test_table_properties_raise_for_none_value(catalog: InMemoryCatalog) -> None:
+    property_with_none = {"property_name": None}
+    with pytest.raises(ValidationError) as exc_info:
+        _ = given_catalog_has_a_table(catalog, properties=property_with_none)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

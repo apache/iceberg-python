@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 from requests import HTTPError, Session
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
@@ -69,6 +69,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
+from pyiceberg.types import transform_dict_value_to_str
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -115,6 +116,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
+HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -127,7 +129,7 @@ def _retry_hook(retry_state: RetryCallState) -> None:
 _RETRY_ARGS = {
     "retry": retry_if_exception_type(AuthorizationExpiredError),
     "stop": stop_after_attempt(2),
-    "before": _retry_hook,
+    "before_sleep": _retry_hook,
     "reraise": True,
 }
 
@@ -146,6 +148,8 @@ class CreateTableRequest(IcebergBaseModel):
     write_order: Optional[SortOrder] = Field(alias="write-order")
     stage_create: bool = Field(alias="stage-create", default=False)
     properties: Properties = Field(default_factory=dict)
+    # validators
+    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
 
 
 class RegisterTableRequest(IcebergBaseModel):
@@ -156,8 +160,10 @@ class RegisterTableRequest(IcebergBaseModel):
 class TokenResponse(IcebergBaseModel):
     access_token: str = Field()
     token_type: str = Field()
-    expires_in: int = Field()
-    issued_token_type: str = Field()
+    expires_in: Optional[int] = Field(default=None)
+    issued_token_type: Optional[str] = Field(default=None)
+    refresh_token: Optional[str] = Field(default=None)
+    scope: Optional[str] = Field(default=None)
 
 
 class ConfigResponse(IcebergBaseModel):
@@ -231,9 +237,9 @@ class RestCatalog(Catalog):
 
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
-            if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):  # type: ignore
+            if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):
                 session.verify = ssl_ca_bundle
-            if ssl_client := ssl_config.get(CLIENT):  # type: ignore
+            if ssl_client := ssl_config.get(CLIENT):
                 if all(k in ssl_client for k in (CERT, KEY)):
                     session.cert = (ssl_client[CERT], ssl_client[KEY])
                 elif ssl_client_cert := ssl_client.get(CERT):
@@ -242,10 +248,7 @@ class RestCatalog(Catalog):
         self._refresh_token(session, self.properties.get(TOKEN))
 
         # Set HTTP headers
-        session.headers["Content-type"] = "application/json"
-        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
-        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
-        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
+        self._config_headers(session)
 
         # Configure SigV4 Request Signing
         if str(self.properties.get(SIGV4, False)).lower() == "true":
@@ -292,8 +295,9 @@ class RestCatalog(Catalog):
         else:
             client_id, client_secret = None, credential
         data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: CATALOG_SCOPE}
-        # Uses application/x-www-form-urlencoded by default
-        response = session.post(url=self.auth_url, data=data)
+        response = session.post(
+            url=self.auth_url, data=data, headers={**session.headers, "Content-type": "application/x-www-form-urlencoded"}
+        )
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -447,16 +451,27 @@ class RestCatalog(Catalog):
             catalog=self,
         )
 
-    def _refresh_token(self, session: Optional[Session] = None, new_token: Optional[str] = None) -> None:
+    def _refresh_token(self, session: Optional[Session] = None, initial_token: Optional[str] = None) -> None:
         session = session or self._session
-        if new_token is not None:
-            self.properties[TOKEN] = new_token
+        if initial_token is not None:
+            self.properties[TOKEN] = initial_token
         elif CREDENTIAL in self.properties:
             self.properties[TOKEN] = self._fetch_access_token(session, self.properties[CREDENTIAL])
 
         # Set Auth token for subsequent calls in the session
         if token := self.properties.get(TOKEN):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
+
+    def _config_headers(self, session: Session) -> None:
+        session.headers["Content-type"] = "application/json"
+        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
+        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
+        header_properties = self._extract_headers_from_properties()
+        session.headers.update(header_properties)
+
+    def _extract_headers_from_properties(self) -> Dict[str, str]:
+        return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
     @retry(**_RETRY_ARGS)
     def create_table(
