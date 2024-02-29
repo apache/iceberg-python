@@ -15,22 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import uuid
-import importlib
-import pytest
 import json
-from typing import Any, Dict
 import os
+import uuid
+from typing import Any, Dict
+
+import pytest
 from pytest_mock import MockFixture
 
-from pyiceberg.utils.config import Config
+from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import StaticTable
 from pyiceberg.table.metadata import TableMetadataV1
-from pyiceberg import serializers
-from pyiceberg.serializers import ToOutputFile
 
 
-def test_legacy_current_snapshot_id(mocker: MockFixture, tmp_path_factory: pytest.TempPathFactory, example_table_metadata_no_snapshot_v1: Dict[str, Any]) -> None:
+def test_legacy_current_snapshot_id(
+    mocker: MockFixture, tmp_path_factory: pytest.TempPathFactory, example_table_metadata_no_snapshot_v1: Dict[str, Any]
+) -> None:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     metadata_location = str(tmp_path_factory.mktemp("metadata") / f"{uuid.uuid4()}.metadata.json")
@@ -40,11 +40,11 @@ def test_legacy_current_snapshot_id(mocker: MockFixture, tmp_path_factory: pytes
     assert static_table.metadata.current_snapshot_id is None
 
     mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
-    
+
     ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
     with PyArrowFileIO().new_input(location=metadata_location).open() as input_stream:
-        metadata = input_stream.read()
-    assert json.loads(metadata)['current-snapshot-id'] == -1
+        metadata_json_bytes = input_stream.read()
+    assert json.loads(metadata_json_bytes)['current-snapshot-id'] == -1
     backwards_compatible_static_table = StaticTable.from_metadata(metadata_location)
     assert backwards_compatible_static_table.metadata.current_snapshot_id is None
     assert backwards_compatible_static_table.metadata == static_table.metadata
