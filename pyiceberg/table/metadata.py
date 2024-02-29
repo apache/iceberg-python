@@ -270,6 +270,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
             return -1
         return current_snapshot_id
 
+
 def _generate_snapshot_id() -> int:
     """Generate a new Snapshot ID from a UUID.
 
