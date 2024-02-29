@@ -39,6 +39,7 @@ from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -863,3 +864,54 @@ def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schem
         # This one should fail since it already has been updated
         with table_b.update_schema() as update:
             update.add_column(path="c", field_type=IntegerType())
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
+    identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
+
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    pa_table = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+        },
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+    )
+
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
+
+    pa_table_with_column = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+            'bar': [19, None, 25],
+        },
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
+    )
+
+    with tbl.transaction() as txn:
+        with txn.update_schema() as schema_txn:
+            schema_txn.union_by_name(pa_table_with_column.schema)
+
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
+                snapshot_update.append_data_file(data_file)

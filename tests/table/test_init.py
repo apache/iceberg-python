@@ -43,6 +43,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     AddSnapshotUpdate,
+    AddSortOrderUpdate,
     AssertCreate,
     AssertCurrentSchemaId,
     AssertDefaultSortOrderId,
@@ -52,6 +53,7 @@ from pyiceberg.table import (
     AssertRefSnapshotId,
     AssertTableUUID,
     RemovePropertiesUpdate,
+    SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SnapshotRef,
@@ -60,12 +62,11 @@ from pyiceberg.table import (
     UpdateSchema,
     _apply_table_update,
     _check_schema,
-    _generate_snapshot_id,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -433,7 +434,7 @@ def test_serialize_set_properties_updates() -> None:
 
 
 def test_add_column(table_v2: Table) -> None:
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     update.add_column(path="b", field_type=IntegerType())
     apply_schema: Schema = update._apply()  # pylint: disable=W0212
     assert len(apply_schema.fields) == 4
@@ -467,7 +468,7 @@ def test_add_primitive_type_column(table_v2: Table) -> None:
 
     for name, type_ in primitive_type.items():
         field_name = f"new_column_{name}"
-        update = UpdateSchema(table_v2)
+        update = UpdateSchema(transaction=table_v2.transaction())
         update.add_column(path=field_name, field_type=type_, doc=f"new_column_{name}")
         new_schema = update._apply()  # pylint: disable=W0212
 
@@ -479,7 +480,7 @@ def test_add_primitive_type_column(table_v2: Table) -> None:
 def test_add_nested_type_column(table_v2: Table) -> None:
     # add struct type column
     field_name = "new_column_struct"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     struct_ = StructType(
         NestedField(1, "lat", DoubleType()),
         NestedField(2, "long", DoubleType()),
@@ -497,7 +498,7 @@ def test_add_nested_type_column(table_v2: Table) -> None:
 def test_add_nested_map_type_column(table_v2: Table) -> None:
     # add map type column
     field_name = "new_column_map"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     map_ = MapType(1, StringType(), 2, IntegerType(), False)
     update.add_column(path=field_name, field_type=map_)
     new_schema = update._apply()  # pylint: disable=W0212
@@ -509,7 +510,7 @@ def test_add_nested_map_type_column(table_v2: Table) -> None:
 def test_add_nested_list_type_column(table_v2: Table) -> None:
     # add list type column
     field_name = "new_column_list"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     list_ = ListType(
         element_id=101,
         element_type=StructType(
@@ -664,6 +665,26 @@ def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
     )
 
 
+def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
+    new_sort_order = SortOrder(order_id=table_v2.sort_order().order_id + 1)
+    new_metadata = update_table_metadata(
+        table_v2.metadata,
+        (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1)),
+    )
+    assert len(new_metadata.sort_orders) == 2
+    assert new_metadata.sort_orders[-1] == new_sort_order
+    assert new_metadata.default_sort_order_id == new_sort_order.order_id
+
+
+def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot set current sort order to the last added one when no sort order has been added"):
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=-1),))
+
+    invalid_order_id = 10
+    with pytest.raises(ValueError, match=f"Sort order with id {invalid_order_id} does not exist"):
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),))
+
+
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     base_metadata = table_v1.metadata
     transaction = table_v1.transaction()
@@ -784,7 +805,7 @@ def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
 
 def test_generate_snapshot_id(table_v2: Table) -> None:
     assert isinstance(_generate_snapshot_id(), int)
-    assert isinstance(table_v2.new_snapshot_id(), int)
+    assert isinstance(table_v2.metadata.new_snapshot_id(), int)
 
 
 def test_assert_create(table_v2: Table) -> None:
