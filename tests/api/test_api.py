@@ -15,17 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import fnmatch
 import re
 import subprocess
-from collections import namedtuple
 
 import griffe
 import importlib_resources as resources
 import pytest
 import yaml
 from griffe.exceptions import GitError
-
-Exclusion = namedtuple('Exclusion', 'obj_path, kind')
 
 
 def fetch_tags() -> None:
@@ -95,15 +93,17 @@ def test_breaking_change() -> None:
     previous = griffe.load_git("pyiceberg", ref=latest_release)
     current = griffe.load("pyiceberg")
 
-    with resources.files("tests.api.exclude").joinpath(f"{latest_release}.yaml").open("r") as exclude_file:
-        exclusion_list = yaml.safe_load(exclude_file)["exclude"]
+    exclusion_list = []
 
-    exclusion_set = {Exclusion(**x) for x in exclusion_list}
+    for file_name in [latest_release, "all"]:
+        with resources.files("tests.api.exclude").joinpath(f"{file_name}.yaml").open("r") as exclude_file:
+            if (exclude := yaml.safe_load(exclude_file)["exclude"]) is not None:
+                exclusion_list += exclude
 
     breaking_changes = []
 
     for breakage in griffe.find_breaking_changes(previous, current):
-        if Exclusion(obj_path=breakage.obj.path, kind=breakage.kind.name) not in exclusion_set:
+        if not any(fnmatch.fnmatch(breakage.obj.path, exclude_path) for exclude_path in exclusion_list):
             breaking_changes.append(breakage.as_dict())
 
     assert not breaking_changes, f"Total of {len(breaking_changes)} breaking API changes since {latest_release}"
