@@ -76,3 +76,20 @@ def test_merge_config() -> None:
     rhs: RecursiveDict = {"common_key": "xyz789"}
     result = merge_config(lhs, rhs)
     assert result["common_key"] == rhs["common_key"]
+
+
+def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempPathFactory) -> None:
+    config_path = str(tmp_path_factory.mktemp("config"))
+    with open(f"{config_path}/.pyiceberg.yaml", "w", encoding=UTF8) as file:
+        yaml_str = as_document({"max-workers": "4", "legacy-current-snapshot-id": "True"}).as_yaml()
+        file.write(yaml_str)
+
+    os.environ["PYICEBERG_HOME"] = config_path
+    with pytest.raises(ValueError):
+        Config().get_bool("max-workers")
+
+    with pytest.raises(ValueError):
+        Config().get_int("legacy-current-snapshot-id")
+
+    assert Config().get_bool("legacy-current-snapshot-id")
+    assert Config().get_int("max-workers") == 4

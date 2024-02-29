@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import codecs
 import gzip
+import json
 from abc import ABC, abstractmethod
 from typing import Callable
 
 from pyiceberg.io import InputFile, InputStream, OutputFile
-from pyiceberg.table.metadata import TableMetadata, TableMetadataUtil
+from pyiceberg.table.metadata import CURRENT_SNAPSHOT_ID, TableMetadata, TableMetadataUtil
 from pyiceberg.typedef import UTF8
+from pyiceberg.utils.config import Config
 
 GZIP = "gzip"
 
@@ -127,6 +129,11 @@ class ToOutputFile:
             overwrite (bool): Where to overwrite the file if it already exists. Defaults to `False`.
         """
         with output_file.create(overwrite=overwrite) as output_stream:
-            json_bytes = metadata.model_dump_json().encode(UTF8)
+            model_dump = metadata.model_dump_json()
+            if Config().get_bool("legacy-current-snapshot-id") and metadata.current_snapshot_id is None:
+                model_dict = json.loads(model_dump)
+                model_dict[CURRENT_SNAPSHOT_ID] = -1
+                model_dump = json.dumps(model_dict)
+            json_bytes = model_dump.encode(UTF8)
             json_bytes = Compressor.get_compressor(output_file.location).bytes_compressor()(json_bytes)
             output_stream.write(json_bytes)

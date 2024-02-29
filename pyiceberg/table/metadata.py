@@ -77,7 +77,7 @@ def cleanup_snapshot_id(data: Dict[str, Any]) -> Dict[str, Any]:
     if CURRENT_SNAPSHOT_ID in data and data[CURRENT_SNAPSHOT_ID] == -1:
         # We treat -1 and None the same, by cleaning this up
         # in a pre-validator, we can simplify the logic later on
-        data[CURRENT_SNAPSHOT_ID] = -1
+        data[CURRENT_SNAPSHOT_ID] = None
     return data
 
 
