@@ -123,6 +123,7 @@ class InMemoryCatalog(Catalog):
         identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
         table = self.__tables[identifier]
         table.metadata = update_table_metadata(base_metadata=table.metadata, updates=table_request.updates)
+
         return CommitTableResponse(
             metadata=table.metadata.model_dump(),
             metadata_location=table.location(),
