@@ -19,5 +19,13 @@
 
 
 exclude:
-- pyiceberg.table.create_mapping_from_schema
-- pyiceberg.cli.console.run
+- pyiceberg.table.create_mapping_from_schema # Removed import (Alias) #441
+- pyiceberg.table.Table.next_sequence_number # Table -> TableMetadata #471
+- pyiceberg.table.Table.new_snapshot_id # Table -> TableMetadata #471
+- pyiceberg.table.StaticTable.next_sequence_number # Table -> TableMetadata #471
+- pyiceberg.table.StaticTable.new_snapshot_id # Table -> TableMetadata #471
+- pyiceberg.table.Transaction.add_snapshot # removed in favor of directly using TableUpdate and TableRequirement #471
+- pyiceberg.table.Transaction.set_ref_snapshot # removed in favor of directly using TableUpdate and TableRequirement #471
+- pyiceberg.catalog.rest.TokenResponse.* # nullability change #466
+- pyiceberg.io.pyarrow.write_file # Parameter change #471
+- pyiceberg.cli.console.run # Positional parameter change #472

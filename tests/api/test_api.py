@@ -82,8 +82,8 @@ def test_breaking_change() -> None:
 
     If a breaking change is intended, the Exclusion can be added as:
     ```
-    - obj_path: pyiceberg.path_to_object
-      kind: griffe.enumerations.BreakageKind.name
+    exclude
+    - pyiceberg.path_to_object # justification as comment #PRNUM
     ```
     to the corresponding "tests.api.exclude.<release>.yaml" file.
     """
