@@ -128,7 +128,7 @@ def _retry_hook(retry_state: RetryCallState) -> None:
 _RETRY_ARGS = {
     "retry": retry_if_exception_type(AuthorizationExpiredError),
     "stop": stop_after_attempt(2),
-    "before": _retry_hook,
+    "before_sleep": _retry_hook,
     "reraise": True,
 }
 
@@ -446,10 +446,10 @@ class RestCatalog(Catalog):
             catalog=self,
         )
 
-    def _refresh_token(self, session: Optional[Session] = None, new_token: Optional[str] = None) -> None:
+    def _refresh_token(self, session: Optional[Session] = None, initial_token: Optional[str] = None) -> None:
         session = session or self._session
-        if new_token is not None:
-            self.properties[TOKEN] = new_token
+        if initial_token is not None:
+            self.properties[TOKEN] = initial_token
         elif CREDENTIAL in self.properties:
             self.properties[TOKEN] = self._fetch_access_token(session, self.properties[CREDENTIAL])
 
