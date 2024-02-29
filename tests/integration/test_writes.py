@@ -28,6 +28,7 @@ import pyarrow.parquet as pq
 import pytest
 import pytz
 from pyarrow.fs import S3FileSystem
+from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
@@ -403,7 +404,7 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize(
     "properties, expected_compression_name",
     [
@@ -419,7 +420,7 @@ def test_write_parquet_compression_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: str,
+    format_version: int,
     properties: Dict[str, Any],
     expected_compression_name: str,
 ) -> None:
@@ -654,3 +655,37 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
         with txn.update_snapshot().fast_append() as snapshot_update:
             for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
                 snapshot_update.append_data_file(data_file)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_properties_int_value(
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: int,
+) -> None:
+    # table properties can be set to int, but still serialized to string
+    property_with_int = {"property_name": 42}
+    identifier = "default.test_table_properties_int_value"
+
+    tbl = _create_table(
+        session_catalog, identifier, {"format-version": format_version, **property_with_int}, [arrow_table_with_null]
+    )
+    assert isinstance(tbl.properties["property_name"], str)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_properties_raise_for_none_value(
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: int,
+) -> None:
+    property_with_none = {"property_name": None}
+    identifier = "default.test_table_properties_raise_for_none_value"
+
+    with pytest.raises(ValidationError) as exc_info:
+        _ = _create_table(
+            session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
+        )
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

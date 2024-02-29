@@ -37,6 +37,7 @@ from functools import cached_property
 from typing import (
     Any,
     ClassVar,
+    Dict,
     Literal,
     Optional,
     Tuple,
@@ -59,6 +60,14 @@ from pyiceberg.utils.singleton import Singleton
 DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
+
+
+def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
+    """Transform all values in the dictionary to string. Raise an error if any value is None."""
+    for key, value in dict.items():
+        if value is None:
+            raise ValueError(f"None type is not a supported value in properties: {key}")
+    return {k: str(v) for k, v in dict.items()}
 
 
 def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
