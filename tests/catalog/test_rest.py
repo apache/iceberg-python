@@ -108,6 +108,24 @@ def test_token_200(rest_mock: Mocker) -> None:
             "token_type": "Bearer",
             "expires_in": 86400,
             "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "scope": "openid offline",
+            "refresh_token": "refresh_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
+        == f"Bearer {TEST_TOKEN}"
+    )
+
+
+def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
         },
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
@@ -306,24 +324,39 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
-def test_list_namespaces_419(rest_mock: Mocker) -> None:
+def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
     new_token = "new_jwt_token"
     new_header = dict(TEST_HEADERS)
     new_header["Authorization"] = f"Bearer {new_token}"
 
-    rest_mock.post(
+    namespaces = rest_mock.register_uri(
+        "GET",
         f"{TEST_URI}v1/namespaces",
-        json={
-            "error": {
-                "message": "Authorization expired.",
-                "type": "AuthorizationExpiredError",
-                "code": 419,
-            }
-        },
-        status_code=419,
-        request_headers=TEST_HEADERS,
+        [
+            {
+                "status_code": 419,
+                "json": {
+                    "error": {
+                        "message": "Authorization expired.",
+                        "type": "AuthorizationExpiredError",
+                        "code": 419,
+                    }
+                },
+                "headers": TEST_HEADERS,
+            },
+            {
+                "status_code": 200,
+                "json": {"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+                "headers": new_header,
+            },
+            {
+                "status_code": 200,
+                "json": {"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+                "headers": new_header,
+            },
+        ],
     )
-    rest_mock.post(
+    tokens = rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
         json={
             "access_token": new_token,
@@ -333,12 +366,6 @@ def test_list_namespaces_419(rest_mock: Mocker) -> None:
         },
         status_code=200,
     )
-    rest_mock.get(
-        f"{TEST_URI}v1/namespaces",
-        json={"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
-        status_code=200,
-        request_headers=new_header,
-    )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
     assert catalog.list_namespaces() == [
         ("default",),
@@ -346,6 +373,17 @@ def test_list_namespaces_419(rest_mock: Mocker) -> None:
         ("fokko",),
         ("system",),
     ]
+    assert namespaces.call_count == 2
+    assert tokens.call_count == 1
+
+    assert catalog.list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+    assert namespaces.call_count == 3
+    assert tokens.call_count == 1
 
 
 def test_create_namespace_200(rest_mock: Mocker) -> None:

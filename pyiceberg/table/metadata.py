@@ -226,6 +226,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
+<<<<<<< HEAD
     def schema(self) -> Schema:
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
@@ -254,6 +255,10 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
     def next_sequence_number(self) -> int:
         return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
+
+    def sort_order_by_id(self, sort_order_id: int) -> Optional[SortOrder]:
+        """Get the sort order by sort_order_id."""
+        return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
 
 
 def _generate_snapshot_id() -> int:

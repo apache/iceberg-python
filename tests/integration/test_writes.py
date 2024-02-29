@@ -33,7 +33,7 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.types import (
@@ -50,28 +50,6 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
-
-
-@pytest.fixture()
-def catalog() -> Catalog:
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-    try:
-        catalog.create_namespace("default")
-    except NamespaceAlreadyExistsError:
-        pass
-
-    return catalog
-
 
 TEST_DATA_WITH_NULL = {
     'bool': [False, None, True],
