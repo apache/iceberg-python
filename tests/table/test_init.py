@@ -62,12 +62,11 @@ from pyiceberg.table import (
     UpdateSchema,
     _apply_table_update,
     _check_schema,
-    _generate_snapshot_id,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -435,7 +434,7 @@ def test_serialize_set_properties_updates() -> None:
 
 
 def test_add_column(table_v2: Table) -> None:
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     update.add_column(path="b", field_type=IntegerType())
     apply_schema: Schema = update._apply()  # pylint: disable=W0212
     assert len(apply_schema.fields) == 4
@@ -469,7 +468,7 @@ def test_add_primitive_type_column(table_v2: Table) -> None:
 
     for name, type_ in primitive_type.items():
         field_name = f"new_column_{name}"
-        update = UpdateSchema(table_v2)
+        update = UpdateSchema(transaction=table_v2.transaction())
         update.add_column(path=field_name, field_type=type_, doc=f"new_column_{name}")
         new_schema = update._apply()  # pylint: disable=W0212
 
@@ -481,7 +480,7 @@ def test_add_primitive_type_column(table_v2: Table) -> None:
 def test_add_nested_type_column(table_v2: Table) -> None:
     # add struct type column
     field_name = "new_column_struct"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     struct_ = StructType(
         NestedField(1, "lat", DoubleType()),
         NestedField(2, "long", DoubleType()),
@@ -499,7 +498,7 @@ def test_add_nested_type_column(table_v2: Table) -> None:
 def test_add_nested_map_type_column(table_v2: Table) -> None:
     # add map type column
     field_name = "new_column_map"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     map_ = MapType(1, StringType(), 2, IntegerType(), False)
     update.add_column(path=field_name, field_type=map_)
     new_schema = update._apply()  # pylint: disable=W0212
@@ -511,7 +510,7 @@ def test_add_nested_map_type_column(table_v2: Table) -> None:
 def test_add_nested_list_type_column(table_v2: Table) -> None:
     # add list type column
     field_name = "new_column_list"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     list_ = ListType(
         element_id=101,
         element_type=StructType(
@@ -806,7 +805,7 @@ def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
 
 def test_generate_snapshot_id(table_v2: Table) -> None:
     assert isinstance(_generate_snapshot_id(), int)
-    assert isinstance(table_v2.new_snapshot_id(), int)
+    assert isinstance(table_v2.metadata.new_snapshot_id(), int)
 
 
 def test_assert_create(table_v2: Table) -> None:

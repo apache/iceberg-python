@@ -84,7 +84,7 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema) -> Table:
 @pytest.mark.integration
 def test_add_already_exists(catalog: Catalog, table_schema_nested: Schema) -> None:
     table = _create_table_with_schema(catalog, table_schema_nested)
-    update = UpdateSchema(table)
+    update = table.update_schema()
 
     with pytest.raises(ValueError) as exc_info:
         update.add_column("foo", IntegerType())
@@ -98,7 +98,7 @@ def test_add_already_exists(catalog: Catalog, table_schema_nested: Schema) -> No
 @pytest.mark.integration
 def test_add_to_non_struct_type(catalog: Catalog, table_schema_simple: Schema) -> None:
     table = _create_table_with_schema(catalog, table_schema_simple)
-    update = UpdateSchema(table)
+    update = table.update_schema()
     with pytest.raises(ValueError) as exc_info:
         update.add_column(path=("foo", "lat"), field_type=IntegerType())
     assert "Cannot add column 'lat' to non-struct type: foo" in str(exc_info.value)
@@ -1066,13 +1066,13 @@ def test_add_nested_list_of_structs(catalog: Catalog) -> None:
 def test_add_required_column(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
-    update = UpdateSchema(table)
+    update = table.update_schema()
     with pytest.raises(ValueError) as exc_info:
         update.add_column(path="data", field_type=IntegerType(), required=True)
     assert "Incompatible change: cannot add required column: data" in str(exc_info.value)
 
     new_schema = (
-        UpdateSchema(table, allow_incompatible_changes=True)  # pylint: disable=W0212
+        UpdateSchema(transaction=table.transaction(), allow_incompatible_changes=True)
         .add_column(path="data", field_type=IntegerType(), required=True)
         ._apply()
     )
@@ -1088,12 +1088,13 @@ def test_add_required_column_case_insensitive(catalog: Catalog) -> None:
     table = _create_table_with_schema(catalog, schema_)
 
     with pytest.raises(ValueError) as exc_info:
-        with UpdateSchema(table, allow_incompatible_changes=True) as update:
-            update.case_sensitive(False).add_column(path="ID", field_type=IntegerType(), required=True)
+        with table.transaction() as txn:
+            with txn.update_schema(allow_incompatible_changes=True) as update:
+                update.case_sensitive(False).add_column(path="ID", field_type=IntegerType(), required=True)
     assert "already exists: ID" in str(exc_info.value)
 
     new_schema = (
-        UpdateSchema(table, allow_incompatible_changes=True)  # pylint: disable=W0212
+        UpdateSchema(transaction=table.transaction(), allow_incompatible_changes=True)
         .add_column(path="ID", field_type=IntegerType(), required=True)
         ._apply()
     )
@@ -1264,7 +1265,7 @@ def test_mixed_changes(catalog: Catalog) -> None:
 @pytest.mark.integration
 def test_ambiguous_column(catalog: Catalog, table_schema_nested: Schema) -> None:
     table = _create_table_with_schema(catalog, table_schema_nested)
-    update = UpdateSchema(table)
+    update = UpdateSchema(transaction=table.transaction())
 
     with pytest.raises(ValueError) as exc_info:
         update.add_column(path="location.latitude", field_type=IntegerType())
@@ -2507,16 +2508,14 @@ def test_two_add_schemas_in_a_single_transaction(catalog: Catalog) -> None:
         ),
     )
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(CommitFailedException) as exc_info:
         with tbl.transaction() as tr:
             with tr.update_schema() as update:
                 update.add_column("bar", field_type=StringType())
             with tr.update_schema() as update:
                 update.add_column("baz", field_type=StringType())
 
-    assert "Updates in a single commit need to be unique, duplicate: <class 'pyiceberg.table.AddSchemaUpdate'>" in str(
-        exc_info.value
-    )
+    assert "CommitFailedException: Requirement failed: current schema changed: expected id 1 != 0" in str(exc_info.value)
 
 
 @pytest.mark.integration
