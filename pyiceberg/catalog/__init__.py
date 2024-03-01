@@ -39,19 +39,25 @@ from typing import (
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInstalledError, TableAlreadyExistsError
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
+    AddPartitionSpecUpdate,
     AddSchemaUpdate,
+    AddSortOrderUpdate,
     AssertTableUUID,
     CommitTableRequest,
     CommitTableResponse,
     SetCurrentSchemaUpdate,
+    SetDefaultSortOrderUpdate,
+    SetDefaultSpecUpdate,
     Table,
     TableMetadata,
+    TableRequirement,
+    TableUpdate,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import (
     EMPTY_DICT,
     Identifier,
@@ -765,20 +771,32 @@ class Catalog(ABC):
     ) -> Table:
         table = self.load_table(identifier)
         with table.transaction() as tx:
-            # Update schema
-            new_schema = assign_fresh_schema_ids(schema_or_type=new_schema, base_schema=table.schema())
-            tx._append_updates(AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id))
-            tx._append_updates(SetCurrentSchemaUpdate(schema_id=-1))
-            # TODO Update sort order
-            # new_sort_order = assign_fresh_sort_order_ids(sort_order=new_sort_order, old_schema=base_schema, fresh_schema=new_schema, sort_order_id=table.sort_order().order_id + 1)
-            # tx._append_updates(AddSortOrderUpdate(sort_order=new_sort_order))
-            # tx._append_updates(SetDefaultSortOrderUpdate(sort_order_id=-1))
-            # Update table properties
+            base_schema = table.schema()
+            new_schema = assign_fresh_schema_ids(schema_or_type=new_schema, base_schema=base_schema)
+            new_sort_order = assign_fresh_sort_order_ids(
+                sort_order=new_sort_order,
+                old_schema=base_schema,
+                fresh_schema=new_schema,
+                sort_order_id=table.sort_order().order_id + 1,
+            )
+            new_partition_spec = assign_fresh_partition_spec_ids(
+                spec=new_partition_spec, old_schema=base_schema, fresh_schema=new_schema, spec_id=table.spec().spec_id + 1
+            )
+
+            requirements: Tuple[TableRequirement, ...] = (AssertTableUUID(uuid=table.metadata.table_uuid),)
+            updates: Tuple[TableUpdate, ...] = (
+                AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
+                SetCurrentSchemaUpdate(schema_id=-1),
+                AddSortOrderUpdate(sort_order=new_sort_order),
+                SetDefaultSortOrderUpdate(sort_order_id=-1),
+                AddPartitionSpecUpdate(spec=new_partition_spec),
+                SetDefaultSpecUpdate(spec_id=-1),
+            )
+            tx._apply(updates, requirements)
+
             tx.set_properties(**new_properties)
-            # Update table location
             if new_location is not None:
                 tx.update_location(new_location)
-            tx._append_requirements(AssertTableUUID(uuid=table.metadata.table_uuid))
         return table
 
     def __repr__(self) -> str:

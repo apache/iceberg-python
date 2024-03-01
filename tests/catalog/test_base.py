@@ -52,13 +52,14 @@ from pyiceberg.table import (
     SetCurrentSchemaUpdate,
     Table,
     TableIdentifier,
+    UpdateSchema,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import TableMetadataV1
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortField, SortOrder
+from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT
-from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, LongType, MapType, NestedField, StringType, StructType
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType, StructType
 
 
 class InMemoryCatalog(Catalog):
@@ -674,65 +675,34 @@ def test_catalog_create_or_replace_table(catalog: InMemoryCatalog, table_schema_
         properties=TEST_TABLE_PROPERTIES,
     )
     highest_field_id = table_schema_nested.highest_field_id
-    # new schema with all IntergerType changed to LongType, added new field 'another_person'
-    new_schema = Schema(
-        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
-        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
-        NestedField(
-            field_id=4,
-            name="qux",
-            field_type=ListType(element_id=5, element_type=StringType(), element_required=True),
-            required=True,
-        ),
-        NestedField(
-            field_id=6,
-            name="quux",
-            field_type=MapType(
-                key_id=7,
-                key_type=StringType(),
-                value_id=8,
-                value_type=MapType(key_id=9, key_type=StringType(), value_id=10, value_type=LongType(), value_required=True),
-                value_required=True,
-            ),
-            required=True,
-        ),
-        NestedField(
-            field_id=11,
-            name="location",
-            field_type=ListType(
-                element_id=12,
-                element_type=StructType(
-                    NestedField(field_id=13, name="latitude", field_type=FloatType(), required=False),
-                    NestedField(field_id=14, name="longitude", field_type=FloatType(), required=False),
-                ),
-                element_required=True,
-            ),
-            required=True,
-        ),
-        NestedField(
-            field_id=highest_field_id + 1,
-            name="another_person",
+    new_schema = (
+        UpdateSchema(transaction=None, schema=table_schema_nested)  # type: ignore
+        .update_column("bar", LongType())
+        .add_column(
+            "another_person",
             field_type=StructType(
                 NestedField(field_id=highest_field_id + 2, name="name", field_type=StringType(), required=False),
                 NestedField(field_id=highest_field_id + 3, name="age", field_type=LongType(), required=True),
             ),
-            required=False,
-        ),
-        schema_id=table_schema_nested.schema_id + 1,
-        identifier_field_ids=[2],
+        )
+        ._apply()
     )
-
+    new_sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+    new_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+    )
+    new_properties = TEST_TABLE_PROPERTIES
+    new_properties["key3"] = "value3"
     # When
     new_table = catalog.create_or_replace_table(
         identifier=table.identifier,
         schema=new_schema,
-        partition_spec=table.spec(),
-        sort_order=table.sort_order(),
-        properties=table.properties,
+        partition_spec=new_spec,
+        sort_order=new_sort_order,
+        properties=new_properties,
     )
     # Then
     assert new_table.schema() == new_schema
-    assert new_table.spec() == table.spec()
-    assert new_table.sort_order() == table.sort_order()
-    assert new_table.properties == table.properties
+    assert new_table.spec() == new_spec
+    assert new_table.sort_order() == new_sort_order
+    assert new_table.properties == new_properties

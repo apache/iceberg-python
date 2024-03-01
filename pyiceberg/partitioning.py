@@ -203,7 +203,9 @@ class PartitionSpec(IcebergBaseModel):
 UNPARTITIONED_PARTITION_SPEC = PartitionSpec(spec_id=0)
 
 
-def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fresh_schema: Schema) -> PartitionSpec:
+def assign_fresh_partition_spec_ids(
+    spec: PartitionSpec, old_schema: Schema, fresh_schema: Schema, spec_id: int = INITIAL_PARTITION_SPEC_ID
+) -> PartitionSpec:
     partition_fields = []
     for pos, field in enumerate(spec.fields):
         original_column_name = old_schema.find_column_name(field.source_id)
@@ -220,7 +222,7 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
                 transform=field.transform,
             )
         )
-    return PartitionSpec(*partition_fields, spec_id=INITIAL_PARTITION_SPEC_ID)
+    return PartitionSpec(*partition_fields, spec_id=spec_id)
 
 
 T = TypeVar("T")
