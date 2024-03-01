@@ -97,7 +97,6 @@ class CatalogType(Enum):
     GLUE = "glue"
     DYNAMODB = "dynamodb"
     SQL = "sql"
-    IN_MEMORY = "in_memory"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:

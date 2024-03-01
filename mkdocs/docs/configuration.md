@@ -265,15 +265,6 @@ catalog:
 The In-Memory catalog uses in-memory data-structures to store information.
 This is useful for test, demo, and playground. Do not use in production as the data is not persisted.
 
-While you can specify In-Memory catalog in the configuration file like this, it is not recommended since information is only persisted for the duration of the function call.
-
-```yaml
-catalog:
-  default:
-    type: in_memory
-    warehouse: /tmp/warehouse # default warehouse location
-```
-
 # Concurrency
 
 PyIceberg uses multiple threads to parallelize operations. The number of workers can be configured by supplying a `max-workers` entry in the configuration file, or by setting the `PYICEBERG_MAX_WORKERS` environment variable. The default value depends on the system hardware and Python version. See [the Python documentation](https://docs.python.org/3/library/concurrent.futures.html#threadpoolexecutor) for more details.
