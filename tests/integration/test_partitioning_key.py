@@ -310,21 +310,24 @@ identifier = "default.test_table"
         (
             [PartitionField(source_id=14, field_id=1001, transform=IdentityTransform(), name="uuid_field")],
             [uuid.UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")],
-            Record(uuid_field="f47ac10b-58cc-4372-a567-0e02b2c3d479"),
-            "uuid_field=f47ac10b-58cc-4372-a567-0e02b2c3d479",
-            f"""CREATE TABLE {identifier} (
-                uuid_field string,
-                string_field string
-            )
-            USING iceberg
-            PARTITIONED BY (
-                identity(uuid_field)
-            )
-            """,
-            f"""INSERT INTO {identifier}
-            VALUES
-            ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Associated string value for UUID f47ac10b-58cc-4372-a567-0e02b2c3d479')
-            """,
+            Record(uuid_field=b'\xf4z\xc1\x0bX\xccCr\xa5g\x0e\x02\xb2\xc3\xd4y'),
+            "uuid_field=9HrBC1jMQ3KlZw4CssPUeQ%3D%3D",
+            None,
+            None,
+            # Skip spark justification because spark does not support UUID type.
+            # f"""CREATE TABLE {identifier} (
+            #     uuid_field string,
+            #     string_field string
+            # )
+            # USING iceberg
+            # PARTITIONED BY (
+            #     identity(uuid_field)
+            # )
+            # """,
+            # f"""INSERT INTO {identifier}
+            # VALUES
+            # ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Associated string value for UUID f47ac10b-58cc-4372-a567-0e02b2c3d479')
+            # """,
         ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=IdentityTransform(), name="binary_field")],
@@ -768,5 +771,6 @@ def test_partition_key(
         spark_path_for_justification = (
             snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
         )
+
         assert spark_partition_for_justification == expected_partition_record
         assert expected_hive_partition_path_slice in spark_path_for_justification

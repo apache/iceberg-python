@@ -414,8 +414,8 @@ def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: Optional[uuid.UUID]) -> Optional[str]:
-    return str(value) if value is not None else None
+def _(type: IcebergType, value: Optional[uuid.UUID]) -> Optional[bytes]:
+    return value.bytes if value is not None else None
 
 
 @_to_partition_representation.register(PrimitiveType)
