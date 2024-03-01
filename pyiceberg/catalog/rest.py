@@ -28,8 +28,9 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 from requests import HTTPError, Session
+from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
 from pyiceberg import __version__
 from pyiceberg.catalog import (
@@ -57,8 +58,8 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     UnauthorizedError,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
+from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
@@ -66,8 +67,9 @@ from pyiceberg.table import (
     TableIdentifier,
     TableMetadata,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
+from pyiceberg.types import transform_dict_value_to_str
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -114,8 +116,22 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
+HEADER_PREFIX = "header."
 
-NAMESPACE_SEPARATOR = b"\x1F".decode(UTF8)
+NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
+
+
+def _retry_hook(retry_state: RetryCallState) -> None:
+    rest_catalog: RestCatalog = retry_state.args[0]
+    rest_catalog._refresh_token()  # pylint: disable=protected-access
+
+
+_RETRY_ARGS = {
+    "retry": retry_if_exception_type(AuthorizationExpiredError),
+    "stop": stop_after_attempt(2),
+    "before_sleep": _retry_hook,
+    "reraise": True,
+}
 
 
 class TableResponse(IcebergBaseModel):
@@ -132,6 +148,8 @@ class CreateTableRequest(IcebergBaseModel):
     write_order: Optional[SortOrder] = Field(alias="write-order")
     stage_create: bool = Field(alias="stage-create", default=False)
     properties: Properties = Field(default_factory=dict)
+    # validators
+    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
 
 
 class RegisterTableRequest(IcebergBaseModel):
@@ -142,8 +160,10 @@ class RegisterTableRequest(IcebergBaseModel):
 class TokenResponse(IcebergBaseModel):
     access_token: str = Field()
     token_type: str = Field()
-    expires_in: int = Field()
-    issued_token_type: str = Field()
+    expires_in: Optional[int] = Field(default=None)
+    issued_token_type: Optional[str] = Field(default=None)
+    refresh_token: Optional[str] = Field(default=None)
+    scope: Optional[str] = Field(default=None)
 
 
 class ConfigResponse(IcebergBaseModel):
@@ -217,26 +237,18 @@ class RestCatalog(Catalog):
 
         # Sets the client side and server side SSL cert verification, if provided as properties.
         if ssl_config := self.properties.get(SSL):
-            if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):  # type: ignore
+            if ssl_ca_bundle := ssl_config.get(CA_BUNDLE):
                 session.verify = ssl_ca_bundle
-            if ssl_client := ssl_config.get(CLIENT):  # type: ignore
+            if ssl_client := ssl_config.get(CLIENT):
                 if all(k in ssl_client for k in (CERT, KEY)):
                     session.cert = (ssl_client[CERT], ssl_client[KEY])
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        # If we have credentials, but not a token, we want to fetch a token
-        if TOKEN not in self.properties and CREDENTIAL in self.properties:
-            self.properties[TOKEN] = self._fetch_access_token(session, self.properties[CREDENTIAL])
-
-        # Set Auth token for subsequent calls in the session
-        if token := self.properties.get(TOKEN):
-            session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
+        self._refresh_token(session, self.properties.get(TOKEN))
 
         # Set HTTP headers
-        session.headers["Content-type"] = "application/json"
-        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
-        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        self._config_headers(session)
 
         # Configure SigV4 Request Signing
         if str(self.properties.get(SIGV4, False)).lower() == "true":
@@ -283,8 +295,9 @@ class RestCatalog(Catalog):
         else:
             client_id, client_secret = None, credential
         data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: CATALOG_SCOPE}
-        # Uses application/x-www-form-urlencoded by default
-        response = session.post(url=self.auth_url, data=data)
+        response = session.post(
+            url=self.auth_url, data=data, headers={**session.headers, "Content-type": "application/x-www-form-urlencoded"}
+        )
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -438,6 +451,29 @@ class RestCatalog(Catalog):
             catalog=self,
         )
 
+    def _refresh_token(self, session: Optional[Session] = None, initial_token: Optional[str] = None) -> None:
+        session = session or self._session
+        if initial_token is not None:
+            self.properties[TOKEN] = initial_token
+        elif CREDENTIAL in self.properties:
+            self.properties[TOKEN] = self._fetch_access_token(session, self.properties[CREDENTIAL])
+
+        # Set Auth token for subsequent calls in the session
+        if token := self.properties.get(TOKEN):
+            session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
+
+    def _config_headers(self, session: Session) -> None:
+        session.headers["Content-type"] = "application/json"
+        session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
+        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
+        header_properties = self._extract_headers_from_properties()
+        session.headers.update(header_properties)
+
+    def _extract_headers_from_properties(self) -> Dict[str, str]:
+        return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
+
+    @retry(**_RETRY_ARGS)
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -447,15 +483,18 @@ class RestCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        iceberg_schema = self._convert_schema_if_needed(schema)
+        fresh_schema = assign_fresh_schema_ids(iceberg_schema)
+        fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
+        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
-            table_schema=schema,
-            partition_spec=partition_spec,
-            write_order=sort_order,
+            table_schema=fresh_schema,
+            partition_spec=fresh_partition_spec,
+            write_order=fresh_sort_order,
             properties=properties,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
@@ -471,6 +510,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse(**response.json())
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
+    @retry(**_RETRY_ARGS)
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -502,6 +542,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse(**response.json())
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
+    @retry(**_RETRY_ARGS)
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
@@ -512,6 +553,7 @@ class RestCatalog(Catalog):
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return [(*table.namespace, table.name) for table in ListTablesResponse(**response.json()).identifiers]
 
+    @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         response = self._session.get(
@@ -525,6 +567,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse(**response.json())
         return self._response_to_table(identifier_tuple, table_response)
 
+    @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
@@ -537,9 +580,11 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchTableError})
 
+    @retry(**_RETRY_ARGS)
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         self.drop_table(identifier=identifier, purge_requested=True)
 
+    @retry(**_RETRY_ARGS)
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
         payload = {
@@ -554,6 +599,7 @@ class RestCatalog(Catalog):
 
         return self.load_table(to_identifier)
 
+    @retry(**_RETRY_ARGS)
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
 
@@ -565,6 +611,8 @@ class RestCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
+            CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
@@ -584,6 +632,7 @@ class RestCatalog(Catalog):
             )
         return CommitTableResponse(**response.json())
 
+    @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         payload = {"namespace": namespace_tuple, "properties": properties}
@@ -593,6 +642,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceAlreadyExistsError})
 
+    @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
@@ -602,6 +652,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
+    @retry(**_RETRY_ARGS)
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
         response = self._session.get(
@@ -619,6 +670,7 @@ class RestCatalog(Catalog):
         namespaces = ListNamespaceResponse(**response.json())
         return [namespace_tuple + child_namespace for child_namespace in namespaces.namespaces]
 
+    @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
@@ -630,6 +682,7 @@ class RestCatalog(Catalog):
 
         return NamespaceResponse(**response.json()).properties
 
+    @retry(**_RETRY_ARGS)
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:

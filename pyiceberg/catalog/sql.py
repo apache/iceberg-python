@@ -32,7 +32,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -101,7 +101,8 @@ class SqlCatalog(Catalog):
 
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
-        self.engine = create_engine(uri_prop, echo=True)
+        echo = bool(self.properties.get("echo", False))
+        self.engine = create_engine(uri_prop, echo=echo)
 
         self._ensure_tables_exist()
 
@@ -111,7 +112,10 @@ class SqlCatalog(Catalog):
                 stmt = select(1).select_from(table)
                 try:
                     session.scalar(stmt)
-                except OperationalError:
+                except (
+                    OperationalError,
+                    ProgrammingError,
+                ):  # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
                     self.create_tables()
                     return
 
@@ -369,7 +373,7 @@ class SqlCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
-            CommitFailedException: If the commit failed.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
@@ -563,7 +567,9 @@ class SqlCatalog(Catalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        database_name = self.identifier_to_database(namespace)
+        if not self._namespace_exists(database_name):
+            raise NoSuchNamespaceError(f"Database {database_name} does not exists")
 
         stmt = select(IcebergNamespaceProperties).where(
             IcebergNamespaceProperties.catalog_name == self.name, IcebergNamespaceProperties.namespace == database_name

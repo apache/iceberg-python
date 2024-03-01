@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import getpass
+import socket
 import time
 from types import TracebackType
 from typing import (
@@ -34,10 +35,17 @@ from hive_metastore.ttypes import (
     AlreadyExistsException,
     FieldSchema,
     InvalidOperationException,
+    LockComponent,
+    LockLevel,
+    LockRequest,
+    LockResponse,
+    LockState,
+    LockType,
     MetaException,
     NoSuchObjectException,
     SerDeInfo,
     StorageDescriptor,
+    UnlockRequest,
 )
 from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
@@ -56,6 +64,7 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -67,7 +76,7 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, TableProperties, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT
@@ -121,17 +130,21 @@ class _HiveClient:
 
     _transport: TTransport
     _client: Client
+    _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, ugi: Optional[str] = None):
         url_parts = urlparse(uri)
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
         self._transport = TTransport.TBufferedTransport(transport)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
         self._client = Client(protocol)
+        self._ugi = ugi.split(':') if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
+        if self._ugi:
+            self._client.set_ugi(*self._ugi)
         return self._client
 
     def __exit__(
@@ -155,7 +168,7 @@ PROP_EXTERNAL = "EXTERNAL"
 PROP_TABLE_TYPE = "table_type"
 PROP_METADATA_LOCATION = "metadata_location"
 PROP_PREVIOUS_METADATA_LOCATION = "previous_metadata_location"
-DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
+DEFAULT_PROPERTIES = {TableProperties.PARQUET_COMPRESSION: TableProperties.PARQUET_COMPRESSION_DEFAULT}
 
 
 def _construct_parameters(metadata_location: str, previous_metadata_location: Optional[str] = None) -> Dict[str, Any]:
@@ -224,7 +237,7 @@ class HiveCatalog(Catalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"])
+        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
 
     def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -331,6 +344,15 @@ class HiveCatalog(Catalog):
         """
         raise NotImplementedError
 
+    def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
+        lock_component: LockComponent = LockComponent(
+            level=LockLevel.TABLE, type=LockType.EXCLUSIVE, dbname=database_name, tablename=table_name, isTransactional=True
+        )
+
+        lock_request: LockRequest = LockRequest(component=[lock_component], user=getpass.getuser(), hostname=socket.gethostname())
+
+        return lock_request
+
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
 
@@ -342,6 +364,7 @@ class HiveCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
@@ -363,15 +386,23 @@ class HiveCatalog(Catalog):
         self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
 
         # commit to hive
-        try:
-            with self._client as open_client:
+        # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
+        with self._client as open_client:
+            lock: LockResponse = open_client.lock(self._create_lock_request(database_name, table_name))
+
+            try:
+                if lock.state != LockState.ACQUIRED:
+                    raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+
                 tbl = open_client.get_table(dbname=database_name, tbl_name=table_name)
                 tbl.parameters = _construct_parameters(
                     metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
                 )
                 open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=tbl)
-        except NoSuchObjectException as e:
-            raise NoSuchTableError(f"Table does not exist: {table_name}") from e
+            except NoSuchObjectException as e:
+                raise NoSuchTableError(f"Table does not exist: {table_name}") from e
+            finally:
+                open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 

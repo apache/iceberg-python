@@ -418,6 +418,63 @@ with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
 ```
 
+## Partition evolution
+
+PyIceberg supports partition evolution. See the [partition evolution](https://iceberg.apache.org/spec/#partition-evolution)
+for more details.
+
+The API to use when evolving partitions is the `update_spec` API on the table.
+
+```python
+with table.update_spec() as update:
+    update.add_field("id", BucketTransform(16), "bucketed_id")
+    update.add_field("event_ts", DayTransform(), "day_ts")
+```
+
+Updating the partition spec can also be done as part of a transaction with other operations.
+
+```python
+with table.transaction() as transaction:
+    with transaction.update_spec() as update_spec:
+        update_spec.add_field("id", BucketTransform(16), "bucketed_id")
+        update_spec.add_field("event_ts", DayTransform(), "day_ts")
+    # ... Update properties etc
+```
+
+### Add fields
+
+New partition fields can be added via the `add_field` API which takes in the field name to partition on,
+the partition transform, and an optional partition name. If the partition name is not specified,
+one will be created.
+
+```python
+with table.update_spec() as update:
+    update.add_field("id", BucketTransform(16), "bucketed_id")
+    update.add_field("event_ts", DayTransform(), "day_ts")
+    # identity is a shortcut API for adding an IdentityTransform
+    update.identity("some_field")
+```
+
+### Remove fields
+
+Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
+
+```python
+with table.update_spec() as update:some_partition_name
+    # Remove the partition field with the name
+    update.remove_field("some_partition_name")
+```
+
+### Rename fields
+
+Partition fields can also be renamed via the `rename_field` API.
+
+```python
+with table.update_spec() as update:
+    # Rename the partition field with the name bucketed_id to sharded_id
+    update.rename_field("bucketed_id", "sharded_id")
+```
+
 ## Table properties
 
 Set and remove properties through the `Transaction` API:
@@ -635,4 +692,57 @@ print(ray_dataset.take(2))
         "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 16, 10, 18),
     },
 ]
+```
+
+### Daft
+
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/latest/user_guide/integrations/iceberg.html)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [Daft to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+A table can be read easily into a Daft Dataframe:
+
+```python
+df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
+df = df.where(df["trip_distance"] >= 10.0)
+df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
+```
+
+This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(No data to display: Dataframe not materialized)
+```
+
+We can execute the Dataframe to preview the first few rows of the query with `df.show()`.
+
+This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
+
+```python
+df.show(2)
+```
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╞══════════╪═══════════════════════════════╪═══════════════════════════════╡
+│ 2        ┆ 2008-12-31T23:23:50.000000    ┆ 2009-01-01T00:34:31.000000    │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2        ┆ 2008-12-31T23:05:03.000000    ┆ 2009-01-01T16:10:18.000000    │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(Showing first 2 rows)
 ```

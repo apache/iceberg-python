@@ -208,6 +208,7 @@ class DynamoDbCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         raise NotImplementedError
 

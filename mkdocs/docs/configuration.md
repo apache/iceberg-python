@@ -46,7 +46,22 @@ The environment variable picked up by Iceberg starts with `PYICEBERG_` and then 
 
 For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
 
-## FileIO
+# Tables
+
+Iceberg tables support table properties to configure table behavior.
+
+## Write options
+
+| Key                               | Options                           | Default | Description                                                                                 |
+| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.page-row-limit`    | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+| `write.parquet.row-group-limit`   | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+
+# FileIO
 
 Iceberg works with the concept of a FileIO which is a pluggable module for reading, writing, and deleting files. By default, PyIceberg will try to initialize the FileIO that's suitable for the scheme (`s3://`, `gs://`, etc.) and will use the first one that's installed.
 
@@ -133,12 +148,26 @@ catalog:
 | Key                    | Example                 | Description                                                                                        |
 | ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
 | uri                    | https://rest-catalog/ws | URI identifying the REST Server                                                                    |
+| ugi                    | t-1234:secret           | Hadoop UGI for Hive client.                                                                        |
 | credential             | t-1234:secret           | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | token                  | FEW23.DFSDF.FSDF        | Bearer token value to use for `Authorization` header                                               |
 | rest.sigv4-enabled     | true                    | Sign requests to the REST Server using AWS SigV4 protocol                                          |
 | rest.signing-region    | us-east-1               | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name      | execute-api             | The service signing name to use when SigV4 signing a request                                       |
 | rest.authorization-url | https://auth-service/cc | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+
+### Headers in RESTCatalog
+
+To configure custom headers in RESTCatalog, include them in the catalog properties with the prefix `header.`. This
+ensures that all HTTP requests to the REST service include the specified headers.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    credential: t-1234:secret
+    header.content-type: application/vnd.api+json
+```
 
 ## SQL Catalog
 
