@@ -315,19 +315,6 @@ identifier = "default.test_table"
             None,
             None,
             # Skip spark justification because spark does not support UUID type.
-            # f"""CREATE TABLE {identifier} (
-            #     uuid_field string,
-            #     string_field string
-            # )
-            # USING iceberg
-            # PARTITIONED BY (
-            #     identity(uuid_field)
-            # )
-            # """,
-            # f"""INSERT INTO {identifier}
-            # VALUES
-            # ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Associated string value for UUID f47ac10b-58cc-4372-a567-0e02b2c3d479')
-            # """,
         ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=IdentityTransform(), name="binary_field")],
