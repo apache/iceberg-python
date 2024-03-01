@@ -17,8 +17,15 @@
 # pylint:disable=redefined-outer-name
 
 
+import uuid
 from pathlib import PosixPath
-from typing import Union
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Set,
+    Union,
+)
 
 import pyarrow as pa
 import pytest
@@ -27,9 +34,10 @@ from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
+    Identifier,
+    Properties,
     PropertiesUpdateSummary,
 )
-from pyiceberg.catalog.in_memory import InMemoryCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -37,26 +45,34 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import WAREHOUSE
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.io import WAREHOUSE, load_file_io
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     AddSchemaUpdate,
     CommitTableRequest,
+    CommitTableResponse,
     Namespace,
     SetCurrentSchemaUpdate,
     Table,
     TableIdentifier,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadataV1
+from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import EMPTY_DICT
 from pyiceberg.types import IntegerType, LongType, NestedField
+
+DEFAULT_WAREHOUSE_LOCATION = "file:///tmp/warehouse"
 
 
 class InMemoryCatalog(Catalog):
-    """An in-memory catalog implementation for testing purposes."""
+    """
+    An in-memory catalog implementation that uses in-memory data-structures to store the namespaces and tables.
+
+    This is useful for test, demo, and playground but not in production as data is not persisted.
+    """
 
     __tables: Dict[Identifier, Table]
     __namespaces: Dict[Identifier, Properties]
@@ -65,6 +81,7 @@ class InMemoryCatalog(Catalog):
         super().__init__(name, **properties)
         self.__tables = {}
         self.__namespaces = {}
+        self._warehouse_location = properties.get(WAREHOUSE, None) or DEFAULT_WAREHOUSE_LOCATION
 
     def create_table(
         self,
@@ -74,6 +91,7 @@ class InMemoryCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        table_uuid: Optional[uuid.UUID] = None,
     ) -> Table:
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
@@ -86,24 +104,26 @@ class InMemoryCatalog(Catalog):
             if namespace not in self.__namespaces:
                 self.__namespaces[namespace] = {}
 
-            new_location = location or f's3://warehouse/{"/".join(identifier)}/data'
-            metadata = TableMetadataV1(**{
-                "format-version": 1,
-                "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
-                "location": new_location,
-                "last-updated-ms": 1602638573874,
-                "last-column-id": schema.highest_field_id,
-                "schema": schema.model_dump(),
-                "partition-spec": partition_spec.model_dump()["fields"],
-                "properties": properties,
-                "current-snapshot-id": -1,
-                "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
-            })
+            if not location:
+                location = f'{self._warehouse_location}/{"/".join(identifier)}'
+
+            metadata_location = self._get_metadata_location(location=location)
+            metadata = new_table_metadata(
+                schema=schema,
+                partition_spec=partition_spec,
+                sort_order=sort_order,
+                location=location,
+                properties=properties,
+                table_uuid=table_uuid,
+            )
+            io = load_file_io({**self.properties, **properties}, location=location)
+            self._write_metadata(metadata, io, metadata_location)
+
             table = Table(
                 identifier=identifier,
                 metadata=metadata,
-                metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                io=load_file_io(),
+                metadata_location=metadata_location,
+                io=io,
                 catalog=self,
             )
             self.__tables[identifier] = table
@@ -113,14 +133,29 @@ class InMemoryCatalog(Catalog):
         raise NotImplementedError
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
-        table = self.__tables[identifier]
-        table.metadata = update_table_metadata(base_metadata=table.metadata, updates=table_request.updates)
-
-        return CommitTableResponse(
-            metadata=table.metadata.model_dump(),
-            metadata_location=table.location(),
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
+        current_table = self.load_table(identifier_tuple)
+        base_metadata = current_table.metadata
+
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        # update table state
+        current_table.metadata = updated_metadata
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         identifier = self.identifier_to_tuple_without_catalog(identifier)
@@ -155,7 +190,7 @@ class InMemoryCatalog(Catalog):
             identifier=to_identifier,
             metadata=table.metadata,
             metadata_location=table.metadata_location,
-            io=load_file_io(),
+            io=self._load_file_io(properties=table.metadata.properties, location=table.metadata_location),
             catalog=self,
         )
         return self.__tables[to_identifier]
@@ -666,7 +701,7 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
 
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
-    assert s == "test.in_memory.catalog (<class 'pyiceberg.catalog.in_memory.InMemoryCatalog'>)"
+    assert s == "test.in_memory.catalog (<class 'test_base.InMemoryCatalog'>)"
 
 
 def test_table_properties_int_value(catalog: InMemoryCatalog) -> None:

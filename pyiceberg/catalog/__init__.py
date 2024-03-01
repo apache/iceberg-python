@@ -144,19 +144,12 @@ def load_sql(name: str, conf: Properties) -> Catalog:
         ) from exc
 
 
-def load_in_memory(name: str, conf: Properties) -> Catalog:
-    from pyiceberg.catalog.in_memory import InMemoryCatalog
-
-    return InMemoryCatalog(name, **conf)
-
-
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
     CatalogType.GLUE: load_glue,
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
-    CatalogType.IN_MEMORY: load_in_memory,
 }
 
 
