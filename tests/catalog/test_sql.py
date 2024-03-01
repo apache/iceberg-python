@@ -21,6 +21,7 @@ from typing import Generator, List
 
 import pyarrow as pa
 import pytest
+from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
@@ -640,7 +641,7 @@ def test_create_namespace_with_null_properties(catalog: SqlCatalog, database_nam
         catalog.create_namespace(namespace=database_name, properties={None: "value"})  # type: ignore
 
     with pytest.raises(IntegrityError):
-        catalog.create_namespace(namespace=database_name, properties={"key": None})  # type: ignore
+        catalog.create_namespace(namespace=database_name, properties={"key": None})
 
 
 @pytest.mark.parametrize(
@@ -915,3 +916,39 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
         with txn.update_snapshot().fast_append() as snapshot_update:
             for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
                 snapshot_update.append_data_file(data_file)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    # table properties can be set to int, but still serialized to string
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    property_with_int = {"property_name": 42}
+    table = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_int)
+    assert isinstance(table.properties["property_name"], str)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_table_properties_raise_for_none_value(
+    catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    property_with_none = {"property_name": None}
+    with pytest.raises(ValidationError) as exc_info:
+        _ = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_none)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

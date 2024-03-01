@@ -73,7 +73,7 @@ class KeyDefaultDict(Dict[K, V]):
 
 
 Identifier = Tuple[str, ...]
-Properties = Dict[str, str]
+Properties = Dict[str, Any]
 RecursiveDict = Dict[str, Union[str, "RecursiveDict"]]
 
 # Represents the literal value

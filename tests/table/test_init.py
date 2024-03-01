@@ -17,10 +17,11 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from copy import copy
-from typing import Dict
+from typing import Any, Dict
 
 import pyarrow as pa
 import pytest
+from pydantic import ValidationError
 from sortedcontainers import SortedList
 
 from pyiceberg.catalog.noop import NoopCatalog
@@ -1081,3 +1082,29 @@ def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
 
     with pytest.raises(ValueError, match=expected):
         _check_schema(table_schema_simple, other_schema)
+
+
+def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
+    # metadata properties are all strings
+    for k, v in example_table_metadata_v2["properties"].items():
+        assert isinstance(k, str)
+        assert isinstance(v, str)
+    metadata = TableMetadataV2(**example_table_metadata_v2)
+    for k, v in metadata.properties.items():
+        assert isinstance(k, str)
+        assert isinstance(v, str)
+
+    # property can be set to int, but still serialized as string
+    property_with_int = {"property_name": 42}
+    new_example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_int}
+    assert isinstance(new_example_table_metadata_v2["properties"]["property_name"], int)
+    new_metadata = TableMetadataV2(**new_example_table_metadata_v2)
+    assert isinstance(new_metadata.properties["property_name"], str)
+
+
+def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[str, Any]) -> None:
+    property_with_none = {"property_name": None}
+    example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_none}
+    with pytest.raises(ValidationError) as exc_info:
+        TableMetadataV2(**example_table_metadata_v2)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

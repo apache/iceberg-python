@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
@@ -49,6 +49,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
+from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.datetime import datetime_to_millis
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
@@ -217,6 +218,9 @@ class TableMetadataCommonFields(IcebergBaseModel):
     and the map values are snapshot reference objects.
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
+
+    # validators
+    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot by snapshot_id."""

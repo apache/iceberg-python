@@ -655,6 +655,11 @@ def _(value: int, _type: IcebergType) -> str:
     return _int_to_human_string(_type, value)
 
 
+@_human_string.register(bool)
+def _(value: bool, _type: IcebergType) -> str:
+    return str(value).lower()
+
+
 @singledispatch
 def _int_to_human_string(_type: IcebergType, value: int) -> str:
     return str(value)
