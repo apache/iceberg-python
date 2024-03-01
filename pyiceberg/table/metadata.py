@@ -122,7 +122,7 @@ def check_sort_orders(table_metadata: TableMetadata) -> TableMetadata:
 
 def construct_refs(table_metadata: TableMetadata) -> TableMetadata:
     """Set the main branch if missing."""
-    if table_metadata.current_snapshot_id is not None and table_metadata.current_snapshot_id != -1:
+    if table_metadata.current_snapshot_id is not None:
         if MAIN_BRANCH not in table_metadata.refs:
             table_metadata.refs[MAIN_BRANCH] = SnapshotRef(
                 snapshot_id=table_metadata.current_snapshot_id, snapshot_ref_type=SnapshotRefType.BRANCH
