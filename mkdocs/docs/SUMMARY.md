@@ -26,6 +26,6 @@
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
-- [Code Reference](reference/)
+- [Code Reference](reference/) <!-- markdown-link-check-disable-line -->
 
 <!-- prettier-ignore-end -->
