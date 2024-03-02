@@ -419,9 +419,9 @@ def test_change_specs_and_schema_transaction(catalog: Catalog) -> None:
         NestedField(field_id=2, name='event_ts', field_type=TimestampType(), required=False),
         NestedField(field_id=3, name='str', field_type=StringType(), required=False),
         NestedField(field_id=4, name='col_string', field_type=StringType(), required=False),
-        schema_id=1,
         identifier_field_ids=[],
     )
+    assert table.schema().schema_id == 1
 
 
 @pytest.mark.integration
