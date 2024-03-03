@@ -17,6 +17,8 @@
 
 <!-- prettier-ignore-start -->
 
+<!-- markdown-link-check-disable -->
+
 - [Getting started](index.md)
 - [Configuration](configuration.md)
 - [CLI](cli.md)
@@ -26,6 +28,8 @@
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
-- [Code Reference](reference/) <!-- markdown-link-check-disable-line -->
+- [Code Reference](reference/)
+
+<!-- markdown-link-check-enable-->
 
 <!-- prettier-ignore-end -->
