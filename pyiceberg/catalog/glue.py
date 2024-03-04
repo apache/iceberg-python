@@ -268,7 +268,7 @@ def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id
     """
     event_system = glue.meta.events
 
-    def add_glue_catalog_id(params, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def add_glue_catalog_id(params: Dict[str, str], **kwargs: Any) -> None:
         if "CatalogId" not in params:
             params["CatalogId"] = glue_catalog_id
 
@@ -289,9 +289,8 @@ class GlueCatalog(Catalog):
         )
         self.glue: GlueClient = session.client("glue")
 
-        self.glue_catalog_id: Optional[str] = properties.get("glue.id")
-        if self.glue_catalog_id is not None:
-            _register_glue_catalog_id_with_glue_client(self.glue, self.glue_catalog_id)
+        if glue_catalog_id := properties.get(GLUE_ID):
+            _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
 
     def _convert_glue_to_iceberg(self, glue_table: TableTypeDef) -> Table:
         properties: Properties = glue_table["Parameters"]
