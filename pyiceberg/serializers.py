@@ -24,6 +24,7 @@ from typing import Callable
 from pyiceberg.io import InputFile, InputStream, OutputFile
 from pyiceberg.table.metadata import TableMetadata, TableMetadataUtil
 from pyiceberg.typedef import UTF8
+from pyiceberg.utils.config import Config
 
 GZIP = "gzip"
 
@@ -127,6 +128,9 @@ class ToOutputFile:
             overwrite (bool): Where to overwrite the file if it already exists. Defaults to `False`.
         """
         with output_file.create(overwrite=overwrite) as output_stream:
-            json_bytes = metadata.model_dump_json(exclude_none=False).encode(UTF8)
+            # We need to serialize None values, in order to dump `None` current-snapshot-id as `-1`
+            exclude_none = False if Config().get_bool("legacy-current-snapshot-id") else True
+
+            json_bytes = metadata.model_dump_json(exclude_none=exclude_none).encode(UTF8)
             json_bytes = Compressor.get_compressor(output_file.location).bytes_compressor()(json_bytes)
             output_stream.write(json_bytes)
