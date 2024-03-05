@@ -81,7 +81,7 @@ class InMemoryCatalog(Catalog):
         super().__init__(name, **properties)
         self.__tables = {}
         self.__namespaces = {}
-        self._warehouse_location = properties.get(WAREHOUSE, None) or DEFAULT_WAREHOUSE_LOCATION
+        self._warehouse_location = properties.get(WAREHOUSE, DEFAULT_WAREHOUSE_LOCATION)
 
     def create_table(
         self,
