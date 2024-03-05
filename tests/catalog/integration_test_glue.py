@@ -35,6 +35,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
+from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.types import IntegerType
 from tests.conftest import clean_up, get_bucket_name, get_s3_path
 
@@ -476,3 +477,69 @@ def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Sch
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+
+
+def test_create_table_transaction(
+    test_catalog: Catalog,
+    s3: boto3.client,
+    table_schema_nested: Schema,
+    table_name: str,
+    database_name: str,
+    athena: AthenaQueryHelper,
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+
+    with test_catalog.create_table_transaction(identifier, table_schema_nested, get_s3_path(get_bucket_name(), database_name, table_name)) as txn:
+        df = pa.Table.from_pylist(
+            [
+                {
+                    "foo": "foo_val",
+                    "bar": 1,
+                    "baz": False,
+                    "qux": ["x", "y"],
+                    "quux": {"key": {"subkey": 2}},
+                    "location": [{"latitude": 1.1}],
+                    "person": {"name": "some_name", "age": 23},
+                }
+            ],
+            schema=schema_to_pyarrow(txn.table_metadata.schema()),
+        )
+
+        with txn.update_snapshot().fast_append() as update_snapshot:
+            data_files = _dataframe_to_data_files(
+                        table_metadata=txn.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=txn._table.io
+                    )
+            for data_file in data_files:
+                update_snapshot.append_data_file(data_file)
+
+    table = test_catalog.load_table(identifier)
+    assert table.identifier == (CATALOG_NAME,) + identifier
+    metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
+    s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    assert athena.get_query_results(f'SELECT * FROM "{database_name}"."{table_name}"') == [
+        {
+            "Data": [
+                {"VarCharValue": "foo"},
+                {"VarCharValue": "bar"},
+                {"VarCharValue": "baz"},
+                {"VarCharValue": "qux"},
+                {"VarCharValue": "quux"},
+                {"VarCharValue": "location"},
+                {"VarCharValue": "person"},
+            ]
+        },
+        {
+            "Data": [
+                {"VarCharValue": "foo_val"},
+                {"VarCharValue": "1"},
+                {"VarCharValue": "false"},
+                {"VarCharValue": "[x, y]"},
+                {"VarCharValue": "{key={subkey=2}}"},
+                {"VarCharValue": "[{latitude=1.1, longitude=null}]"},
+                {"VarCharValue": "{name=some_name, age=23}"},
+            ]
+        },
+    ]
