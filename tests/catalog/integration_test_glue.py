@@ -490,7 +490,9 @@ def test_create_table_transaction(
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
 
-    with test_catalog.create_table_transaction(identifier, table_schema_nested, get_s3_path(get_bucket_name(), database_name, table_name)) as txn:
+    with test_catalog.create_table_transaction(
+        identifier, table_schema_nested, get_s3_path(get_bucket_name(), database_name, table_name)
+    ) as txn:
         df = pa.Table.from_pylist(
             [
                 {
@@ -508,8 +510,8 @@ def test_create_table_transaction(
 
         with txn.update_snapshot().fast_append() as update_snapshot:
             data_files = _dataframe_to_data_files(
-                        table_metadata=txn.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=txn._table.io
-                    )
+                table_metadata=txn.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=txn._table.io
+            )
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
 
