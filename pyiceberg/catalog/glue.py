@@ -332,12 +332,12 @@ class GlueCatalog(Catalog):
                 f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
             ) from e
 
-    def _get_glue_table(self, database_name: str, table_name: str) -> Optional[TableTypeDef]:
+    def _get_glue_table(self, database_name: str, table_name: str) -> TableTypeDef:
         try:
             load_table_response = self.glue.get_table(DatabaseName=database_name, Name=table_name)
             return load_table_response["Table"]
-        except self.glue.exceptions.EntityNotFoundException:
-            return None
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
     def _create_staged_table(
         self,
@@ -445,8 +445,8 @@ class GlueCatalog(Catalog):
         )
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple)
 
-        current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
-        if current_glue_table is not None:
+        try:
+            current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
             # Update the table
             glue_table_version_id = current_glue_table.get("VersionId")
             if not glue_table_version_id:
@@ -489,7 +489,7 @@ class GlueCatalog(Catalog):
             )
 
             return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
-        else:
+        except NoSuchTableError:
             # Create the table
             updated_metadata = construct_initial_table_metadata(table_request.updates)
             new_metadata_version = 0
