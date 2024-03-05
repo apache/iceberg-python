@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property, singledispatch
+from functools import cached_property, singledispatch, singledispatchmethod
 from itertools import chain
 from typing import (
     TYPE_CHECKING,
@@ -72,6 +72,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     INITIAL_PARTITION_SPEC_ID,
     PARTITION_FIELD_ID_START,
+    UNPARTITIONED_PARTITION_SPEC,
     IdentityTransform,
     PartitionField,
     PartitionSpec,
@@ -93,6 +94,8 @@ from pyiceberg.table.metadata import (
     SUPPORTED_TABLE_FORMAT_VERSION,
     TableMetadata,
     TableMetadataUtil,
+    TableMetadataV1,
+    TableMetadataV2,
 )
 from pyiceberg.table.name_mapping import (
     NameMapping,
@@ -108,7 +111,7 @@ from pyiceberg.table.snapshots import (
     Summary,
     update_snapshot_summaries,
 )
-from pyiceberg.table.sorting import SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -137,7 +140,6 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from pyiceberg.catalog import Catalog
-
 
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
@@ -373,7 +375,45 @@ class Transaction:
             return self._table
 
 
+class CreateTableTransaction(Transaction):
+    @staticmethod
+    def create_changes(table_metadata: TableMetadata) -> Tuple[TableUpdate, ...]:
+        changes = [
+            AssignUUIDUpdate(uuid=table_metadata.table_uuid),
+            UpgradeFormatVersionUpdate(format_version=table_metadata.format_version),
+        ]
+
+        schema: Schema = table_metadata.schema()
+        changes.append(AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id))
+        changes.append(SetCurrentSchemaUpdate(schema_id=-1))
+
+        spec: PartitionSpec = table_metadata.spec()
+        if spec.is_unpartitioned():
+            changes.append(AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC))
+        else:
+            changes.append(AddPartitionSpecUpdate(spec=spec))
+        changes.append(SetDefaultSpecUpdate(spec_id=-1))
+
+        sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
+        if sort_order is None or sort_order.is_unsorted:
+            changes.append(AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER))
+        else:
+            changes.append(AddSortOrderUpdate(sort_order=sort_order))
+        changes.append(SetDefaultSortOrderUpdate(sort_order_id=-1))
+
+        changes.append(SetLocationUpdate(location=table_metadata.location))
+        changes.append(SetPropertiesUpdate(updates=table_metadata.properties))
+
+        return tuple(changes)
+
+    def __init__(self, table: StagedTable):
+        super().__init__(table, autocommit=False)
+        self._requirements = (AssertCreate(),)
+        self._updates = self.create_changes(table.metadata)
+
+
 class TableUpdateAction(Enum):
+    assign_uuid = "assign-uuid"
     upgrade_format_version = "upgrade-format-version"
     add_schema = "add-schema"
     set_current_schema = "set-current-schema"
@@ -392,6 +432,11 @@ class TableUpdateAction(Enum):
 
 class TableUpdate(IcebergBaseModel):
     action: TableUpdateAction
+
+
+class AssignUUIDUpdate(TableUpdate):
+    action: TableUpdateAction = TableUpdateAction.assign_uuid
+    uuid: uuid.UUID
 
 
 class UpgradeFormatVersionUpdate(TableUpdate):
@@ -520,6 +565,15 @@ def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, conte
 
     """
     raise NotImplementedError(f"Unsupported table update: {update}")
+
+
+@_apply_table_update.register(AssignUUIDUpdate)
+def _(update: AssignUUIDUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.uuid == base_metadata.table_uuid:
+        return base_metadata
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"table_uuid": update.uuid})
 
 
 @_apply_table_update.register(UpgradeFormatVersionUpdate)
@@ -751,6 +805,143 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
         new_metadata = _apply_table_update(update, new_metadata, context)
 
     return new_metadata.model_copy(deep=True)
+
+
+class InitialTableMetadataConstructor:
+    table_uuid: uuid.UUID
+    format_version: int
+    schema: Schema
+    current_schema_id: int
+    spec: PartitionSpec
+    default_spec_id: int
+    sort_order: SortOrder
+    default_sort_order_id: int
+    location: str
+    properties: Dict[str, str]
+
+    @singledispatchmethod
+    def apply_table_update(self, update: TableUpdate) -> None:
+        raise NotImplementedError(f"Table Update {update} should not be part of initial table metadata construction")
+
+    @apply_table_update.register(AssignUUIDUpdate)
+    def _(self, update: AssignUUIDUpdate) -> None:
+        self.table_uuid = update.uuid
+
+    @apply_table_update.register(UpgradeFormatVersionUpdate)
+    def _(self, update: UpgradeFormatVersionUpdate) -> None:
+        self.format_version = update.format_version
+
+    @apply_table_update.register(AddSchemaUpdate)
+    def _(self, update: AddSchemaUpdate) -> None:
+        self.schema = update.schema_
+
+    @apply_table_update.register(SetCurrentSchemaUpdate)
+    def _(self, update: SetCurrentSchemaUpdate) -> None:
+        if update.schema_id == -1:
+            if self.schema is None:
+                raise ValueError("No schema has been added")
+            self.current_schema_id = self.schema.schema_id
+        else:
+            self.current_schema_id = update.schema_id
+
+    @apply_table_update.register(AddPartitionSpecUpdate)
+    def _(self, update: AddPartitionSpecUpdate) -> None:
+        self.spec = update.spec
+
+    @apply_table_update.register(SetDefaultSpecUpdate)
+    def _(self, update: SetDefaultSpecUpdate) -> None:
+        if update.spec_id == -1:
+            if self.spec is None:
+                raise ValueError("No partition spec has been added")
+            self.default_spec_id = self.spec.spec_id
+        else:
+            self.default_spec_id = update.spec_id
+
+    @apply_table_update.register(AddSortOrderUpdate)
+    def _(self, update: AddSortOrderUpdate) -> None:
+        self.sort_order = update.sort_order
+
+    @apply_table_update.register(SetDefaultSortOrderUpdate)
+    def _(self, update: SetDefaultSortOrderUpdate) -> None:
+        if update.sort_order_id == -1:
+            if self.sort_order is None:
+                raise ValueError("No sort order has been added")
+            self.default_sort_order_id = self.sort_order.order_id
+        else:
+            self.default_sort_order_id = update.sort_order_id
+
+    @apply_table_update.register(SetLocationUpdate)
+    def _(self, update: SetLocationUpdate) -> None:
+        self.location = update.location
+
+    @apply_table_update.register(SetPropertiesUpdate)
+    def _(self, update: SetPropertiesUpdate) -> None:
+        self.properties = update.updates
+
+    def ready_to_construct(self) -> bool:
+        """Return true if all fields are set.
+
+        Note fields may not be able to get from getattr if not set
+        """
+        return all(
+            hasattr(self, field) and getattr(self, field) is not None
+            for field in [
+                "table_uuid",
+                "format_version",
+                "schema",
+                "current_schema_id",
+                "spec",
+                "default_spec_id",
+                "sort_order",
+                "default_sort_order_id",
+                "location",
+                "properties",
+            ]
+        )
+
+    def construct_initial_metadata(self) -> TableMetadata:
+        if self.format_version == 1:
+            return TableMetadataV1(
+                location=self.location,
+                last_column_id=self.schema.highest_field_id,
+                current_schema_id=self.current_schema_id,
+                schema=self.schema,
+                partition_spec=[field.model_dump() for field in self.spec.fields],
+                partition_specs=[self.spec],
+                default_spec_id=self.default_spec_id,
+                sort_order=[self.sort_order],
+                default_sort_order_id=self.default_sort_order_id,
+                properties=self.properties,
+                last_partition_id=self.spec.last_assigned_field_id,
+                table_uuid=self.table_uuid,
+            )
+
+        return TableMetadataV2(
+            location=self.location,
+            schemas=[self.schema],
+            last_column_id=self.schema.highest_field_id,
+            current_schema_id=self.current_schema_id,
+            partition_specs=[self.spec],
+            default_spec_id=self.default_spec_id,
+            sort_orders=[self.sort_order],
+            default_sort_order_id=self.default_sort_order_id,
+            properties=self.properties,
+            last_partition_id=self.spec.last_assigned_field_id,
+            table_uuid=self.table_uuid,
+        )
+
+
+def construct_initial_table_metadata(updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+    initial_create_update_index = 0
+    initial_metadata_constructor = InitialTableMetadataConstructor()
+    for update in updates:
+        initial_metadata_constructor.apply_table_update(update)
+        initial_create_update_index += 1
+        if initial_metadata_constructor.ready_to_construct():
+            break
+    base_metadata = initial_metadata_constructor.construct_initial_metadata()
+    updated_metadata = update_table_metadata(base_metadata, updates[initial_create_update_index:])
+    return updated_metadata
 
 
 class TableRequirement(IcebergBaseModel):
@@ -1211,6 +1402,25 @@ class StaticTable(Table):
         )
 
 
+class StagedTable(Table):
+    def refresh(self) -> Table:
+        raise ValueError("Cannot refresh a staged table")
+
+    def scan(
+        self,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        selected_fields: Tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        snapshot_id: Optional[int] = None,
+        options: Properties = EMPTY_DICT,
+        limit: Optional[int] = None,
+    ) -> DataScan:
+        raise ValueError("Cannot scan a staged table")
+
+    def to_daft(self) -> daft.DataFrame:
+        raise ValueError("Cannot convert a staged table to a Daft DataFrame")
+
+
 def _parse_row_filter(expr: Union[str, BooleanExpression]) -> BooleanExpression:
     """Accept an expression in the form of a BooleanExpression or a string.
 
@@ -1654,7 +1864,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
+            # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self

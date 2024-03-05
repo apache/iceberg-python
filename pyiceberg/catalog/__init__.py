@@ -45,6 +45,8 @@ from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CreateTableTransaction,
+    StagedTable,
     Table,
     TableMetadata,
 )
@@ -287,6 +289,62 @@ class Catalog(ABC):
 
     def _load_file_io(self, properties: Properties = EMPTY_DICT, location: Optional[str] = None) -> FileIO:
         return load_file_io({**self.properties, **properties}, location)
+
+    def _create_staged_table(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> StagedTable:
+        """Create a table and return the table instance without committing the changes.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            Table: the created table instance.
+
+        Raises:
+            TableAlreadyExistsError: If a table with the name already exists.
+        """
+        raise NotImplementedError
+
+    def create_table_transaction(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> CreateTableTransaction:
+        """Create a CreateTableTransaction.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            CreateTableTransaction: createTableTransaction instance.
+
+        Raises:
+            TableAlreadyExistsError: If a table with the name already exists.
+        """
+        return CreateTableTransaction(
+            self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
+        )
 
     @abstractmethod
     def create_table(

@@ -671,3 +671,31 @@ def test_commit_table_properties(
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+
+
+@mock_aws
+def test_create_table_transaction(
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+
+    with test_catalog.create_table_transaction(identifier, table_schema_nested) as txn:
+        with txn.update_schema() as update_schema:
+            update_schema.add_column(path="b", field_type=IntegerType())
+
+        txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+
+    table = test_catalog.load_table(identifier)
+
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert table.schema().find_field("b").field_type == IntegerType()
+    assert table.properties == {"test_a": "test_aa", "test_b": "test_b", "test_c": "test_c"}
