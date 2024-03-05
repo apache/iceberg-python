@@ -100,6 +100,13 @@ from pyiceberg.types import (
 if TYPE_CHECKING:
     import pyarrow as pa
 
+
+# There is a unique Glue metastore in each AWS account and each AWS region. By default, GlueCatalog chooses the Glue
+# metastore to use based on the user's default AWS client credential and region setup. You can specify the Glue catalog
+# ID through glue.id catalog property to point to a Glue catalog in a different AWS account. The Glue catalog ID is your
+# numeric AWS account ID.
+GLUE_ID = "glue.id"
+
 # If Glue should skip archiving an old table version when creating a new version in a commit. By
 # default, Glue archives all old table versions after an UpdateTable call, but Glue has a default
 # max number of archived table versions (can be increased). So for streaming use case with lots
@@ -259,6 +266,22 @@ def _construct_database_input(database_name: str, properties: Properties) -> Dat
     return database_input
 
 
+def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id: str) -> None:
+    """
+    Register the Glue Catalog ID (AWS Account ID) as a parameter on all Glue client methods.
+
+    It's more ergonomic to do this than to pass the CatalogId as a parameter to every client call since it's an optional
+    parameter and boto3 does not support 'None' values for missing parameters.
+    """
+    event_system = glue.meta.events
+
+    def add_glue_catalog_id(params: Dict[str, str], **kwargs: Any) -> None:
+        if "CatalogId" not in params:
+            params["CatalogId"] = glue_catalog_id
+
+    event_system.register("provide-client-params.glue", add_glue_catalog_id)
+
+
 class GlueCatalog(Catalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
@@ -272,6 +295,9 @@ class GlueCatalog(Catalog):
             aws_session_token=properties.get("aws_session_token"),
         )
         self.glue: GlueClient = session.client("glue")
+
+        if glue_catalog_id := properties.get(GLUE_ID):
+            _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
 
     def _convert_glue_to_iceberg(self, glue_table: TableTypeDef) -> Table:
         properties: Properties = glue_table["Parameters"]

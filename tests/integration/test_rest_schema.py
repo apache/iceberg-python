@@ -361,7 +361,6 @@ def test_revert_changes(simple_table: Table, table_schema_simple: Schema) -> Non
             NestedField(field_id=1, name='foo', field_type=StringType(), required=False),
             NestedField(field_id=2, name='bar', field_type=IntegerType(), required=True),
             NestedField(field_id=3, name='baz', field_type=BooleanType(), required=False),
-            schema_id=0,
             identifier_field_ids=[2],
         ),
         1: Schema(
@@ -369,11 +368,12 @@ def test_revert_changes(simple_table: Table, table_schema_simple: Schema) -> Non
             NestedField(field_id=2, name='bar', field_type=IntegerType(), required=True),
             NestedField(field_id=3, name='baz', field_type=BooleanType(), required=False),
             NestedField(field_id=4, name='data', field_type=IntegerType(), required=False),
-            schema_id=1,
             identifier_field_ids=[2],
         ),
     }
     assert simple_table.schema().schema_id == 0
+    assert simple_table.schemas()[0].schema_id == 0
+    assert simple_table.schemas()[1].schema_id == 1
 
 
 @pytest.mark.integration

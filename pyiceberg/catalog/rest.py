@@ -294,7 +294,11 @@ class RestCatalog(Catalog):
             client_id, client_secret = credential.split(SEMICOLON)
         else:
             client_id, client_secret = None, credential
-        data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: CATALOG_SCOPE}
+
+        # take scope from properties or use default CATALOG_SCOPE
+        scope = self.properties.get(SCOPE) or CATALOG_SCOPE
+
+        data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: scope}
         response = session.post(
             url=self.auth_url, data=data, headers={**session.headers, "Content-type": "application/x-www-form-urlencoded"}
         )

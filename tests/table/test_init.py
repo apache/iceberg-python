@@ -107,26 +107,26 @@ def test_schema(table_v2: Table) -> None:
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-        schema_id=1,
         identifier_field_ids=[1, 2],
     )
+    assert table_v2.schema().schema_id == 1
 
 
 def test_schemas(table_v2: Table) -> None:
     assert table_v2.schemas() == {
         0: Schema(
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
-            schema_id=0,
             identifier_field_ids=[],
         ),
         1: Schema(
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
             NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
             NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-            schema_id=1,
             identifier_field_ids=[1, 2],
         ),
     }
+    assert table_v2.schemas()[0].schema_id == 0
+    assert table_v2.schemas()[1].schema_id == 1
 
 
 def test_spec(table_v2: Table) -> None:
@@ -266,31 +266,34 @@ def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
 
 def test_table_scan_projection_full_schema(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.select("x", "y", "z").projection() == Schema(
+    projection_schema = scan.select("x", "y", "z").projection()
+    assert projection_schema == Schema(
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-        schema_id=1,
         identifier_field_ids=[1, 2],
     )
+    assert projection_schema.schema_id == 1
 
 
 def test_table_scan_projection_single_column(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.select("y").projection() == Schema(
+    projection_schema = scan.select("y").projection()
+    assert projection_schema == Schema(
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
-        schema_id=1,
         identifier_field_ids=[2],
     )
+    assert projection_schema.schema_id == 1
 
 
 def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.with_case_sensitive(False).select("Y").projection() == Schema(
+    projection_schema = scan.with_case_sensitive(False).select("Y").projection()
+    assert projection_schema == Schema(
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
-        schema_id=1,
         identifier_field_ids=[2],
     )
+    assert projection_schema.schema_id == 1
 
 
 def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
@@ -983,20 +986,22 @@ def test_correct_schema() -> None:
     )
 
     # Should use the current schema, instead the one from the snapshot
-    assert t.scan().projection() == Schema(
+    projection_schema = t.scan().projection()
+    assert projection_schema == Schema(
         NestedField(field_id=1, name='x', field_type=LongType(), required=True),
         NestedField(field_id=2, name='y', field_type=LongType(), required=True),
         NestedField(field_id=3, name='z', field_type=LongType(), required=True),
-        schema_id=1,
         identifier_field_ids=[1, 2],
     )
+    assert projection_schema.schema_id == 1
 
     # When we explicitly filter on the commit, we want to have the schema that's linked to the snapshot
-    assert t.scan(snapshot_id=123).projection() == Schema(
+    projection_schema = t.scan(snapshot_id=123).projection()
+    assert projection_schema == Schema(
         NestedField(field_id=1, name='x', field_type=LongType(), required=True),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert projection_schema.schema_id == 0
 
     with pytest.warns(UserWarning, match="Metadata does not contain schema with id: 10"):
         t.scan(snapshot_id=234).projection()
