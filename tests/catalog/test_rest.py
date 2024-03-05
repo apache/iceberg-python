@@ -46,6 +46,7 @@ TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
 TEST_AUTH_URL = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
+TEST_SCOPE = "openid_offline_corpds_ds_profile"
 TEST_HEADERS = {
     "Content-type": "application/json",
     "X-Client-Version": "0.14.1",
@@ -134,6 +135,43 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
         == f"Bearer {TEST_TOKEN}"
     )
+
+
+def test_token_with_default_scope(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
+    )
+    assert "catalog" in mock_request.last_request.text
+
+
+def test_token_with_custom_scope(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_SCOPE in mock_request.last_request.text
 
 
 def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
