@@ -24,7 +24,7 @@ hide:
 
 # Catalogs
 
-PyIceberg currently has native support for REST, SQL, Hive, Glue, DynamoDB, and In-Memory catalogs.
+PyIceberg currently has native support for REST, SQL, Hive, Glue and DynamoDB.
 
 There are three ways to pass in configuration:
 
