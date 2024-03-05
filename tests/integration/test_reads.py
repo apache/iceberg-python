@@ -93,7 +93,6 @@ def create_table(catalog: Catalog) -> Table:
         NestedField(field_id=2, name="int", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="bool", field_type=BooleanType(), required=False),
         NestedField(field_id=4, name="datetime", field_type=TimestampType(), required=False),
-        schema_id=1,
     )
 
     return catalog.create_table(identifier=TABLE_NAME, schema=schema)

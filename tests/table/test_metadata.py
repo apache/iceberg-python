@@ -120,7 +120,6 @@ def test_v1_metadata_parsing_directly(example_table_metadata_v1: Dict[str, Any])
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
             NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
             NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-            schema_id=0,
             identifier_field_ids=[],
         )
     ]

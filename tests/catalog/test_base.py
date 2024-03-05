@@ -614,9 +614,9 @@ def test_add_column(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 1
 
     transaction = given_table.transaction()
     transaction.update_schema().add_column(path="new_column2", field_type=IntegerType(), doc="doc").commit()
@@ -628,9 +628,9 @@ def test_add_column(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
         NestedField(field_id=5, name="new_column2", field_type=IntegerType(), required=False, doc="doc"),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 2
 
 
 def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
@@ -644,9 +644,9 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 1
 
     with given_table.transaction() as tx:
         tx.update_schema().add_column(path="new_column2", field_type=IntegerType(), doc="doc").commit()
@@ -657,9 +657,9 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
         NestedField(field_id=5, name="new_column2", field_type=IntegerType(), required=False, doc="doc"),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 2
 
 
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
