@@ -47,6 +47,9 @@ TEST_CREDENTIALS = "client:secret"
 TEST_AUTH_URL = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_SCOPE = "openid_offline_corpds_ds_profile"
+TEST_AUDIENCE = "test_audience"
+TEST_RESOURCE = "test_resource"
+
 TEST_HEADERS = {
     "Content-type": "application/json",
     "X-Client-Version": "0.14.1",
@@ -135,6 +138,48 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
         == f"Bearer {TEST_TOKEN}"
     )
+
+
+def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog(
+            "rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE
+        )._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_AUDIENCE in mock_request.last_request.text
+    assert TEST_RESOURCE in mock_request.last_request.text
+
+
+def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_AUDIENCE not in mock_request.last_request.text
+    assert TEST_RESOURCE not in mock_request.last_request.text
 
 
 def test_token_with_default_scope(rest_mock: Mocker) -> None:

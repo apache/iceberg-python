@@ -170,6 +170,8 @@ catalog:
 | credential             | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | token                  | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
 | scope                  | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource               | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience               | rest_catalog                     | Logical name of target resource or service                                                         |
 | rest.sigv4-enabled     | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
 | rest.signing-region    | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name      | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
