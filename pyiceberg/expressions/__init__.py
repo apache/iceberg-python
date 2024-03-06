@@ -664,11 +664,13 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
     literal: Literal[L]
 
     def __init__(self, term: Union[str, UnboundTerm[Any]], literal: Union[L, Literal[L]]):  # pylint: disable=W0621
+        # print("lets check the type", literal, type(literal), term)
         super().__init__(term)
         self.literal = _to_literal(literal)  # pylint: disable=W0621
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundLiteralPredicate[L]:
         bound_term = self.term.bind(schema, case_sensitive)
+        # print("last min", self.term, self.literal, bound_term, bound_term.ref().field, bound_term.ref().field.field_type)
         lit = self.literal.to(bound_term.ref().field.field_type)
 
         if isinstance(lit, AboveMax):

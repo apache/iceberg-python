@@ -71,6 +71,7 @@ class Operation(Enum):
     REPLACE = "replace"
     OVERWRITE = "overwrite"
     DELETE = "delete"
+    PARTIAL_OVERWRITE = "partial_overwrite"
 
     def __repr__(self) -> str:
         """Return the string representation of the Operation class."""
@@ -304,7 +305,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
 def update_snapshot_summaries(
     summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
-    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:
+    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.PARTIAL_OVERWRITE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
     if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
@@ -364,5 +365,4 @@ def update_snapshot_summaries(
         added_property=ADDED_EQUALITY_DELETES,
         removed_property=REMOVED_EQUALITY_DELETES,
     )
-
     return summary

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from __future__ import annotations
+import threading
 
 import itertools
 import uuid
@@ -229,6 +230,44 @@ class PropertyUtil:
                 raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
         else:
             return default
+
+# to do 
+class PartitionProjector:
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        case_sensitive: bool = True,
+    ):
+        self.table_metadata = table_metadata
+        self.row_filter = _parse_row_filter(row_filter)
+        self.case_sensitive = case_sensitive
+
+    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id])
+        return project(self.row_filter)
+
+    @cached_property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return KeyDefaultDict(self._build_partition_projection)
+
+    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
+        spec = self.table_metadata.specs()[spec_id]
+        return visitors.manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
+
+    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
+        spec = self.table_metadata.specs()[spec_id]
+        partition_type = spec.partition_type(self.table_metadata.schema())
+        partition_schema = Schema(*partition_type.fields)
+        partition_expr = self.partition_filters[spec_id]
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _EvaluatorExpression methods bound to a single
+        # shared instance across multiple threads.
+
+        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
+            data_file.partition
+        )
 
 
 class Transaction:
@@ -1100,7 +1139,7 @@ class Table:
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
 
-    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+    def overwrite(self, df: pa.Table, overwrite_filter: Union[str, BooleanExpression] = ALWAYS_TRUE) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
 
@@ -1117,20 +1156,27 @@ class Table:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if overwrite_filter != AlwaysTrue():
-            raise NotImplementedError("Cannot overwrite a subset of a table")
-
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:
-            with txn.update_snapshot().overwrite() as update_snapshot:
-                # skip writing data files if the dataframe is empty
-                if df.shape[0] > 0:
-                    data_files = _dataframe_to_data_files(
-                        table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
-                    )
-                    for data_file in data_files:
-                        update_snapshot.append_data_file(data_file)
+            if overwrite_filter == ALWAYS_TRUE:
+                with txn.update_snapshot().overwrite() as update_snapshot:
+                    # skip writing data files if the dataframe is empty
+                    if df.shape[0] > 0:
+                        data_files = _dataframe_to_data_files(
+                            table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                        )
+                        for data_file in data_files:
+                            update_snapshot.append_data_file(data_file)
+            else:
+                with txn.update_snapshot().partial_overwrite(overwrite_filter) as update_snapshot:
+                    # skip writing data files if the dataframe is empty
+                    if df.shape[0] > 0:
+                        data_files = _dataframe_to_data_files(
+                            table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                        )
+                        for data_file in data_files:
+                            update_snapshot.append_data_file(data_file)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -1395,46 +1441,10 @@ class DataScan(TableScan):
     ):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
-    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
-        return project(self.row_filter)
-
     @cached_property
-    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
-        return KeyDefaultDict(self._build_partition_projection)
+    def _partition_projector(self):
+        return PartitionProjector(self.table.metadata, self.row_filter, self.case_sensitive)
 
-    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        spec = self.table.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
-
-    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
-        spec = self.table.specs()[spec_id]
-        partition_type = spec.partition_type(self.table.schema())
-        partition_schema = Schema(*partition_type.fields)
-        partition_expr = self.partition_filters[spec_id]
-
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
-            data_file.partition
-        )
-
-    def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
-        """Ensure that no manifests are loaded that contain deletes that are older than the data.
-
-        Args:
-            min_data_sequence_number (int): The minimal sequence number.
-            manifest (ManifestFile): A ManifestFile that can be either data or deletes.
-
-        Returns:
-            Boolean indicating if it is either a data file, or a relevant delete file.
-        """
-        return manifest.content == ManifestContent.DATA or (
-            # Not interested in deletes that are older than the data
-            manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
-        )
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -1451,18 +1461,20 @@ class DataScan(TableScan):
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
-        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._partition_projector._build_manifest_evaluator)
 
         manifests = [
             manifest_file
             for manifest_file in snapshot.manifests(io)
             if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
-
+        # print(f"{manifest_evaluators=}")
+        # print("raw manifests:" , [m.manifest_path for m in snapshot.manifests(io)] )
+        # print("filtered", [m.manifest_path for m in manifests])
         # step 2: filter the data files in each manifest
         # this filter depends on the partition spec used to write the manifest file
 
-        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._partition_projector._build_partition_evaluator)
         metrics_evaluator = _InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
@@ -1484,7 +1496,7 @@ class DataScan(TableScan):
                         metrics_evaluator,
                     )
                     for manifest in manifests
-                    if self._check_sequence_number(min_data_sequence_number, manifest)
+                    if check_sequence_number(min_data_sequence_number, manifest)
                 ],
             )
         ):
@@ -2449,6 +2461,15 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
 
 
+class DeletedDataFilesCountDueToPartialOverwrite:
+    def __init__(self):
+        self.deleted_files = []
+        self.lock = threading.Lock()
+
+    def delete_file(self, data_file: DataFile):
+        with self.lock:
+            self.deleted_files.append(data_file)
+
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
@@ -2457,16 +2478,19 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
+    # _partition_projector: PartitionProjector #if not None, could be leverage to indicate it is partiion overwrite
+    _deleted_data_fiels_due_to_partial_overwrite: DeletedDataFilesCountDueToPartialOverwrite
 
     def __init__(
         self,
-        operation: Operation,
+        operation: Operation, #done, inited
         transaction: Transaction,
-        io: FileIO,
+        io: FileIO, #done, inited
+        overwrite_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, 
         commit_uuid: Optional[uuid.UUID] = None,
     ) -> None:
         super().__init__(transaction)
-        self.commit_uuid = commit_uuid or uuid.uuid4()
+        self.commit_uuid = commit_uuid or uuid.uuid4() #done
         self._io = io
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
@@ -2475,16 +2499,18 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
         self._added_data_files = []
+        self._deleted_data_fiels_due_to_partial_overwrite = DeletedDataFilesCountDueToPartialOverwrite()
+    
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
         return self
 
-    @abstractmethod
-    def _deleted_entries(self) -> List[ManifestEntry]: ...
+    # @abstractmethod
+    # def _deleted_entries(self) -> List[ManifestEntry]: ...
 
-    @abstractmethod
-    def _existing_manifests(self) -> List[ManifestFile]: ...
+    # @abstractmethod
+    # def _existing_manifests(self) -> List[ManifestFile]: ...
 
     def _manifests(self) -> List[ManifestFile]:
         def _write_added_manifest() -> List[ManifestFile]:
@@ -2534,6 +2560,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             else:
                 return []
 
+
         executor = ExecutorFactory.get_or_create()
 
         added_manifests = executor.submit(_write_added_manifest)
@@ -2541,12 +2568,63 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         existing_manifests = executor.submit(self._existing_manifests)
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
+# <<<<<<< HEAD
+
+# =======
+        
+
+#         def _fetch_existing_manifests() -> List[ManifestFile]:
+#             existing_manifests = []
+
+#             # Add existing manifests
+#             if self._operation == Operation.APPEND and self._parent_snapshot_id is not None:
+#                 # In case we want to append, just add the existing manifests
+#                 previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
+
+#                 if previous_snapshot is None:
+#                     raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
+
+#                 for manifest in previous_snapshot.manifests(io=self._table.io):
+#                     print("details", manifest.manifest_path, manifest.has_added_files(), manifest.has_existing_files())
+#                     if (
+#                         manifest.has_added_files()
+#                         or manifest.has_existing_files()
+#                         or manifest.added_snapshot_id == self._snapshot_id
+#                     ):
+#                         existing_manifests.append(manifest)
+
+#             return existing_manifests
+
+#         executor = ExecutorFactory.get_or_create()
+
+#         if self._operation == Operation.OVERWRITE and self._partition_projector:
+#             print("curious", self._operation, self._partition_projector)
+#             added_manifests = executor.submit(_write_added_manifest)
+#             filtered_manifests = executor.submit(_write_filtered_manifests)
+#             a = added_manifests.result() 
+#             print("added manifests", a)
+#             b = filtered_manifests.result()
+#             print("filtered manifests", b)
+#             res = a + b 
+#             return res
+#         else:
+#             print("curious 2", self._operation, self._partition_projector)
+#             added_manifests = executor.submit(_write_added_manifest)
+#             delete_manifests = executor.submit(_write_delete_manifest)
+#             existing_manifests = executor.submit(_fetch_existing_manifests)
+#             e = existing_manifests.result()
+#             print("printing existing manifests in the existing", [m.manifest_path for m in e])
+#             return added_manifests.result() + delete_manifests.result() + e
+# >>>>>>> a8fef84 (static overwrite with filter)
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
 
         for data_file in self._added_data_files:
             ssc.add_file(data_file=data_file)
+        
+        for data_file in self._deleted_data_fiels_due_to_partial_overwrite.deleted_files:
+            ssc.remove_file(data_file=data_file)
 
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
@@ -2554,15 +2632,20 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             else None
         )
 
+        summary_collector_to_fill = ssc.build()
+        summary_to_fill = Summary(operation=self._operation, **summary_collector_to_fill)
+        
+        #to do truncate function ins update_Xxx should be merged with the logic that handles partial overwrites and self._deleted_data_fiels_due_to_partial_overwrite
         return update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **ssc.build()),
+            summary=summary_to_fill,
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
-            truncate_full_table=self._operation == Operation.OVERWRITE,
+            truncate_full_table=self._operation == Operation.OVERWRITE
         )
 
     def _commit(self) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
+
 
         summary = self._summary()
 
@@ -2690,7 +2773,6 @@ def _get_table_partitions(
         .to_pylist()
         for partition_field in partition_fields
     }
-
     table_partitions = []
     for inst in sorted_slice_instructions:
         partition_slice = arrow_table.slice(**inst)
@@ -2828,6 +2910,152 @@ class OverwriteFiles(_MergingSnapshotProducer):
         else:
             return []
 
+class PartialOverwriteFiles(_MergingSnapshotProducer):
+    def __init__(self,  table_metadata: TableMetadata, overwrite_filter: Union[str, BooleanExpression], **kwargs):
+        print("kwargs are", kwargs) 
+        super().__init__(**kwargs)
+        self._partition_projector = ( 
+            PartitionProjector(table_metadata, overwrite_filter) if overwrite_filter != ALWAYS_TRUE else None
+        )  
+
+    def _manifests(self) -> List[ManifestFile]:
+        #### to do remove this !!!!!?????
+        def _write_added_manifest() -> List[ManifestFile]:
+            if self._added_data_files:
+                output_file_location = _new_manifest_path(
+                    location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
+                )
+                with write_manifest(
+                    format_version=self._transaction.table_metadata.format_version,
+                    spec=self._transaction.table_metadata.spec(),
+                    schema=self._transaction.table_metadata.schema(),
+                    output_file=self._io.new_output(output_file_location),
+                    snapshot_id=self._snapshot_id,
+                ) as writer:
+                    for data_file in self._added_data_files:
+                        writer.add_entry(
+                            ManifestEntry(
+                                status=ManifestEntryStatus.ADDED,
+                                snapshot_id=self._snapshot_id,
+                                data_sequence_number=None,
+                                file_sequence_number=None,
+                                data_file=data_file,
+                            )
+                        )
+                return [writer.to_manifest_file()]
+            else:
+                return []
+
+        def _write_filtered_manifest(
+            io: FileIO,
+            manifest: ManifestFile,
+            partition_filter: Callable[[DataFile], bool],
+            file_num: int
+        ) -> List[ManifestFile]:
+            print("write filtered manifests", manifest.manifest_path)
+
+            output_file_location = _new_manifest_path(location=self._transaction.table_metadata.location, num=file_num, commit_uuid=self.commit_uuid)
+            
+            with write_manifest(
+                format_version=self._transaction.table_metadata.format_version,
+                spec=self._transaction.table_metadata.spec(),
+                schema=self._transaction.table_metadata.schema(),
+                output_file=self._io.new_output(output_file_location),
+                snapshot_id=self._snapshot_id,
+            ) as writer:
+                for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True):
+                    print("adrian one, lets first check partition_filter mark entry delete", manifest_entry.data_file.partition, partition_filter(manifest_entry.data_file))
+                    if partition_filter(manifest_entry.data_file):
+                        if manifest_entry.data_file.content != DataFileContent.DATA:
+                            # Delete files which falls into partition filter does not need to go into the new manifest
+                            continue
+                        status = ManifestEntryStatus.DELETED  # MEAT
+                        self._deleted_data_fiels_due_to_partial_overwrite.delete_file(manifest_entry.data_file)
+                    else:
+                        status = ManifestEntryStatus.EXISTING  
+                    print(f"{manifest_entry.data_file.partition=}, {status=}, {manifest_entry.data_file.file_path=}")
+                    
+                    writer.add_entry(
+                        ManifestEntry(
+                            status=status,  
+                            snapshot_id=self._snapshot_id,
+                            data_sequence_number=manifest_entry.data_sequence_number,
+                            file_sequence_number=manifest_entry.file_sequence_number,
+                            data_file=manifest_entry.data_file,
+                        )
+                    )
+
+            return [writer.to_manifest_file()]
+
+        def _write_filtered_manifests() -> List[ManifestFile]:
+            current_spec_id = self._transaction.table_metadata.spec().spec_id
+
+            manifest_evaluator = self._partition_projector._build_manifest_evaluator(
+                current_spec_id
+            )  
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if previous_snapshot is None:
+                # This should never happen since you cannot overwrite an empty table
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+            # print(f"{manifest_evaluator=}, {manifest_evaluator( previous_snapshot.manifests(self.io)[0])=}")
+            manifests = [
+                manifest_file
+                for manifest_file in previous_snapshot.manifests(self._io)
+                if manifest_file.partition_spec_id == current_spec_id
+                and manifest_evaluator(manifest_file)
+                and (
+                    manifest_file.has_added_files()
+                    or manifest_file.has_existing_files()
+                    or manifest_file.added_snapshot_id == self._snapshot_id
+                )
+            ]
+            # print("before manifest filter", [manifest_file.manifest_path for manifest_file in previous_snapshot.manifests(self._io)])
+            # print("after manifest filter", [manifest_file.manifest_path for manifest_file in manifests])
+            # print("ManifestFile desp", manifests[0].manifest_path, "length", len(manifests))
+
+            executor = ExecutorFactory.get_or_create()
+
+            partition_evaluator = self._partition_projector._build_partition_evaluator(current_spec_id)
+            min_data_sequence_number = _min_data_file_sequence_number(manifests) # to do
+
+            manifest_files = list(
+                chain(
+                    *executor.map(
+                        lambda args: _write_filtered_manifest(*args),
+                        [
+                            (
+                                self._io,
+                                manifest,
+                                partition_evaluator,
+                                idx + 1 # 0 is reserved for the manifest that includes the added files # to do make it generated and auto-incremented
+                            )
+                            for idx, manifest in enumerate(manifests)
+                            if current_spec_id == manifest.partition_spec_id and check_sequence_number(min_data_sequence_number, manifest) 
+                        ],
+                    )
+                )
+            )
+            # print("we get the manifest files like this", [manifest.manifest_path for manifest in manifest_files])
+            return manifest_files
+
+
+        executor = ExecutorFactory.get_or_create()
+
+        print("curious", self._operation, self._partition_projector)
+        added_manifests = executor.submit(_write_added_manifest)
+        filtered_manifests = executor.submit(_write_filtered_manifests)
+        a = added_manifests.result() 
+        print("added manifests", a)
+        b = filtered_manifests.result()
+        print("filtered manifests", b)
+        res = a + b 
+        return res
+
+    
+        
+        
+
 
 class UpdateSnapshot:
     _transaction: Transaction
@@ -2849,6 +3077,33 @@ class UpdateSnapshot:
             io=self._io,
         )
 
+    def partial_overwrite(self, overwrite_filter: Union[str, BooleanExpression]):
+        return PartialOverwriteFiles(
+            table_metadata = self._transaction.table_metadata,
+            overwrite_filter = overwrite_filter,
+            operation=Operation.PARTIAL_OVERWRITE
+            if self._transaction.table_metadata.current_snapshot() is not None
+            else Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+        )
+
+
+def check_sequence_number(min_data_sequence_number: int, manifest: ManifestFile) -> bool:
+    """Ensure that no manifests are loaded that contain deletes that are older than the data.
+
+    Args:
+        min_data_sequence_number (int): The minimal sequence number.
+        manifest (ManifestFile): A ManifestFile that can be either data or deletes.
+
+    Returns:
+        Boolean indicating if it is either a data file, or a relevant delete file.
+    """
+    return manifest.content == ManifestContent.DATA or (
+        # Not interested in deletes that are older than the data
+        manifest.content == ManifestContent.DELETES
+        and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
+    )
 
 class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     _transaction: Transaction
@@ -3091,4 +3346,3 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
         return partition_field.field_id not in self._deletes and partition_field.transform == transform
-

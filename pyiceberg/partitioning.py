@@ -64,6 +64,7 @@ from pyiceberg.types import (
     TimestamptzType,
     UUIDType,
 )
+from pyiceberg.types import DateType, IcebergType, NestedField, StructType, TimestampType, TimestamptzType, PrimitiveType, UUIDType
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
