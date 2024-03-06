@@ -1777,9 +1777,9 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
     bin_packed_record_batches = PackingIterator(
         items=batches,
         target_weight=target_file_size,
-        lookback=2,
+        lookback=len(batches),  # ignore lookback
         weight_func=lambda x: x.nbytes,
-        largest_bin_first=True,
+        largest_bin_first=False,
     )
     return bin_packed_record_batches
 
