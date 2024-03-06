@@ -1135,6 +1135,23 @@ class Table:
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
 
+    def add_files(self, file_paths: List[str]) -> None:
+        """
+        Shorthand API for adding files as data files to the table.
+
+        Args:
+            files: The list of full file paths to be added as data files to the table
+        """
+        if self.name_mapping() is None:
+            with self.transaction() as tx:
+                tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
+
+        with self.transaction() as txn:
+            with txn.update_snapshot().fast_append() as update_snapshot:
+                data_files = _parquet_files_to_data_files(table_metadata=self.metadata, file_paths=file_paths, io=self.io)
+                for data_file in data_files:
+                    update_snapshot.append_data_file(data_file)
+
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
@@ -2430,6 +2447,21 @@ class WriteTask:
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
 
+@dataclass(frozen=True)
+class AddFileTask:
+    write_uuid: uuid.UUID
+    task_id: int
+    df: pa.Table
+    sort_order_id: Optional[int] = None
+
+    # Later to be extended with partition information
+
+    def generate_data_file_filename(self, extension: str) -> str:
+        # Mimics the behavior in the Java API:
+        # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
+        return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+
+
 def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
     return f'{location}/metadata/{commit_uuid}-m{num}.avro'
 
@@ -2459,6 +2491,18 @@ def _dataframe_to_data_files(
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+
+
+def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
+    """Convert a list files into DataFiles.
+
+    Returns:
+        An iterable that supplies DataFiles that describe the parquet files.
+    """
+    from pyiceberg.io.pyarrow import parquet_file_to_data_file
+
+    for file_path in file_paths:
+        yield parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):

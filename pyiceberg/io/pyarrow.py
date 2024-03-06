@@ -1772,6 +1772,33 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     return iter([data_file])
 
 
+def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
+    input_file = io.new_input(file_path)
+    with input_file.open() as input_stream:
+        parquet_metadata = pq.read_metadata(input_stream)
+
+    schema = table_metadata.schema()
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=parquet_metadata.num_rows,
+        file_size_in_bytes=len(input_file),
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+    )
+    fill_parquet_file_metadata(
+        data_file=data_file,
+        parquet_metadata=parquet_metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    return data_file
+
+
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
 PYARROW_UNCOMPRESSED_CODEC = "none"
 
