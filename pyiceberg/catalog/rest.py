@@ -292,8 +292,8 @@ class RestCatalog(Catalog):
             return self.url(Endpoints.get_token, prefixed=False)
 
     def _extract_optional_oauth_params(self) -> Dict[str, str]:
+        optional_oauth_param = {SCOPE: self.properties.get(SCOPE) or CATALOG_SCOPE}
         set_of_optional_params = {AUDIENCE, RESOURCE}
-        optional_oauth_param = {}
         for param in set_of_optional_params:
             if param_value := self.properties.get(param):
                 optional_oauth_param[param] = param_value
@@ -306,10 +306,7 @@ class RestCatalog(Catalog):
         else:
             client_id, client_secret = None, credential
 
-        # take scope from properties or use default CATALOG_SCOPE
-        scope = self.properties.get(SCOPE) or CATALOG_SCOPE
-
-        data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: scope}
+        data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret}
 
         optional_oauth_params = self._extract_optional_oauth_params()
         data.update(optional_oauth_params)
