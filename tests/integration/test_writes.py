@@ -356,7 +356,9 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
-def test_python_writes_with_spark_snapshot_reads(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+def test_python_writes_with_spark_snapshot_reads(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
+) -> None:
     identifier = "default.python_writes_with_spark_snapshot_reads"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
 
