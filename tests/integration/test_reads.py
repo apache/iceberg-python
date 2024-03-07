@@ -161,20 +161,16 @@ def test_table_properties_dict(catalog: Catalog) -> None:
 
     with table.transaction() as transaction:
         transaction.set_properties({"abc": "🤪"})
-
     assert table.properties == dict({"abc": "🤪"}, **DEFAULT_PROPERTIES)
 
     with table.transaction() as transaction:
         transaction.remove_properties("abc")
-
     assert table.properties == DEFAULT_PROPERTIES
 
     table = table.transaction().set_properties({"abc": "def"}).commit_transaction()
-
     assert table.properties == dict({"abc": "def"}, **DEFAULT_PROPERTIES)
 
     table = table.transaction().remove_properties("abc").commit_transaction()
-
     assert table.properties == DEFAULT_PROPERTIES
 
 
