@@ -50,6 +50,7 @@ from pyiceberg.table import (
     Table,
     TableMetadata,
 )
+from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -315,7 +316,23 @@ class Catalog(ABC):
         Raises:
             TableAlreadyExistsError: If a table with the name already exists.
         """
-        raise NotImplementedError
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+
+        location = self._resolve_table_location(location, database_name, table_name)
+        metadata_location = self._get_metadata_location(location=location)
+        metadata = new_table_metadata(
+            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
+        )
+        io = load_file_io(properties=self.properties, location=metadata_location)
+        return StagedTable(
+            identifier=(self.name, database_name, table_name),
+            metadata=metadata,
+            metadata_location=metadata_location,
+            io=io,
+            catalog=self,
+        )
 
     def create_table_transaction(
         self,

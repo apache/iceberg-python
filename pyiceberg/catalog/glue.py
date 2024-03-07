@@ -67,7 +67,6 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
-    StagedTable,
     Table,
     construct_initial_table_metadata,
     update_table_metadata,
@@ -365,33 +364,6 @@ class GlueCatalog(Catalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
-    def _create_staged_table(
-        self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
-        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
-        sort_order: SortOrder = UNSORTED_SORT_ORDER,
-        properties: Properties = EMPTY_DICT,
-    ) -> StagedTable:
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
-
-        database_name, table_name = self.identifier_to_database_and_table(identifier)
-
-        location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
-        metadata = new_table_metadata(
-            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
-        )
-        io = load_file_io(properties=self.properties, location=metadata_location)
-        return StagedTable(
-            identifier=(self.name, database_name, table_name),
-            metadata=metadata,
-            metadata_location=metadata_location,
-            io=io,
-            catalog=self,
-        )
-
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -420,20 +392,18 @@ class GlueCatalog(Catalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
-
-        database_name, table_name = self.identifier_to_database_and_table(identifier)
-
-        location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
-        metadata = new_table_metadata(
-            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
+        staged_table = self._create_staged_table(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
         )
-        io = load_file_io(properties=self.properties, location=metadata_location)
-        self._write_metadata(metadata, io, metadata_location)
-
-        table_input = _construct_table_input(table_name, metadata_location, properties, metadata)
         database_name, table_name = self.identifier_to_database_and_table(identifier)
+
+        self._write_metadata(staged_table.metadata, staged_table.io, staged_table.metadata_location)
+        table_input = _construct_table_input(table_name, staged_table.metadata_location, properties, staged_table.metadata)
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
         return self.load_table(identifier=identifier)
