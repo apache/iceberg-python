@@ -119,6 +119,9 @@ def test_table_properties(catalog: Catalog) -> None:
     table = table.transaction().remove_properties("abc").commit_transaction()
     assert table.properties == DEFAULT_PROPERTIES
 
+    table = table.transaction().set_properties(abc=123).commit_transaction()
+    assert table.properties == dict(abc="123", **DEFAULT_PROPERTIES)
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
@@ -140,6 +143,9 @@ def test_table_properties_dict(catalog: Catalog) -> None:
 
     table = table.transaction().remove_properties("abc").commit_transaction()
     assert table.properties == DEFAULT_PROPERTIES
+
+    table = table.transaction().set_properties({"abc": 123}).commit_transaction()
+    assert table.properties == dict({"abc": "123"}, **DEFAULT_PROPERTIES)
 
 
 @pytest.mark.integration

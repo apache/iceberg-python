@@ -42,7 +42,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, SerializeAsAny
+from pydantic import Field, SerializeAsAny, field_validator
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
@@ -124,6 +124,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    transform_dict_value_to_str,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
@@ -293,7 +294,7 @@ class Transaction:
 
         return self
 
-    def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: str) -> Transaction:
+    def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: Any) -> Transaction:
         """Set properties.
 
         When a property is already set, it will be overwritten.
@@ -472,7 +473,9 @@ class SetLocationUpdate(TableUpdate):
 
 class SetPropertiesUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.set_properties
-    updates: Dict[str, str]
+    updates: Properties
+    # validators
+    transform_properties_dict_value_to_str = field_validator('updates', mode='before')(transform_dict_value_to_str)
 
 
 class RemovePropertiesUpdate(TableUpdate):
