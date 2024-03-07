@@ -474,8 +474,10 @@ class SetLocationUpdate(TableUpdate):
 class SetPropertiesUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.set_properties
     updates: Properties
-    # validators
-    transform_properties_dict_value_to_str = field_validator('updates', mode='before')(transform_dict_value_to_str)
+
+    @field_validator('updates', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
 
 
 class RemovePropertiesUpdate(TableUpdate):
