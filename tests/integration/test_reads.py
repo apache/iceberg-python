@@ -121,6 +121,7 @@ def test_table_properties(catalog: Catalog) -> None:
     assert table.properties == DEFAULT_PROPERTIES
 
     table = table.transaction().set_properties(abc=123).commit_transaction()
+    # properties are stored as strings in the iceberg spec
     assert table.properties == dict(abc="123", **DEFAULT_PROPERTIES)
 
     with pytest.raises(ValidationError) as exc_info:
@@ -150,6 +151,7 @@ def test_table_properties_dict(catalog: Catalog) -> None:
     assert table.properties == DEFAULT_PROPERTIES
 
     table = table.transaction().set_properties({"abc": 123}).commit_transaction()
+    # properties are stored as strings in the iceberg spec
     assert table.properties == dict({"abc": "123"}, **DEFAULT_PROPERTIES)
 
     with pytest.raises(ValidationError) as exc_info:
