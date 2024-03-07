@@ -126,6 +126,42 @@ def test_table_properties(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
+def test_table_properties_dict(catalog: Catalog) -> None:
+    table = create_table(catalog)
+
+    assert table.properties == DEFAULT_PROPERTIES
+
+    with table.transaction() as transaction:
+        transaction.set_properties({"abc": "🤪"})
+
+    assert table.properties == dict({"abc": "🤪"}, **DEFAULT_PROPERTIES)
+
+    with table.transaction() as transaction:
+        transaction.remove_properties("abc")
+
+    assert table.properties == DEFAULT_PROPERTIES
+
+    table = table.transaction().set_properties({"abc": "def"}).commit_transaction()
+
+    assert table.properties == dict({"abc": "def"}, **DEFAULT_PROPERTIES)
+
+    table = table.transaction().remove_properties("abc").commit_transaction()
+
+    assert table.properties == DEFAULT_PROPERTIES
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
+def test_table_properties_error(catalog: Catalog) -> None:
+    table = create_table(catalog)
+    properties = {"abc": "def"}
+    with pytest.raises(ValueError) as e:
+        table.transaction().set_properties(properties, abc="def").commit_transaction()
+    assert "Cannot pass both properties and kwargs" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('catalog_hive'), pytest.lazy_fixture('catalog_rest')])
 def test_pyarrow_nan(catalog: Catalog) -> None:
     table_test_null_nan = catalog.load_table("default.test_null_nan")
     arrow_table = table_test_null_nan.scan(row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")).to_arrow()
