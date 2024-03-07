@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
@@ -50,6 +50,7 @@ from pyiceberg.typedef import (
     Properties,
 )
 from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
@@ -262,6 +263,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def sort_order_by_id(self, sort_order_id: int) -> Optional[SortOrder]:
         """Get the sort order by sort_order_id."""
         return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
+
+    @field_serializer('current_snapshot_id')
+    def serialize_current_snapshot_id(self, current_snapshot_id: Optional[int]) -> Optional[int]:
+        if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
+            return -1
+        return current_snapshot_id
 
 
 def _generate_snapshot_id() -> int:
