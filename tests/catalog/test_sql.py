@@ -903,12 +903,10 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
             'foo': ['a', None, 'z'],
             'bar': [19, None, 25],
         },
-        schema=pa.schema(
-            [
-                pa.field("foo", pa.string(), nullable=True),
-                pa.field("bar", pa.int32(), nullable=True),
-            ]
-        ),
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
     )
 
     with tbl.transaction() as txn:
