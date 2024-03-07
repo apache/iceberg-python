@@ -170,6 +170,8 @@ catalog:
 | credential             | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | token                  | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
 | scope                  | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource               | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience               | rest_catalog                     | Logical name of target resource or service                                                         |
 | rest.sigv4-enabled     | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
 | rest.signing-region    | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name      | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
@@ -284,3 +286,7 @@ catalog:
 # Concurrency
 
 PyIceberg uses multiple threads to parallelize operations. The number of workers can be configured by supplying a `max-workers` entry in the configuration file, or by setting the `PYICEBERG_MAX_WORKERS` environment variable. The default value depends on the system hardware and Python version. See [the Python documentation](https://docs.python.org/3/library/concurrent.futures.html#threadpoolexecutor) for more details.
+
+# Backward Compatibility
+
+Previous versions of Java (`<1.4.0`) implementations incorrectly assume the optional attribute `current-snapshot-id` to be a required attribute in TableMetadata. This means that if `current-snapshot-id` is missing in the metadata file (e.g. on table creation), the application will throw an exception without being able to load the table. This assumption has been corrected in more recent Iceberg versions. However, it is possible to force PyIceberg to create a table with a metadata file that will be compatible with previous versions. This can be configured by setting the `legacy-current-snapshot-id` entry as "True" in the configuration file, or by setting the `LEGACY_CURRENT_SNAPSHOT_ID` environment variable. Refer to the [PR discussion](https://github.com/apache/iceberg-python/pull/473) for more details on the issue

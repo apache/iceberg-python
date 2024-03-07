@@ -105,6 +105,8 @@ CLIENT_CREDENTIALS = "client_credentials"
 CREDENTIAL = "credential"
 GRANT_TYPE = "grant_type"
 SCOPE = "scope"
+AUDIENCE = "audience"
+RESOURCE = "resource"
 TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
 SEMICOLON = ":"
 KEY = "key"
@@ -289,16 +291,26 @@ class RestCatalog(Catalog):
         else:
             return self.url(Endpoints.get_token, prefixed=False)
 
+    def _extract_optional_oauth_params(self) -> Dict[str, str]:
+        optional_oauth_param = {SCOPE: self.properties.get(SCOPE) or CATALOG_SCOPE}
+        set_of_optional_params = {AUDIENCE, RESOURCE}
+        for param in set_of_optional_params:
+            if param_value := self.properties.get(param):
+                optional_oauth_param[param] = param_value
+
+        return optional_oauth_param
+
     def _fetch_access_token(self, session: Session, credential: str) -> str:
         if SEMICOLON in credential:
             client_id, client_secret = credential.split(SEMICOLON)
         else:
             client_id, client_secret = None, credential
 
-        # take scope from properties or use default CATALOG_SCOPE
-        scope = self.properties.get(SCOPE) or CATALOG_SCOPE
+        data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret}
 
-        data = {GRANT_TYPE: CLIENT_CREDENTIALS, CLIENT_ID: client_id, CLIENT_SECRET: client_secret, SCOPE: scope}
+        optional_oauth_params = self._extract_optional_oauth_params()
+        data.update(optional_oauth_params)
+
         response = session.post(
             url=self.auth_url, data=data, headers={**session.headers, "Content-type": "application/x-www-form-urlencoded"}
         )

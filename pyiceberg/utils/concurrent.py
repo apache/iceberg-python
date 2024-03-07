@@ -37,13 +37,4 @@ class ExecutorFactory:
     @staticmethod
     def max_workers() -> Optional[int]:
         """Return the max number of workers configured."""
-        config = Config()
-        val = config.config.get("max-workers")
-
-        if val is None:
-            return None
-
-        try:
-            return int(val)  # type: ignore
-        except ValueError as err:
-            raise ValueError(f"Max workers should be an integer or left unset. Current value: {val}") from err
+        return Config().get_int("max-workers")

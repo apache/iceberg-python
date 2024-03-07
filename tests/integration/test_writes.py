@@ -356,6 +356,28 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
+def test_python_writes_with_spark_snapshot_reads(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
+) -> None:
+    identifier = "default.python_writes_with_spark_snapshot_reads"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    def get_current_snapshot_id(identifier: str) -> int:
+        return (
+            spark.sql(f"SELECT snapshot_id FROM {identifier}.snapshots order by committed_at desc limit 1")
+            .collect()[0]
+            .snapshot_id
+        )
+
+    tbl.overwrite(arrow_table_with_null)
+    assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+    tbl.overwrite(arrow_table_with_null)
+    assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+    tbl.append(arrow_table_with_null)
+    assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize(
     "properties, expected_compression_name",
