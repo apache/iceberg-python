@@ -31,8 +31,6 @@ from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -58,7 +56,7 @@ from pyiceberg.table import (
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import IntegerType, LongType, NestedField
 
 
@@ -94,18 +92,20 @@ class InMemoryCatalog(Catalog):
                 self.__namespaces[namespace] = {}
 
             new_location = location or f's3://warehouse/{"/".join(identifier)}/data'
-            metadata = TableMetadataV1(**{
-                "format-version": 1,
-                "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
-                "location": new_location,
-                "last-updated-ms": 1602638573874,
-                "last-column-id": schema.highest_field_id,
-                "schema": schema.model_dump(),
-                "partition-spec": partition_spec.model_dump()["fields"],
-                "properties": properties,
-                "current-snapshot-id": -1,
-                "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
-            })
+            metadata = TableMetadataV1(
+                **{
+                    "format-version": 1,
+                    "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
+                    "location": new_location,
+                    "last-updated-ms": 1602638573874,
+                    "last-column-id": schema.highest_field_id,
+                    "schema": schema.model_dump(),
+                    "partition-spec": partition_spec.model_dump()["fields"],
+                    "properties": properties,
+                    "current-snapshot-id": -1,
+                    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
+                }
+            )
             table = Table(
                 identifier=identifier,
                 metadata=metadata,

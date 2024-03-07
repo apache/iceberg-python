@@ -32,11 +32,12 @@ from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
-from pyiceberg.catalog import Catalog, Properties, Table
+from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
-from pyiceberg.table import _dataframe_to_data_files
+from pyiceberg.table import Table, _dataframe_to_data_files
+from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -96,24 +97,26 @@ TABLE_SCHEMA = Schema(
 
 @pytest.fixture(scope="session")
 def pa_schema() -> pa.Schema:
-    return pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.large_binary()),
-        ("fixed", pa.binary(16)),
-    ])
+    return pa.schema(
+        [
+            ("bool", pa.bool_()),
+            ("string", pa.string()),
+            ("string_long", pa.string()),
+            ("int", pa.int32()),
+            ("long", pa.int64()),
+            ("float", pa.float32()),
+            ("double", pa.float64()),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+            ("date", pa.date32()),
+            # Not supported by Spark
+            # ("time", pa.time64("us")),
+            # Not natively supported by Arrow
+            # ("uuid", pa.fixed(16)),
+            ("binary", pa.large_binary()),
+            ("fixed", pa.binary(16)),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -616,10 +619,12 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
             'foo': ['a', None, 'z'],
             'bar': [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with tbl.transaction() as txn:

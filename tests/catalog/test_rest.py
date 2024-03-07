@@ -23,7 +23,8 @@ import pytest
 from requests_mock import Mocker
 
 import pyiceberg
-from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
+from pyiceberg.table import Table
+from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,

@@ -46,8 +46,6 @@ from pyiceberg.catalog import (
     PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -67,7 +65,7 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
