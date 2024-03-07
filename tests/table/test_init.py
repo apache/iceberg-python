@@ -57,7 +57,6 @@ from pyiceberg.table import (
     SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
-    SnapshotRef,
     StaticTable,
     Table,
     UpdateSchema,
@@ -68,6 +67,7 @@ from pyiceberg.table import (
     update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -930,52 +930,56 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
 
 
 def test_correct_schema() -> None:
-    table_metadata = TableMetadataV2(**{
-        "format-version": 2,
-        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
-        "location": "s3://bucket/test/location",
-        "last-sequence-number": 34,
-        "last-updated-ms": 1602638573590,
-        "last-column-id": 3,
-        "current-schema-id": 1,
-        "schemas": [
-            {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
-            {
-                "type": "struct",
-                "schema-id": 1,
-                "identifier-field-ids": [1, 2],
-                "fields": [
-                    {"id": 1, "name": "x", "required": True, "type": "long"},
-                    {"id": 2, "name": "y", "required": True, "type": "long"},
-                    {"id": 3, "name": "z", "required": True, "type": "long"},
-                ],
-            },
-        ],
-        "default-spec-id": 0,
-        "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
-        "last-partition-id": 1000,
-        "default-sort-order-id": 0,
-        "sort-orders": [],
-        "current-snapshot-id": 123,
-        "snapshots": [
-            {
-                "snapshot-id": 234,
-                "timestamp-ms": 1515100955770,
-                "sequence-number": 0,
-                "summary": {"operation": "append"},
-                "manifest-list": "s3://a/b/1.avro",
-                "schema-id": 10,
-            },
-            {
-                "snapshot-id": 123,
-                "timestamp-ms": 1515100955770,
-                "sequence-number": 0,
-                "summary": {"operation": "append"},
-                "manifest-list": "s3://a/b/1.avro",
-                "schema-id": 0,
-            },
-        ],
-    })
+    table_metadata = TableMetadataV2(
+        **{
+            "format-version": 2,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": "s3://bucket/test/location",
+            "last-sequence-number": 34,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 3,
+            "current-schema-id": 1,
+            "schemas": [
+                {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+                {
+                    "type": "struct",
+                    "schema-id": 1,
+                    "identifier-field-ids": [1, 2],
+                    "fields": [
+                        {"id": 1, "name": "x", "required": True, "type": "long"},
+                        {"id": 2, "name": "y", "required": True, "type": "long"},
+                        {"id": 3, "name": "z", "required": True, "type": "long"},
+                    ],
+                },
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [
+                {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}
+            ],
+            "last-partition-id": 1000,
+            "default-sort-order-id": 0,
+            "sort-orders": [],
+            "current-snapshot-id": 123,
+            "snapshots": [
+                {
+                    "snapshot-id": 234,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 10,
+                },
+                {
+                    "snapshot-id": 123,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 0,
+                },
+            ],
+        }
+    )
 
     t = Table(
         identifier=("default", "t1"),
@@ -1014,11 +1018,13 @@ def test_correct_schema() -> None:
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.decimal128(18, 6), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.decimal128(18, 6), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = r"""Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1035,11 +1041,13 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1056,10 +1064,12 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1076,12 +1086,14 @@ def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-        pa.field("new_field", pa.date32(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("new_field", pa.date32(), nullable=True),
+        )
+    )
 
     expected = r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
 

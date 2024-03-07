@@ -23,7 +23,6 @@ import pytest
 from requests_mock import Mocker
 
 import pyiceberg
-from pyiceberg.table import Table
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
@@ -37,6 +36,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
