@@ -75,8 +75,8 @@ from pyiceberg.expressions import (
     AlwaysTrue,
     BooleanExpression,
     BoundTerm,
-    Literal,
 )
+from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
     bind,

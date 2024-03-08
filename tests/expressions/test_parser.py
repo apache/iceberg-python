@@ -17,6 +17,7 @@
 import pytest
 from pyparsing import ParseException
 
+import pyiceberg.expressions.parser as parser
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -37,7 +38,6 @@ from pyiceberg.expressions import (
     NotStartsWith,
     Or,
     StartsWith,
-    parser,
 )
 
 

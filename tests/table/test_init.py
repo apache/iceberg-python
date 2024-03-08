@@ -53,7 +53,6 @@ from pyiceberg.table import (
     RemovePropertiesUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
-    SnapshotRef,
     StaticTable,
     Table,
     UpdateSchema,
@@ -64,6 +63,7 @@ from pyiceberg.table import (
     update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2
+from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
