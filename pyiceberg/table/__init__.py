@@ -74,7 +74,6 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     INITIAL_PARTITION_SPEC_ID,
     PARTITION_FIELD_ID_START,
-    IdentityTransform,
     PartitionField,
     PartitionSpec,
     _PartitionNameGenerator,
@@ -111,7 +110,7 @@ from pyiceberg.table.snapshots import (
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import SortOrder
-from pyiceberg.transforms import TimeTransform, Transform, VoidTransform
+from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -1145,6 +1144,9 @@ class Table:
         Args:
             file_paths: The list of full file paths to be added as data files to the table
         """
+        if any(not isinstance(field.transform, IdentityTransform) for field in self.metadata.spec().fields):
+            raise NotImplementedError("Cannot add_files to a table with Transform Partitions")
+
         if self.name_mapping() is None:
             with self.transaction() as tx:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
@@ -2502,7 +2504,12 @@ def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableM
             if partition_field := partition_struct.field_by_name(partition_name):
                 partition_field_values[partition_name] = StringLiteral(string_value).to(partition_field.field_type).value
 
-        yield AddFileTask(file_path=file_path, partition_field_value=Record(**partition_field_values))
+        yield AddFileTask(
+            file_path=file_path,
+            partition_field_value=Record(**{
+                field.name: partition_field_values.get(field.name) for field in partition_struct.fields
+            }),
+        )
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
