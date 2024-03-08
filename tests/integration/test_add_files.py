@@ -28,7 +28,7 @@ from pyiceberg.catalog import Catalog, Table
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import IdentityTransform, MonthTransform
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
