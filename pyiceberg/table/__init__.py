@@ -33,6 +33,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -56,6 +57,7 @@ from pyiceberg.expressions import (
     parser,
     visitors,
 )
+from pyiceberg.expressions.literals import StringLiteral
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator, inclusive_projection
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
@@ -117,6 +119,7 @@ from pyiceberg.typedef import (
     Identifier,
     KeyDefaultDict,
     Properties,
+    Record,
 )
 from pyiceberg.types import (
     IcebergType,
@@ -1140,7 +1143,7 @@ class Table:
         Shorthand API for adding files as data files to the table.
 
         Args:
-            files: The list of full file paths to be added as data files to the table
+            file_paths: The list of full file paths to be added as data files to the table
         """
         if self.name_mapping() is None:
             with self.transaction() as tx:
@@ -2449,17 +2452,8 @@ class WriteTask:
 
 @dataclass(frozen=True)
 class AddFileTask:
-    write_uuid: uuid.UUID
-    task_id: int
-    df: pa.Table
-    sort_order_id: Optional[int] = None
-
-    # Later to be extended with partition information
-
-    def generate_data_file_filename(self, extension: str) -> str:
-        # Mimics the behavior in the Java API:
-        # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
-        return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+    file_path: str
+    partition_field_value: Record
 
 
 def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
@@ -2493,16 +2487,34 @@ def _dataframe_to_data_files(
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
 
 
+def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
+    partition_spec = table_metadata.spec()
+    partition_struct = partition_spec.partition_type(table_metadata.schema())
+
+    for file_path in file_paths:
+        # file_path = 's3://warehouse/default/part1=2024-03-04/part2=ABCD'
+        # ['part1=2024-03-04', 'part2=ABCD']
+        parts = [part for part in file_path.split("/") if "=" in part]
+
+        partition_field_values = {}
+        for part in parts:
+            partition_name, string_value = part.split("=")
+            if partition_field := partition_struct.field_by_name(partition_name):
+                partition_field_values[partition_name] = StringLiteral(string_value).to(partition_field.field_type).value
+
+        yield AddFileTask(file_path=file_path, partition_field_value=Record(**partition_field_values))
+
+
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
     Returns:
         An iterable that supplies DataFiles that describe the parquet files.
     """
-    from pyiceberg.io.pyarrow import parquet_file_to_data_file
+    from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    for file_path in file_paths:
-        yield parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
+    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
