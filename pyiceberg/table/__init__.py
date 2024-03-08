@@ -294,17 +294,21 @@ class Transaction:
 
         return self
 
-    def set_properties(self, **updates: str) -> Transaction:
+    def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: str) -> Transaction:
         """Set properties.
 
         When a property is already set, it will be overwritten.
 
         Args:
-            updates: The properties set on the table.
+            properties: The properties set on the table.
+            kwargs: properties can also be pass as kwargs.
 
         Returns:
             The alter table builder.
         """
+        if properties and kwargs:
+            raise ValueError("Cannot pass both properties and kwargs")
+        updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
