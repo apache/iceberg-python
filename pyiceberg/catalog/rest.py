@@ -65,8 +65,8 @@ from pyiceberg.table import (
     CommitTableResponse,
     Table,
     TableIdentifier,
-    TableMetadata,
 )
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
 from pyiceberg.types import transform_dict_value_to_str

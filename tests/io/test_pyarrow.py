@@ -53,8 +53,8 @@ from pyiceberg.expressions import (
     GreaterThan,
     Not,
     Or,
-    literal,
 )
+from pyiceberg.expressions.literals import literal
 from pyiceberg.io import InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,

@@ -32,11 +32,12 @@ from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
-from pyiceberg.catalog import Catalog, Properties, Table
+from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
-from pyiceberg.table import _dataframe_to_data_files
+from pyiceberg.table import Table, _dataframe_to_data_files
+from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
