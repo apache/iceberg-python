@@ -36,8 +36,8 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table, TableProperties, _dataframe_to_data_files
 from pyiceberg.typedef import Properties
-from pyiceberg.table import SetPropertiesUpdate, Table, TableProperties, _dataframe_to_data_files
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -391,11 +391,6 @@ def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog
         """
         ).count()
 
-    def set_table_properties(tbl: Table, properties: Properties) -> Table:
-        with tbl.transaction() as transaction:
-            transaction._apply((SetPropertiesUpdate(updates=properties),))
-        return tbl
-
     # writes 1 data file since the table is smaller than default target file size
     assert arrow_table_with_null.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
     tbl.overwrite(arrow_table_with_null)
@@ -409,7 +404,7 @@ def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog
 
     # writes multiple data files once target file size is overridden
     target_file_size = arrow_table_with_null.nbytes
-    tbl = set_table_properties(tbl, {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)})
+    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)}).commit_transaction()
     assert str(target_file_size) == tbl.properties.get(TableProperties.WRITE_TARGET_FILE_SIZE_BYTES)
     assert target_file_size < bigger_arrow_tbl.nbytes
     tbl.overwrite(bigger_arrow_tbl)
@@ -417,7 +412,7 @@ def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog
 
     # writes half the number of data files when target file size doubles
     target_file_size = arrow_table_with_null.nbytes * 2
-    tbl = set_table_properties(tbl, {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)})
+    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)}).commit_transaction()
     assert str(target_file_size) == tbl.properties.get(TableProperties.WRITE_TARGET_FILE_SIZE_BYTES)
     assert target_file_size < bigger_arrow_tbl.nbytes
     tbl.overwrite(bigger_arrow_tbl)
