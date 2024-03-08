@@ -1727,10 +1727,10 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     for task in tasks:
         parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
-        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}' # generate_data_file_filename
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'  # generate_data_file_filename
         schema = table_metadata.schema()
         arrow_file_schema = schema_to_pyarrow(schema)
-        
+
         fo = io.new_output(file_path)
         row_group_size = PropertyUtil.property_as_int(
             properties=table_metadata.properties,
@@ -1764,7 +1764,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         )
 
         yield data_file
-    
+
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
 PYARROW_UNCOMPRESSED_CODEC = "none"

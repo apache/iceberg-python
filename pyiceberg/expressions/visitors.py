@@ -636,7 +636,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
     def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
         pos = term.ref().accessor.position
         field = self.partition_fields[pos]
-        
+
         if field.lower_bound is None or field.upper_bound is None:
             # values are all null and literal cannot contain null
             return ROWS_CANNOT_MATCH

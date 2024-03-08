@@ -15,9 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 from __future__ import annotations
-import threading
 
 import itertools
+import threading
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -75,11 +75,11 @@ from pyiceberg.partitioning import (
     PARTITION_FIELD_ID_START,
     IdentityTransform,
     PartitionField,
+    PartitionFieldValue,
+    PartitionKey,
     PartitionSpec,
     _PartitionNameGenerator,
     _visit_partition_field,
-    PartitionFieldValue,
-    PartitionKey
 )
 from pyiceberg.schema import (
     PartnerAccessor,
@@ -231,7 +231,8 @@ class PropertyUtil:
         else:
             return default
 
-# to do 
+
+# to do
 class PartitionProjector:
     def __init__(
         self,
@@ -253,7 +254,9 @@ class PartitionProjector:
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return visitors.manifest_evaluator(
+            spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive
+        )
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
@@ -1126,7 +1129,6 @@ class Table:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:
@@ -1442,9 +1444,8 @@ class DataScan(TableScan):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     @cached_property
-    def _partition_projector(self):
+    def _partition_projector(self) -> PartitionProjector:
         return PartitionProjector(self.table.metadata, self.row_filter, self.case_sensitive)
-
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -1461,7 +1462,9 @@ class DataScan(TableScan):
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
-        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._partition_projector._build_manifest_evaluator)
+        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(
+            self._partition_projector._build_manifest_evaluator
+        )
 
         manifests = [
             manifest_file
@@ -1474,7 +1477,9 @@ class DataScan(TableScan):
         # step 2: filter the data files in each manifest
         # this filter depends on the partition spec used to write the manifest file
 
-        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._partition_projector._build_partition_evaluator)
+        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(
+            self._partition_projector._build_partition_evaluator
+        )
         metrics_evaluator = _InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
@@ -2462,14 +2467,13 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
 
 
 class DeletedDataFilesCountDueToPartialOverwrite:
-    def __init__(self):
-        self.deleted_files = []
+    def __init__(self) -> None:
+        self.deleted_files: List[DataFile] = []
         self.lock = threading.Lock()
 
-    def delete_file(self, data_file: DataFile):
+    def delete_file(self, data_file: DataFile) -> None:
         with self.lock:
             self.deleted_files.append(data_file)
-
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
@@ -2483,14 +2487,14 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
     def __init__(
         self,
-        operation: Operation, #done, inited
+        operation: Operation,  # done, inited
         transaction: Transaction,
-        io: FileIO, #done, inited
-        overwrite_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, 
+        io: FileIO,  # done, inited
+        overwrite_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         commit_uuid: Optional[uuid.UUID] = None,
     ) -> None:
         super().__init__(transaction)
-        self.commit_uuid = commit_uuid or uuid.uuid4() #done
+        self.commit_uuid = commit_uuid or uuid.uuid4()  # done
         self._io = io
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
@@ -2500,17 +2504,16 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
         self._added_data_files = []
         self._deleted_data_fiels_due_to_partial_overwrite = DeletedDataFilesCountDueToPartialOverwrite()
-    
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
         return self
 
-    # @abstractmethod
-    # def _deleted_entries(self) -> List[ManifestEntry]: ...
+    @abstractmethod
+    def _deleted_entries(self) -> List[ManifestEntry]: ...
 
-    # @abstractmethod
-    # def _existing_manifests(self) -> List[ManifestFile]: ...
+    @abstractmethod
+    def _existing_manifests(self) -> List[ManifestFile]: ...
 
     def _manifests(self) -> List[ManifestFile]:
         def _write_added_manifest() -> List[ManifestFile]:
@@ -2560,7 +2563,6 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             else:
                 return []
 
-
         executor = ExecutorFactory.get_or_create()
 
         added_manifests = executor.submit(_write_added_manifest)
@@ -2568,61 +2570,13 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         existing_manifests = executor.submit(self._existing_manifests)
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
-# <<<<<<< HEAD
-
-# =======
-        
-
-#         def _fetch_existing_manifests() -> List[ManifestFile]:
-#             existing_manifests = []
-
-#             # Add existing manifests
-#             if self._operation == Operation.APPEND and self._parent_snapshot_id is not None:
-#                 # In case we want to append, just add the existing manifests
-#                 previous_snapshot = self._table.snapshot_by_id(self._parent_snapshot_id)
-
-#                 if previous_snapshot is None:
-#                     raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
-
-#                 for manifest in previous_snapshot.manifests(io=self._table.io):
-#                     print("details", manifest.manifest_path, manifest.has_added_files(), manifest.has_existing_files())
-#                     if (
-#                         manifest.has_added_files()
-#                         or manifest.has_existing_files()
-#                         or manifest.added_snapshot_id == self._snapshot_id
-#                     ):
-#                         existing_manifests.append(manifest)
-
-#             return existing_manifests
-
-#         executor = ExecutorFactory.get_or_create()
-
-#         if self._operation == Operation.OVERWRITE and self._partition_projector:
-#             print("curious", self._operation, self._partition_projector)
-#             added_manifests = executor.submit(_write_added_manifest)
-#             filtered_manifests = executor.submit(_write_filtered_manifests)
-#             a = added_manifests.result() 
-#             print("added manifests", a)
-#             b = filtered_manifests.result()
-#             print("filtered manifests", b)
-#             res = a + b 
-#             return res
-#         else:
-#             print("curious 2", self._operation, self._partition_projector)
-#             added_manifests = executor.submit(_write_added_manifest)
-#             delete_manifests = executor.submit(_write_delete_manifest)
-#             existing_manifests = executor.submit(_fetch_existing_manifests)
-#             e = existing_manifests.result()
-#             print("printing existing manifests in the existing", [m.manifest_path for m in e])
-#             return added_manifests.result() + delete_manifests.result() + e
-# >>>>>>> a8fef84 (static overwrite with filter)
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
 
         for data_file in self._added_data_files:
             ssc.add_file(data_file=data_file)
-        
+
         for data_file in self._deleted_data_fiels_due_to_partial_overwrite.deleted_files:
             ssc.remove_file(data_file=data_file)
 
@@ -2634,18 +2588,17 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
         summary_collector_to_fill = ssc.build()
         summary_to_fill = Summary(operation=self._operation, **summary_collector_to_fill)
-        
-        #to do truncate function ins update_Xxx should be merged with the logic that handles partial overwrites and self._deleted_data_fiels_due_to_partial_overwrite
+
+        # to do truncate function ins update_Xxx should be merged with the logic that handles partial overwrites and self._deleted_data_fiels_due_to_partial_overwrite
         return update_snapshot_summaries(
             summary=summary_to_fill,
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
-            truncate_full_table=self._operation == Operation.OVERWRITE
+            truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
     def _commit(self) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
-
 
         summary = self._summary()
 
@@ -2703,15 +2656,25 @@ def _dataframe_to_data_files(
     if any(len(spec.fields) > 0 for spec in table_metadata.partition_specs):
         partitions = partition(table_metadata, df)
         yield from write_file(
-            io=io, 
+            io=io,
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), df = partition.arrow_table_partition, partition_key=partition.partition_key, schema=table_metadata.schema())
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    df=partition.arrow_table_partition,
+                    partition_key=partition.partition_key,
+                    schema=table_metadata.schema(),
+                )
                 for partition in partitions
             ]),
         )
     else:
-        yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid =write_uuid, task_id = next(counter), df = df, schema=table_metadata.schema())]))
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([WriteTask(write_uuid=write_uuid, task_id=next(counter), df=df, schema=table_metadata.schema())]),
+        )
 
 
 @dataclass(frozen=True)
@@ -2726,13 +2689,17 @@ def _get_partition_sort_order(partition_columns: list[str], reverse: bool = Fals
     return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
 
 
-def group_by_partition_scheme(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
+def group_by_partition_scheme(
+    iceberg_table_metadata: TableMetadata, arrow_table: pa.Table, partition_columns: list[str]
+) -> pa.Table:
     """Given a table sort it by current partition scheme with all transform functions supported."""
     # todo support hidden partition transform function
     from pyiceberg.transforms import IdentityTransform
 
     supported = {IdentityTransform}
-    if not all(type(field.transform) in supported for field in iceberg_table_metadata.spec().fields if field in partition_columns):
+    if not all(
+        type(field.transform) in supported for field in iceberg_table_metadata.spec().fields if field in partition_columns
+    ):
         raise ValueError(
             f"Not all transforms are supported, get: {[transform in supported for transform in iceberg_table_metadata.spec().fields]}."
         )
@@ -2910,16 +2877,22 @@ class OverwriteFiles(_MergingSnapshotProducer):
         else:
             return []
 
+
 class PartialOverwriteFiles(_MergingSnapshotProducer):
-    def __init__(self,  table_metadata: TableMetadata, overwrite_filter: Union[str, BooleanExpression], **kwargs):
-        print("kwargs are", kwargs) 
+    def __init__(self, table_metadata: TableMetadata, overwrite_filter: Union[str, BooleanExpression], **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._partition_projector = ( 
+        self._partition_projector = (
             PartitionProjector(table_metadata, overwrite_filter) if overwrite_filter != ALWAYS_TRUE else None
-        )  
+        )
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        return []
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        return []
 
     def _manifests(self) -> List[ManifestFile]:
-        #### to do remove this !!!!!?????
+        # to do remove this !!!!!?????
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
                 output_file_location = _new_manifest_path(
@@ -2947,15 +2920,14 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
                 return []
 
         def _write_filtered_manifest(
-            io: FileIO,
-            manifest: ManifestFile,
-            partition_filter: Callable[[DataFile], bool],
-            file_num: int
+            io: FileIO, manifest: ManifestFile, partition_filter: Callable[[DataFile], bool], file_num: int
         ) -> List[ManifestFile]:
             print("write filtered manifests", manifest.manifest_path)
 
-            output_file_location = _new_manifest_path(location=self._transaction.table_metadata.location, num=file_num, commit_uuid=self.commit_uuid)
-            
+            output_file_location = _new_manifest_path(
+                location=self._transaction.table_metadata.location, num=file_num, commit_uuid=self.commit_uuid
+            )
+
             with write_manifest(
                 format_version=self._transaction.table_metadata.format_version,
                 spec=self._transaction.table_metadata.spec(),
@@ -2964,7 +2936,11 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
                 snapshot_id=self._snapshot_id,
             ) as writer:
                 for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True):
-                    print("adrian one, lets first check partition_filter mark entry delete", manifest_entry.data_file.partition, partition_filter(manifest_entry.data_file))
+                    print(
+                        "adrian one, lets first check partition_filter mark entry delete",
+                        manifest_entry.data_file.partition,
+                        partition_filter(manifest_entry.data_file),
+                    )
                     if partition_filter(manifest_entry.data_file):
                         if manifest_entry.data_file.content != DataFileContent.DATA:
                             # Delete files which falls into partition filter does not need to go into the new manifest
@@ -2972,12 +2948,12 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
                         status = ManifestEntryStatus.DELETED  # MEAT
                         self._deleted_data_fiels_due_to_partial_overwrite.delete_file(manifest_entry.data_file)
                     else:
-                        status = ManifestEntryStatus.EXISTING  
+                        status = ManifestEntryStatus.EXISTING
                     print(f"{manifest_entry.data_file.partition=}, {status=}, {manifest_entry.data_file.file_path=}")
-                    
+
                     writer.add_entry(
                         ManifestEntry(
-                            status=status,  
+                            status=status,
                             snapshot_id=self._snapshot_id,
                             data_sequence_number=manifest_entry.data_sequence_number,
                             file_sequence_number=manifest_entry.file_sequence_number,
@@ -2990,9 +2966,12 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
         def _write_filtered_manifests() -> List[ManifestFile]:
             current_spec_id = self._transaction.table_metadata.spec().spec_id
 
-            manifest_evaluator = self._partition_projector._build_manifest_evaluator(
-                current_spec_id
-            )  
+            if self._partition_projector is None:
+                raise ValueError("Partialoverwrite without a partition projector.")
+            manifest_evaluator = self._partition_projector._build_manifest_evaluator(current_spec_id)
+            if self._parent_snapshot_id is None:
+                # This should never happen since you cannot overwrite an empty table
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
             previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if previous_snapshot is None:
                 # This should never happen since you cannot overwrite an empty table
@@ -3017,7 +2996,7 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
             executor = ExecutorFactory.get_or_create()
 
             partition_evaluator = self._partition_projector._build_partition_evaluator(current_spec_id)
-            min_data_sequence_number = _min_data_file_sequence_number(manifests) # to do
+            min_data_sequence_number = _min_data_file_sequence_number(manifests)  # to do
 
             manifest_files = list(
                 chain(
@@ -3028,10 +3007,12 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
                                 self._io,
                                 manifest,
                                 partition_evaluator,
-                                idx + 1 # 0 is reserved for the manifest that includes the added files # to do make it generated and auto-incremented
+                                idx
+                                + 1,  # 0 is reserved for the manifest that includes the added files # to do make it generated and auto-incremented
                             )
                             for idx, manifest in enumerate(manifests)
-                            if current_spec_id == manifest.partition_spec_id and check_sequence_number(min_data_sequence_number, manifest) 
+                            if current_spec_id == manifest.partition_spec_id
+                            and check_sequence_number(min_data_sequence_number, manifest)
                         ],
                     )
                 )
@@ -3039,22 +3020,17 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
             # print("we get the manifest files like this", [manifest.manifest_path for manifest in manifest_files])
             return manifest_files
 
-
         executor = ExecutorFactory.get_or_create()
 
         print("curious", self._operation, self._partition_projector)
         added_manifests = executor.submit(_write_added_manifest)
         filtered_manifests = executor.submit(_write_filtered_manifests)
-        a = added_manifests.result() 
+        a = added_manifests.result()
         print("added manifests", a)
         b = filtered_manifests.result()
         print("filtered manifests", b)
-        res = a + b 
+        res = a + b
         return res
-
-    
-        
-        
 
 
 class UpdateSnapshot:
@@ -3077,10 +3053,10 @@ class UpdateSnapshot:
             io=self._io,
         )
 
-    def partial_overwrite(self, overwrite_filter: Union[str, BooleanExpression]):
+    def partial_overwrite(self, overwrite_filter: Union[str, BooleanExpression]) -> PartialOverwriteFiles:
         return PartialOverwriteFiles(
-            table_metadata = self._transaction.table_metadata,
-            overwrite_filter = overwrite_filter,
+            table_metadata=self._transaction.table_metadata,
+            overwrite_filter=overwrite_filter,
             operation=Operation.PARTIAL_OVERWRITE
             if self._transaction.table_metadata.current_snapshot() is not None
             else Operation.APPEND,
@@ -3104,6 +3080,7 @@ def check_sequence_number(min_data_sequence_number: int, manifest: ManifestFile)
         manifest.content == ManifestContent.DELETES
         and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
     )
+
 
 class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     _transaction: Transaction

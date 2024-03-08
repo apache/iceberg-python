@@ -21,11 +21,16 @@ from typing import Union
 
 import pyarrow as pa
 import pytest
-import pytz
 from pyspark.sql import SparkSession
+from pyspark.sql.utils import AnalysisException
+from zoneinfo import ZoneInfo
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
+from pyiceberg.expressions import BooleanExpression, EqualTo, IsNull, Reference
+from pyiceberg.expressions.literals import (
+    TimestampLiteral,
+)
 from pyiceberg.partitioning import PartitionField, PartitionSpec, _to_partition_representation
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
@@ -43,28 +48,6 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
-from pyiceberg.expressions.literals import (
-    DateLiteral,
-    DecimalLiteral,
-    Literal,
-    LongLiteral,
-    TimestampLiteral,
-    literal,
-)
-
-from pyiceberg.expressions import (
-    AlwaysTrue,
-    And,
-    BooleanExpression,
-    EqualTo,
-    parser,
-    visitors,
-    Reference,
-    literal,
-    EqualTo,
-    IsNull
-)
-from pyspark.sql.utils import AnalysisException
 
 
 @pytest.fixture()
@@ -248,9 +231,6 @@ def table_v1_appended_with_null_partitioned(session_catalog: Catalog, arrow_tabl
         for _ in range(2):
             tbl.append(arrow_table_with_null)
         assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-
-
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -477,8 +457,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     ).collect()
 
     operations = [row.operation for row in rows]
-    #print(operations)
-    assert operations == ['append', 'append', 'overwrite','append', 'partial_overwrite']
+    # print(operations)
+    assert operations == ['append', 'append', 'overwrite', 'append', 'partial_overwrite']
 
     summaries = [row.summary for row in rows]
     # append 3 new data files with 3 records, giving a total of 3 files and 3 records
@@ -522,15 +502,15 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     }
     # append another 3 new data files with 3 records, giving a total of 6 files and 6 records
     assert summaries[3] == {
-        'added-data-files': '3', 
-        'total-equality-deletes': '0', 
-        'added-records': '3', 
-        'total-position-deletes': '0', 
-        'added-files-size': '15029', 
-        'total-delete-files': '0', 
-        'total-files-size': '30058', 
-        'total-data-files': '6', 
-        'total-records': '6'
+        'added-data-files': '3',
+        'total-equality-deletes': '0',
+        'added-records': '3',
+        'total-position-deletes': '0',
+        'added-files-size': '15029',
+        'total-delete-files': '0',
+        'total-files-size': '30058',
+        'total-data-files': '6',
+        'total-records': '6',
     }
     # static overwrite which deletes 2 record (one from step3, one from step4) and 2 datafile, adding 3 new data files and 3 records, so total data files and records are 6 - 2 + 3 = 7
     assert summaries[4] == {
@@ -545,7 +525,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         'deleted-records': '2',
         'total-files-size': '34297',
         'total-data-files': '7',
-        'total-records': '7'
+        'total-records': '7',
     }
 
 
@@ -575,7 +555,7 @@ def test_data_files_with_table_partitioned_with_null(
     # second append's manifest list links to  2 manifest files (M1, M2)
     # third operation of static overwrite's manifest list is linked to 2 manifest files (M3 which has 6 deleted entries from M1 and M2; M4 which has 3 added files)
     # fourth operation of append manifest list abandons M3 since it has no existing or added entries and keeps M4 and added M5 with 3 added files
-    # fifth operation of static overwrite's manifest list is linked to one filtered manifest M7,8 which filters and (todo: spark merges these 2, we could do them same in future) M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation 
+    # fifth operation of static overwrite's manifest list is linked to one filtered manifest M7,8 which filters and (todo: spark merges these 2, we could do them same in future) M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation
     # also links to M6 which adds 3 entries.
     # so we have flattened list of [[M1], [M1, M2], [M3, M4], [M4, M5], [M6, M7, M8]]
     # where: add      exist      delete    added_by
@@ -589,15 +569,16 @@ def test_data_files_with_table_partitioned_with_null(
     # M8      0         2           1        S5
 
     spark.sql(
-            f"""
+        f"""
             REFRESH TABLE {identifier}
         """
-        )
+    )
     rows = spark.sql(
         f"""
         SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
         FROM {identifier}.all_manifests
-    """).collect()
+    """
+    ).collect()
     assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0, 3, 3, 3, 0, 0]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 2, 2]
     assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 1, 1]
@@ -626,10 +607,10 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
         tbl.append("not a df")
 
 
-from zoneinfo import ZoneInfo
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col, expr", [
+    "part_col, expr",
+    [
         ('int', 'int=1'),
         ('int', EqualTo(Reference("int"), 1)),
         ('int', 'int is NULL'),
@@ -643,20 +624,37 @@ from zoneinfo import ZoneInfo
         ('long', 'long is NULL'),
         ('long', IsNull(Reference("long"))),
         ('date', "date='2023-01-01'"),
-        ('date', EqualTo(Reference("date"), _to_partition_representation(DateType(), date(2023,1,1)))),
+        ('date', EqualTo(Reference("date"), _to_partition_representation(DateType(), date(2023, 1, 1)))),
         ('date', 'date is NULL'),
         ('date', IsNull(Reference("date"))),
         ('timestamp', "timestamp='2023-01-01T19:25:00'"),
-        ('timestamp', EqualTo(Reference("timestamp"), _to_partition_representation(TimestampType(), datetime(2023,1,1,19,25)))),
+        (
+            'timestamp',
+            EqualTo(Reference("timestamp"), _to_partition_representation(TimestampType(), datetime(2023, 1, 1, 19, 25))),
+        ),
         ('timestamp', 'timestamp is NULL'),
         ('timestamp', IsNull(Reference("timestamp"))),
         ('timestamptz', "timestamptz='2023-01-01T19:25:00+00:00'"),
-        ('timestamptz', EqualTo(Reference("timestamptz"), TimestampLiteral(_to_partition_representation(TimestamptzType(), datetime(2023, 1, 1, 19, 25, 00, tzinfo=ZoneInfo("UTC")))))),
+        (
+            'timestamptz',
+            EqualTo(
+                Reference("timestamptz"),
+                TimestampLiteral(
+                    _to_partition_representation(TimestamptzType(), datetime(2023, 1, 1, 19, 25, 00, tzinfo=ZoneInfo("UTC")))
+                ),
+            ),
+        ),
         ('timestamptz', 'timestamptz is NULL'),
         ('timestamptz', IsNull(Reference("timestamptz"))),
-    ]
+    ],
 )
-def test_query_filter_after_append_overwrite_table_with_expr(spark: SparkSession,  session_catalog, part_col: str, expr: Union[str, BooleanExpression], arrow_table_with_null: pa.Table) -> None:
+def test_query_filter_after_append_overwrite_table_with_expr(
+    spark: SparkSession,
+    session_catalog: Catalog,
+    part_col: str,
+    expr: Union[str, BooleanExpression],
+    arrow_table_with_null: pa.Table,
+) -> None:
     identifier = f"default.arrow_table_v1_appended_overwrite_partitioned_on_col_{part_col}"
     try:
         spark.sql(f"drop table {identifier}")
@@ -670,7 +668,7 @@ def test_query_filter_after_append_overwrite_table_with_expr(spark: SparkSession
         schema=TABLE_SCHEMA,
         partition_spec=PartitionSpec(
             PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=part_col)
-        ),  
+        ),
         properties={'format-version': '1'},
     )
 
@@ -680,5 +678,5 @@ def test_query_filter_after_append_overwrite_table_with_expr(spark: SparkSession
 
     iceberg_table = session_catalog.load_table(identifier=identifier)
     spark.sql(f"select * from {identifier}").show(20, False)
-    assert iceberg_table.scan(row_filter = expr).to_arrow().num_rows == 1
+    assert iceberg_table.scan(row_filter=expr).to_arrow().num_rows == 1
     assert iceberg_table.scan().to_arrow().num_rows == 7
