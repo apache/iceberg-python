@@ -20,6 +20,19 @@ site_url: https://py.iceberg.apache.org/
 repo_url: "https://github.com/apache/iceberg-python"
 repo_name: "apache/iceberg-python"
 
+extra:
+  alternate:
+      # Original Language
+    - name: English
+      lang: 'en'
+      link: '%GT_RELATIVE_URL%'  # For relative urls back to original language
+      # Extra languages
+    - name: Chinese
+      lang: 'zh'
+      link: 'https://translate.goog/?_x_tr_sl=en&_x_tr_tl=zh'
+      # _x_tr_sl = source language
+      # _x_tr_tl = translation language
+
 plugins:
   - gen-files:
       scripts:
@@ -32,6 +45,8 @@ plugins:
       handlers:
         python:
           paths: [..]
+  - google-translate:
+      url: https://py.iceberg.apache.org/  # optional (but necessary for local tests)
 
 theme:
   name: material
