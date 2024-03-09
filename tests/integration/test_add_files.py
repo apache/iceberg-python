@@ -63,6 +63,25 @@ ARROW_TABLE = pa.Table.from_pylist(
     schema=ARROW_SCHEMA,
 )
 
+ARROW_SCHEMA_UPDATED = pa.schema([
+    ("foo", pa.bool_()),
+    ("baz", pa.int32()),
+    ("qux", pa.date32()),
+    ("quux", pa.int32()),
+])
+
+ARROW_TABLE_UPDATED = pa.Table.from_pylist(
+    [
+        {
+            "foo": True,
+            "baz": 123,
+            "qux": date(2024, 3, 7),
+            "quux": 234,
+        }
+    ],
+    schema=ARROW_SCHEMA_UPDATED,
+)
+
 PARTITION_SPEC = PartitionSpec(
     PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="baz"),
     PartitionField(source_id=10, field_id=1001, transform=IdentityTransform(), name="qux"),
@@ -124,7 +143,7 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
     identifier = "default.partitioned_table"
     tbl = _create_table(session_catalog, identifier, PARTITION_SPEC)
 
-    file_paths = [f"s3://warehouse/default/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
+    file_paths = [f"s3://warehouse/default/partitioned/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
     # write parquet files
     for file_path in file_paths:
         fo = tbl.io.new_output(file_path)
@@ -153,3 +172,93 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
     assert df.count() == 5, "Expected 5 rows"
     for col in df.columns:
         assert df.filter(df[col].isNotNull()).count() == 5, "Expected all 5 rows to be non-null"
+
+
+@pytest.mark.integration
+def test_add_files_to_partitioned_table_missing_partition(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.partitioned_table"
+    tbl = _create_table(session_catalog, identifier, PARTITION_SPEC)
+
+    file_paths = [f"s3://warehouse/default/partitioned_2/baz=123/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+
+    # NameMapping must have been set to enable reads
+    assert tbl.name_mapping() is not None
+
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [5]
+    assert [row.existing_data_files_count for row in rows] == [0]
+    assert [row.deleted_data_files_count for row in rows] == [0]
+
+    df = spark.table(identifier)
+    assert df.count() == 5, "Expected 5 rows"
+
+    for col in df.columns:
+        value_count = 0 if col == "qux" else 5
+        assert df.filter(df[col].isNotNull()).count() == value_count, f"Expected {value_count} rows to be non-null"
+
+
+@pytest.mark.integration
+def test_add_files_to_unpartitioned_table_with_schema_updates(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.unpartitioned_table_2"
+    tbl = _create_table(session_catalog, identifier)
+
+    file_paths = [f"s3://warehouse/default/unpartitioned_2/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+
+    # NameMapping must have been set to enable reads
+    assert tbl.name_mapping() is not None
+
+    with tbl.update_schema() as update:
+        update.add_column("quux", IntegerType())
+        update.delete_column("bar")
+
+    file_path = "s3://warehouse/default/unpartitioned_2/test-6.parquet"
+    # write parquet files
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=ARROW_SCHEMA_UPDATED) as writer:
+            writer.write_table(ARROW_TABLE_UPDATED)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=[file_path])
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [5, 1, 5]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0]
+
+    df = spark.table(identifier)
+    assert df.count() == 6, "Expected 6 rows"
+    assert len(df.columns) == 4, "Expected 4 columns"
+    df.show()
+    for col in df.columns:
+        value_count = 1 if col == "quux" else 6
+        assert df.filter(df[col].isNotNull()).count() == value_count, f"Expected {value_count} rows to be non-null"
