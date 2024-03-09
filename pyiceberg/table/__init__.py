@@ -43,10 +43,12 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, SerializeAsAny
+from pydantic import Field, SerializeAsAny, field_validator
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
+import pyiceberg.expressions.parser as parser
+import pyiceberg.expressions.visitors as visitors
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysTrue,
@@ -54,11 +56,8 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     Reference,
-    parser,
-    visitors,
 )
 from pyiceberg.expressions.literals import StringLiteral
-from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator, inclusive_projection
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
@@ -127,6 +126,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    transform_dict_value_to_str,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
@@ -296,17 +296,21 @@ class Transaction:
 
         return self
 
-    def set_properties(self, **updates: str) -> Transaction:
+    def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: Any) -> Transaction:
         """Set properties.
 
         When a property is already set, it will be overwritten.
 
         Args:
-            updates: The properties set on the table.
+            properties: The properties set on the table.
+            kwargs: properties can also be pass as kwargs.
 
         Returns:
             The alter table builder.
         """
+        if properties and kwargs:
+            raise ValueError("Cannot pass both properties and kwargs")
+        updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
@@ -472,6 +476,10 @@ class SetLocationUpdate(TableUpdate):
 class SetPropertiesUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.set_properties
     updates: Dict[str, str]
+
+    @field_validator('updates', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
 
 
 class RemovePropertiesUpdate(TableUpdate):
@@ -1397,7 +1405,9 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
 
     if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
+        evaluator = visitors._InclusiveMetricsEvaluator(
+            POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path)
+        )
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -1421,7 +1431,7 @@ class DataScan(TableScan):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1488,7 +1498,7 @@ class DataScan(TableScan):
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-        metrics_evaluator = _InclusiveMetricsEvaluator(
+        metrics_evaluator = visitors._InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 

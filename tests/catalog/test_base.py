@@ -31,8 +31,6 @@ from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -58,7 +56,7 @@ from pyiceberg.table import (
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import IntegerType, LongType, NestedField
 
 

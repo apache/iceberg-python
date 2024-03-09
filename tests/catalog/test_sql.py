@@ -25,7 +25,6 @@ from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
-from pyiceberg.catalog import Identifier
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
     CommitFailedException,
@@ -49,6 +48,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import Identifier
 from pyiceberg.types import IntegerType
 
 
