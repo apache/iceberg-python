@@ -224,7 +224,7 @@ class SnapshotSummaryCollector:
             self.added_eq_deletes += data_file.record_count
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
-
+    
     def remove_file(self, data_file: DataFile) -> None:
         self.removed_file_size += data_file.file_size_in_bytes
 
@@ -266,7 +266,6 @@ class SnapshotSummaryCollector:
         set_when_positive(properties, self.removed_eq_deletes, REMOVED_EQUALITY_DELETES)
 
         return properties
-
 
 def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
     for prop in {

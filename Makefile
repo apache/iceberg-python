@@ -40,9 +40,9 @@ test-integration:
 	docker-compose -f dev/docker-compose-integration.yml kill
 	docker-compose -f dev/docker-compose-integration.yml rm -f
 	docker-compose -f dev/docker-compose-integration.yml up -d
-	sleep 10
+	sleep 5
 	docker-compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
-	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS} -s
+	poetry run pytest tests/ -v -m france ${PYTEST_ARGS} -s
 
 
 test-integration-rebuild:

@@ -1571,7 +1571,6 @@ class Move:
 
 U = TypeVar('U')
 
-
 class UpdateTableMetadata(ABC, Generic[U]):
     _transaction: Transaction
 
@@ -2465,8 +2464,7 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
     return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
 
-
-class DeletedDataFilesCountDueToPartialOverwrite:
+class PartialOverwriteDeletedDataFiles:
     def __init__(self) -> None:
         self.deleted_files: List[DataFile] = []
         self.lock = threading.Lock()
@@ -2475,16 +2473,16 @@ class DeletedDataFilesCountDueToPartialOverwrite:
         with self.lock:
             self.deleted_files.append(data_file)
 
-
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
     commit_uuid: uuid.UUID
     _operation: Operation
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
-    # _partition_projector: PartitionProjector #if not None, could be leverage to indicate it is partiion overwrite
-    _deleted_data_fiels_due_to_partial_overwrite: DeletedDataFilesCountDueToPartialOverwrite
-
+    _io: FileIO
+    _partition_projector: Optional[PartitionProjector] 
+    _partial_overwrite_deleted_data_files: PartialOverwriteDeletedDataFiles
+    # _manifests_compositions:  Any #list[Callable[[_MergingSnapshotProducer], List[ManifestFile]]]
     def __init__(
         self,
         operation: Operation,  # done, inited
@@ -2503,73 +2501,84 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
         self._added_data_files = []
-        self._deleted_data_fiels_due_to_partial_overwrite = DeletedDataFilesCountDueToPartialOverwrite()
+        self._partial_overwrite_deleted_data_files = PartialOverwriteDeletedDataFiles()
+        # self._manifests_compositions = [self._write_added_manifest]
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
         return self
 
     @abstractmethod
-    def _deleted_entries(self) -> List[ManifestEntry]: ...
-
-    @abstractmethod
     def _existing_manifests(self) -> List[ManifestFile]: ...
 
-    def _manifests(self) -> List[ManifestFile]:
-        def _write_added_manifest() -> List[ManifestFile]:
-            if self._added_data_files:
-                output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
-                )
-                with write_manifest(
-                    format_version=self._transaction.table_metadata.format_version,
-                    spec=self._transaction.table_metadata.spec(),
-                    schema=self._transaction.table_metadata.schema(),
-                    output_file=self._io.new_output(output_file_location),
-                    snapshot_id=self._snapshot_id,
-                ) as writer:
-                    for data_file in self._added_data_files:
-                        writer.add_entry(
-                            ManifestEntry(
-                                status=ManifestEntryStatus.ADDED,
-                                snapshot_id=self._snapshot_id,
-                                data_sequence_number=None,
-                                file_sequence_number=None,
-                                data_file=data_file,
-                            )
+    @abstractmethod
+    def _filtered_entries(self) -> List[ManifestEntry]: ...
+
+    def _write_filtered_manifest(self, file_num: int = 1) -> List[ManifestFile]:
+        print("start calling filtered_entries")
+        filtered_entries = self._filtered_entries()
+
+        if len(filtered_entries) == 0:
+            return []
+
+        output_file_location = _new_manifest_path(
+            location=self._transaction.table_metadata.location, num=file_num, commit_uuid=self.commit_uuid
+        )
+
+        with write_manifest(
+            format_version=self._transaction.table_metadata.format_version,
+            spec=self._transaction.table_metadata.spec(),
+            schema=self._transaction.table_metadata.schema(),
+            output_file=self._io.new_output(output_file_location),
+            snapshot_id=self._snapshot_id,
+        ) as writer:
+            for manifest_entry in filtered_entries:
+                writer.add_entry(manifest_entry)
+        m = writer.to_manifest_file()
+        print(m.manifest_path)
+        return [m]
+
+    def _write_added_manifest(self) -> List[ManifestFile]:
+        if self._added_data_files:
+            output_file_location = _new_manifest_path(
+                location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
+            )
+            with write_manifest(
+                format_version=self._transaction.table_metadata.format_version,
+                spec=self._transaction.table_metadata.spec(),
+                schema=self._transaction.table_metadata.schema(),
+                output_file=self._io.new_output(output_file_location),
+                snapshot_id=self._snapshot_id,
+            ) as writer:
+                for data_file in self._added_data_files:
+                    print("file path is!!!", data_file.file_path)
+                    writer.add_entry(
+                        ManifestEntry(
+                            status=ManifestEntryStatus.ADDED,
+                            snapshot_id=self._snapshot_id,
+                            data_sequence_number=None,
+                            file_sequence_number=None,
+                            data_file=data_file,
                         )
-                return [writer.to_manifest_file()]
-            else:
-                return []
+                    )
+            return [writer.to_manifest_file()]
+        else:
+            return []
+        
 
-        def _write_delete_manifest() -> List[ManifestFile]:
-            # Check if we need to mark the files as deleted
-            deleted_entries = self._deleted_entries()
-            if len(deleted_entries) > 0:
-                output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=1, commit_uuid=self.commit_uuid
-                )
 
-                with write_manifest(
-                    format_version=self._transaction.table_metadata.format_version,
-                    spec=self._transaction.table_metadata.spec(),
-                    schema=self._transaction.table_metadata.schema(),
-                    output_file=self._io.new_output(output_file_location),
-                    snapshot_id=self._snapshot_id,
-                ) as writer:
-                    for delete_entry in deleted_entries:
-                        writer.add_entry(delete_entry)
-                return [writer.to_manifest_file()]
-            else:
-                return []
-
+    def _manifests(self) -> List[ManifestFile]:
         executor = ExecutorFactory.get_or_create()
+        # for manifest_collection_func in self._manifests_compositions:
+        #     manifest_collection_func(self)
+        added_manifests = executor.submit(self._write_added_manifest).result()
+        filtered_manifests = executor.submit(self._write_filtered_manifest).result()
+        existing_manifests = executor.submit(self._existing_manifests).result()
+        print([m.manifest_path for m in added_manifests])
+        print([m.manifest_path for m in filtered_manifests])
+        print([m.manifest_path for m in existing_manifests])
 
-        added_manifests = executor.submit(_write_added_manifest)
-        delete_manifests = executor.submit(_write_delete_manifest)
-        existing_manifests = executor.submit(self._existing_manifests)
-
-        return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
+        return added_manifests + filtered_manifests + existing_manifests
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
@@ -2577,7 +2586,9 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         for data_file in self._added_data_files:
             ssc.add_file(data_file=data_file)
 
-        for data_file in self._deleted_data_fiels_due_to_partial_overwrite.deleted_files:
+        # Only delete files caused by partial overwrite. 
+        # Full table overwrite uses previous snapshot to update in a more efficient way.
+        for data_file in self._partial_overwrite_deleted_data_files.deleted_files:
             ssc.remove_file(data_file=data_file)
 
         previous_snapshot = (
@@ -2589,7 +2600,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         summary_collector_to_fill = ssc.build()
         summary_to_fill = Summary(operation=self._operation, **summary_collector_to_fill)
 
-        # to do truncate function ins update_Xxx should be merged with the logic that handles partial overwrites and self._deleted_data_fiels_due_to_partial_overwrite
+        # to do truncate function ins update_Xxx should be merged with the logic that handles partial overwrites and self._partial_overwrite_deleted_data_files
         return update_snapshot_summaries(
             summary=summary_to_fill,
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
@@ -2827,31 +2838,30 @@ class FastAppendFiles(_MergingSnapshotProducer):
 
         return existing_manifests
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        """To determine if we need to record any deleted manifest entries.
 
-        In case of an append, nothing is deleted.
+    def _filtered_entries(self) -> List[ManifestEntry]: 
+        """To determine if we need to filter and refresh existing entries with new status in new manifest.
+
+        In case of an append, we do not write new manifest with freshed entries but link manifestlist to all previous manifests.
         """
         return []
-
 
 class OverwriteFiles(_MergingSnapshotProducer):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
 
-        In the of a full overwrite, all the previous manifests are
-        considered deleted.
+        In the case of a full overwrite, all the previous manifests are considered deleted.
         """
         return []
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        """To determine if we need to record any deleted entries.
+    def _filtered_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to refresh existing entries with new status as delete in new manifest.
 
-        With a full overwrite all the entries are considered deleted.
-        With partial overwrites we have to use the predicate to evaluate
-        which entries are affected.
+        With a full overwrite, any data file entry that was not deleted became deleted, otherwise skipping the entry.
         """
-        if self._parent_snapshot_id is not None:
+        if self._parent_snapshot_id is None:
+            return []
+        else:
             previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if previous_snapshot is None:
                 # This should never happen since you cannot overwrite an empty table
@@ -2859,7 +2869,7 @@ class OverwriteFiles(_MergingSnapshotProducer):
 
             executor = ExecutorFactory.get_or_create()
 
-            def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+            def _get_deleted_entries(manifest: ManifestFile) -> List[ManifestEntry]:
                 return [
                     ManifestEntry(
                         status=ManifestEntryStatus.DELETED,
@@ -2872,10 +2882,8 @@ class OverwriteFiles(_MergingSnapshotProducer):
                     if entry.data_file.content == DataFileContent.DATA
                 ]
 
-            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
-            return list(chain(*list_of_entries))
-        else:
-            return []
+            list_of_entries = executor.map(_get_deleted_entries, previous_snapshot.manifests(self._io))
+            return list(chain(*list_of_entries))    
 
 
 class PartialOverwriteFiles(_MergingSnapshotProducer):
@@ -2885,102 +2893,42 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
             PartitionProjector(table_metadata, overwrite_filter) if overwrite_filter != ALWAYS_TRUE else None
         )
 
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        return []
-
     def _existing_manifests(self) -> List[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        In the case of a full overwrite, old manifests are abandoned and rewritten with refreshed entry statuses.
+        """
         return []
 
-    def _manifests(self) -> List[ManifestFile]:
-        # to do remove this !!!!!?????
-        def _write_added_manifest() -> List[ManifestFile]:
-            if self._added_data_files:
-                output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
-                )
-                with write_manifest(
-                    format_version=self._transaction.table_metadata.format_version,
-                    spec=self._transaction.table_metadata.spec(),
-                    schema=self._transaction.table_metadata.schema(),
-                    output_file=self._io.new_output(output_file_location),
-                    snapshot_id=self._snapshot_id,
-                ) as writer:
-                    for data_file in self._added_data_files:
-                        writer.add_entry(
-                            ManifestEntry(
-                                status=ManifestEntryStatus.ADDED,
-                                snapshot_id=self._snapshot_id,
-                                data_sequence_number=None,
-                                file_sequence_number=None,
-                                data_file=data_file,
-                            )
-                        )
-                return [writer.to_manifest_file()]
-            else:
-                return []
+    def _filtered_entries(self) -> List[ManifestEntry]: 
+        """To determine if we need to filter and refresh existing entries with new status in new manifest.
 
-        def _write_filtered_manifest(
-            io: FileIO, manifest: ManifestFile, partition_filter: Callable[[DataFile], bool], file_num: int
-        ) -> List[ManifestFile]:
-            print("write filtered manifests", manifest.manifest_path)
+        With a partial overwrite (This matches spark iceberg partial overwrite behavior):
+        Deleted entry of previous snapshot: skipped in the new snapshot
+        Existing or added entry of previous snapshot matching partial overwrite filter: status = deleted in new snapshot
+        Existing or added entry of previous snapshot not matching partial overwrite filter: status = existing in new snapshot
+        """
 
-            output_file_location = _new_manifest_path(
-                location=self._transaction.table_metadata.location, num=file_num, commit_uuid=self.commit_uuid
-            )
-
-            with write_manifest(
-                format_version=self._transaction.table_metadata.format_version,
-                spec=self._transaction.table_metadata.spec(),
-                schema=self._transaction.table_metadata.schema(),
-                output_file=self._io.new_output(output_file_location),
-                snapshot_id=self._snapshot_id,
-            ) as writer:
-                for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True):
-                    print(
-                        "adrian one, lets first check partition_filter mark entry delete",
-                        manifest_entry.data_file.partition,
-                        partition_filter(manifest_entry.data_file),
-                    )
-                    if partition_filter(manifest_entry.data_file):
-                        if manifest_entry.data_file.content != DataFileContent.DATA:
-                            # Delete files which falls into partition filter does not need to go into the new manifest
-                            continue
-                        status = ManifestEntryStatus.DELETED  # MEAT
-                        self._deleted_data_fiels_due_to_partial_overwrite.delete_file(manifest_entry.data_file)
-                    else:
-                        status = ManifestEntryStatus.EXISTING
-                    print(f"{manifest_entry.data_file.partition=}, {status=}, {manifest_entry.data_file.file_path=}")
-
-                    writer.add_entry(
-                        ManifestEntry(
-                            status=status,
-                            snapshot_id=self._snapshot_id,
-                            data_sequence_number=manifest_entry.data_sequence_number,
-                            file_sequence_number=manifest_entry.file_sequence_number,
-                            data_file=manifest_entry.data_file,
-                        )
-                    )
-
-            return [writer.to_manifest_file()]
-
-        def _write_filtered_manifests() -> List[ManifestFile]:
-            current_spec_id = self._transaction.table_metadata.spec().spec_id
-
-            if self._partition_projector is None:
-                raise ValueError("Partialoverwrite without a partition projector.")
-            manifest_evaluator = self._partition_projector._build_manifest_evaluator(current_spec_id)
-            if self._parent_snapshot_id is None:
-                # This should never happen since you cannot overwrite an empty table
-                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+        if self._parent_snapshot_id is None:
+            return []
+        else:
             previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if previous_snapshot is None:
                 # This should never happen since you cannot overwrite an empty table
                 raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
 
+            current_spec_id = self._transaction.table_metadata.spec().spec_id
+
+            if self._partition_projector is None:
+                raise ValueError("Partial overwrite without a partition projector.")
+            manifest_evaluator = self._partition_projector._build_manifest_evaluator(current_spec_id)
+
+            manifests = previous_snapshot.manifests(self._io)
+            executor = ExecutorFactory.get_or_create()
             # print(f"{manifest_evaluator=}, {manifest_evaluator( previous_snapshot.manifests(self.io)[0])=}")
             manifests = [
                 manifest_file
-                for manifest_file in previous_snapshot.manifests(self._io)
+                for manifest_file in manifests
                 if manifest_file.partition_spec_id == current_spec_id
                 and manifest_evaluator(manifest_file)
                 and (
@@ -2992,45 +2940,33 @@ class PartialOverwriteFiles(_MergingSnapshotProducer):
             # print("before manifest filter", [manifest_file.manifest_path for manifest_file in previous_snapshot.manifests(self._io)])
             # print("after manifest filter", [manifest_file.manifest_path for manifest_file in manifests])
             # print("ManifestFile desp", manifests[0].manifest_path, "length", len(manifests))
+            partition_filter = self._partition_projector._build_partition_evaluator(current_spec_id)
 
-            executor = ExecutorFactory.get_or_create()
-
-            partition_evaluator = self._partition_projector._build_partition_evaluator(current_spec_id)
-            min_data_sequence_number = _min_data_file_sequence_number(manifests)  # to do
-
-            manifest_files = list(
-                chain(
-                    *executor.map(
-                        lambda args: _write_filtered_manifest(*args),
-                        [
-                            (
-                                self._io,
-                                manifest,
-                                partition_evaluator,
-                                idx
-                                + 1,  # 0 is reserved for the manifest that includes the added files # to do make it generated and auto-incremented
-                            )
-                            for idx, manifest in enumerate(manifests)
-                            if current_spec_id == manifest.partition_spec_id
-                            and check_sequence_number(min_data_sequence_number, manifest)
-                        ],
+            def _get_refreshed_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+                filtered_entries = []
+                for manifest_entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True):
+                    print(
+                        "PO, lets first check partition_filter filter entries",
+                        manifest_entry.data_file.partition,
+                        partition_filter(manifest_entry.data_file),
                     )
-                )
-            )
-            # print("we get the manifest files like this", [manifest.manifest_path for manifest in manifest_files])
-            return manifest_files
+                    if partition_filter(manifest_entry.data_file):
+                        if manifest_entry.data_file.content != DataFileContent.DATA:
+                            # Delete files which falls into partition filter does not need to go into the new manifest
+                            continue
+                        status = ManifestEntryStatus.DELETED  
+                        self._partial_overwrite_deleted_data_files.delete_file(manifest_entry.data_file)
+                    else:
+                        status = ManifestEntryStatus.EXISTING
+                    manifest_entry.status = status
+                    print(f"{manifest_entry.data_file.partition=}, {status=}, {manifest_entry.data_file.file_path=}")
+                    filtered_entries.append(manifest_entry)
+                return filtered_entries
 
-        executor = ExecutorFactory.get_or_create()
-
-        print("curious", self._operation, self._partition_projector)
-        added_manifests = executor.submit(_write_added_manifest)
-        filtered_manifests = executor.submit(_write_filtered_manifests)
-        a = added_manifests.result()
-        print("added manifests", a)
-        b = filtered_manifests.result()
-        print("filtered manifests", b)
-        res = a + b
-        return res
+            list_of_list_of_entries = executor.map(_get_refreshed_entries, previous_snapshot.manifests(self._io))
+            list_of_entries = list(chain(*list_of_list_of_entries))
+            print("is the po called? ", [(e.status,e.data_file.file_path) for e in list_of_entries])
+            return list_of_entries
 
 
 class UpdateSnapshot:
@@ -3080,7 +3016,6 @@ def check_sequence_number(min_data_sequence_number: int, manifest: ManifestFile)
         manifest.content == ManifestContent.DELETES
         and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
     )
-
 
 class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     _transaction: Transaction

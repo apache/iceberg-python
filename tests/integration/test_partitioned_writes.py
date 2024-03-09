@@ -426,7 +426,7 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, part_col: str) -> N
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 row for {col}"
 
 
-@pytest.mark.integration
+@pytest.mark.france
 def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_summaries"
 
@@ -441,7 +441,6 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         properties={'format-version': '2'},
     )
 
-    print("append!!!!!! 1")
     tbl.append(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
     tbl.overwrite(arrow_table_with_null)
@@ -457,10 +456,10 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     ).collect()
 
     operations = [row.operation for row in rows]
-    # print(operations)
     assert operations == ['append', 'append', 'overwrite', 'append', 'partial_overwrite']
 
     summaries = [row.summary for row in rows]
+    print("checking summaries", summaries)
     # append 3 new data files with 3 records, giving a total of 3 files and 3 records
     assert summaries[0] == {
         'added-data-files': '3',
@@ -529,7 +528,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     }
 
 
-@pytest.mark.integration
+@pytest.mark.france
 def test_data_files_with_table_partitioned_with_null(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
 ) -> None:
@@ -555,7 +554,7 @@ def test_data_files_with_table_partitioned_with_null(
     # second append's manifest list links to  2 manifest files (M1, M2)
     # third operation of static overwrite's manifest list is linked to 2 manifest files (M3 which has 6 deleted entries from M1 and M2; M4 which has 3 added files)
     # fourth operation of append manifest list abandons M3 since it has no existing or added entries and keeps M4 and added M5 with 3 added files
-    # fifth operation of static overwrite's manifest list is linked to one filtered manifest M7,8 which filters and (todo: spark merges these 2, we could do them same in future) M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation
+    # fifth operation of static overwrite's manifest list is linked to one filtered manifest M7 which filters and merges M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation
     # also links to M6 which adds 3 entries.
     # so we have flattened list of [[M1], [M1, M2], [M3, M4], [M4, M5], [M6, M7, M8]]
     # where: add      exist      delete    added_by
@@ -565,8 +564,8 @@ def test_data_files_with_table_partitioned_with_null(
     # M4      3         0           0        S3
     # M5      3         0           0        S4
     # M6      3         0           0        S5
-    # M7      0         2           1        S5
-    # M8      0         2           1        S5
+    # M7      0         4           2        S5
+   
 
     spark.sql(
         f"""
@@ -579,9 +578,10 @@ def test_data_files_with_table_partitioned_with_null(
         FROM {identifier}.all_manifests
     """
     ).collect()
-    assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0, 3, 3, 3, 0, 0]
-    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 2, 2]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 1, 1]
+    print("checking datafiles", rows)
+    assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0, 3, 3, 3, 0]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 4]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 2 ]
 
 
 @pytest.mark.integration
