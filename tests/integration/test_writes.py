@@ -404,7 +404,7 @@ def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog
 
     # writes multiple data files once target file size is overridden
     target_file_size = arrow_table_with_null.nbytes
-    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)}).commit_transaction()
+    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size}).commit_transaction()
     assert str(target_file_size) == tbl.properties.get(TableProperties.WRITE_TARGET_FILE_SIZE_BYTES)
     assert target_file_size < bigger_arrow_tbl.nbytes
     tbl.overwrite(bigger_arrow_tbl)
@@ -412,7 +412,7 @@ def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog
 
     # writes half the number of data files when target file size doubles
     target_file_size = arrow_table_with_null.nbytes * 2
-    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)}).commit_transaction()
+    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size}).commit_transaction()
     assert str(target_file_size) == tbl.properties.get(TableProperties.WRITE_TARGET_FILE_SIZE_BYTES)
     assert target_file_size < bigger_arrow_tbl.nbytes
     tbl.overwrite(bigger_arrow_tbl)
