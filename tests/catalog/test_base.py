@@ -620,7 +620,6 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
         NestedField(2, "y", LongType(), doc="comment"),
         NestedField(3, "z", LongType()),
         NestedField(4, "add", LongType()),
-        schema_id=1,
     )
 
     # When
