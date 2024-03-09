@@ -321,7 +321,12 @@ class Transaction:
         Returns:
             A new UpdateSchema.
         """
-        return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+        return UpdateSchema(
+            self,
+            allow_incompatible_changes=allow_incompatible_changes,
+            case_sensitive=case_sensitive,
+            name_mapping=self._table.name_mapping(),
+        )
 
     def update_snapshot(self) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
