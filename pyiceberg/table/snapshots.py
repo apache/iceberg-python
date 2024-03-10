@@ -364,4 +364,5 @@ def update_snapshot_summaries(
         added_property=ADDED_EQUALITY_DELETES,
         removed_property=REMOVED_EQUALITY_DELETES,
     )
+
     return summary

@@ -232,7 +232,6 @@ class PropertyUtil:
             return default
 
 
-# to do
 class PartitionProjector:
     def __init__(
         self,
@@ -2528,8 +2527,8 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         ) as writer:
             for manifest_entry in filtered_entries:
                 writer.add_entry(manifest_entry)
-        m = writer.to_manifest_file()
-        return [m]
+
+        return [writer.to_manifest_file()]
 
     def _write_added_manifest(self) -> List[ManifestFile]:
         if self._added_data_files:
@@ -2560,11 +2559,11 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
     def _manifests(self) -> List[ManifestFile]:
         executor = ExecutorFactory.get_or_create()
 
-        added_manifests = executor.submit(self._write_added_manifest).result()
-        filtered_manifests = executor.submit(self._write_filtered_manifest).result()
-        existing_manifests = executor.submit(self._existing_manifests).result()
+        added_manifests = executor.submit(self._write_added_manifest)
+        filtered_manifests = executor.submit(self._write_filtered_manifest)
+        existing_manifests = executor.submit(self._existing_manifests)
 
-        return added_manifests + filtered_manifests + existing_manifests
+        return added_manifests.result() + filtered_manifests.result() + existing_manifests.result()
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
@@ -2573,7 +2572,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             ssc.add_file(data_file=data_file)
 
         # Only delete files caused by partial overwrite.
-        # Full table overwrite uses previous snapshot to update in a more efficient way.
+        # Full table overwrite uses previous snapshot summary to update in a more efficient way.
         if self._deleted_data_files is not None and isinstance(self._deleted_data_files, ExplicitlyDeletedDataFiles):
             for data_file in self._deleted_data_files.deleted_files:
                 ssc.remove_file(data_file=data_file)
@@ -2584,10 +2583,9 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             else None
         )
 
-        summary_collector_to_fill = ssc.build()
-        summary_to_fill = Summary(operation=self._operation, **summary_collector_to_fill)
+        summary_to_update = Summary(operation=self._operation, **ssc.build())
         return update_snapshot_summaries(
-            summary=summary_to_fill,
+            summary=summary_to_update,
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
             truncate_full_table=isinstance(self._deleted_data_files, DeleteAllDataFiles),
         )
@@ -2700,7 +2698,6 @@ def group_by_partition_scheme(
             f"Not all transforms are supported, get: {[transform in supported for transform in iceberg_table_metadata.spec().fields]}."
         )
 
-    # only works for identity
     sort_options = _get_partition_sort_order(partition_columns, reverse=False)
     sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
     return sorted_arrow_table

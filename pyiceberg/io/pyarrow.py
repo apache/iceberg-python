@@ -1719,10 +1719,6 @@ def fill_parquet_file_metadata(
     data_file.split_offsets = split_offsets
 
 
-# write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-# write_file(io = table.io, table_metadata = table.metadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-
-
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     for task in tasks:
         parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)

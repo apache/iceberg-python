@@ -170,7 +170,7 @@ def table_v1_with_null_partitioned(session_catalog: Catalog, arrow_table_with_nu
         "timestamptz",
         "timestamp",
         "binary",
-    ]  # [, "date", "timestamptz", "timestamp", "binary", "fixed"]
+    ]
     for partition_col in partition_cols:
         identifier = f"default.arrow_table_v1_with_null_partitioned_on_col_{partition_col}"
 
@@ -555,7 +555,7 @@ def test_data_files_with_table_partitioned_with_null(
     # fourth operation of append manifest list abandons M3 since it has no existing or added entries and keeps M4 and added M5 with 3 added files
     # fifth operation of static overwrite's manifest list is linked to one filtered manifest M7 which filters and merges M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation
     # also links to M6 which adds 3 entries.
-    # so we have flattened list of [[M1], [M1, M2], [M3, M4], [M4, M5], [M6, M7, M8]]
+    # so we have flattened list of [[M1], [M1, M2], [M3, M4], [M4, M5], [M6, M7]]
     # where: add      exist      delete    added_by
     # M1      3         0           0        S1
     # M2      3         0           0        S2
