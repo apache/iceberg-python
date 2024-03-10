@@ -426,7 +426,7 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, part_col: str) -> N
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 row for {col}"
 
 
-@pytest.mark.france
+@pytest.mark.integration
 def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_summaries"
 
@@ -456,10 +456,9 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append', 'overwrite', 'append', 'partial_overwrite']
+    assert operations == ['append', 'append', 'overwrite', 'append', 'overwrite']
 
     summaries = [row.summary for row in rows]
-    print("checking summaries", summaries)
     # append 3 new data files with 3 records, giving a total of 3 files and 3 records
     assert summaries[0] == {
         'added-data-files': '3',
@@ -528,7 +527,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     }
 
 
-@pytest.mark.france
+@pytest.mark.integration
 def test_data_files_with_table_partitioned_with_null(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
 ) -> None:
@@ -565,7 +564,6 @@ def test_data_files_with_table_partitioned_with_null(
     # M5      3         0           0        S4
     # M6      3         0           0        S5
     # M7      0         4           2        S5
-   
 
     spark.sql(
         f"""
@@ -578,10 +576,9 @@ def test_data_files_with_table_partitioned_with_null(
         FROM {identifier}.all_manifests
     """
     ).collect()
-    print("checking datafiles", rows)
     assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0, 3, 3, 3, 0]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 4]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 2 ]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 2]
 
 
 @pytest.mark.integration

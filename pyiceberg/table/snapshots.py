@@ -71,7 +71,6 @@ class Operation(Enum):
     REPLACE = "replace"
     OVERWRITE = "overwrite"
     DELETE = "delete"
-    PARTIAL_OVERWRITE = "partial_overwrite"
 
     def __repr__(self) -> str:
         """Return the string representation of the Operation class."""
@@ -224,7 +223,7 @@ class SnapshotSummaryCollector:
             self.added_eq_deletes += data_file.record_count
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
-    
+
     def remove_file(self, data_file: DataFile) -> None:
         self.removed_file_size += data_file.file_size_in_bytes
 
@@ -267,6 +266,7 @@ class SnapshotSummaryCollector:
 
         return properties
 
+
 def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
     for prop in {
         TOTAL_DATA_FILES,
@@ -304,7 +304,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
 def update_snapshot_summaries(
     summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
-    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.PARTIAL_OVERWRITE}:
+    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
     if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:

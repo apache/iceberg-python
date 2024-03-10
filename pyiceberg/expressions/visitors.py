@@ -490,7 +490,6 @@ class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
         return term.eval(self.struct) is not None
 
     def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
-        # print("adrian kernel is called", term, literal, "eval is, ", term.eval(self.struct), f"{self.struct=}")
         return term.eval(self.struct) == literal.value
 
     def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
@@ -554,8 +553,6 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
         self.partition_filter = bind(partition_struct_schema, rewrite_not(partition_filter), case_sensitive)
 
     def eval(self, manifest: ManifestFile) -> bool:
-        # print(f"about why partition evalutes failed {manifest.partitions=}")
-        # print(f"about why partition evalutes failed {manifest.partitions[0].lower_bound=}, {manifest.partitions[0].upper_bound=}, {self.partition_filter=}")
         if partitions := manifest.partitions:
             self.partition_fields = partitions
             return visit(self.partition_filter, self)
