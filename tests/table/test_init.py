@@ -66,6 +66,7 @@ from pyiceberg.table import (
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
+    verify_table_already_sorted,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.snapshots import (
@@ -1113,3 +1114,21 @@ def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[s
     with pytest.raises(ValidationError) as exc_info:
         TableMetadataV2(**example_table_metadata_v2)
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "input_sorted_indices, expected_sorted_or_not",
+    [
+        (pa.array([2, 1, 0], type=pa.uint64()), False),
+        (pa.array([0, 1, 2, 3, 4, 5], type=pa.uint64()), True),
+        (pa.array([0, 1, 2, 3, 4, 5], type=pa.int64()), False),
+        (pa.array([-1, 0, 1], type=pa.int64()), False),
+        (pa.array([1, 2, 4], type=pa.uint64()), False),
+        (pa.array([0], type=pa.uint64()), True),
+        (pa.array([1], type=pa.uint64()), False),
+        (pa.array([2, 3, 4], type=pa.uint64()), False),
+    ],
+)
+def test_verify_table_already_sorted(input_sorted_indices: pa.Array, expected_sorted_or_not: bool) -> None:
+    assert verify_table_already_sorted(input_sorted_indices) == expected_sorted_or_not

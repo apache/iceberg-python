@@ -43,6 +43,8 @@ from typing import (
     Union,
 )
 
+import pyarrow.compute as pc
+from pyarrow import uint64
 from pydantic import Field, SerializeAsAny
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
@@ -2683,26 +2685,6 @@ def _get_partition_sort_order(partition_columns: list[str], reverse: bool = Fals
     return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
 
 
-def group_by_partition_scheme(
-    iceberg_table_metadata: TableMetadata, arrow_table: pa.Table, partition_columns: list[str]
-) -> pa.Table:
-    """Given a table sort it by current partition scheme with all transform functions supported."""
-    # todo support hidden partition transform function
-    from pyiceberg.transforms import IdentityTransform
-
-    supported = {IdentityTransform}
-    if not all(
-        type(field.transform) in supported for field in iceberg_table_metadata.spec().fields if field in partition_columns
-    ):
-        raise ValueError(
-            f"Not all transforms are supported, get: {[transform in supported for transform in iceberg_table_metadata.spec().fields]}."
-        )
-
-    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
-    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
-    return sorted_arrow_table
-
-
 def get_partition_columns(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> list[str]:
     arrow_table_cols = set(arrow_table.column_names)
     partition_cols = []
@@ -2772,31 +2754,63 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
     We then retrieve the partition keys by offsets.
     And slice the arrow table by offsets and lengths of each partition.
     """
-    import pyarrow as pa
-
     partition_columns = get_partition_columns(iceberg_table_metadata, arrow_table)
 
-    arrow_table = group_by_partition_scheme(iceberg_table_metadata, arrow_table, partition_columns)
+    sort_order_options = _get_partition_sort_order(partition_columns, reverse=False)
+    sorted_arrow_table_indices = pc.sort_indices(arrow_table, **sort_order_options)
 
-    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
-    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
-
+    # Efficiently avoid applying the grouping algorithm when the table is already sorted
     slice_instructions: list[dict[str, Any]] = []
-    last = len(reversed_indices)
-    reversed_indices_size = len(reversed_indices)
-    ptr = 0
-    while ptr < reversed_indices_size:
-        group_size = last - reversed_indices[ptr]
-        offset = reversed_indices[ptr]
-        slice_instructions.append({"offset": offset, "length": group_size})
-        last = reversed_indices[ptr]
-        ptr = ptr + group_size
+    if verify_table_already_sorted(sorted_arrow_table_indices):
+        slice_instructions = [{"offset": 0, "length": 1}]
+    else:
+        # group table by partition scheme
+        arrow_table_grouped_by_partition = arrow_table.take(sorted_arrow_table_indices)
+
+        reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
+        reverse_sort_indices = pc.sort_indices(arrow_table_grouped_by_partition, **reversing_sort_order_options).to_pylist()
+
+        last = len(reverse_sort_indices)
+        reverse_sort_indices_size = len(reverse_sort_indices)
+        ptr = 0
+        while ptr < reverse_sort_indices_size:
+            group_size = last - reverse_sort_indices[ptr]
+            offset = reverse_sort_indices[ptr]
+            slice_instructions.append({"offset": offset, "length": group_size})
+            last = reverse_sort_indices[ptr]
+            ptr = ptr + group_size
 
     table_partitions: list[TablePartition] = _get_table_partitions(
-        arrow_table, iceberg_table_metadata.spec(), iceberg_table_metadata.schema(), slice_instructions
+        arrow_table_grouped_by_partition, iceberg_table_metadata.spec(), iceberg_table_metadata.schema(), slice_instructions
     )
 
     return table_partitions
+
+
+def verify_table_already_sorted(arrow_table_indices: pa.Array) -> bool:
+    """
+    Check whether the input indices is a pyarrow array of [0, 1, 2 ..., length - 1] with uint64.
+
+    It is used for result of sort_indices (which returns uint64) to see whehter the raw array is already sorted.
+    """
+    try:
+        import pyarrow as pa
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+    # sanity check
+    if not arrow_table_indices.type == uint64():
+        return False
+    min_value = pc.min_max(arrow_table_indices)['min'].as_py()
+    if min_value != 0:
+        return False
+
+    if len(arrow_table_indices) == 1:
+        return True
+    differences = pc.pairwise_diff(arrow_table_indices, period=1)
+    filled_differences = pc.fill_null(differences, 1)
+    equality = pc.equal(filled_differences, pa.scalar(1, type=pa.uint64()))
+    return pc.all(equality).as_py()
 
 
 class FastAppendFiles(_MergingSnapshotProducer):
