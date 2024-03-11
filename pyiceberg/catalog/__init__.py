@@ -646,6 +646,13 @@ class Catalog(ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
+    def table_exist(self, identifier: Union[str, Identifier]) -> bool:
+        try:
+            self.load_table(identifier)
+            return True
+        except NoSuchTableError:
+            return False
+
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
