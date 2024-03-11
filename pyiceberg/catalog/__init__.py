@@ -646,7 +646,7 @@ class Catalog(ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
-    def table_exist(self, identifier: Union[str, Identifier]) -> bool:
+    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         try:
             self.load_table(identifier)
             return True

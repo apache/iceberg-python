@@ -377,15 +377,15 @@ def test_table_raises_error_on_table_not_found(catalog: InMemoryCatalog) -> None
         catalog.load_table(TEST_TABLE_IDENTIFIER)
 
 
-def test_table_exist(catalog: InMemoryCatalog) -> None:
+def test_table_exists(catalog: InMemoryCatalog) -> None:
     # Given
     given_catalog_has_a_table(catalog)
     # Then
-    assert catalog.table_exist(TEST_TABLE_IDENTIFIER)
+    assert catalog.table_exists(TEST_TABLE_IDENTIFIER)
 
 
-def test_table_exist_on_table_not_found(catalog: InMemoryCatalog) -> None:
-    assert not catalog.table_exist(TEST_TABLE_IDENTIFIER)
+def test_table_exists_on_table_not_found(catalog: InMemoryCatalog) -> None:
+    assert not catalog.table_exists(TEST_TABLE_IDENTIFIER)
 
 
 def test_drop_table(catalog: InMemoryCatalog) -> None:
