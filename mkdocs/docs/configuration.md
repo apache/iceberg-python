@@ -259,6 +259,8 @@ catalog:
 
 ## DynamoDB Catalog
 
+**Deprecated:** As of version 0.6.0, the DynamoDB Catalog is planned for deprecation in version 1.0.0.
+
 If you want to use AWS DynamoDB as the catalog, you can use the last two ways to configure the pyiceberg and refer
 [How to configure AWS credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html)
 to set your AWS account credentials locally.
