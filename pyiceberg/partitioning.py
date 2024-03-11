@@ -218,7 +218,8 @@ class PartitionSpec(IcebergBaseModel):
         for field in self.fields:
             source_type = schema.find_type(field.source_id)
             result_type = field.transform.result_type(source_type)
-            nested_fields.append(NestedField(field.field_id, field.name, result_type, required=False))
+            required = schema.find_field(field.source_id).required
+            nested_fields.append(NestedField(field.field_id, field.name, result_type, required=required))
         return StructType(*nested_fields)
 
     def partition_to_path(self, data: Record, schema: Schema) -> str:
