@@ -29,7 +29,6 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromByteStream
-from pyiceberg.table import SortOrder
 from pyiceberg.table.metadata import (
     TableMetadataUtil,
     TableMetadataV1,
@@ -37,7 +36,7 @@ from pyiceberg.table.metadata import (
     new_table_metadata,
 )
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
-from pyiceberg.table.sorting import NullOrder, SortDirection, SortField
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (

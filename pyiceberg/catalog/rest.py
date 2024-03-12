@@ -65,8 +65,8 @@ from pyiceberg.table import (
     CommitTableResponse,
     Table,
     TableIdentifier,
-    TableMetadata,
 )
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
 from pyiceberg.types import transform_dict_value_to_str
@@ -149,9 +149,12 @@ class CreateTableRequest(IcebergBaseModel):
     partition_spec: Optional[PartitionSpec] = Field(alias="partition-spec")
     write_order: Optional[SortOrder] = Field(alias="write-order")
     stage_create: bool = Field(alias="stage-create", default=False)
-    properties: Properties = Field(default_factory=dict)
+    properties: Dict[str, str] = Field(default_factory=dict)
+
     # validators
-    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
+    @field_validator('properties', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
 
 
 class RegisterTableRequest(IcebergBaseModel):

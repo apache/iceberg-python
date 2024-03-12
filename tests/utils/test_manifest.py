@@ -37,8 +37,7 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Snapshot
-from pyiceberg.table.snapshots import Operation, Summary
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
 from pyiceberg.types import IntegerType, NestedField

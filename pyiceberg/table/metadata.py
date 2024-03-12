@@ -221,7 +221,9 @@ class TableMetadataCommonFields(IcebergBaseModel):
     current-snapshot-id even if the refs map is null."""
 
     # validators
-    transform_properties_dict_value_to_str = field_validator('properties', mode='before')(transform_dict_value_to_str)
+    @field_validator('properties', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot by snapshot_id."""

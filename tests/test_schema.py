@@ -23,8 +23,8 @@ import pytest
 
 from pyiceberg import schema
 from pyiceberg.exceptions import ResolveError, ValidationError
-from pyiceberg.expressions import Accessor
 from pyiceberg.schema import (
+    Accessor,
     Schema,
     build_position_accessors,
     promote,
