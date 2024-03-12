@@ -38,8 +38,6 @@ from pyiceberg.catalog import (
     URI,
     WAREHOUSE_LOCATION,
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -68,7 +66,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
-from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 
 if TYPE_CHECKING:

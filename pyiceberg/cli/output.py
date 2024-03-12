@@ -31,7 +31,8 @@ from rich.tree import Tree
 
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table, TableMetadata
+from pyiceberg.table import Table
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.refs import SnapshotRefType
 from pyiceberg.typedef import IcebergBaseModel, Identifier, Properties
 
