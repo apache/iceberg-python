@@ -708,7 +708,7 @@ def test_create_table_transaction(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
 
-    with test_catalog.create_table_transaction(identifier, table_schema_nested) as txn:
+    with test_catalog.create_table_transaction(identifier, table_schema_nested, properties={"format-version": "1"}) as txn:
         with txn.update_schema() as update_schema:
             update_schema.add_column(path="b", field_type=IntegerType())
 

@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property, singledispatch, singledispatchmethod
+from functools import cached_property, singledispatch
 from itertools import chain
 from typing import (
     TYPE_CHECKING,
@@ -91,10 +91,9 @@ from pyiceberg.schema import (
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     SUPPORTED_TABLE_FORMAT_VERSION,
+    IncompleteTableMetadata,
     TableMetadata,
     TableMetadataUtil,
-    TableMetadataV1,
-    TableMetadataV2,
 )
 from pyiceberg.table.name_mapping import (
     NameMapping,
@@ -565,7 +564,9 @@ class _TableMetadataUpdateContext:
 
 
 @singledispatch
-def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _apply_table_update(
+    update: TableUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     """Apply a table update to the table metadata.
 
     Args:
@@ -581,7 +582,9 @@ def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, conte
 
 
 @_apply_table_update.register(AssignUUIDUpdate)
-def _(update: AssignUUIDUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: AssignUUIDUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     if update.uuid == base_metadata.table_uuid:
         return base_metadata
 
@@ -589,14 +592,29 @@ def _(update: AssignUUIDUpdate, base_metadata: TableMetadata, context: _TableMet
     return base_metadata.model_copy(update={"table_uuid": update.uuid})
 
 
+@_apply_table_update.register(SetLocationUpdate)
+def _(
+    update: SetLocationUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
+    context.add_update(update)
+    return base_metadata.model_copy(update={"location": update.location})
+
+
 @_apply_table_update.register(UpgradeFormatVersionUpdate)
-def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: UpgradeFormatVersionUpdate,
+    base_metadata: TableMetadata | IncompleteTableMetadata,
+    context: _TableMetadataUpdateContext,
+) -> TableMetadata | IncompleteTableMetadata:
     if update.format_version > SUPPORTED_TABLE_FORMAT_VERSION:
         raise ValueError(f"Unsupported table format version: {update.format_version}")
     elif update.format_version < base_metadata.format_version:
         raise ValueError(f"Cannot downgrade v{base_metadata.format_version} table to v{update.format_version}")
     elif update.format_version == base_metadata.format_version:
         return base_metadata
+
+    if isinstance(base_metadata, IncompleteTableMetadata):
+        return base_metadata.model_copy(update={"format_version": update.format_version})
 
     updated_metadata_data = copy(base_metadata.model_dump())
     updated_metadata_data["format-version"] = update.format_version
@@ -606,7 +624,9 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
 
 
 @_apply_table_update.register(SetPropertiesUpdate)
-def _(update: SetPropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: SetPropertiesUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     if len(update.updates) == 0:
         return base_metadata
 
@@ -618,7 +638,9 @@ def _(update: SetPropertiesUpdate, base_metadata: TableMetadata, context: _Table
 
 
 @_apply_table_update.register(RemovePropertiesUpdate)
-def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: RemovePropertiesUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     if len(update.removals) == 0:
         return base_metadata
 
@@ -631,7 +653,9 @@ def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _Ta
 
 
 @_apply_table_update.register(AddSchemaUpdate)
-def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: AddSchemaUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
@@ -645,7 +669,9 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
 
 
 @_apply_table_update.register(SetCurrentSchemaUpdate)
-def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: SetCurrentSchemaUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     new_schema_id = update.schema_id
     if new_schema_id == -1:
         # The last added schema should be in base_metadata.schemas at this point
@@ -665,7 +691,9 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 
 
 @_apply_table_update.register(AddPartitionSpecUpdate)
-def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: AddPartitionSpecUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     for spec in base_metadata.partition_specs:
         if spec.spec_id == update.spec.spec_id:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
@@ -674,7 +702,7 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
         update={
             "partition_specs": base_metadata.partition_specs + [update.spec],
             "last_partition_id": max(
-                max(field.field_id for field in update.spec.fields),
+                max([field.field_id for field in update.spec.fields] + [0]),
                 base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
             ),
         }
@@ -682,7 +710,9 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
 
 
 @_apply_table_update.register(SetDefaultSpecUpdate)
-def _(update: SetDefaultSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: SetDefaultSpecUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     new_spec_id = update.spec_id
     if new_spec_id == -1:
         new_spec_id = max(spec.spec_id for spec in base_metadata.partition_specs)
@@ -702,7 +732,9 @@ def _(update: SetDefaultSpecUpdate, base_metadata: TableMetadata, context: _Tabl
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
-def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: AddSnapshotUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     if len(base_metadata.schemas) == 0:
         raise ValueError("Attempting to add a snapshot before a schema is added")
     elif len(base_metadata.partition_specs) == 0:
@@ -733,7 +765,9 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
 
 
 @_apply_table_update.register(SetSnapshotRefUpdate)
-def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: SetSnapshotRefUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     snapshot_ref = SnapshotRef(
         snapshot_id=update.snapshot_id,
         snapshot_ref_type=update.type,
@@ -772,7 +806,9 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 
 
 @_apply_table_update.register(AddSortOrderUpdate)
-def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: AddSortOrderUpdate, base_metadata: TableMetadata | IncompleteTableMetadata, context: _TableMetadataUpdateContext
+) -> TableMetadata | IncompleteTableMetadata:
     context.add_update(update)
     return base_metadata.model_copy(
         update={
@@ -782,7 +818,11 @@ def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableM
 
 
 @_apply_table_update.register(SetDefaultSortOrderUpdate)
-def _(update: SetDefaultSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+def _(
+    update: SetDefaultSortOrderUpdate,
+    base_metadata: TableMetadata | IncompleteTableMetadata,
+    context: _TableMetadataUpdateContext,
+) -> TableMetadata | IncompleteTableMetadata:
     new_sort_order_id = update.sort_order_id
     if new_sort_order_id == -1:
         # The last added sort order should be in base_metadata.sort_orders at this point
@@ -820,141 +860,13 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     return new_metadata.model_copy(deep=True)
 
 
-class InitialTableMetadataConstructor:
-    table_uuid: uuid.UUID
-    format_version: int
-    schema: Schema
-    current_schema_id: int
-    spec: PartitionSpec
-    default_spec_id: int
-    sort_order: SortOrder
-    default_sort_order_id: int
-    location: str
-    properties: Dict[str, str]
-
-    @singledispatchmethod
-    def apply_table_update(self, update: TableUpdate) -> None:
-        raise NotImplementedError(f"Table Update {update} should not be part of initial table metadata construction")
-
-    @apply_table_update.register(AssignUUIDUpdate)
-    def _(self, update: AssignUUIDUpdate) -> None:
-        self.table_uuid = update.uuid
-
-    @apply_table_update.register(UpgradeFormatVersionUpdate)
-    def _(self, update: UpgradeFormatVersionUpdate) -> None:
-        self.format_version = update.format_version
-
-    @apply_table_update.register(AddSchemaUpdate)
-    def _(self, update: AddSchemaUpdate) -> None:
-        self.schema = update.schema_
-
-    @apply_table_update.register(SetCurrentSchemaUpdate)
-    def _(self, update: SetCurrentSchemaUpdate) -> None:
-        if update.schema_id == -1:
-            if self.schema is None:
-                raise ValueError("No schema has been added")
-            self.current_schema_id = self.schema.schema_id
-        else:
-            self.current_schema_id = update.schema_id
-
-    @apply_table_update.register(AddPartitionSpecUpdate)
-    def _(self, update: AddPartitionSpecUpdate) -> None:
-        self.spec = update.spec
-
-    @apply_table_update.register(SetDefaultSpecUpdate)
-    def _(self, update: SetDefaultSpecUpdate) -> None:
-        if update.spec_id == -1:
-            if self.spec is None:
-                raise ValueError("No partition spec has been added")
-            self.default_spec_id = self.spec.spec_id
-        else:
-            self.default_spec_id = update.spec_id
-
-    @apply_table_update.register(AddSortOrderUpdate)
-    def _(self, update: AddSortOrderUpdate) -> None:
-        self.sort_order = update.sort_order
-
-    @apply_table_update.register(SetDefaultSortOrderUpdate)
-    def _(self, update: SetDefaultSortOrderUpdate) -> None:
-        if update.sort_order_id == -1:
-            if self.sort_order is None:
-                raise ValueError("No sort order has been added")
-            self.default_sort_order_id = self.sort_order.order_id
-        else:
-            self.default_sort_order_id = update.sort_order_id
-
-    @apply_table_update.register(SetLocationUpdate)
-    def _(self, update: SetLocationUpdate) -> None:
-        self.location = update.location
-
-    @apply_table_update.register(SetPropertiesUpdate)
-    def _(self, update: SetPropertiesUpdate) -> None:
-        self.properties = update.updates
-
-    def ready_to_construct(self) -> bool:
-        """Return true if all fields are set.
-
-        Note fields may not be able to get from getattr if not set
-        """
-        return all(
-            hasattr(self, field) and getattr(self, field) is not None
-            for field in [
-                "table_uuid",
-                "format_version",
-                "schema",
-                "current_schema_id",
-                "spec",
-                "default_spec_id",
-                "sort_order",
-                "default_sort_order_id",
-                "location",
-                "properties",
-            ]
-        )
-
-    def construct_initial_metadata(self) -> TableMetadata:
-        if self.format_version == 1:
-            return TableMetadataV1(
-                location=self.location,
-                last_column_id=self.schema.highest_field_id,
-                current_schema_id=self.current_schema_id,
-                schema=self.schema,
-                partition_spec=[field.model_dump() for field in self.spec.fields],
-                partition_specs=[self.spec],
-                default_spec_id=self.default_spec_id,
-                sort_order=[self.sort_order],
-                default_sort_order_id=self.default_sort_order_id,
-                properties=self.properties,
-                last_partition_id=self.spec.last_assigned_field_id,
-                table_uuid=self.table_uuid,
-            )
-
-        return TableMetadataV2(
-            location=self.location,
-            schemas=[self.schema],
-            last_column_id=self.schema.highest_field_id,
-            current_schema_id=self.current_schema_id,
-            partition_specs=[self.spec],
-            default_spec_id=self.default_spec_id,
-            sort_orders=[self.sort_order],
-            default_sort_order_id=self.default_sort_order_id,
-            properties=self.properties,
-            last_partition_id=self.spec.last_assigned_field_id,
-            table_uuid=self.table_uuid,
-        )
-
-
-def construct_initial_table_metadata(updates: Tuple[TableUpdate, ...]) -> TableMetadata:
-    initial_create_update_index = 0
-    initial_metadata_constructor = InitialTableMetadataConstructor()
+def construct_table_metadata(updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+    table_metadata = IncompleteTableMetadata()
+    context = _TableMetadataUpdateContext()
     for update in updates:
-        initial_metadata_constructor.apply_table_update(update)
-        initial_create_update_index += 1
-        if initial_metadata_constructor.ready_to_construct():
-            break
-    base_metadata = initial_metadata_constructor.construct_initial_metadata()
-    updated_metadata = update_table_metadata(base_metadata, updates[initial_create_update_index:])
-    return updated_metadata
+        table_metadata = _apply_table_update(update, table_metadata, context)
+
+    return table_metadata.to_metadata()
 
 
 class TableRequirement(IcebergBaseModel):

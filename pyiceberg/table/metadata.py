@@ -287,6 +287,31 @@ def _generate_snapshot_id() -> int:
     return snapshot_id
 
 
+class IncompleteTableMetadata(TableMetadataCommonFields):
+    location: str = Field(default="")
+    format_version: Literal[1, 2] = Field(alias="format-version", default=1)
+    """An integer version number for the format. Currently, this can be 1 or 2
+        based on the spec. Implementations must throw an exception if a table’s
+        version is higher than the supported version."""
+
+    last_sequence_number: int = Field(alias="last-sequence-number", default=INITIAL_SEQUENCE_NUMBER)
+    """The table’s highest assigned sequence number, a monotonically
+    increasing long that tracks the order of snapshots in a table."""
+
+    last_column_id: int = Field(alias="last-column-id", default=-1)
+    """An integer; the highest assigned column ID for the table.
+    This is used to ensure fields are always assigned an unused ID
+    when evolving schemas."""
+
+    def to_metadata(self) -> TableMetadata:
+        metadata = copy(self.model_dump())
+        if self.format_version == 1:
+            metadata["schema"] = self.schema().model_dump()
+            metadata["partition-spec"] = [field.model_dump() for field in self.spec().fields]
+            return TableMetadataV1.model_validate(metadata)
+        return TableMetadataV2.model_validate(metadata)
+
+
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """Represents version 1 of the Table Metadata.
 

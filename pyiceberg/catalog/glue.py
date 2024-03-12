@@ -66,10 +66,10 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     Table,
-    construct_initial_table_metadata,
+    construct_table_metadata,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadata, new_table_metadata
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
@@ -485,7 +485,7 @@ class GlueCatalog(Catalog):
             return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
         except NoSuchTableError:
             # Create the table
-            updated_metadata = construct_initial_table_metadata(table_request.updates)
+            updated_metadata = construct_table_metadata(table_request.updates)
             new_metadata_version = 0
             new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
             self._write_metadata(
