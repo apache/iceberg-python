@@ -212,6 +212,9 @@ class TableProperties:
 
     METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
 
+    WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
+    WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
+
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION = 2
@@ -2569,9 +2572,21 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
+        partition_summary_limit = self._transaction.table_metadata.properties.get(
+            TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
+        )
+        if isinstance(partition_summary_limit, str):
+            raise ValueError(
+                f"WRITE_PARTITION_SUMMARY_LIMIT in table properties should be int but get str: {partition_summary_limit}"
+            )
+        ssc.set_partition_summary_limit(partition_summary_limit)
 
         for data_file in self._added_data_files:
-            ssc.add_file(data_file=data_file)
+            ssc.add_file(
+                data_file=data_file,
+                partition_spec=self._transaction.table_metadata.spec(),
+                schema=self._transaction.table_metadata.schema(),
+            )
 
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
