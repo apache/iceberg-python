@@ -128,38 +128,6 @@ class UpdateMetrics:
         self.added_eq_deletes = 0
         self.removed_eq_deletes = 0
 
-    # def added_file(file: DataFile) -> None:
-    #     self.added_file_size += file.file_size_in_bytes
-    #     if file.content == DataFileContent.DATA:
-    #         self.added_data_files += 1
-    #         self.added_records += file.record_count
-    #     elif file.content == DataFileContent.POSITION_DELETES:
-    #         self.added_delete_files += 1
-    #         self.added_pos_delete_files += 1
-    #         self.added_pos_deletes += file.record_count
-    #     elif file.content == DataFileContent.EQUALITY_DELETES:
-    #         self.added_delete_files += 1
-    #         self.added_eq_delete_files += 1
-    #         self.added_eq_deletes += file.record_count
-    #     else:
-    #         raise ValueError("Unsupported file content type: " + file.content())
-
-    # def removed_file(file: DataFile) -> None:
-    #     self.removed_file_size += file.file_size_in_bytes
-    #     if file.content == DataFileContent.DATA:
-    #         self.removed_data_files += 1
-    #         self.deleted_records += file.record_count
-    #     elif file.content == DataFileContent.POSITION_DELETES:
-    #         self.removed_delete_files += 1
-    #         self.removed_pos_delete_files += 1
-    #         self.removed_pos_deletes += file.record_count
-    #     elif file.content == DataFileContent.EQUALITY_DELETES
-    #         self.removed_delete_files += 1
-    #         self.removed_eq_delete_files += 1
-    #         self.removed_eq_deletes += file.record_count
-    #     else:
-    #         raise ValueError("Unsupported file content type: " + file.content())
-
     def add_file(self, data_file: DataFile) -> None:
         self.added_file_size += data_file.file_size_in_bytes
 
