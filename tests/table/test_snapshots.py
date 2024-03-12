@@ -156,11 +156,6 @@ def data_file() -> DataFile:
     )
 
 
-@pytest.fixture
-def data_file_with_partition() -> DataFile:
-    return DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
-
-
 def test_snapshot_summary_collector(data_file: DataFile) -> None:
     ssc = SnapshotSummaryCollector()
 
@@ -175,7 +170,9 @@ def test_snapshot_summary_collector(data_file: DataFile) -> None:
     }
 
 
-def test_snapshot_summary_collector_with_partition(data_file_with_partition: DataFile) -> None:
+def test_snapshot_summary_collector_with_partition() -> None:
+    # Given
+
     ssc = SnapshotSummaryCollector()
 
     assert ssc.build() == {}
@@ -185,19 +182,38 @@ def test_snapshot_summary_collector_with_partition(data_file_with_partition: Dat
         NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
     )
     spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name='int_field'))
-    ssc.set_partition_summary_limit(10)
-    ssc.add_file(data_file=data_file_with_partition, schema=schema, partition_spec=spec)
-    ssc.remove_file(data_file=data_file_with_partition, schema=schema, partition_spec=spec)
+    data_file_1 = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
+    data_file_2 = DataFile(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(int_field=2))
+    # When
+    ssc.add_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_2, schema=schema, partition_spec=spec)
 
+    # Then
     assert ssc.build() == {
         'added-files-size': '1234',
-        'removed-files-size': '1234',
+        'removed-files-size': '5555',
         'added-data-files': '1',
-        'deleted-data-files': '1',
+        'deleted-data-files': '2',
         'added-records': '100',
-        'deleted-records': '100',
-        'changed-partition-count': '1',
+        'deleted-records': '300',
+        'changed-partition-count': '2',
+    }
+
+    # When
+    ssc.set_partition_summary_limit(10)
+
+    # Then
+    assert ssc.build() == {
+        'added-files-size': '1234',
+        'removed-files-size': '5555',
+        'added-data-files': '1',
+        'deleted-data-files': '2',
+        'added-records': '100',
+        'deleted-records': '300',
+        'changed-partition-count': '2',
         'partitions.int_field=1': 'added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100',
+        'partitions.int_field=2': 'removed-files-size=4321,deleted-data-files=1,deleted-records=200',
     }
 
 

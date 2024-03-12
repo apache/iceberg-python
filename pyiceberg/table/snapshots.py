@@ -92,24 +92,6 @@ class UpdateMetrics:
     added_eq_deletes: int
     removed_eq_deletes: int
 
-    # def clear() {
-    #     self.added_file_size = 0
-    #     self.removed_file_size = 0
-    #     self.added_data_files = 0
-    #     self.removed_data_files = 0
-    #     self.added_eq_delete_files = 0
-    #     self.removed_eq_delete_files = 0
-    #     self.added_pos_delete_files = 0
-    #     self.removed_pos_delete_files = 0
-    #     self.added_delete_files = 0
-    #     self.removed_delete_files = 0
-    #     self.added_records = 0
-    #     self.deleted_records = 0
-    #     self.added_pos_deletes = 0
-    #     self.removed_pos_deletes = 0
-    #     self.added_eq_deletes = 0
-    #     self.removed_eq_deletes = 0
-    # }
     def __init__(self) -> None:
         self.added_file_size = 0
         self.removed_file_size = 0
@@ -303,7 +285,7 @@ class SnapshotSummaryCollector:
         self.metrics.remove_file(data_file)
         if getattr(data_file, "partition", None) is not None and len(data_file.partition.record_fields()) != 0:
             if partition_spec is None or schema is None:
-                raise ValueError("add data file with partition but without specifying the partiton_spec and schema")
+                raise ValueError("remove data file with partition but without specifying the partiton_spec and schema")
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=False, schema=schema)
 
     def update_partition_metrics(self, partition_spec: PartitionSpec, file: DataFile, is_add_file: bool, schema: Schema) -> None:
