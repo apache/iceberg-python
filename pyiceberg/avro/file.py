@@ -35,7 +35,8 @@ from typing import (
     TypeVar,
 )
 
-from pyiceberg.avro.codecs import KNOWN_CODECS, Codec
+from pyiceberg.avro.codecs import KNOWN_CODECS
+from pyiceberg.avro.codecs.codec import Codec
 from pyiceberg.avro.decoder import BinaryDecoder, new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.reader import Reader

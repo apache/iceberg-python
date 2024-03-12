@@ -69,8 +69,8 @@ from pyarrow.fs import (
 )
 from sortedcontainers import SortedList
 
-from pyiceberg.avro.resolver import ResolveError
 from pyiceberg.conversions import to_bytes
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysTrue,
     BooleanExpression,

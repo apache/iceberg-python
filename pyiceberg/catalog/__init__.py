@@ -46,8 +46,8 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     Table,
-    TableMetadata,
 )
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
