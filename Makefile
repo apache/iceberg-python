@@ -36,6 +36,9 @@ test-s3:
 	sh ./dev/run-minio.sh
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
+test-api:
+	poetry run pytest tests/ -m api -vv ${PYTEST_ARGS}
+
 test-integration:
 	docker-compose -f dev/docker-compose-integration.yml kill
 	docker-compose -f dev/docker-compose-integration.yml rm -f

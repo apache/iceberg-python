@@ -1,0 +1,31 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+
+exclude:
+- pyiceberg.table.create_mapping_from_schema # Removed import (Alias) #441
+- pyiceberg.table.Table.next_sequence_number # Table -> TableMetadata #471
+- pyiceberg.table.Table.new_snapshot_id # Table -> TableMetadata #471
+- pyiceberg.table.StaticTable.next_sequence_number # Table -> TableMetadata #471
+- pyiceberg.table.StaticTable.new_snapshot_id # Table -> TableMetadata #471
+- pyiceberg.table.Transaction.add_snapshot # removed in favor of directly using TableUpdate and TableRequirement #471
+- pyiceberg.table.Transaction.set_ref_snapshot # removed in favor of directly using TableUpdate and TableRequirement #471
+- pyiceberg.catalog.rest.TokenResponse.* # nullability change #466
+- pyiceberg.io.pyarrow.write_file # Parameter change #471
+- pyiceberg.cli.console.run # Positional parameter change #472

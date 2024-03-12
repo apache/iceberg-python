@@ -17,7 +17,7 @@
 
 from pathlib import Path
 
-import griffe  # type: ignore
+import griffe
 import mkdocs_gen_files  # type: ignore
 
 nav = mkdocs_gen_files.Nav()
