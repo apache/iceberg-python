@@ -719,3 +719,11 @@ class RestCatalog(Catalog):
             updated=parsed_response.updated,
             missing=parsed_response.missing,
         )
+
+    @retry(**_RETRY_ARGS)
+    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        response = self._session.head(
+            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
+        )
+        return response.status_code == 200
