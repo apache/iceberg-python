@@ -32,9 +32,7 @@ unsigned_long_long_array_template = cython.declare(array.array, array.array('Q',
 
 @cython.final
 cdef class CythonBinaryDecoder:
-    """Implement a BinaryDecoder that reads from an in-memory buffer.
-
-    """
+    """Implement a BinaryDecoder that reads from an in-memory buffer."""
 
     # This the data that is duplicated when the decoder is created.
     cdef unsigned char *_data

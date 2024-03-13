@@ -17,6 +17,7 @@
 import uuid
 from time import time
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -33,8 +34,6 @@ from pyiceberg.catalog import (
     PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -55,7 +54,10 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 DYNAMODB_CLIENT = "dynamodb"
 
@@ -80,7 +82,15 @@ ITEM = "Item"
 class DynamoDbCatalog(Catalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self.dynamodb = boto3.client(DYNAMODB_CLIENT)
+        session = boto3.Session(
+            profile_name=properties.get("profile_name"),
+            region_name=properties.get("region_name"),
+            botocore_session=properties.get("botocore_session"),
+            aws_access_key_id=properties.get("aws_access_key_id"),
+            aws_secret_access_key=properties.get("aws_secret_access_key"),
+            aws_session_token=properties.get("aws_session_token"),
+        )
+        self.dynamodb = session.client(DYNAMODB_CLIENT)
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
         self._ensure_catalog_table_exists_or_create()
 
@@ -119,7 +129,7 @@ class DynamoDbCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -144,6 +154,8 @@ class DynamoDbCatalog(Catalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
@@ -194,6 +206,7 @@ class DynamoDbCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         raise NotImplementedError
 

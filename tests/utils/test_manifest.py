@@ -37,8 +37,7 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Snapshot
-from pyiceberg.table.snapshots import Operation, Summary
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
 from pyiceberg.types import IntegerType, NestedField
@@ -55,14 +54,19 @@ def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, 
 
 def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     manifest = ManifestFile(
-        manifest_path=generated_manifest_entry_file, manifest_length=0, partition_spec_id=0, sequence_number=None, partitions=[]
+        manifest_path=generated_manifest_entry_file,
+        manifest_length=0,
+        partition_spec_id=0,
+        added_snapshot_id=0,
+        sequence_number=0,
+        partitions=[],
     )
     manifest_entries = manifest.fetch_manifest_entry(PyArrowFileIO())
     manifest_entry = manifest_entries[0]
 
     assert manifest_entry.status == ManifestEntryStatus.ADDED
     assert manifest_entry.snapshot_id == 8744736658442914487
-    assert manifest_entry.data_sequence_number is None
+    assert manifest_entry.data_sequence_number == 0
     assert isinstance(manifest_entry.data_file, DataFile)
 
     data_file = manifest_entry.data_file

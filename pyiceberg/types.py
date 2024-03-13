@@ -29,6 +29,7 @@ Example:
 Notes:
   - https://iceberg.apache.org/#spec/#primitive-types
 """
+
 from __future__ import annotations
 
 import re
@@ -36,6 +37,7 @@ from functools import cached_property
 from typing import (
     Any,
     ClassVar,
+    Dict,
     Literal,
     Optional,
     Tuple,
@@ -58,6 +60,14 @@ from pyiceberg.utils.singleton import Singleton
 DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
+
+
+def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
+    """Transform all values in the dictionary to string. Raise an error if any value is None."""
+    for key, value in dict.items():
+        if value is None:
+            raise ValueError(f"None type is not a supported value in properties: {key}")
+    return {k: str(v) for k, v in dict.items()}
 
 
 def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
@@ -347,6 +357,18 @@ class StructType(IcebergType):
         for field in self.fields:
             if field.field_id == field_id:
                 return field
+        return None
+
+    def field_by_name(self, name: str, case_sensitive: bool = True) -> Optional[NestedField]:
+        if case_sensitive:
+            name_lower = name.lower()
+            for field in self.fields:
+                if field.name.lower() == name_lower:
+                    return field
+        else:
+            for field in self.fields:
+                if field.name == name:
+                    return field
         return None
 
     def __str__(self) -> str:

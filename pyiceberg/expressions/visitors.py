@@ -54,7 +54,6 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     BoundTerm,
     BoundUnaryPredicate,
-    L,
     Not,
     Or,
     UnboundPredicate,
@@ -63,7 +62,7 @@ from pyiceberg.expressions.literals import Literal
 from pyiceberg.manifest import DataFile, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import EMPTY_DICT, StructProtocol
+from pyiceberg.typedef import EMPTY_DICT, L, StructProtocol
 from pyiceberg.types import (
     DoubleType,
     FloatType,
@@ -892,8 +891,13 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     def visit_bound_predicate(self, predicate: BoundPredicate[L]) -> BooleanExpression:
         file_column_name = self.file_schema.find_column_name(predicate.term.ref().field.field_id)
 
-        if not file_column_name:
-            raise ValueError(f"Not found in file schema: {file_column_name}")
+        if file_column_name is None:
+            # In the case of schema evolution, the column might not be present
+            # in the file schema when reading older data
+            if isinstance(predicate, BoundIsNull):
+                return AlwaysTrue()
+            else:
+                return AlwaysFalse()
 
         if isinstance(predicate, BoundUnaryPredicate):
             return predicate.as_unbound(file_column_name)

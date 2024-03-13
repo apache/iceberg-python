@@ -30,10 +30,12 @@ For the development, Poetry is used for packing and dependency management. You c
 pip install poetry
 ```
 
-If you have an older version of pip and virtualenv you need to update these:
+Make sure you're using an up-to-date environment from venv
 
 ```bash
 pip install --upgrade virtualenv pip
+python -m venv ./venv
+source ./venv/bin/activate
 ```
 
 To get started, you can run `make install`, which installs Poetry and all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --no-dev`.
@@ -55,6 +57,22 @@ To set up IDEA with Poetry ([also on Loom](https://www.loom.com/share/6d36464d45
 For IDEA ≤2021 you need to install the [Poetry integration as a plugin](https://plugins.jetbrains.com/plugin/14307-poetry/).
 
 Now you're set using Poetry, and all the tests will run in Poetry, and you'll have syntax highlighting in the pyproject.toml to indicate stale dependencies.
+
+## Installation from source
+
+Clone the repository for local development:
+
+```sh
+git clone https://github.com/apache/iceberg-python.git
+cd iceberg-python
+pip3 install -e ".[s3fs,hive]"
+```
+
+Install it directly for GitHub (not recommended), but sometimes handy:
+
+```
+pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[s3fs]"
+```
 
 ## Linting
 

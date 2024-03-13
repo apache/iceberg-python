@@ -237,6 +237,19 @@ def test_negative_value_to_human_string(negative_value: int, time_transform: Tim
 
 
 @pytest.mark.parametrize(
+    "zero_value,time_transform,expected",
+    [
+        (0, YearTransform(), "1970"),
+        (0, MonthTransform(), "1970-01"),
+        (0, DayTransform(), "1970-01-01"),
+        (0, HourTransform(), "1970-01-01-00"),
+    ],
+)
+def test_zero_value_to_human_string(zero_value: int, time_transform: TimeTransform[Any], expected: str) -> None:
+    assert time_transform.to_human_string(TimestampType(), zero_value) == expected
+
+
+@pytest.mark.parametrize(
     "type_var",
     [
         DateType(),
@@ -274,6 +287,12 @@ def test_time_methods(type_var: PrimitiveType) -> None:
         (MonthTransform(), TimestamptzType(), -1, -1),
         (DayTransform(), TimestampType(), 1512151975038194, 17501),
         (DayTransform(), TimestampType(), -1, -1),
+        (YearTransform(), DateType(), 0, 0),
+        (MonthTransform(), DateType(), 0, 0),
+        (DayTransform(), DateType(), 0, 0),
+        (YearTransform(), TimestampType(), 0, 0),
+        (MonthTransform(), TimestampType(), 0, 0),
+        (DayTransform(), TimestampType(), 0, 0),
     ],
 )
 def test_time_apply_method(transform: TimeTransform[Any], type_var: PrimitiveType, value: int, expected: int) -> None:
@@ -291,6 +310,7 @@ def test_hour_method(type_var: PrimitiveType) -> None:
     assert HourTransform().can_transform(type_var)
     assert HourTransform().result_type(type_var) == IntegerType()
     assert HourTransform().transform(type_var)(1512151975038194) == 420042  # type: ignore
+    assert HourTransform().transform(type_var)(0) == 0  # type: ignore
     assert HourTransform().dedup_name == "time"
 
 
@@ -362,7 +382,7 @@ def test_identity_method(type_var: PrimitiveType) -> None:
 @pytest.mark.parametrize("type_var", [IntegerType(), LongType()])
 @pytest.mark.parametrize(
     "input_var,expected",
-    [(1, 0), (5, 0), (9, 0), (10, 10), (11, 10), (-1, -10), (-10, -10), (-12, -20)],
+    [(1, 0), (5, 0), (9, 0), (10, 10), (11, 10), (-1, -10), (-10, -10), (-12, -20), (0, 0)],
 )
 def test_truncate_integer(type_var: PrimitiveType, input_var: int, expected: int) -> None:
     trunc = TruncateTransform(10)  # type: ignore
@@ -377,6 +397,7 @@ def test_truncate_integer(type_var: PrimitiveType, input_var: int, expected: int
         (Decimal("12.29"), Decimal("12.20")),
         (Decimal("0.05"), Decimal("0.00")),
         (Decimal("-0.05"), Decimal("-0.10")),
+        (Decimal("0.0"), Decimal("0.0")),
     ],
 )
 def test_truncate_decimal(input_var: Decimal, expected: Decimal) -> None:
@@ -384,7 +405,7 @@ def test_truncate_decimal(input_var: Decimal, expected: Decimal) -> None:
     assert trunc.transform(DecimalType(9, 2))(input_var) == expected
 
 
-@pytest.mark.parametrize("input_var,expected", [("abcdefg", "abcde"), ("abc", "abc")])
+@pytest.mark.parametrize("input_var,expected", [("abcdefg", "abcde"), ("abc", "abc"), ("", "")])
 def test_truncate_string(input_var: str, expected: str) -> None:
     trunc = TruncateTransform(5)  # type: ignore
     assert trunc.transform(StringType())(input_var) == expected
@@ -724,9 +745,7 @@ def test_projection_day_human(bound_reference_date: BoundReference[int]) -> None
 
     assert DayTransform().project(
         "dt", BoundGreaterThanOrEqual(term=bound_reference_date, literal=date_literal)
-    ) == GreaterThanOrEqual(
-        term="dt", literal=17532
-    )  # >= 2018, 1, 1
+    ) == GreaterThanOrEqual(term="dt", literal=17532)  # >= 2018, 1, 1
 
     assert DayTransform().project("dt", BoundGreaterThan(term=bound_reference_date, literal=date_literal)) == GreaterThanOrEqual(
         term="dt", literal=17533

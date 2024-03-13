@@ -15,9 +15,12 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
-from typing import Generator, List
+import time
+from typing import Any, Dict, Generator, List
+from uuid import uuid4
 
 import boto3
+import pyarrow as pa
 import pytest
 from botocore.exceptions import ClientError
 
@@ -30,7 +33,9 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType
 from tests.conftest import clean_up, get_bucket_name, get_s3_path
 
 # The number of tables/databases used in list_table/namespace test
@@ -51,8 +56,62 @@ def fixture_test_catalog() -> Generator[Catalog, None, None]:
     clean_up(test_catalog)
 
 
+class AthenaQueryHelper:
+    _athena_client: boto3.client
+    _s3_resource: boto3.resource
+    _output_bucket: str
+    _output_path: str
+
+    def __init__(self) -> None:
+        self._s3_resource = boto3.resource("s3")
+        self._athena_client = boto3.client("athena")
+        self._output_bucket = get_bucket_name()
+        self._output_path = f"athena_results_{uuid4()}"
+
+    def get_query_results(self, query: str) -> List[Dict[str, Any]]:
+        query_execution_id = self._athena_client.start_query_execution(
+            QueryString=query, ResultConfiguration={"OutputLocation": f"s3://{self._output_bucket}/{self._output_path}"}
+        )["QueryExecutionId"]
+
+        while True:
+            result = self._athena_client.get_query_execution(QueryExecutionId=query_execution_id)["QueryExecution"]["Status"]
+            query_status = result["State"]
+            assert query_status not in [
+                "FAILED",
+                "CANCELLED",
+            ], f"""
+   Athena query with the string failed or was cancelled:
+   Query: {query}
+   Status: {query_status}
+   Reason: {result["StateChangeReason"]}"""
+
+            if query_status not in ["QUEUED", "RUNNING"]:
+                break
+            time.sleep(0.5)
+
+        # No pagination for now, assume that we are not doing large queries
+        return self._athena_client.get_query_results(QueryExecutionId=query_execution_id)["ResultSet"]["Rows"]
+
+    def clean_up(self) -> None:
+        bucket = self._s3_resource.Bucket(self._output_bucket)
+        for obj in bucket.objects.filter(Prefix=f"{self._output_path}/"):
+            self._s3_resource.Object(bucket.name, obj.key).delete()
+
+
+@pytest.fixture(name="athena", scope="module")
+def fixture_athena_helper() -> Generator[AthenaQueryHelper, None, None]:
+    query_helper = AthenaQueryHelper()
+    yield query_helper
+    query_helper.clean_up()
+
+
 def test_create_table(
-    test_catalog: Catalog, s3: boto3.client, table_schema_nested: Schema, table_name: str, database_name: str
+    test_catalog: Catalog,
+    s3: boto3.client,
+    table_schema_nested: Schema,
+    table_name: str,
+    database_name: str,
+    athena: AthenaQueryHelper,
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
@@ -61,6 +120,49 @@ def test_create_table(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {
+                    "foo": "foo_val",
+                    "bar": 1,
+                    "baz": False,
+                    "qux": ["x", "y"],
+                    "quux": {"key": {"subkey": 2}},
+                    "location": [{"latitude": 1.1}],
+                    "person": {"name": "some_name", "age": 23},
+                }
+            ],
+            schema=schema_to_pyarrow(table.schema()),
+        ),
+    )
+
+    assert athena.get_query_results(f'SELECT * FROM "{database_name}"."{table_name}"') == [
+        {
+            "Data": [
+                {"VarCharValue": "foo"},
+                {"VarCharValue": "bar"},
+                {"VarCharValue": "baz"},
+                {"VarCharValue": "qux"},
+                {"VarCharValue": "quux"},
+                {"VarCharValue": "location"},
+                {"VarCharValue": "person"},
+            ]
+        },
+        {
+            "Data": [
+                {"VarCharValue": "foo_val"},
+                {"VarCharValue": "1"},
+                {"VarCharValue": "false"},
+                {"VarCharValue": "[x, y]"},
+                {"VarCharValue": "{key={subkey=2}}"},
+                {"VarCharValue": "[{latitude=1.1, longitude=null}]"},
+                {"VarCharValue": "{name=some_name, age=23}"},
+            ]
+        },
+    ]
 
 
 def test_create_table_with_invalid_location(table_schema_nested: Schema, table_name: str, database_name: str) -> None:
@@ -82,6 +184,7 @@ def test_create_table_with_default_location(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_nested: Schema, table_name: str) -> None:
@@ -97,6 +200,15 @@ def test_create_duplicated_table(test_catalog: Catalog, table_schema_nested: Sch
         test_catalog.create_table((database_name, table_name), table_schema_nested)
 
 
+def test_create_table_if_not_exists_duplicated_table(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    test_catalog.create_namespace(database_name)
+    table1 = test_catalog.create_table((database_name, table_name), table_schema_nested)
+    table2 = test_catalog.create_table_if_not_exists((database_name, table_name), table_schema_nested)
+    assert table1.identifier == table2.identifier
+
+
 def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
@@ -105,6 +217,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     assert table.identifier == loaded_table.identifier
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
@@ -126,6 +239,7 @@ def test_rename_table(
     new_table_name = f"rename-{table_name}"
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     assert table.identifier == (CATALOG_NAME,) + identifier
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
@@ -261,3 +375,104 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+def test_commit_table_update_schema(
+    test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str, athena: AthenaQueryHelper
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    original_table_metadata = table.metadata
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert original_table_metadata.current_schema_id == 0
+
+    assert athena.get_query_results(f'SELECT * FROM "{database_name}"."{table_name}"') == [
+        {
+            "Data": [
+                {"VarCharValue": "foo"},
+                {"VarCharValue": "bar"},
+                {"VarCharValue": "baz"},
+                {"VarCharValue": "qux"},
+                {"VarCharValue": "quux"},
+                {"VarCharValue": "location"},
+                {"VarCharValue": "person"},
+            ]
+        }
+    ]
+
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.current_schema_id == 1
+    assert len(updated_table_metadata.schemas) == 2
+    new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
+    assert new_schema
+    assert new_schema == update._apply()
+    assert new_schema.find_field("b").field_type == IntegerType()
+
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {
+                    "foo": "foo_val",
+                    "bar": 1,
+                    "location": [{"latitude": 1.1}],
+                    "person": {"name": "some_name", "age": 23},
+                    "b": 2,
+                }
+            ],
+            schema=schema_to_pyarrow(new_schema),
+        ),
+    )
+
+    assert athena.get_query_results(f'SELECT * FROM "{database_name}"."{table_name}"') == [
+        {
+            "Data": [
+                {"VarCharValue": "foo"},
+                {"VarCharValue": "bar"},
+                {"VarCharValue": "baz"},
+                {"VarCharValue": "qux"},
+                {"VarCharValue": "quux"},
+                {"VarCharValue": "location"},
+                {"VarCharValue": "person"},
+                {"VarCharValue": "b"},
+            ]
+        },
+        {
+            "Data": [
+                {"VarCharValue": "foo_val"},
+                {"VarCharValue": "1"},
+                {},
+                {"VarCharValue": "[]"},
+                {"VarCharValue": "{}"},
+                {"VarCharValue": "[{latitude=1.1, longitude=null}]"},
+                {"VarCharValue": "{name=some_name, age=23}"},
+                {"VarCharValue": "2"},
+            ]
+        },
+    ]
+
+
+def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
+
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    transaction = table.transaction()
+    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+    transaction.remove_properties("test_b")
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}

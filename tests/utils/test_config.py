@@ -41,6 +41,20 @@ def test_from_environment_variables_uppercase() -> None:
     assert Config().get_catalog_config("PRODUCTION") == {"uri": "https://service.io/api"}
 
 
+@mock.patch.dict(
+    os.environ,
+    {
+        "PYICEBERG_CATALOG__PRODUCTION__S3__REGION": "eu-north-1",
+        "PYICEBERG_CATALOG__PRODUCTION__S3__ACCESS_KEY_ID": "username",
+    },
+)
+def test_fix_nested_objects_from_environment_variables() -> None:
+    assert Config().get_catalog_config("PRODUCTION") == {
+        's3.region': 'eu-north-1',
+        's3.access-key-id': 'username',
+    }
+
+
 def test_from_configuration_files(tmp_path_factory: pytest.TempPathFactory) -> None:
     config_path = str(tmp_path_factory.mktemp("config"))
     with open(f"{config_path}/.pyiceberg.yaml", "w", encoding=UTF8) as file:
@@ -62,3 +76,20 @@ def test_merge_config() -> None:
     rhs: RecursiveDict = {"common_key": "xyz789"}
     result = merge_config(lhs, rhs)
     assert result["common_key"] == rhs["common_key"]
+
+
+def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempPathFactory) -> None:
+    config_path = str(tmp_path_factory.mktemp("config"))
+    with open(f"{config_path}/.pyiceberg.yaml", "w", encoding=UTF8) as file:
+        yaml_str = as_document({"max-workers": "4", "legacy-current-snapshot-id": "True"}).as_yaml()
+        file.write(yaml_str)
+
+    os.environ["PYICEBERG_HOME"] = config_path
+    with pytest.raises(ValueError):
+        Config().get_bool("max-workers")
+
+    with pytest.raises(ValueError):
+        Config().get_int("legacy-current-snapshot-id")
+
+    assert Config().get_bool("legacy-current-snapshot-id")
+    assert Config().get_int("max-workers") == 4

@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import time
 from enum import Enum
 from typing import (
     Any,
@@ -138,7 +139,7 @@ class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
     sequence_number: Optional[int] = Field(alias="sequence-number", default=None)
-    timestamp_ms: int = Field(alias="timestamp-ms")
+    timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: Optional[str] = Field(
         alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
     )
@@ -277,23 +278,30 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
     }:
         summary[prop] = '0'
 
-    if value := previous_summary.get(TOTAL_DATA_FILES):
-        summary[DELETED_DATA_FILES] = value
-    if value := previous_summary.get(TOTAL_DELETE_FILES):
-        summary[REMOVED_DELETE_FILES] = value
-    if value := previous_summary.get(TOTAL_RECORDS):
-        summary[DELETED_RECORDS] = value
-    if value := previous_summary.get(TOTAL_FILE_SIZE):
-        summary[REMOVED_FILE_SIZE] = value
-    if value := previous_summary.get(TOTAL_POSITION_DELETES):
-        summary[REMOVED_POSITION_DELETES] = value
-    if value := previous_summary.get(TOTAL_EQUALITY_DELETES):
-        summary[REMOVED_EQUALITY_DELETES] = value
+    def get_prop(prop: str) -> int:
+        value = previous_summary.get(prop) or '0'
+        try:
+            return int(value)
+        except ValueError as e:
+            raise ValueError(f"Could not parse summary property {prop} to an int: {value}") from e
+
+    if value := get_prop(TOTAL_DATA_FILES):
+        summary[DELETED_DATA_FILES] = str(value)
+    if value := get_prop(TOTAL_DELETE_FILES):
+        summary[REMOVED_DELETE_FILES] = str(value)
+    if value := get_prop(TOTAL_RECORDS):
+        summary[DELETED_RECORDS] = str(value)
+    if value := get_prop(TOTAL_FILE_SIZE):
+        summary[REMOVED_FILE_SIZE] = str(value)
+    if value := get_prop(TOTAL_POSITION_DELETES):
+        summary[REMOVED_POSITION_DELETES] = str(value)
+    if value := get_prop(TOTAL_EQUALITY_DELETES):
+        summary[REMOVED_EQUALITY_DELETES] = str(value)
 
     return summary
 
 
-def _update_snapshot_summaries(
+def update_snapshot_summaries(
     summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:

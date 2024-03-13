@@ -18,11 +18,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -34,7 +36,7 @@ from typing import (
     cast,
 )
 
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInstalledError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInstalledError, TableAlreadyExistsError
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -44,8 +46,8 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     Table,
-    TableMetadata,
 )
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -54,6 +56,9 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +78,17 @@ METADATA = "metadata"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
+
+TABLE_METADATA_FILE_NAME_REGEX = re.compile(
+    r"""
+    (\d+)              # version number
+    -                  # separator
+    ([\w-]{36})        # UUID (36 characters, including hyphens)
+    (?:\.\w+)?         # optional codec name
+    \.metadata\.json   # file extension
+    """,
+    re.X,
+)
 
 
 class CatalogType(Enum):
@@ -122,7 +138,9 @@ def load_sql(name: str, conf: Properties) -> Catalog:
 
         return SqlCatalog(name, **conf)
     except ImportError as exc:
-        raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-postgres]'") from exc
+        raise NotInstalledError(
+            "SQLAlchemy support not installed: pip install 'pyiceberg[sql-postgres]' or pip install 'pyiceberg[sql-sqlite]'"
+        ) from exc
 
 
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
@@ -274,7 +292,7 @@ class Catalog(ABC):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -296,6 +314,34 @@ class Catalog(ABC):
         Raises:
             TableAlreadyExistsError: If a table with the name already exists.
         """
+
+    def create_table_if_not_exists(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        """Create a table if it does not exist.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            Table: the created table instance if the table does not exist, else the existing
+            table instance.
+        """
+        try:
+            return self.create_table(identifier, schema, location, partition_spec, sort_order, properties)
+        except TableAlreadyExistsError:
+            return self.load_table(identifier)
 
     @abstractmethod
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -367,6 +413,8 @@ class Catalog(ABC):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
+            CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
 
     @abstractmethod
@@ -498,6 +546,22 @@ class Catalog(ABC):
             if overlap:
                 raise ValueError(f"Updates and deletes have an overlap: {overlap}")
 
+    @staticmethod
+    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
+        if isinstance(schema, Schema):
+            return schema
+        try:
+            import pyarrow as pa
+
+            from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
+
+            if isinstance(schema, pa.Schema):
+                schema: Schema = visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())  # type: ignore
+                return schema
+        except ModuleNotFoundError:
+            pass
+        raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
+
     def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
         if not location:
             return self._get_default_warehouse_location(database_name, table_name)
@@ -587,8 +651,38 @@ class Catalog(ABC):
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
 
     @staticmethod
-    def _get_metadata_location(location: str) -> str:
-        return f"{location}/metadata/00000-{uuid.uuid4()}.metadata.json"
+    def _get_metadata_location(location: str, new_version: int = 0) -> str:
+        if new_version < 0:
+            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
+        version_str = f"{new_version:05d}"
+        return f"{location}/metadata/{version_str}-{uuid.uuid4()}.metadata.json"
+
+    @staticmethod
+    def _parse_metadata_version(metadata_location: str) -> int:
+        """Parse the version from the metadata location.
+
+        The version is the first part of the file name, before the first dash.
+        For example, the version of the metadata file
+        `s3://bucket/db/tb/metadata/00001-6c97e413-d51b-4538-ac70-12fe2a85cb83.metadata.json`
+        is 1.
+        If the path does not comply with the pattern, the version is defaulted to be -1, ensuring
+        that the next metadata file is treated as having version 0.
+
+        Args:
+            metadata_location (str): The location of the metadata file.
+
+        Returns:
+            int: The version of the metadata file. -1 if the file name does not have valid version string
+        """
+        file_name = metadata_location.split("/")[-1]
+        if file_name_match := TABLE_METADATA_FILE_NAME_REGEX.fullmatch(file_name):
+            try:
+                uuid.UUID(file_name_match.group(2))
+            except ValueError:
+                return -1
+            return int(file_name_match.group(1))
+        else:
+            return -1
 
     def _get_updated_props_and_update_summary(
         self, current_properties: Properties, removals: Optional[Set[str]], updates: Properties

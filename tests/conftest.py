@@ -24,11 +24,14 @@ In the case where the fixture must be used in a pytest.mark.parametrize decorato
 and the built-in pytest fixture request should be used as an additional argument in the function. The fixture can then be
 retrieved using `request.getfixturevalue(fixture_name)`.
 """
+
 import os
 import re
+import socket
 import string
 import uuid
 from datetime import datetime
+from pathlib import Path
 from random import choice
 from tempfile import TemporaryDirectory
 from typing import (
@@ -38,17 +41,15 @@ from typing import (
     Generator,
     List,
     Optional,
-    Union,
 )
-from urllib.parse import urlparse
 
 import boto3
 import pytest
-from moto import mock_dynamodb, mock_glue
-from moto.server import ThreadedMotoServer  # type: ignore
+from moto import mock_aws
+from pyspark.sql import SparkSession
 
 from pyiceberg import schema
-from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
@@ -56,8 +57,6 @@ from pyiceberg.io import (
     GCS_PROJECT_ID,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
-    OutputFile,
-    OutputStream,
     fsspec,
     load_file_io,
 )
@@ -84,9 +83,10 @@ from pyiceberg.types import (
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
-    from pytest import ExitCode, Session
+    import pyarrow as pa
+    from moto.server import ThreadedMotoServer  # type: ignore
 
-    from pyiceberg.io.pyarrow import PyArrowFile, PyArrowFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
 def pytest_collection_modifyitems(items: List[pytest.Item]) -> None:
@@ -262,6 +262,182 @@ def table_schema_nested_with_struct_key_map() -> Schema:
         NestedField(field_id=29, name="double", field_type=DoubleType(), required=True),
         schema_id=1,
         identifier_field_ids=[1],
+    )
+
+
+@pytest.fixture(scope="session")
+def pyarrow_schema_simple_without_ids() -> "pa.Schema":
+    import pyarrow as pa
+
+    return pa.schema([
+        pa.field('foo', pa.string(), nullable=True),
+        pa.field('bar', pa.int32(), nullable=False),
+        pa.field('baz', pa.bool_(), nullable=True),
+    ])
+
+
+@pytest.fixture(scope="session")
+def pyarrow_schema_nested_without_ids() -> "pa.Schema":
+    import pyarrow as pa
+
+    return pa.schema([
+        pa.field('foo', pa.string(), nullable=False),
+        pa.field('bar', pa.int32(), nullable=False),
+        pa.field('baz', pa.bool_(), nullable=True),
+        pa.field('qux', pa.list_(pa.string()), nullable=False),
+        pa.field(
+            'quux',
+            pa.map_(
+                pa.string(),
+                pa.map_(pa.string(), pa.int32()),
+            ),
+            nullable=False,
+        ),
+        pa.field(
+            'location',
+            pa.list_(
+                pa.struct([
+                    pa.field('latitude', pa.float32(), nullable=False),
+                    pa.field('longitude', pa.float32(), nullable=False),
+                ]),
+            ),
+            nullable=False,
+        ),
+        pa.field(
+            'person',
+            pa.struct([
+                pa.field('name', pa.string(), nullable=True),
+                pa.field('age', pa.int32(), nullable=False),
+            ]),
+            nullable=True,
+        ),
+    ])
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_simple() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_simple_no_ids() -> Schema:
+    return Schema(
+        NestedField(field_id=-1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=-1, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=-1, name="baz", field_type=BooleanType(), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_table_schema_simple() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[],
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_nested() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=4,
+            name="qux",
+            field_type=ListType(element_id=5, element_type=StringType(), element_required=False),
+            required=True,
+        ),
+        NestedField(
+            field_id=6,
+            name="quux",
+            field_type=MapType(
+                key_id=7,
+                key_type=StringType(),
+                value_id=8,
+                value_type=MapType(key_id=9, key_type=StringType(), value_id=10, value_type=IntegerType(), value_required=False),
+                value_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=11,
+            name="location",
+            field_type=ListType(
+                element_id=12,
+                element_type=StructType(
+                    NestedField(field_id=13, name="latitude", field_type=FloatType(), required=True),
+                    NestedField(field_id=14, name="longitude", field_type=FloatType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=15,
+            name="person",
+            field_type=StructType(
+                NestedField(field_id=16, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=17, name="age", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_nested_no_ids() -> Schema:
+    return Schema(
+        NestedField(field_id=-1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=-1, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=-1, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=-1,
+            name="qux",
+            field_type=ListType(element_id=-1, element_type=StringType(), element_required=False),
+            required=True,
+        ),
+        NestedField(
+            field_id=-1,
+            name="quux",
+            field_type=MapType(
+                key_id=-1,
+                key_type=StringType(),
+                value_id=-1,
+                value_type=MapType(key_id=-1, key_type=StringType(), value_id=-1, value_type=IntegerType(), value_required=False),
+                value_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=-1,
+            name="location",
+            field_type=ListType(
+                element_id=-1,
+                element_type=StructType(
+                    NestedField(field_id=-1, name="latitude", field_type=FloatType(), required=True),
+                    NestedField(field_id=-1, name="longitude", field_type=FloatType(), required=True),
+                ),
+                element_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=-1,
+            name="person",
+            field_type=StructType(
+                NestedField(field_id=-1, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=-1, name="age", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
     )
 
 
@@ -716,7 +892,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
             "file_size_in_bytes": 1265950,
             "block_size_in_bytes": 67108864,
@@ -1278,40 +1454,6 @@ def simple_map() -> MapType:
     return MapType(key_id=19, key_type=StringType(), value_id=25, value_type=DoubleType(), value_required=False)
 
 
-class LocalOutputFile(OutputFile):
-    """An OutputFile implementation for local files (for test use only)."""
-
-    def __init__(self, location: str) -> None:
-        parsed_location = urlparse(location)  # Create a ParseResult from the uri
-        if (
-            parsed_location.scheme and parsed_location.scheme != "file"
-        ):  # Validate that an uri is provided with a scheme of `file`
-            raise ValueError("LocalOutputFile location must have a scheme of `file`")
-        elif parsed_location.netloc:
-            raise ValueError(f"Network location is not allowed for LocalOutputFile: {parsed_location.netloc}")
-
-        super().__init__(location=location)
-        self._path = parsed_location.path
-
-    def __len__(self) -> int:
-        """Return the length of an instance of the LocalOutputFile class."""
-        return os.path.getsize(self._path)
-
-    def exists(self) -> bool:
-        return os.path.exists(self._path)
-
-    def to_input_file(self) -> "PyArrowFile":
-        from pyiceberg.io.pyarrow import PyArrowFileIO
-
-        return PyArrowFileIO().new_input(location=self.location)
-
-    def create(self, overwrite: bool = False) -> OutputStream:
-        output_file = open(self._path, "wb" if overwrite else "xb")
-        if not issubclass(type(output_file), OutputStream):
-            raise TypeError("Object returned from LocalOutputFile.create(...) does not match the OutputStream protocol.")
-        return output_file
-
-
 @pytest.fixture(scope="session")
 def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
@@ -1586,46 +1728,45 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
     os.environ.pop("AWS_DEFAULT_REGION")
 
 
-MOTO_SERVER = ThreadedMotoServer(port=5000)
+@pytest.fixture(scope="session")
+def moto_server() -> "ThreadedMotoServer":
+    from moto.server import ThreadedMotoServer
 
+    server = ThreadedMotoServer(ip_address="localhost", port=5001)
 
-def pytest_sessionfinish(
-    session: "Session",
-    exitstatus: Union[int, "ExitCode"],
-) -> None:
-    if MOTO_SERVER._server_ready:
-        MOTO_SERVER.stop()
+    # this will throw an exception if the port is already in use
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((server._ip_address, server._port))
+
+    server.start()
+    yield server
+    server.stop()
 
 
 @pytest.fixture(scope="session")
-def moto_server() -> ThreadedMotoServer:
-    MOTO_SERVER.start()
-    return MOTO_SERVER
-
-
-@pytest.fixture(scope="session")
-def moto_endpoint_url(moto_server: ThreadedMotoServer) -> str:
+def moto_endpoint_url(moto_server: "ThreadedMotoServer") -> str:
     _url = f"http://{moto_server._ip_address}:{moto_server._port}"
     return _url
 
 
-@pytest.fixture(name="_s3")
+@pytest.fixture(name="_s3", scope="function")
 def fixture_s3(_aws_credentials: None, moto_endpoint_url: str) -> Generator[boto3.client, None, None]:
     """Yield a mocked S3 client."""
-    yield boto3.client("s3", region_name="us-east-1", endpoint_url=moto_endpoint_url)
+    with mock_aws():
+        yield boto3.client("s3", region_name="us-east-1", endpoint_url=moto_endpoint_url)
 
 
 @pytest.fixture(name="_glue")
 def fixture_glue(_aws_credentials: None) -> Generator[boto3.client, None, None]:
     """Yield a mocked glue client."""
-    with mock_glue():
+    with mock_aws():
         yield boto3.client("glue", region_name="us-east-1")
 
 
 @pytest.fixture(name="_dynamodb")
 def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, None]:
     """Yield a mocked DynamoDB client."""
-    with mock_dynamodb():
+    with mock_aws():
         yield boto3.client("dynamodb", region_name="us-east-1")
 
 
@@ -1687,7 +1828,7 @@ BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
     my_iceberg_table-[a-z]{20}/metadata/
-    00000-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
+    [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
 
@@ -1717,7 +1858,8 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
 
 @pytest.fixture(name="s3", scope="module")
 def fixture_s3_client() -> boto3.client:
-    yield boto3.client("s3")
+    with mock_aws():
+        yield boto3.client("s3")
 
 
 def clean_up(test_catalog: Catalog) -> None:
@@ -1752,6 +1894,11 @@ def example_task(data_file: str) -> FileScanTask:
     )
 
 
+@pytest.fixture(scope="session")
+def warehouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("test_sql")
+
+
 @pytest.fixture
 def table_v1(example_table_metadata_v1: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV1(**example_table_metadata_v1)
@@ -1779,3 +1926,53 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 @pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture(scope="session")
+def session_catalog() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+@pytest.fixture(scope="session")
+def spark() -> SparkSession:
+    import importlib.metadata
+    import os
+
+    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
+    scala_version = "2.12"
+    iceberg_version = "1.4.3"
+
+    os.environ["PYSPARK_SUBMIT_ARGS"] = (
+        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
+    )
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
+
+    spark = (
+        SparkSession.builder.appName("PyIceberg integration test")
+        .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.cache-enabled", "false")
+        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
+        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
+        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
+        .config("spark.sql.defaultCatalog", "integration")
+        .getOrCreate()
+    )
+
+    return spark

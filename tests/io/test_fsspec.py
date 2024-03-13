@@ -15,16 +15,39 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
+import tempfile
 import uuid
 
 import pytest
 from botocore.awsrequest import AWSRequest
+from fsspec.implementations.local import LocalFileSystem
 from requests_mock import Mocker
 
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, s3v4_rest_signer
 from pyiceberg.io.pyarrow import PyArrowFileIO
+
+
+def test_fsspec_infer_local_fs_from_path(fsspec_fileio: FsspecFileIO) -> None:
+    """Test path with `file` scheme and no scheme both use LocalFileSystem"""
+    assert isinstance(fsspec_fileio.new_output("file://tmp/warehouse")._fs, LocalFileSystem)
+    assert isinstance(fsspec_fileio.new_output("/tmp/warehouse")._fs, LocalFileSystem)
+
+
+def test_fsspec_local_fs_can_create_path_without_parent_dir(fsspec_fileio: FsspecFileIO) -> None:
+    """Test LocalFileSystem can create path without first creating the parent directories"""
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        file_path = f"{tmpdirname}/foo/bar/baz.txt"
+        output_file = fsspec_fileio.new_output(file_path)
+        parent_path = os.path.dirname(file_path)
+        assert output_file._fs.exists(parent_path) is False
+        try:
+            with output_file.create() as f:
+                f.write(b"foo")
+        except Exception:
+            pytest.fail("Failed to write to file without parent directory")
 
 
 @pytest.mark.s3

@@ -15,9 +15,11 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import getpass
+import socket
 import time
 from types import TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -33,10 +35,17 @@ from hive_metastore.ttypes import (
     AlreadyExistsException,
     FieldSchema,
     InvalidOperationException,
+    LockComponent,
+    LockLevel,
+    LockRequest,
+    LockResponse,
+    LockState,
+    LockType,
     MetaException,
     NoSuchObjectException,
     SerDeInfo,
     StorageDescriptor,
+    UnlockRequest,
 )
 from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
@@ -50,11 +59,10 @@ from pyiceberg.catalog import (
     METADATA_LOCATION,
     TABLE_TYPE,
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -66,10 +74,10 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, TableProperties, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -90,6 +98,10 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
 
 # Replace by visitor
 hive_types = {
@@ -116,17 +128,21 @@ class _HiveClient:
 
     _transport: TTransport
     _client: Client
+    _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, ugi: Optional[str] = None):
         url_parts = urlparse(uri)
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
         self._transport = TTransport.TBufferedTransport(transport)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
         self._client = Client(protocol)
+        self._ugi = ugi.split(':') if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
+        if self._ugi:
+            self._client.set_ugi(*self._ugi)
         return self._client
 
     def __exit__(
@@ -150,6 +166,7 @@ PROP_EXTERNAL = "EXTERNAL"
 PROP_TABLE_TYPE = "table_type"
 PROP_METADATA_LOCATION = "metadata_location"
 PROP_PREVIOUS_METADATA_LOCATION = "previous_metadata_location"
+DEFAULT_PROPERTIES = {TableProperties.PARQUET_COMPRESSION: TableProperties.PARQUET_COMPRESSION_DEFAULT}
 
 
 def _construct_parameters(metadata_location: str, previous_metadata_location: Optional[str] = None) -> Dict[str, Any]:
@@ -218,7 +235,7 @@ class HiveCatalog(Catalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"])
+        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
 
     def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -249,7 +266,7 @@ class HiveCatalog(Catalog):
     def create_table(
         self,
         identifier: Union[str, Identifier],
-        schema: Schema,
+        schema: Union[Schema, "pa.Schema"],
         location: Optional[str] = None,
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
@@ -272,6 +289,9 @@ class HiveCatalog(Catalog):
             AlreadyExistsError: If a table with the name already exists.
             ValueError: If the identifier is invalid.
         """
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+
+        properties = {**DEFAULT_PROPERTIES, **properties}
         database_name, table_name = self.identifier_to_database_and_table(identifier)
         current_time_millis = int(time.time() * 1000)
 
@@ -279,7 +299,11 @@ class HiveCatalog(Catalog):
 
         metadata_location = self._get_metadata_location(location=location)
         metadata = new_table_metadata(
-            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
+            location=location,
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
         )
         io = load_file_io({**self.properties, **properties}, location=location)
         self._write_metadata(metadata, io, metadata_location)
@@ -318,6 +342,15 @@ class HiveCatalog(Catalog):
         """
         raise NotImplementedError
 
+    def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
+        lock_component: LockComponent = LockComponent(
+            level=LockLevel.TABLE, type=LockType.EXCLUSIVE, dbname=database_name, tablename=table_name, isTransactional=True
+        )
+
+        lock_request: LockRequest = LockRequest(component=[lock_component], user=getpass.getuser(), hostname=socket.gethostname())
+
+        return lock_request
+
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
 
@@ -329,8 +362,47 @@ class HiveCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        raise NotImplementedError
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
+        )
+        current_table = self.load_table(identifier_tuple)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        base_metadata = current_table.metadata
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        # commit to hive
+        # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
+        with self._client as open_client:
+            lock: LockResponse = open_client.lock(self._create_lock_request(database_name, table_name))
+
+            try:
+                if lock.state != LockState.ACQUIRED:
+                    raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+
+                tbl = open_client.get_table(dbname=database_name, tbl_name=table_name)
+                tbl.parameters = _construct_parameters(
+                    metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
+                )
+                open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=tbl)
+            except NoSuchObjectException as e:
+                raise NoSuchTableError(f"Table does not exist: {table_name}") from e
+            finally:
+                open_client.unlock(UnlockRequest(lockid=lock.lockid))
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and return the table instance.

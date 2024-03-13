@@ -37,7 +37,7 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import EMPTY_DICT, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -59,6 +59,8 @@ from pyiceberg.types import (
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
 DEFAULT_READ_VERSION: Literal[2] = 2
+
+INITIAL_SEQUENCE_NUMBER = 0
 
 
 class DataFileContent(int, Enum):
@@ -301,31 +303,28 @@ def _(partition_field_type: PrimitiveType) -> PrimitiveType:
 
 
 def data_file_with_partition(partition_type: StructType, format_version: Literal[1, 2]) -> StructType:
-    data_file_partition_type = StructType(
-        *[
-            NestedField(
-                field_id=field.field_id,
-                name=field.name,
-                field_type=partition_field_to_data_file_partition_field(field.field_type),
-            )
-            for field in partition_type.fields
-        ]
-    )
+    data_file_partition_type = StructType(*[
+        NestedField(
+            field_id=field.field_id,
+            name=field.name,
+            field_type=partition_field_to_data_file_partition_field(field.field_type),
+            required=field.required,
+        )
+        for field in partition_type.fields
+    ])
 
-    return StructType(
-        *[
-            NestedField(
-                field_id=102,
-                name="partition",
-                field_type=data_file_partition_type,
-                required=True,
-                doc="Partition data tuple, schema based on the partition spec",
-            )
-            if field.field_id == 102
-            else field
-            for field in DATA_FILE_TYPE[format_version].fields
-        ]
-    )
+    return StructType(*[
+        NestedField(
+            field_id=102,
+            name="partition",
+            field_type=data_file_partition_type,
+            required=True,
+            doc="Partition data tuple, schema based on the partition spec",
+        )
+        if field.field_id == 102
+        else field
+        for field in DATA_FILE_TYPE[format_version].fields
+    ])
 
 
 class DataFile(Record):
@@ -410,12 +409,10 @@ MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_v
 
 
 def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_file: StructType) -> Schema:
-    return Schema(
-        *[
-            NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-            for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
-        ]
-    )
+    return Schema(*[
+        NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
+        for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
+    ])
 
 
 class ManifestEntry(Record):
@@ -497,25 +494,42 @@ def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partition
     return [field.to_summary() for field in field_stats]
 
 
-MANIFEST_FILE_SCHEMA: Schema = Schema(
-    NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
-    NestedField(501, "manifest_length", LongType(), required=True),
-    NestedField(502, "partition_spec_id", IntegerType(), required=True),
-    NestedField(517, "content", IntegerType(), required=False, initial_default=ManifestContent.DATA),
-    NestedField(515, "sequence_number", LongType(), required=False, initial_default=0),
-    NestedField(516, "min_sequence_number", LongType(), required=False, initial_default=0),
-    NestedField(503, "added_snapshot_id", LongType(), required=False),
-    NestedField(504, "added_files_count", IntegerType(), required=False),
-    NestedField(505, "existing_files_count", IntegerType(), required=False),
-    NestedField(506, "deleted_files_count", IntegerType(), required=False),
-    NestedField(512, "added_rows_count", LongType(), required=False),
-    NestedField(513, "existing_rows_count", LongType(), required=False),
-    NestedField(514, "deleted_rows_count", LongType(), required=False),
-    NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
-    NestedField(519, "key_metadata", BinaryType(), required=False),
-)
+MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
+    1: Schema(
+        NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(501, "manifest_length", LongType(), required=True),
+        NestedField(502, "partition_spec_id", IntegerType(), required=True),
+        NestedField(503, "added_snapshot_id", LongType(), required=True),
+        NestedField(504, "added_files_count", IntegerType(), required=False),
+        NestedField(505, "existing_files_count", IntegerType(), required=False),
+        NestedField(506, "deleted_files_count", IntegerType(), required=False),
+        NestedField(512, "added_rows_count", LongType(), required=False),
+        NestedField(513, "existing_rows_count", LongType(), required=False),
+        NestedField(514, "deleted_rows_count", LongType(), required=False),
+        NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
+        NestedField(519, "key_metadata", BinaryType(), required=False),
+    ),
+    2: Schema(
+        NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
+        NestedField(501, "manifest_length", LongType(), required=True),
+        NestedField(502, "partition_spec_id", IntegerType(), required=True),
+        NestedField(517, "content", IntegerType(), required=True, initial_default=ManifestContent.DATA),
+        NestedField(515, "sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(516, "min_sequence_number", LongType(), required=True, initial_default=0),
+        NestedField(503, "added_snapshot_id", LongType(), required=True),
+        NestedField(504, "added_files_count", IntegerType(), required=True),
+        NestedField(505, "existing_files_count", IntegerType(), required=True),
+        NestedField(506, "deleted_files_count", IntegerType(), required=True),
+        NestedField(512, "added_rows_count", LongType(), required=True),
+        NestedField(513, "existing_rows_count", LongType(), required=True),
+        NestedField(514, "deleted_rows_count", LongType(), required=True),
+        NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
+        NestedField(519, "key_metadata", BinaryType(), required=False),
+    ),
+}
 
-MANIFEST_FILE_SCHEMA_STRUCT = MANIFEST_FILE_SCHEMA.as_struct()
+MANIFEST_LIST_FILE_STRUCTS = {format_version: schema.as_struct() for format_version, schema in MANIFEST_LIST_FILE_SCHEMAS.items()}
+
 
 POSITIONAL_DELETE_SCHEMA = Schema(
     NestedField(2147483546, "file_path", StringType()), NestedField(2147483545, "pos", IntegerType())
@@ -557,7 +571,7 @@ class ManifestFile(Record):
     key_metadata: Optional[bytes]
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
-        super().__init__(*data, **{"struct": MANIFEST_FILE_SCHEMA_STRUCT, **named_data})
+        super().__init__(*data, **{"struct": MANIFEST_LIST_FILE_STRUCTS[DEFAULT_READ_VERSION], **named_data})
 
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
@@ -602,7 +616,7 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     with AvroFile[ManifestFile](
         input_file,
-        MANIFEST_FILE_SCHEMA,
+        MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION],
         read_types={-1: ManifestFile, 508: PartitionFieldSummary},
         read_enums={517: ManifestContent},
     ) as reader:
@@ -665,7 +679,9 @@ class ManifestWriter(ABC):
     _min_data_sequence_number: Optional[int]
     _partitions: List[Record]
 
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str]):
+    def __init__(
+        self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str] = EMPTY_DICT
+    ) -> None:
         self.closed = False
         self._spec = spec
         self._schema = schema
@@ -699,13 +715,11 @@ class ManifestWriter(ABC):
         self._writer.__exit__(exc_type, exc_value, traceback)
 
     @abstractmethod
-    def content(self) -> ManifestContent:
-        ...
+    def content(self) -> ManifestContent: ...
 
     @property
     @abstractmethod
-    def version(self) -> Literal[1, 2]:
-        ...
+    def version(self) -> Literal[1, 2]: ...
 
     def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
         data_file_type = data_file_with_partition(
@@ -723,8 +737,7 @@ class ManifestWriter(ABC):
         )
 
     @abstractmethod
-    def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
-        ...
+    def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry: ...
 
     def to_manifest_file(self) -> ManifestFile:
         """Return the manifest file."""
@@ -746,7 +759,7 @@ class ManifestWriter(ABC):
             existing_rows_count=self._existing_rows,
             deleted_rows_count=self._deleted_rows,
             partitions=construct_partition_summaries(self._spec, self._schema, self._partitions),
-            key_metadatas=None,
+            key_metadata=None,
         )
 
     def add_entry(self, entry: ManifestEntry) -> ManifestWriter:
@@ -845,13 +858,15 @@ def write_manifest(
 
 
 class ManifestListWriter(ABC):
+    _format_version: Literal[1, 2]
     _output_file: OutputFile
     _meta: Dict[str, str]
     _manifest_files: List[ManifestFile]
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, output_file: OutputFile, meta: Dict[str, str]):
+    def __init__(self, format_version: Literal[1, 2], output_file: OutputFile, meta: Dict[str, Any]):
+        self._format_version = format_version
         self._output_file = output_file
         self._meta = meta
         self._manifest_files = []
@@ -859,7 +874,11 @@ class ManifestListWriter(ABC):
     def __enter__(self) -> ManifestListWriter:
         """Open the writer for writing."""
         self._writer = AvroOutputFile[ManifestFile](
-            output_file=self._output_file, file_schema=MANIFEST_FILE_SCHEMA, schema_name="manifest_file", metadata=self._meta
+            output_file=self._output_file,
+            record_schema=MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION],
+            file_schema=MANIFEST_LIST_FILE_SCHEMAS[self._format_version],
+            schema_name="manifest_file",
+            metadata=self._meta,
         )
         self._writer.__enter__()
         return self
@@ -875,8 +894,7 @@ class ManifestListWriter(ABC):
         return
 
     @abstractmethod
-    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
-        ...
+    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile: ...
 
     def add_manifests(self, manifest_files: List[ManifestFile]) -> ManifestListWriter:
         self._writer.write_block([self.prepare_manifest(manifest_file) for manifest_file in manifest_files])
@@ -884,9 +902,11 @@ class ManifestListWriter(ABC):
 
 
 class ManifestListWriterV1(ManifestListWriter):
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: int):
+    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int]):
         super().__init__(
-            output_file, {"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"}
+            format_version=1,
+            output_file=output_file,
+            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -899,10 +919,11 @@ class ManifestListWriterV2(ManifestListWriter):
     _commit_snapshot_id: int
     _sequence_number: int
 
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: int, sequence_number: int):
+    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int], sequence_number: int):
         super().__init__(
-            output_file,
-            {
+            format_version=2,
+            output_file=output_file,
+            meta={
                 "snapshot-id": str(snapshot_id),
                 "parent-snapshot-id": str(parent_snapshot_id),
                 "sequence-number": str(sequence_number),
@@ -920,7 +941,7 @@ class ManifestListWriterV2(ManifestListWriter):
             # To validate this, check that the snapshot id matches the current commit
             if self._commit_snapshot_id != wrapped_manifest_file.added_snapshot_id:
                 raise ValueError(
-                    f"Found unassigned sequence number for a manifest from snapshot: {wrapped_manifest_file.added_snapshot_id}"
+                    f"Found unassigned sequence number for a manifest from snapshot: {self._commit_snapshot_id} != {wrapped_manifest_file.added_snapshot_id}"
                 )
             wrapped_manifest_file.sequence_number = self._sequence_number
 
@@ -936,11 +957,17 @@ class ManifestListWriterV2(ManifestListWriter):
 
 
 def write_manifest_list(
-    format_version: Literal[1, 2], output_file: OutputFile, snapshot_id: int, parent_snapshot_id: int, sequence_number: int
+    format_version: Literal[1, 2],
+    output_file: OutputFile,
+    snapshot_id: int,
+    parent_snapshot_id: Optional[int],
+    sequence_number: Optional[int],
 ) -> ManifestListWriter:
     if format_version == 1:
         return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id)
     elif format_version == 2:
+        if sequence_number is None:
+            raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
         return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")

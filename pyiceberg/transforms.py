@@ -132,20 +132,17 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     root: str = Field()
 
     @abstractmethod
-    def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[T]]:
-        ...
+    def transform(self, source: IcebergType) -> Callable[[Optional[S]], Optional[T]]: ...
 
     @abstractmethod
     def can_transform(self, source: IcebergType) -> bool:
         return False
 
     @abstractmethod
-    def result_type(self, source: IcebergType) -> IcebergType:
-        ...
+    def result_type(self, source: IcebergType) -> IcebergType: ...
 
     @abstractmethod
-    def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]:
-        ...
+    def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]: ...
 
     @property
     def preserves_order(self) -> bool:
@@ -285,8 +282,7 @@ class TimeResolution(IntEnum):
 class TimeTransform(Transform[S, int], Generic[S], Singleton):
     @property
     @abstractmethod
-    def granularity(self) -> TimeResolution:
-        ...
+    def granularity(self) -> TimeResolution: ...
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
         return self.granularity <= other.granularity if hasattr(other, "granularity") else False
@@ -295,8 +291,7 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
         return IntegerType()
 
     @abstractmethod
-    def transform(self, source: IcebergType) -> Callable[[Optional[Any]], Optional[int]]:
-        ...
+    def transform(self, source: IcebergType) -> Callable[[Optional[Any]], Optional[int]]: ...
 
     def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]:
         transformer = self.transform(pred.term.ref().field.field_type)
@@ -387,7 +382,7 @@ class MonthTransform(TimeTransform[S]):
         else:
             raise ValueError(f"Cannot apply month transform for type: {source}")
 
-        return lambda v: month_func(v) if v else None
+        return lambda v: month_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (DateType, TimestampType, TimestamptzType))
@@ -429,7 +424,7 @@ class DayTransform(TimeTransform[S]):
         else:
             raise ValueError(f"Cannot apply day transform for type: {source}")
 
-        return lambda v: day_func(v) if v else None
+        return lambda v: day_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (DateType, TimestampType, TimestamptzType))
@@ -469,7 +464,7 @@ class HourTransform(TimeTransform[S]):
         else:
             raise ValueError(f"Cannot apply hour transform for type: {source}")
 
-        return lambda v: hour_func(v) if v else None
+        return lambda v: hour_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (TimestampType, TimestamptzType))
@@ -618,7 +613,7 @@ class TruncateTransform(Transform[S, S]):
         else:
             raise ValueError(f"Cannot truncate for type: {source}")
 
-        return lambda v: truncate_func(v) if v else None
+        return lambda v: truncate_func(v) if v is not None else None
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
         if self == other:
@@ -658,6 +653,11 @@ def _(value: bytes, _type: IcebergType) -> str:
 @_human_string.register(int)
 def _(value: int, _type: IcebergType) -> str:
     return _int_to_human_string(_type, value)
+
+
+@_human_string.register(bool)
+def _(value: bool, _type: IcebergType) -> str:
+    return str(value).lower()
 
 
 @singledispatch

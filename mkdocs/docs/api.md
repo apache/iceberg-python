@@ -146,6 +146,25 @@ catalog.create_table(
 )
 ```
 
+To create a table using a pyarrow schema:
+
+```python
+import pyarrow as pa
+
+schema = pa.schema(
+    [
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ]
+)
+
+catalog.create_table(
+    identifier="docs_example.bids",
+    schema=schema,
+)
+```
+
 ## Load a table
 
 ### Catalog table
@@ -175,6 +194,104 @@ static_table = StaticTable.from_metadata(
 
 The static-table is considered read-only.
 
+## Write support
+
+With PyIceberg 0.6.0 write support is added through Arrow. Let's consider an Arrow Table:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+```
+
+Next, create a table based on the schema:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+Now write the data to the table:
+
+<!-- prettier-ignore-start -->
+
+!!! note inline end "Fast append"
+    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) to minimize the amount of data written. This enables quick writes, reducing the possibility of conflicts. The downside of the fast append is that it creates more metadata than a normal commit. [Compaction is planned](https://github.com/apache/iceberg-python/issues/270) and will automatically rewrite all the metadata when a threshold is hit, to maintain performant reads.
+
+<!-- prettier-ignore-end -->
+
+```python
+tbl.append(df)
+
+# or
+
+tbl.overwrite(df)
+```
+
+The data is written to the table, and when the table is read using `tbl.scan().to_arrow()`:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten","Paris"]]
+lat: [[52.371807,37.773972,53.11254,48.864716]]
+long: [[4.896029,-122.431297,6.0989,2.349014]]
+```
+
+You both can use `append(df)` or `overwrite(df)` since there is no data yet. If we want to add more data, we can use `.append()` again:
+
+```python
+df = pa.Table.from_pylist(
+    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}],
+)
+
+tbl.append(df)
+```
+
+When reading the table `tbl.scan().to_arrow()` you can see that `Groningen` is now also part of the table:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten","Paris"],["Groningen"]]
+lat: [[52.371807,37.773972,53.11254,48.864716],[53.21917]]
+long: [[4.896029,-122.431297,6.0989,2.349014],[6.56667]]
+```
+
+The nested lists indicate the different Arrow buffers, where the first write results into a buffer, and the second append in a separate buffer. This is expected since it will read two parquet files.
+
+<!-- prettier-ignore-start -->
+
+!!! example "Under development"
+    Writing using PyIceberg is still under development. Support for [partial overwrites](https://github.com/apache/iceberg-python/issues/268) and writing to [partitioned tables](https://github.com/apache/iceberg-python/issues/208) is planned and being worked on.
+
+<!-- prettier-ignore-end -->
+
 ## Schema evolution
 
 PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).
@@ -193,6 +310,47 @@ with table.transaction() as transaction:
     with transaction.update_schema() as update_schema:
         update.add_column("some_other_field", IntegerType(), "doc")
     # ... Update properties etc
+```
+
+### Union by Name
+
+Using `.union_by_name()` you can merge another schema into an existing schema without having to worry about field-IDs:
+
+```python
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType, LongType
+
+catalog = load_catalog()
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+table = catalog.create_table("default.locations", schema)
+
+new_schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+    NestedField(10, "population", LongType(), required=False),
+)
+
+with table.update_schema() as update:
+    update.union_by_name(new_schema)
+```
+
+Now the table has the union of the two schemas `print(table.schema())`:
+
+```
+table {
+  1: city: optional string
+  2: lat: optional double
+  3: long: optional double
+  4: population: optional long
+}
 ```
 
 ### Add column
@@ -258,6 +416,63 @@ Delete a field, careful this is a incompatible change (readers/writers might exp
 ```python
 with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
+```
+
+## Partition evolution
+
+PyIceberg supports partition evolution. See the [partition evolution](https://iceberg.apache.org/spec/#partition-evolution)
+for more details.
+
+The API to use when evolving partitions is the `update_spec` API on the table.
+
+```python
+with table.update_spec() as update:
+    update.add_field("id", BucketTransform(16), "bucketed_id")
+    update.add_field("event_ts", DayTransform(), "day_ts")
+```
+
+Updating the partition spec can also be done as part of a transaction with other operations.
+
+```python
+with table.transaction() as transaction:
+    with transaction.update_spec() as update_spec:
+        update_spec.add_field("id", BucketTransform(16), "bucketed_id")
+        update_spec.add_field("event_ts", DayTransform(), "day_ts")
+    # ... Update properties etc
+```
+
+### Add fields
+
+New partition fields can be added via the `add_field` API which takes in the field name to partition on,
+the partition transform, and an optional partition name. If the partition name is not specified,
+one will be created.
+
+```python
+with table.update_spec() as update:
+    update.add_field("id", BucketTransform(16), "bucketed_id")
+    update.add_field("event_ts", DayTransform(), "day_ts")
+    # identity is a shortcut API for adding an IdentityTransform
+    update.identity("some_field")
+```
+
+### Remove fields
+
+Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
+
+```python
+with table.update_spec() as update:some_partition_name
+    # Remove the partition field with the name
+    update.remove_field("some_partition_name")
+```
+
+### Rename fields
+
+Partition fields can also be renamed via the `rename_field` API.
+
+```python
+with table.update_spec() as update:
+    # Rename the partition field with the name bucketed_id to sharded_id
+    update.rename_field("bucketed_id", "sharded_id")
 ```
 
 ## Table properties
@@ -477,4 +692,57 @@ print(ray_dataset.take(2))
         "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 16, 10, 18),
     },
 ]
+```
+
+### Daft
+
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/latest/user_guide/integrations/iceberg.html)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [Daft to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+A table can be read easily into a Daft Dataframe:
+
+```python
+df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
+df = df.where(df["trip_distance"] >= 10.0)
+df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
+```
+
+This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(No data to display: Dataframe not materialized)
+```
+
+We can execute the Dataframe to preview the first few rows of the query with `df.show()`.
+
+This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
+
+```python
+df.show(2)
+```
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╞══════════╪═══════════════════════════════╪═══════════════════════════════╡
+│ 2        ┆ 2008-12-31T23:23:50.000000    ┆ 2009-01-01T00:34:31.000000    │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2        ┆ 2008-12-31T23:05:03.000000    ┆ 2009-01-01T16:10:18.000000    │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(Showing first 2 rows)
 ```

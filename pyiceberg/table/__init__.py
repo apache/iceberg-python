@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import itertools
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generic,
     Iterable,
     List,
     Literal,
@@ -40,20 +42,20 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, SerializeAsAny
+from pydantic import Field, SerializeAsAny, field_validator
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
+import pyiceberg.expressions.parser as parser
+import pyiceberg.expressions.visitors as visitors
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysTrue,
     And,
     BooleanExpression,
     EqualTo,
-    parser,
-    visitors,
+    Reference,
 )
-from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator, inclusive_projection
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
@@ -61,15 +63,28 @@ from pyiceberg.manifest import (
     DataFileContent,
     ManifestContent,
     ManifestEntry,
+    ManifestEntryStatus,
     ManifestFile,
+    write_manifest,
+    write_manifest_list,
 )
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import (
+    INITIAL_PARTITION_SPEC_ID,
+    PARTITION_FIELD_ID_START,
+    PartitionField,
+    PartitionSpec,
+    _PartitionNameGenerator,
+    _visit_partition_field,
+)
 from pyiceberg.schema import (
+    PartnerAccessor,
     Schema,
     SchemaVisitor,
+    SchemaWithPartnerVisitor,
     assign_fresh_schema_ids,
     promote,
     visit,
+    visit_with_partner,
 )
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
@@ -77,9 +92,22 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
 )
+from pyiceberg.table.name_mapping import (
+    NameMapping,
+    parse_mapping_from_json,
+    update_mapping,
+)
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
+from pyiceberg.table.snapshots import (
+    Operation,
+    Snapshot,
+    SnapshotLogEntry,
+    SnapshotSummaryCollector,
+    Summary,
+    update_snapshot_summaries,
+)
 from pyiceberg.table.sorting import SortOrder
+from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -95,11 +123,13 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    transform_dict_value_to_str,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
+    import daft
     import pandas as pd
     import pyarrow as pa
     import ray
@@ -107,24 +137,116 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
 
+
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
+
+_JAVA_LONG_MAX = 9223372036854775807
+
+
+def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
+    from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
+
+    name_mapping = table_schema.name_mapping
+    try:
+        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
+    except ValueError as e:
+        other_schema = _pyarrow_to_schema_without_ids(other_schema)
+        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
+        raise ValueError(
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+        ) from e
+
+    if table_schema.as_struct() != task_schema.as_struct():
+        from rich.console import Console
+        from rich.table import Table as RichTable
+
+        console = Console(record=True)
+
+        rich_table = RichTable(show_header=True, header_style="bold")
+        rich_table.add_column("")
+        rich_table.add_column("Table field")
+        rich_table.add_column("Dataframe field")
+
+        for lhs in table_schema.fields:
+            try:
+                rhs = task_schema.find_field(lhs.field_id)
+                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
+            except ValueError:
+                rich_table.add_row("❌", str(lhs), "Missing")
+
+        console.print(rich_table)
+        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+
+
+class TableProperties:
+    PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
+    PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    PARQUET_ROW_GROUP_LIMIT = "write.parquet.row-group-limit"
+    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    PARQUET_PAGE_SIZE_BYTES = "write.parquet.page-size-bytes"
+    PARQUET_PAGE_SIZE_BYTES_DEFAULT = 1024 * 1024  # 1 MB
+
+    PARQUET_PAGE_ROW_LIMIT = "write.parquet.page-row-limit"
+    PARQUET_PAGE_ROW_LIMIT_DEFAULT = 20000
+
+    PARQUET_DICT_SIZE_BYTES = "write.parquet.dict-size-bytes"
+    PARQUET_DICT_SIZE_BYTES_DEFAULT = 2 * 1024 * 1024  # 2 MB
+
+    PARQUET_COMPRESSION = "write.parquet.compression-codec"
+    PARQUET_COMPRESSION_DEFAULT = "zstd"
+
+    PARQUET_COMPRESSION_LEVEL = "write.parquet.compression-level"
+    PARQUET_COMPRESSION_LEVEL_DEFAULT = None
+
+    PARQUET_BLOOM_FILTER_MAX_BYTES = "write.parquet.bloom-filter-max-bytes"
+    PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT = 1024 * 1024
+
+    PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
+
+    DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
+    DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
+
+    METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
+
+    DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
+    FORMAT_VERSION = "format-version"
+    DEFAULT_FORMAT_VERSION = 2
+
+
+class PropertyUtil:
+    @staticmethod
+    def property_as_int(properties: Dict[str, str], property_name: str, default: Optional[int] = None) -> Optional[int]:
+        if value := properties.get(property_name):
+            try:
+                return int(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
+        else:
+            return default
 
 
 class Transaction:
     _table: Table
+    table_metadata: TableMetadata
+    _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
 
-    def __init__(
-        self,
-        table: Table,
-        actions: Optional[Tuple[TableUpdate, ...]] = None,
-        requirements: Optional[Tuple[TableRequirement, ...]] = None,
-    ):
+    def __init__(self, table: Table, autocommit: bool = False):
+        """Open a transaction to stage and commit changes to a table.
+
+        Args:
+            table: The table that will be altered.
+            autocommit: Option to automatically commit the changes when they are staged.
+        """
+        self.table_metadata = table.metadata
         self._table = table
-        self._updates = actions or ()
-        self._requirements = requirements or ()
+        self._autocommit = autocommit
+        self._updates = ()
+        self._requirements = ()
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
@@ -132,49 +254,23 @@ class Transaction:
 
     def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
         """Close and commit the transaction."""
-        fresh_table = self.commit_transaction()
-        # Update the new data in place
-        self._table.metadata = fresh_table.metadata
-        self._table.metadata_location = fresh_table.metadata_location
+        self.commit_transaction()
 
-    def _append_updates(self, *new_updates: TableUpdate) -> Transaction:
-        """Append updates to the set of staged updates.
+    def _apply(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...] = ()) -> Transaction:
+        """Check if the requirements are met, and applies the updates to the metadata."""
+        for requirement in requirements:
+            requirement.validate(self.table_metadata)
 
-        Args:
-            *new_updates: Any new updates.
+        self._updates += updates
+        self._requirements += requirements
 
-        Raises:
-            ValueError: When the type of update is not unique.
+        self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
-        Returns:
-            Transaction object with the new updates appended.
-        """
-        for new_update in new_updates:
-            # explicitly get type of new_update as new_update is an instantiated class
-            type_new_update = type(new_update)
-            if any(isinstance(update, type_new_update) for update in self._updates):
-                raise ValueError(f"Updates in a single commit need to be unique, duplicate: {type_new_update}")
-        self._updates = self._updates + new_updates
-        return self
+        if self._autocommit:
+            self.commit_transaction()
+            self._updates = ()
+            self._requirements = ()
 
-    def _append_requirements(self, *new_requirements: TableRequirement) -> Transaction:
-        """Append requirements to the set of staged requirements.
-
-        Args:
-            *new_requirements: Any new requirements.
-
-        Raises:
-            ValueError: When the type of requirement is not unique.
-
-        Returns:
-            Transaction object with the new requirements appended.
-        """
-        for new_requirement in new_requirements:
-            # explicitly get type of new_update as requirement is an instantiated class
-            type_new_requirement = type(new_requirement)
-            if any(isinstance(requirement, type_new_requirement) for requirement in self._requirements):
-                raise ValueError(f"Requirements in a single commit need to be unique, duplicate: {type_new_requirement}")
-        self._requirements = self._requirements + new_requirements
         return self
 
     def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
@@ -191,31 +287,61 @@ class Transaction:
 
         if format_version < self._table.metadata.format_version:
             raise ValueError(f"Cannot downgrade v{self._table.metadata.format_version} table to v{format_version}")
-        if format_version > self._table.metadata.format_version:
-            return self._append_updates(UpgradeFormatVersionUpdate(format_version=format_version))
-        else:
-            return self
 
-    def set_properties(self, **updates: str) -> Transaction:
+        if format_version > self._table.metadata.format_version:
+            return self._apply((UpgradeFormatVersionUpdate(format_version=format_version),))
+
+        return self
+
+    def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: Any) -> Transaction:
         """Set properties.
 
         When a property is already set, it will be overwritten.
 
         Args:
-            updates: The properties set on the table.
+            properties: The properties set on the table.
+            kwargs: properties can also be pass as kwargs.
 
         Returns:
             The alter table builder.
         """
-        return self._append_updates(SetPropertiesUpdate(updates=updates))
+        if properties and kwargs:
+            raise ValueError("Cannot pass both properties and kwargs")
+        updates = properties or kwargs
+        return self._apply((SetPropertiesUpdate(updates=updates),))
 
-    def update_schema(self) -> UpdateSchema:
+    def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
+
+        Args:
+            allow_incompatible_changes: If changes are allowed that might break downstream consumers.
+            case_sensitive: If field names are case-sensitive.
 
         Returns:
             A new UpdateSchema.
         """
-        return UpdateSchema(self._table, self)
+        return UpdateSchema(
+            self,
+            allow_incompatible_changes=allow_incompatible_changes,
+            case_sensitive=case_sensitive,
+            name_mapping=self._table.name_mapping(),
+        )
+
+    def update_snapshot(self) -> UpdateSnapshot:
+        """Create a new UpdateSnapshot to produce a new snapshot for the table.
+
+        Returns:
+            A new UpdateSnapshot
+        """
+        return UpdateSnapshot(self, io=self._table.io)
+
+    def update_spec(self) -> UpdateSpec:
+        """Create a new UpdateSpec to update the partitioning of the table.
+
+        Returns:
+            A new UpdateSpec.
+        """
+        return UpdateSpec(self)
 
     def remove_properties(self, *removals: str) -> Transaction:
         """Remove properties.
@@ -226,7 +352,7 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        return self._append_updates(RemovePropertiesUpdate(removals=removals))
+        return self._apply((RemovePropertiesUpdate(removals=removals),))
 
     def update_location(self, location: str) -> Transaction:
         """Set the new table location.
@@ -245,7 +371,6 @@ class Transaction:
         Returns:
             The table with the updates applied.
         """
-        # Strip the catalog name
         if len(self._updates) > 0:
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
@@ -354,6 +479,10 @@ class SetPropertiesUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.set_properties
     updates: Dict[str, str]
 
+    @field_validator('updates', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
+
 
 class RemovePropertiesUpdate(TableUpdate):
     action: TableUpdateAction = TableUpdateAction.remove_properties
@@ -379,6 +508,13 @@ class _TableMetadataUpdateContext:
     def is_added_schema(self, schema_id: int) -> bool:
         return any(
             update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
+        )
+
+    def is_added_sort_order(self, sort_order_id: int) -> bool:
+        return any(
+            update.sort_order.order_id == sort_order_id
+            for update in self._updates
+            if update.action == TableUpdateAction.add_sort_order
         )
 
 
@@ -414,6 +550,31 @@ def _(update: UpgradeFormatVersionUpdate, base_metadata: TableMetadata, context:
     return TableMetadataUtil.parse_obj(updated_metadata_data)
 
 
+@_apply_table_update.register(SetPropertiesUpdate)
+def _(update: SetPropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(update.updates) == 0:
+        return base_metadata
+
+    properties = dict(base_metadata.properties)
+    properties.update(update.updates)
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"properties": properties})
+
+
+@_apply_table_update.register(RemovePropertiesUpdate)
+def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(update.removals) == 0:
+        return base_metadata
+
+    properties = dict(base_metadata.properties)
+    for key in update.removals:
+        properties.pop(key)
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"properties": properties})
+
+
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.last_column_id < base_metadata.last_column_id:
@@ -446,6 +607,43 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 
     context.add_update(update)
     return base_metadata.model_copy(update={"current_schema_id": new_schema_id})
+
+
+@_apply_table_update.register(AddPartitionSpecUpdate)
+def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for spec in base_metadata.partition_specs:
+        if spec.spec_id == update.spec.spec_id:
+            raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
+    context.add_update(update)
+    return base_metadata.model_copy(
+        update={
+            "partition_specs": base_metadata.partition_specs + [update.spec],
+            "last_partition_id": max(
+                max(field.field_id for field in update.spec.fields),
+                base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
+            ),
+        }
+    )
+
+
+@_apply_table_update.register(SetDefaultSpecUpdate)
+def _(update: SetDefaultSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    new_spec_id = update.spec_id
+    if new_spec_id == -1:
+        new_spec_id = max(spec.spec_id for spec in base_metadata.partition_specs)
+    if new_spec_id == base_metadata.default_spec_id:
+        return base_metadata
+    found_spec_id = False
+    for spec in base_metadata.partition_specs:
+        found_spec_id = spec.spec_id == new_spec_id
+        if found_spec_id:
+            break
+
+    if not found_spec_id:
+        raise ValueError(f"Failed to find spec with id {new_spec_id}")
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"default_spec_id": new_spec_id})
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
@@ -518,6 +716,36 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(AddSortOrderUpdate)
+def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+    return base_metadata.model_copy(
+        update={
+            "sort_orders": base_metadata.sort_orders + [update.sort_order],
+        }
+    )
+
+
+@_apply_table_update.register(SetDefaultSortOrderUpdate)
+def _(update: SetDefaultSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    new_sort_order_id = update.sort_order_id
+    if new_sort_order_id == -1:
+        # The last added sort order should be in base_metadata.sort_orders at this point
+        new_sort_order_id = max(sort_order.order_id for sort_order in base_metadata.sort_orders)
+        if not context.is_added_sort_order(new_sort_order_id):
+            raise ValueError("Cannot set current sort order to the last added one when no sort order has been added")
+
+    if new_sort_order_id == base_metadata.default_sort_order_id:
+        return base_metadata
+
+    sort_order = base_metadata.sort_order_by_id(new_sort_order_id)
+    if sort_order is None:
+        raise ValueError(f"Sort order with id {new_sort_order_id} does not exist")
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
+
+
 def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
     """Update the table metadata with the given updates in one transaction.
 
@@ -583,7 +811,7 @@ class AssertRefSnapshotId(TableRequirement):
     """
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
-    ref: str
+    ref: str = Field(...)
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
@@ -635,7 +863,7 @@ class AssertLastAssignedPartitionId(TableRequirement):
     """The table's last assigned partition id must match the requirement's `last-assigned-partition-id`."""
 
     type: Literal["assert-last-assigned-partition-id"] = Field(default="assert-last-assigned-partition-id")
-    last_assigned_partition_id: int = Field(..., alias="last-assigned-partition-id")
+    last_assigned_partition_id: Optional[int] = Field(..., alias="last-assigned-partition-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
@@ -674,6 +902,9 @@ class AssertDefaultSortOrderId(TableRequirement):
             raise CommitFailedException(
                 f"Requirement failed: default sort order id has changed: expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
             )
+
+
+UpdatesAndRequirements = Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]
 
 
 class Namespace(IcebergRootModel[List[str]]):
@@ -720,6 +951,11 @@ class Table:
         self.catalog = catalog
 
     def transaction(self) -> Transaction:
+        """Create a new transaction object to first stage the changes, and then commit them to the catalog.
+
+        Returns:
+            The transaction object
+        """
         return Transaction(self)
 
     def refresh(self) -> Table:
@@ -783,6 +1019,12 @@ class Table:
         """Return a dict of the sort orders of this table."""
         return {sort_order.order_id: sort_order for sort_order in self.metadata.sort_orders}
 
+    def last_partition_id(self) -> int:
+        """Return the highest assigned partition field ID across all specs or 999 if only the unpartitioned spec exists."""
+        if self.metadata.last_partition_id:
+            return self.metadata.last_partition_id
+        return PARTITION_FIELD_ID_START - 1
+
     @property
     def properties(self) -> Dict[str, str]:
         """Properties of the table."""
@@ -796,21 +1038,10 @@ class Table:
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
 
-    def _next_sequence_number(self) -> int:
-        return INITIAL_SEQUENCE_NUMBER if self.format_version == 1 else self.last_sequence_number + 1
-
-    def new_snapshot_id(self) -> int:
-        """Generate a new snapshot-id that's not in use."""
-        snapshot_id = _generate_snapshot_id()
-        while self.snapshot_by_id(snapshot_id) is not None:
-            snapshot_id = _generate_snapshot_id()
-
-        return snapshot_id
-
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
-        if snapshot_id := self.metadata.current_snapshot_id:
-            return self.snapshot_by_id(snapshot_id)
+        if self.metadata.current_snapshot_id is not None:
+            return self.snapshot_by_id(self.metadata.current_snapshot_id)
         return None
 
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
@@ -828,7 +1059,96 @@ class Table:
         return self.metadata.snapshot_log
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
-        return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+        """Create a new UpdateSchema to alter the columns of this table.
+
+        Args:
+            allow_incompatible_changes: If changes are allowed that might break downstream consumers.
+            case_sensitive: If field names are case-sensitive.
+
+        Returns:
+            A new UpdateSchema.
+        """
+        return UpdateSchema(
+            transaction=Transaction(self, autocommit=True),
+            allow_incompatible_changes=allow_incompatible_changes,
+            case_sensitive=case_sensitive,
+            name_mapping=self.name_mapping(),
+        )
+
+    def name_mapping(self) -> Optional[NameMapping]:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
+            return parse_mapping_from_json(name_mapping_json)
+        else:
+            return None
+
+    def append(self, df: pa.Table) -> None:
+        """
+        Shorthand API for appending a PyArrow table to the table.
+
+        Args:
+            df: The Arrow dataframe that will be appended to overwrite the table
+        """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned tables")
+
+        _check_schema(self.schema(), other_schema=df.schema)
+
+        with self.transaction() as txn:
+            with txn.update_snapshot().fast_append() as update_snapshot:
+                # skip writing data files if the dataframe is empty
+                if df.shape[0] > 0:
+                    data_files = _dataframe_to_data_files(
+                        table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                    )
+                    for data_file in data_files:
+                        update_snapshot.append_data_file(data_file)
+
+    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+        """
+        Shorthand for overwriting the table with a PyArrow table.
+
+        Args:
+            df: The Arrow dataframe that will be used to overwrite the table
+            overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
+                              or a boolean expression in case of a partial overwrite
+        """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
+        if overwrite_filter != AlwaysTrue():
+            raise NotImplementedError("Cannot overwrite a subset of a table")
+
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned tables")
+
+        _check_schema(self.schema(), other_schema=df.schema)
+
+        with self.transaction() as txn:
+            with txn.update_snapshot().overwrite() as update_snapshot:
+                # skip writing data files if the dataframe is empty
+                if df.shape[0] > 0:
+                    data_files = _dataframe_to_data_files(
+                        table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                    )
+                    for data_file in data_files:
+                        update_snapshot.append_data_file(data_file)
+
+    def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
+        return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
     def refs(self) -> Dict[str, SnapshotRef]:
         """Return the snapshot references in the table."""
@@ -864,6 +1184,16 @@ class Table:
         snapshot_str = f"snapshot: {str(self.current_snapshot()) if self.current_snapshot() else 'null'}"
         result_str = f"{table_name}(\n  {schema_str}\n),\n{partition_str},\n{sort_order_str},\n{snapshot_str}"
         return result_str
+
+    def to_daft(self) -> daft.DataFrame:
+        """Read a Daft DataFrame lazily from this Iceberg table.
+
+        Returns:
+            daft.DataFrame: Unmaterialized Daft Dataframe created from the Iceberg table
+        """
+        import daft
+
+        return daft.read_iceberg(self)
 
 
 class StaticTable(Table):
@@ -942,27 +1272,32 @@ class TableScan(ABC):
         return self.table.current_snapshot()
 
     def projection(self) -> Schema:
-        snapshot_schema = self.table.schema()
-        if snapshot := self.snapshot():
-            if snapshot.schema_id is not None:
-                snapshot_schema = self.table.schemas()[snapshot.schema_id]
+        current_schema = self.table.schema()
+        if self.snapshot_id is not None:
+            snapshot = self.table.snapshot_by_id(self.snapshot_id)
+            if snapshot is not None:
+                if snapshot.schema_id is not None:
+                    snapshot_schema = self.table.schemas().get(snapshot.schema_id)
+                    if snapshot_schema is not None:
+                        current_schema = snapshot_schema
+                    else:
+                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
+            else:
+                raise ValueError(f"Snapshot not found: {self.snapshot_id}")
 
         if "*" in self.selected_fields:
-            return snapshot_schema
+            return current_schema
 
-        return snapshot_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
-
-    @abstractmethod
-    def plan_files(self) -> Iterable[ScanTask]:
-        ...
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     @abstractmethod
-    def to_arrow(self) -> pa.Table:
-        ...
+    def plan_files(self) -> Iterable[ScanTask]: ...
 
     @abstractmethod
-    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
-        ...
+    def to_arrow(self) -> pa.Table: ...
+
+    @abstractmethod
+    def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
@@ -1037,7 +1372,7 @@ def _min_data_file_sequence_number(manifests: List[ManifestFile]) -> int:
         return INITIAL_SEQUENCE_NUMBER
 
 
-def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
+def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_entries: SortedList[ManifestEntry]) -> Set[DataFile]:
     """Check if the delete file is relevant for the data file.
 
     Using the column metrics to see if the filename is in the lower and upper bound.
@@ -1052,7 +1387,9 @@ def _match_deletes_to_datafile(data_entry: ManifestEntry, positional_delete_entr
     relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
 
     if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
+        evaluator = visitors._InclusiveMetricsEvaluator(
+            POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path)
+        )
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -1076,7 +1413,7 @@ class DataScan(TableScan):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1143,7 +1480,7 @@ class DataScan(TableScan):
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-        metrics_evaluator = _InclusiveMetricsEvaluator(
+        metrics_evaluator = visitors._InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
@@ -1181,7 +1518,7 @@ class DataScan(TableScan):
         return [
             FileScanTask(
                 data_entry.data_file,
-                delete_files=_match_deletes_to_datafile(
+                delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
                 ),
@@ -1232,8 +1569,31 @@ class Move:
     other_field_id: Optional[int] = None
 
 
-class UpdateSchema:
-    _table: Table
+U = TypeVar('U')
+
+
+class UpdateTableMetadata(ABC, Generic[U]):
+    _transaction: Transaction
+
+    def __init__(self, transaction: Transaction) -> None:
+        self._transaction = transaction
+
+    @abstractmethod
+    def _commit(self) -> UpdatesAndRequirements: ...
+
+    def commit(self) -> None:
+        self._transaction._apply(*self._commit())
+
+    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
+        """Close and commit the change."""
+        self.commit()
+
+    def __enter__(self) -> U:
+        """Update the table."""
+        return self  # type: ignore
+
+
+class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _schema: Schema
     _last_column_id: itertools.count[int]
     _identifier_field_names: Set[str]
@@ -1248,18 +1608,25 @@ class UpdateSchema:
     _id_to_parent: Dict[int, str] = {}
     _allow_incompatible_changes: bool
     _case_sensitive: bool
-    _transaction: Optional[Transaction]
 
     def __init__(
         self,
-        table: Table,
-        transaction: Optional[Transaction] = None,
+        transaction: Transaction,
         allow_incompatible_changes: bool = False,
         case_sensitive: bool = True,
+        schema: Optional[Schema] = None,
+        name_mapping: Optional[NameMapping] = None,
     ) -> None:
-        self._table = table
-        self._schema = table.schema()
-        self._last_column_id = itertools.count(table.metadata.last_column_id + 1)
+        super().__init__(transaction)
+
+        if isinstance(schema, Schema):
+            self._schema = schema
+            self._last_column_id = itertools.count(1 + schema.highest_field_id)
+        else:
+            self._schema = self._transaction.table_metadata.schema()
+            self._last_column_id = itertools.count(1 + self._transaction.table_metadata.last_column_id)
+
+        self._name_mapping = name_mapping
         self._identifier_field_names = self._schema.identifier_field_names()
 
         self._adds = {}
@@ -1283,14 +1650,6 @@ class UpdateSchema:
         self._case_sensitive = case_sensitive
         self._transaction = transaction
 
-    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
-        """Close and commit the change."""
-        return self.commit()
-
-    def __enter__(self) -> UpdateSchema:
-        """Update the table."""
-        return self
-
     def case_sensitive(self, case_sensitive: bool) -> UpdateSchema:
         """Determine if the case of schema needs to be considered when comparing column names.
 
@@ -1301,6 +1660,17 @@ class UpdateSchema:
             This for method chaining
         """
         self._case_sensitive = case_sensitive
+        return self
+
+    def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+        from pyiceberg.catalog import Catalog
+
+        visit_with_partner(
+            Catalog._convert_schema_if_needed(new_schema),
+            -1,
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
+            PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
+        )
         return self
 
     def add_column(
@@ -1438,7 +1808,7 @@ class UpdateSchema:
         from_field_correct_casing = self._schema.find_column_name(field_from.field_id)
         if from_field_correct_casing in self._identifier_field_names:
             self._identifier_field_names.remove(from_field_correct_casing)
-            new_identifier_path = f"{from_field_correct_casing[:-len(field_from.name)]}{new_name}"
+            new_identifier_path = f"{from_field_correct_casing[: -len(field_from.name)]}{new_name}"
             self._identifier_field_names.add(new_identifier_path)
 
         return self
@@ -1668,29 +2038,36 @@ class UpdateSchema:
 
         return self
 
-    def commit(self) -> None:
+    def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
         new_schema = self._apply()
 
-        existing_schema_id = next((schema.schema_id for schema in self._table.metadata.schemas if schema == new_schema), None)
+        existing_schema_id = next(
+            (schema.schema_id for schema in self._transaction.table_metadata.schemas if schema == new_schema), None
+        )
+
+        requirements: Tuple[TableRequirement, ...] = ()
+        updates: Tuple[TableUpdate, ...] = ()
 
         # Check if it is different current schema ID
-        if existing_schema_id != self._table.schema().schema_id:
-            requirements = (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
+        if existing_schema_id != self._schema.schema_id:
+            requirements += (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
             if existing_schema_id is None:
-                last_column_id = max(self._table.metadata.last_column_id, new_schema.highest_field_id)
-                updates = (
+                last_column_id = max(self._transaction.table_metadata.last_column_id, new_schema.highest_field_id)
+                updates += (
                     AddSchemaUpdate(schema=new_schema, last_column_id=last_column_id),
                     SetCurrentSchemaUpdate(schema_id=-1),
                 )
             else:
-                updates = (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)  # type: ignore
+                updates += (SetCurrentSchemaUpdate(schema_id=existing_schema_id),)
 
-            if self._transaction is not None:
-                self._transaction._append_updates(*updates)  # pylint: disable=W0212
-                self._transaction._append_requirements(*requirements)  # pylint: disable=W0212
-            else:
-                self._table._do_commit(updates=updates, requirements=requirements)  # pylint: disable=W0212
+            if name_mapping := self._name_mapping:
+                updated_name_mapping = update_mapping(name_mapping, self._updates, self._adds)
+                updates += (
+                    SetPropertiesUpdate(updates={TableProperties.DEFAULT_NAME_MAPPING: updated_name_mapping.model_dump_json()}),
+                )
+
+        return updates, requirements
 
     def _apply(self) -> Schema:
         """Apply the pending changes to the original schema and returns the result.
@@ -1716,7 +2093,14 @@ class UpdateSchema:
 
             field_ids.add(field.field_id)
 
-        return Schema(*struct.fields, schema_id=1 + max(self._table.schemas().keys()), identifier_field_ids=field_ids)
+        if txn := self._transaction:
+            next_schema_id = 1 + (
+                max(schema.schema_id for schema in txn.table_metadata.schemas) if txn.table_metadata is not None else 0
+            )
+        else:
+            next_schema_id = 0
+
+        return Schema(*struct.fields, schema_id=next_schema_id, identifier_field_ids=field_ids)
 
     def assign_new_column_id(self) -> int:
         return next(self._last_column_id)
@@ -1849,6 +2233,159 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
         return primitive
 
 
+class UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
+    update_schema: UpdateSchema
+    existing_schema: Schema
+    case_sensitive: bool
+
+    def __init__(self, update_schema: UpdateSchema, existing_schema: Schema, case_sensitive: bool) -> None:
+        self.update_schema = update_schema
+        self.existing_schema = existing_schema
+        self.case_sensitive = case_sensitive
+
+    def schema(self, schema: Schema, partner_id: Optional[int], struct_result: bool) -> bool:
+        return struct_result
+
+    def struct(self, struct: StructType, partner_id: Optional[int], missing_positions: List[bool]) -> bool:
+        if partner_id is None:
+            return True
+
+        fields = struct.fields
+        partner_struct = self._find_field_type(partner_id)
+
+        if not partner_struct.is_struct:
+            raise ValueError(f"Expected a struct, got: {partner_struct}")
+
+        for pos, missing in enumerate(missing_positions):
+            if missing:
+                self._add_column(partner_id, fields[pos])
+            else:
+                field = fields[pos]
+                if nested_field := partner_struct.field_by_name(field.name, case_sensitive=self.case_sensitive):
+                    self._update_column(field, nested_field)
+
+        return False
+
+    def _add_column(self, parent_id: int, field: NestedField) -> None:
+        if parent_name := self.existing_schema.find_column_name(parent_id):
+            path: Tuple[str, ...] = (parent_name, field.name)
+        else:
+            path = (field.name,)
+
+        self.update_schema.add_column(path=path, field_type=field.field_type, required=field.required, doc=field.doc)
+
+    def _update_column(self, field: NestedField, existing_field: NestedField) -> None:
+        full_name = self.existing_schema.find_column_name(existing_field.field_id)
+
+        if full_name is None:
+            raise ValueError(f"Could not find field: {existing_field}")
+
+        if field.optional and existing_field.required:
+            self.update_schema.make_column_optional(full_name)
+
+        if field.field_type.is_primitive and field.field_type != existing_field.field_type:
+            self.update_schema.update_column(full_name, field_type=field.field_type)
+
+        if field.doc is not None and not field.doc != existing_field.doc:
+            self.update_schema.update_column(full_name, doc=field.doc)
+
+    def _find_field_type(self, field_id: int) -> IcebergType:
+        if field_id == -1:
+            return self.existing_schema.as_struct()
+        else:
+            return self.existing_schema.find_field(field_id).field_type
+
+    def field(self, field: NestedField, partner_id: Optional[int], field_result: bool) -> bool:
+        return partner_id is None
+
+    def list(self, list_type: ListType, list_partner_id: Optional[int], element_missing: bool) -> bool:
+        if list_partner_id is None:
+            return True
+
+        if element_missing:
+            raise ValueError("Error traversing schemas: element is missing, but list is present")
+
+        partner_list_type = self._find_field_type(list_partner_id)
+        if not isinstance(partner_list_type, ListType):
+            raise ValueError(f"Expected list-type, got: {partner_list_type}")
+
+        self._update_column(list_type.element_field, partner_list_type.element_field)
+
+        return False
+
+    def map(self, map_type: MapType, map_partner_id: Optional[int], key_missing: bool, value_missing: bool) -> bool:
+        if map_partner_id is None:
+            return True
+
+        if key_missing:
+            raise ValueError("Error traversing schemas: key is missing, but map is present")
+
+        if value_missing:
+            raise ValueError("Error traversing schemas: value is missing, but map is present")
+
+        partner_map_type = self._find_field_type(map_partner_id)
+        if not isinstance(partner_map_type, MapType):
+            raise ValueError(f"Expected map-type, got: {partner_map_type}")
+
+        self._update_column(map_type.key_field, partner_map_type.key_field)
+        self._update_column(map_type.value_field, partner_map_type.value_field)
+
+        return False
+
+    def primitive(self, primitive: PrimitiveType, primitive_partner_id: Optional[int]) -> bool:
+        return primitive_partner_id is None
+
+
+class PartnerIdByNameAccessor(PartnerAccessor[int]):
+    partner_schema: Schema
+    case_sensitive: bool
+
+    def __init__(self, partner_schema: Schema, case_sensitive: bool) -> None:
+        self.partner_schema = partner_schema
+        self.case_sensitive = case_sensitive
+
+    def schema_partner(self, partner: Optional[int]) -> Optional[int]:
+        return -1
+
+    def field_partner(self, partner_field_id: Optional[int], field_id: int, field_name: str) -> Optional[int]:
+        if partner_field_id is not None:
+            if partner_field_id == -1:
+                struct = self.partner_schema.as_struct()
+            else:
+                struct = self.partner_schema.find_field(partner_field_id).field_type
+                if not struct.is_struct:
+                    raise ValueError(f"Expected StructType: {struct}")
+
+            if field := struct.field_by_name(name=field_name, case_sensitive=self.case_sensitive):
+                return field.field_id
+
+        return None
+
+    def list_element_partner(self, partner_list_id: Optional[int]) -> Optional[int]:
+        if partner_list_id is not None and (field := self.partner_schema.find_field(partner_list_id)):
+            if not isinstance(field.field_type, ListType):
+                raise ValueError(f"Expected ListType: {field}")
+            return field.field_type.element_field.field_id
+        else:
+            return None
+
+    def map_key_partner(self, partner_map_id: Optional[int]) -> Optional[int]:
+        if partner_map_id is not None and (field := self.partner_schema.find_field(partner_map_id)):
+            if not isinstance(field.field_type, MapType):
+                raise ValueError(f"Expected MapType: {field}")
+            return field.field_type.key_field.field_id
+        else:
+            return None
+
+    def map_value_partner(self, partner_map_id: Optional[int]) -> Optional[int]:
+        if partner_map_id is not None and (field := self.partner_schema.find_field(partner_map_id)):
+            if not isinstance(field.field_type, MapType):
+                raise ValueError(f"Expected MapType: {field}")
+            return field.field_type.value_field.field_id
+        else:
+            return None
+
+
 def _add_fields(fields: Tuple[NestedField, ...], adds: Optional[List[NestedField]]) -> Tuple[NestedField, ...]:
     adds = adds or []
     return fields + tuple(adds)
@@ -1892,15 +2429,536 @@ def _add_and_move_fields(
     return None if len(adds) == 0 else tuple(*fields, *adds)
 
 
-def _generate_snapshot_id() -> int:
-    """Generate a new Snapshot ID from a UUID.
+@dataclass(frozen=True)
+class WriteTask:
+    write_uuid: uuid.UUID
+    task_id: int
+    df: pa.Table
+    sort_order_id: Optional[int] = None
 
-    Returns: An 64 bit long
+    # Later to be extended with partition information
+
+    def generate_data_file_filename(self, extension: str) -> str:
+        # Mimics the behavior in the Java API:
+        # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
+        return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+
+
+def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
+    return f'{location}/metadata/{commit_uuid}-m{num}.avro'
+
+
+def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
+    # Mimics the behavior in Java:
+    # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
+    return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
+
+
+def _dataframe_to_data_files(
+    table_metadata: TableMetadata, df: pa.Table, io: FileIO, write_uuid: Optional[uuid.UUID] = None
+) -> Iterable[DataFile]:
+    """Convert a PyArrow table into a DataFile.
+
+    Returns:
+        An iterable that supplies datafiles that represent the table.
     """
-    rnd_uuid = uuid.uuid4()
-    snapshot_id = int.from_bytes(
-        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
-    )
-    snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
+    from pyiceberg.io.pyarrow import write_file
 
-    return snapshot_id
+    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
+        raise ValueError("Cannot write to partitioned tables")
+
+    counter = itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
+
+    # This is an iter, so we don't have to materialize everything every time
+    # This will be more relevant when we start doing partitioned writes
+    yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+
+
+class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
+    commit_uuid: uuid.UUID
+    _operation: Operation
+    _snapshot_id: int
+    _parent_snapshot_id: Optional[int]
+    _added_data_files: List[DataFile]
+
+    def __init__(
+        self,
+        operation: Operation,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: Optional[uuid.UUID] = None,
+    ) -> None:
+        super().__init__(transaction)
+        self.commit_uuid = commit_uuid or uuid.uuid4()
+        self._io = io
+        self._operation = operation
+        self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
+        # Since we only support the main branch for now
+        self._parent_snapshot_id = (
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
+        )
+        self._added_data_files = []
+
+    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
+        self._added_data_files.append(data_file)
+        return self
+
+    @abstractmethod
+    def _deleted_entries(self) -> List[ManifestEntry]: ...
+
+    @abstractmethod
+    def _existing_manifests(self) -> List[ManifestFile]: ...
+
+    def _manifests(self) -> List[ManifestFile]:
+        def _write_added_manifest() -> List[ManifestFile]:
+            if self._added_data_files:
+                output_file_location = _new_manifest_path(
+                    location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
+                )
+                with write_manifest(
+                    format_version=self._transaction.table_metadata.format_version,
+                    spec=self._transaction.table_metadata.spec(),
+                    schema=self._transaction.table_metadata.schema(),
+                    output_file=self._io.new_output(output_file_location),
+                    snapshot_id=self._snapshot_id,
+                ) as writer:
+                    for data_file in self._added_data_files:
+                        writer.add_entry(
+                            ManifestEntry(
+                                status=ManifestEntryStatus.ADDED,
+                                snapshot_id=self._snapshot_id,
+                                data_sequence_number=None,
+                                file_sequence_number=None,
+                                data_file=data_file,
+                            )
+                        )
+                return [writer.to_manifest_file()]
+            else:
+                return []
+
+        def _write_delete_manifest() -> List[ManifestFile]:
+            # Check if we need to mark the files as deleted
+            deleted_entries = self._deleted_entries()
+            if len(deleted_entries) > 0:
+                output_file_location = _new_manifest_path(
+                    location=self._transaction.table_metadata.location, num=1, commit_uuid=self.commit_uuid
+                )
+
+                with write_manifest(
+                    format_version=self._transaction.table_metadata.format_version,
+                    spec=self._transaction.table_metadata.spec(),
+                    schema=self._transaction.table_metadata.schema(),
+                    output_file=self._io.new_output(output_file_location),
+                    snapshot_id=self._snapshot_id,
+                ) as writer:
+                    for delete_entry in deleted_entries:
+                        writer.add_entry(delete_entry)
+                return [writer.to_manifest_file()]
+            else:
+                return []
+
+        executor = ExecutorFactory.get_or_create()
+
+        added_manifests = executor.submit(_write_added_manifest)
+        delete_manifests = executor.submit(_write_delete_manifest)
+        existing_manifests = executor.submit(self._existing_manifests)
+
+        return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
+
+    def _summary(self) -> Summary:
+        ssc = SnapshotSummaryCollector()
+
+        for data_file in self._added_data_files:
+            ssc.add_file(data_file=data_file)
+
+        previous_snapshot = (
+            self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if self._parent_snapshot_id is not None
+            else None
+        )
+
+        return update_snapshot_summaries(
+            summary=Summary(operation=self._operation, **ssc.build()),
+            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
+            truncate_full_table=self._operation == Operation.OVERWRITE,
+        )
+
+    def _commit(self) -> UpdatesAndRequirements:
+        new_manifests = self._manifests()
+        next_sequence_number = self._transaction.table_metadata.next_sequence_number()
+
+        summary = self._summary()
+
+        manifest_list_file_path = _generate_manifest_list_path(
+            location=self._transaction.table_metadata.location,
+            snapshot_id=self._snapshot_id,
+            attempt=0,
+            commit_uuid=self.commit_uuid,
+        )
+        with write_manifest_list(
+            format_version=self._transaction.table_metadata.format_version,
+            output_file=self._io.new_output(manifest_list_file_path),
+            snapshot_id=self._snapshot_id,
+            parent_snapshot_id=self._parent_snapshot_id,
+            sequence_number=next_sequence_number,
+        ) as writer:
+            writer.add_manifests(new_manifests)
+
+        snapshot = Snapshot(
+            snapshot_id=self._snapshot_id,
+            parent_snapshot_id=self._parent_snapshot_id,
+            manifest_list=manifest_list_file_path,
+            sequence_number=next_sequence_number,
+            summary=summary,
+            schema_id=self._transaction.table_metadata.current_schema_id,
+        )
+
+        return (
+            (
+                AddSnapshotUpdate(snapshot=snapshot),
+                SetSnapshotRefUpdate(
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                ),
+            ),
+            (
+                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
+                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
+            ),
+        )
+
+
+class FastAppendFiles(_MergingSnapshotProducer):
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        A fast append will add another ManifestFile to the ManifestList.
+        All the existing manifest files are considered existing.
+        """
+        existing_manifests = []
+
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+
+            if previous_snapshot is None:
+                raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
+
+            for manifest in previous_snapshot.manifests(io=self._io):
+                if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
+                    existing_manifests.append(manifest)
+
+        return existing_manifests
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to record any deleted manifest entries.
+
+        In case of an append, nothing is deleted.
+        """
+        return []
+
+
+class OverwriteFiles(_MergingSnapshotProducer):
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        In the of a full overwrite, all the previous manifests are
+        considered deleted.
+        """
+        return []
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to record any deleted entries.
+
+        With a full overwrite all the entries are considered deleted.
+        With partial overwrites we have to use the predicate to evaluate
+        which entries are affected.
+        """
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if previous_snapshot is None:
+                # This should never happen since you cannot overwrite an empty table
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+            executor = ExecutorFactory.get_or_create()
+
+            def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+                return [
+                    ManifestEntry(
+                        status=ManifestEntryStatus.DELETED,
+                        snapshot_id=entry.snapshot_id,
+                        data_sequence_number=entry.data_sequence_number,
+                        file_sequence_number=entry.file_sequence_number,
+                        data_file=entry.data_file,
+                    )
+                    for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True)
+                    if entry.data_file.content == DataFileContent.DATA
+                ]
+
+            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
+            return list(chain(*list_of_entries))
+        else:
+            return []
+
+
+class UpdateSnapshot:
+    _transaction: Transaction
+    _io: FileIO
+
+    def __init__(self, transaction: Transaction, io: FileIO) -> None:
+        self._transaction = transaction
+        self._io = io
+
+    def fast_append(self) -> FastAppendFiles:
+        return FastAppendFiles(operation=Operation.APPEND, transaction=self._transaction, io=self._io)
+
+    def overwrite(self) -> OverwriteFiles:
+        return OverwriteFiles(
+            operation=Operation.OVERWRITE
+            if self._transaction.table_metadata.current_snapshot() is not None
+            else Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+        )
+
+
+class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
+    _transaction: Transaction
+    _name_to_field: Dict[str, PartitionField] = {}
+    _name_to_added_field: Dict[str, PartitionField] = {}
+    _transform_to_field: Dict[Tuple[int, str], PartitionField] = {}
+    _transform_to_added_field: Dict[Tuple[int, str], PartitionField] = {}
+    _renames: Dict[str, str] = {}
+    _added_time_fields: Dict[int, PartitionField] = {}
+    _case_sensitive: bool
+    _adds: List[PartitionField]
+    _deletes: Set[int]
+    _last_assigned_partition_id: int
+
+    def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
+        super().__init__(transaction)
+        self._name_to_field = {field.name: field for field in transaction.table_metadata.spec().fields}
+        self._name_to_added_field = {}
+        self._transform_to_field = {
+            (field.source_id, repr(field.transform)): field for field in transaction.table_metadata.spec().fields
+        }
+        self._transform_to_added_field = {}
+        self._adds = []
+        self._deletes = set()
+        self._last_assigned_partition_id = transaction.table_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1
+        self._renames = {}
+        self._transaction = transaction
+        self._case_sensitive = case_sensitive
+        self._added_time_fields = {}
+
+    def add_field(
+        self,
+        source_column_name: str,
+        transform: Transform[Any, Any],
+        partition_field_name: Optional[str] = None,
+    ) -> UpdateSpec:
+        ref = Reference(source_column_name)
+        bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
+        # verify transform can actually bind it
+        output_type = bound_ref.field.field_type
+        if not transform.can_transform(output_type):
+            raise ValueError(f"{transform} cannot transform {output_type} values from {bound_ref.field.name}")
+
+        transform_key = (bound_ref.field.field_id, repr(transform))
+        existing_partition_field = self._transform_to_field.get(transform_key)
+        if existing_partition_field and self._is_duplicate_partition(transform, existing_partition_field):
+            raise ValueError(f"Duplicate partition field for ${ref.name}=${ref}, ${existing_partition_field} already exists")
+
+        added = self._transform_to_added_field.get(transform_key)
+        if added:
+            raise ValueError(f"Already added partition: {added.name}")
+
+        new_field = self._partition_field((bound_ref.field.field_id, transform), partition_field_name)
+        if new_field.name in self._name_to_added_field:
+            raise ValueError(f"Already added partition field with name: {new_field.name}")
+
+        if isinstance(new_field.transform, TimeTransform):
+            existing_time_field = self._added_time_fields.get(new_field.source_id)
+            if existing_time_field:
+                raise ValueError(f"Cannot add time partition field: {new_field.name} conflicts with {existing_time_field.name}")
+            self._added_time_fields[new_field.source_id] = new_field
+        self._transform_to_added_field[transform_key] = new_field
+
+        existing_partition_field = self._name_to_field.get(new_field.name)
+        if existing_partition_field and new_field.field_id not in self._deletes:
+            if isinstance(existing_partition_field.transform, VoidTransform):
+                self.rename_field(
+                    existing_partition_field.name, existing_partition_field.name + "_" + str(existing_partition_field.field_id)
+                )
+            else:
+                raise ValueError(f"Cannot add duplicate partition field name: {existing_partition_field.name}")
+
+        self._name_to_added_field[new_field.name] = new_field
+        self._adds.append(new_field)
+        return self
+
+    def add_identity(self, source_column_name: str) -> UpdateSpec:
+        return self.add_field(source_column_name, IdentityTransform(), None)
+
+    def remove_field(self, name: str) -> UpdateSpec:
+        added = self._name_to_added_field.get(name)
+        if added:
+            raise ValueError(f"Cannot delete newly added field {name}")
+        renamed = self._renames.get(name)
+        if renamed:
+            raise ValueError(f"Cannot rename and delete field {name}")
+        field = self._name_to_field.get(name)
+        if not field:
+            raise ValueError(f"No such partition field: {name}")
+
+        self._deletes.add(field.field_id)
+        return self
+
+    def rename_field(self, name: str, new_name: str) -> UpdateSpec:
+        existing_field = self._name_to_field.get(new_name)
+        if existing_field and isinstance(existing_field.transform, VoidTransform):
+            return self.rename_field(name, name + "_" + str(existing_field.field_id))
+        added = self._name_to_added_field.get(name)
+        if added:
+            raise ValueError("Cannot rename recently added partitions")
+        field = self._name_to_field.get(name)
+        if not field:
+            raise ValueError(f"Cannot find partition field {name}")
+        if field.field_id in self._deletes:
+            raise ValueError(f"Cannot delete and rename partition field {name}")
+        self._renames[name] = new_name
+        return self
+
+    def _commit(self) -> UpdatesAndRequirements:
+        new_spec = self._apply()
+        updates: Tuple[TableUpdate, ...] = ()
+        requirements: Tuple[TableRequirement, ...] = ()
+
+        if self._transaction.table_metadata.default_spec_id != new_spec.spec_id:
+            if new_spec.spec_id not in self._transaction.table_metadata.specs():
+                updates = (
+                    AddPartitionSpecUpdate(spec=new_spec),
+                    SetDefaultSpecUpdate(spec_id=-1),
+                )
+            else:
+                updates = (SetDefaultSpecUpdate(spec_id=new_spec.spec_id),)
+
+            required_last_assigned_partitioned_id = self._transaction.table_metadata.last_partition_id
+            requirements = (AssertLastAssignedPartitionId(last_assigned_partition_id=required_last_assigned_partitioned_id),)
+
+        return updates, requirements
+
+    def _apply(self) -> PartitionSpec:
+        def _check_and_add_partition_name(schema: Schema, name: str, source_id: int, partition_names: Set[str]) -> None:
+            try:
+                field = schema.find_field(name)
+            except ValueError:
+                field = None
+
+            if source_id is not None and field is not None and field.field_id != source_id:
+                raise ValueError(f"Cannot create identity partition from a different field in the schema {name}")
+            elif field is not None and source_id != field.field_id:
+                raise ValueError(f"Cannot create partition from name that exists in schema {name}")
+            if not name:
+                raise ValueError("Undefined name")
+            if name in partition_names:
+                raise ValueError(f"Partition name has to be unique: {name}")
+            partition_names.add(name)
+
+        def _add_new_field(
+            schema: Schema, source_id: int, field_id: int, name: str, transform: Transform[Any, Any], partition_names: Set[str]
+        ) -> PartitionField:
+            _check_and_add_partition_name(schema, name, source_id, partition_names)
+            return PartitionField(source_id, field_id, transform, name)
+
+        partition_fields = []
+        partition_names: Set[str] = set()
+        for field in self._transaction.table_metadata.spec().fields:
+            if field.field_id not in self._deletes:
+                renamed = self._renames.get(field.name)
+                if renamed:
+                    new_field = _add_new_field(
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        renamed,
+                        field.transform,
+                        partition_names,
+                    )
+                else:
+                    new_field = _add_new_field(
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        field.name,
+                        field.transform,
+                        partition_names,
+                    )
+                partition_fields.append(new_field)
+            elif self._transaction.table_metadata.format_version == 1:
+                renamed = self._renames.get(field.name)
+                if renamed:
+                    new_field = _add_new_field(
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        renamed,
+                        VoidTransform(),
+                        partition_names,
+                    )
+                else:
+                    new_field = _add_new_field(
+                        self._transaction.table_metadata.schema(),
+                        field.source_id,
+                        field.field_id,
+                        field.name,
+                        VoidTransform(),
+                        partition_names,
+                    )
+
+                partition_fields.append(new_field)
+
+        for added_field in self._adds:
+            new_field = PartitionField(
+                source_id=added_field.source_id,
+                field_id=added_field.field_id,
+                transform=added_field.transform,
+                name=added_field.name,
+            )
+            partition_fields.append(new_field)
+
+        # Reuse spec id or create a new one.
+        new_spec = PartitionSpec(*partition_fields)
+        new_spec_id = INITIAL_PARTITION_SPEC_ID
+        for spec in self._transaction.table_metadata.specs().values():
+            if new_spec.compatible_with(spec):
+                new_spec_id = spec.spec_id
+                break
+            elif new_spec_id <= spec.spec_id:
+                new_spec_id = spec.spec_id + 1
+        return PartitionSpec(*partition_fields, spec_id=new_spec_id)
+
+    def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
+        if self._transaction.table_metadata.format_version == 2:
+            source_id, transform = transform_key
+            historical_fields = []
+            for spec in self._transaction.table_metadata.specs().values():
+                for field in spec.fields:
+                    historical_fields.append((field.source_id, field.field_id, repr(field.transform), field.name))
+
+            for field_key in historical_fields:
+                if field_key[0] == source_id and field_key[2] == repr(transform):
+                    if name is None or field_key[3] == name:
+                        return PartitionField(source_id, field_key[1], transform, name)
+
+        new_field_id = self._new_field_id()
+        if name is None:
+            tmp_field = PartitionField(transform_key[0], new_field_id, transform_key[1], 'unassigned_field_name')
+            name = _visit_partition_field(self._transaction.table_metadata.schema(), tmp_field, _PartitionNameGenerator())
+        return PartitionField(transform_key[0], new_field_id, transform_key[1], name)
+
+    def _new_field_id(self) -> int:
+        self._last_assigned_partition_id += 1
+        return self._last_assigned_partition_id
+
+    def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
+        return partition_field.field_id not in self._deletes and partition_field.transform == transform

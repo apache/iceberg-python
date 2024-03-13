@@ -19,14 +19,15 @@ import os
 from pathlib import Path
 from typing import Generator, List
 
+import pyarrow as pa
 import pytest
-from pytest import TempPathFactory
+from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
-from pyiceberg.catalog import Identifier
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -34,7 +35,12 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
+from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import _dataframe_to_data_files
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
     SortDirection,
@@ -42,11 +48,8 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import IdentityTransform
-
-
-@pytest.fixture(name="warehouse", scope="session")
-def fixture_warehouse(tmp_path_factory: TempPathFactory) -> Path:
-    return tmp_path_factory.mktemp("test_sql")
+from pyiceberg.typedef import Identifier
+from pyiceberg.types import IntegerType
 
 
 @pytest.fixture(name="random_identifier")
@@ -66,7 +69,7 @@ def fixture_another_random_identifier(warehouse: Path, database_name: str, table
 @pytest.fixture(scope="module")
 def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite+pysqlite:///:memory:",
+        "uri": "sqlite:///:memory:",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
@@ -78,8 +81,34 @@ def catalog_memory(warehouse: Path) -> Generator[SqlCatalog, None, None]:
 @pytest.fixture(scope="module")
 def catalog_sqlite(warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": "sqlite:////tmp/sql-catalog.db",
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
+    catalog.create_tables()
+    yield catalog
+    catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_sqlite_without_rowcount(warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
+    catalog.engine.dialect.supports_sane_rowcount = False
+    catalog.create_tables()
+    yield catalog
+    catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_sqlite_fsspec(warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+        PY_IO_IMPL: FSSPEC_FILE_IO,
     }
     catalog = SqlCatalog("test_sql_catalog", **props)
     catalog.create_tables()
@@ -123,6 +152,44 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
     table = catalog.create_table(random_identifier, table_schema_nested)
     assert table.sort_order().order_id == 0, "Order ID must match"
     assert table.sort_order().is_unsorted is True, "Order must be unsorted"
+    catalog.drop_table(random_identifier)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, table_schema_nested, properties={"format-version": "1"})
+    assert table.sort_order().order_id == 0, "Order ID must match"
+    assert table.sort_order().is_unsorted is True, "Order must be unsorted"
+    assert table.format_version == 1
+    assert table.spec() == UNPARTITIONED_PARTITION_SPEC
+    catalog.drop_table(random_identifier)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_create_table_with_pyarrow_schema(
+    catalog: SqlCatalog,
+    pyarrow_schema_simple_without_ids: pa.Schema,
+    iceberg_table_schema_simple: Schema,
+    random_identifier: Identifier,
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, pyarrow_schema_simple_without_ids)
+    assert table.schema() == iceberg_table_schema_simple
     catalog.drop_table(random_identifier)
 
 
@@ -180,6 +247,23 @@ def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schem
     catalog.create_table(random_identifier, table_schema_nested)
     with pytest.raises(TableAlreadyExistsError):
         catalog.create_table(random_identifier, table_schema_nested)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_create_table_if_not_exists_duplicated_table(
+    catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table1 = catalog.create_table(random_identifier, table_schema_nested)
+    table2 = catalog.create_table_if_not_exists(random_identifier, table_schema_nested)
+    assert table1.identifier == table2.identifier
 
 
 @pytest.mark.parametrize(
@@ -305,6 +389,7 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
@@ -322,6 +407,7 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, random_ide
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
@@ -341,6 +427,7 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: Identifier) -> None:
@@ -353,6 +440,7 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, random_identifier: 
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table(
@@ -377,6 +465,7 @@ def test_rename_table(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_from_self_identifier(
@@ -403,6 +492,7 @@ def test_rename_table_from_self_identifier(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_to_existing_one(
@@ -425,6 +515,7 @@ def test_rename_table_to_existing_one(
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier, another_random_identifier: Identifier) -> None:
@@ -439,6 +530,7 @@ def test_rename_missing_table(catalog: SqlCatalog, random_identifier: Identifier
     [
         lazy_fixture('catalog_memory'),
         lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
     ],
 )
 def test_rename_table_to_missing_namespace(
@@ -549,7 +641,7 @@ def test_create_namespace_with_null_properties(catalog: SqlCatalog, database_nam
         catalog.create_namespace(namespace=database_name, properties={None: "value"})  # type: ignore
 
     with pytest.raises(IntegrityError):
-        catalog.create_namespace(namespace=database_name, properties={"key": None})  # type: ignore
+        catalog.create_namespace(namespace=database_name, properties={"key": None})
 
 
 @pytest.mark.parametrize(
@@ -643,6 +735,18 @@ def test_load_empty_namespace_properties(catalog: SqlCatalog, database_name: str
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_load_namespace_properties_non_existing_namespace(catalog: SqlCatalog) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.load_namespace_properties("does_not_exist")
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) -> None:
     warehouse_location = "/test/location"
     test_properties = {
@@ -664,3 +768,187 @@ def test_update_namespace_properties(catalog: SqlCatalog, database_name: str) ->
         else:
             assert k in update_report.removed
     assert "updated test description" == catalog.load_namespace_properties(database_name)["comment"]
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, table_schema_nested)
+
+    assert catalog._parse_metadata_version(table.metadata_location) == 0
+    assert table.metadata.current_schema_id == 0
+
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+
+    assert catalog._parse_metadata_version(table.metadata_location) == 1
+    assert updated_table_metadata.current_schema_id == 1
+    assert len(updated_table_metadata.schemas) == 2
+    new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
+    assert new_schema
+    assert new_schema == update._apply()
+    assert new_schema.find_field("b").field_type == IntegerType()
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture('catalog_sqlite_fsspec'),
+    ],
+)
+def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, table_schema_simple)
+
+    df = pa.Table.from_pydict(
+        {
+            "foo": ["a"],
+            "bar": [1],
+            "baz": [True],
+        },
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+
+    table.append(df)
+
+    # new snapshot is written in APPEND mode
+    assert len(table.metadata.snapshots) == 1
+    assert table.metadata.snapshots[0].snapshot_id == table.metadata.current_snapshot_id
+    assert table.metadata.snapshots[0].parent_snapshot_id is None
+    assert table.metadata.snapshots[0].sequence_number == 1
+    assert table.metadata.snapshots[0].summary is not None
+    assert table.metadata.snapshots[0].summary.operation == Operation.APPEND
+    assert table.metadata.snapshots[0].summary['added-data-files'] == '1'
+    assert table.metadata.snapshots[0].summary['added-records'] == '1'
+    assert table.metadata.snapshots[0].summary['total-data-files'] == '1'
+    assert table.metadata.snapshots[0].summary['total-records'] == '1'
+
+    # read back the data
+    assert df == table.scan().to_arrow()
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table_a = catalog.create_table(random_identifier, table_schema_simple)
+    table_b = catalog.load_table(random_identifier)
+
+    with table_a.update_schema() as update:
+        update.add_column(path="b", field_type=IntegerType())
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 0, found 1"):
+        # This one should fail since it already has been updated
+        with table_b.update_schema() as update:
+            update.add_column(path="c", field_type=IntegerType())
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
+    identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
+
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    pa_table = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+        },
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+    )
+
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
+
+    pa_table_with_column = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+            'bar': [19, None, 25],
+        },
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
+    )
+
+    with tbl.transaction() as txn:
+        with txn.update_schema() as schema_txn:
+            schema_txn.union_by_name(pa_table_with_column.schema)
+
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
+                snapshot_update.append_data_file(data_file)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    # table properties can be set to int, but still serialized to string
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    property_with_int = {"property_name": 42}
+    table = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_int)
+    assert isinstance(table.properties["property_name"], str)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite_without_rowcount'),
+    ],
+)
+def test_table_properties_raise_for_none_value(
+    catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier
+) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    property_with_none = {"property_name": None}
+    with pytest.raises(ValidationError) as exc_info:
+        _ = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_none)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
