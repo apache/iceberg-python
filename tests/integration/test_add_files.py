@@ -24,10 +24,11 @@ import pyarrow.parquet as pq
 import pytest
 from pyspark.sql import SparkSession
 
-from pyiceberg.catalog import Catalog, Table
+from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BooleanType,
@@ -150,6 +151,44 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
                 writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+
+    # NameMapping must have been set to enable reads
+    assert tbl.name_mapping() is not None
+
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [5]
+    assert [row.existing_data_files_count for row in rows] == [0]
+    assert [row.deleted_data_files_count for row in rows] == [0]
+
+    df = spark.table(identifier)
+    assert df.count() == 5, "Expected 5 rows"
+    for col in df.columns:
+        assert df.filter(df[col].isNotNull()).count() == 5, "Expected all 5 rows to be non-null"
+
+
+@pytest.mark.integration
+def test_add_files_to_partitioned_table_hive_style(spark: SparkSession, session_catalog: Catalog) -> None:
+    # Typical Hive Style Partitioning does not have the partition date in the parquet file
+    # It is instead inferred from the partition path
+    identifier = "default.partitioned_hive_table"
+    tbl = _create_table(session_catalog, identifier, PARTITION_SPEC)
+
+    file_paths = [f"s3://warehouse/default/hive/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA.remove(3).remove(2)) as writer:
+                writer.write_table(ARROW_TABLE.drop_columns(["baz", "qux"]))
 
     # add the parquet files as data files
     tbl.add_files(file_paths=file_paths)
