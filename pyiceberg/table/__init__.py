@@ -416,8 +416,17 @@ class CreateTableTransaction(Transaction):
 
     def __init__(self, table: StagedTable):
         super().__init__(table, autocommit=False)
-        self._requirements = (AssertCreate(),)
         self._updates = self.create_changes(table.metadata)
+
+    def commit_transaction(self) -> Table:
+        """Commit the changes to the catalog.
+
+        Returns:
+            The table with the updates applied.
+        """
+        # In the case of a create table transaction, the only requirement is AssertCreate.
+        self._requirements = (AssertCreate(),)
+        return super().commit_transaction()
 
 
 class TableUpdateAction(Enum):
