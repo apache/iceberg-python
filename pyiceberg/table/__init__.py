@@ -71,7 +71,6 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     INITIAL_PARTITION_SPEC_ID,
     PARTITION_FIELD_ID_START,
-    IdentityTransform,
     PartitionField,
     PartitionSpec,
     _PartitionNameGenerator,
@@ -108,7 +107,7 @@ from pyiceberg.table.snapshots import (
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import SortOrder
-from pyiceberg.transforms import TimeTransform, Transform, VoidTransform
+from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
