@@ -47,14 +47,14 @@ include = [
 
 [tool.poetry.dependencies]
 python = "^3.8"
-mmhash3 = ">=3.0.0,<4.0.0"
+mmh3 = ">=4.0.0,<5.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
 rich = ">=10.11.0,<14.0.0"
 strictyaml = ">=1.7.0,<2.0.0" # CVE-2020-14343 was fixed in 5.4.
 pydantic = ">=2.0,<3.0,!=2.4.0,!=2.4.1" # 2.4.0, 2.4.1 has a critical bug
 sortedcontainers = "2.4.0"
-fsspec = ">=2023.1.0,<2024.1.0"
+fsspec = ">=2023.1.0,<2025.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<9.0.0"
@@ -149,6 +149,7 @@ warn_unreachable = true
 warn_unused_ignores = true
 disallow_any_generics = true
 disallow_untyped_defs = true
+implicit_reexport = false
 
 [[tool.mypy.overrides]]
 module = "pyarrow.*"

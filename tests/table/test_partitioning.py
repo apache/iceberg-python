@@ -127,5 +127,5 @@ def test_partition_type(table_schema_simple: Schema) -> None:
 
     assert spec.partition_type(table_schema_simple) == StructType(
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
-        NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=False),
+        NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
     )
