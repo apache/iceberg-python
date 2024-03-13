@@ -194,6 +194,16 @@ static_table = StaticTable.from_metadata(
 
 The static-table is considered read-only.
 
+## Check if a table exists
+
+To check whether the `bids` table exists:
+
+```python
+catalog.table_exists("docs_example.bids")
+```
+
+Returns `True` if the table already exists.
+
 ## Write support
 
 With PyIceberg 0.6.0 write support is added through Arrow. Let's consider an Arrow Table:
