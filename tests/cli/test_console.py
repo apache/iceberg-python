@@ -17,14 +17,17 @@
 import datetime
 import os
 import uuid
-from pathlib import PosixPath
+from pathlib import Path
+from typing import Generator
 from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
+from pytest_lazyfixture import lazy_fixture
 from pytest_mock import MockFixture
 
 from pyiceberg.catalog import WAREHOUSE_LOCATION, Catalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.cli.console import run
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -53,13 +56,22 @@ def env_vars(mocker: MockFixture) -> None:
     mocker.patch.dict(os.environ, MOCK_ENVIRONMENT)
 
 
-@pytest.fixture(name="catalog")
-def fixture_catalog(mocker: MockFixture, tmp_path: PosixPath) -> Catalog:
-    in_memory_catalog = InMemoryCatalog(
-        "test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"}
-    )
-    mocker.patch("pyiceberg.cli.console.load_catalog", return_value=in_memory_catalog)
-    return in_memory_catalog
+@pytest.fixture(scope="function")
+def catalog_memory(mocker: MockFixture, warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    catalog = InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: str(warehouse)})
+    mocker.patch("pyiceberg.cli.console.load_catalog", return_value=catalog)
+    yield catalog
+
+
+@pytest.fixture(scope="function")
+def catalog_sqlite(mocker: MockFixture, warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    props = {
+        "uri": "sqlite:///:memory:",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog("test_sql_catalog", **props)
+    mocker.patch("pyiceberg.cli.console.load_catalog", return_value=catalog)
+    yield catalog
 
 
 @pytest.fixture(name="namespace_properties")
@@ -95,6 +107,13 @@ TEST_TIMESTAMP = 1602638573874
 MOCK_ENVIRONMENT = {"PYICEBERG_CATALOG__PRODUCTION__URI": "test://doesnotexist"}
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_list_root(catalog: Catalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
 
@@ -105,6 +124,13 @@ def test_list_root(catalog: Catalog) -> None:
     assert TEST_TABLE_NAMESPACE in result.output
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_list_namespace(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -120,6 +146,13 @@ def test_list_namespace(catalog: Catalog) -> None:
     assert result.output == "default.my_table\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_describe_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -130,6 +163,13 @@ def test_describe_namespace(catalog: Catalog, namespace_properties: Properties) 
     assert result.output == "location  s3://warehouse/database/location\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_describe_namespace_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -141,6 +181,13 @@ def test_describe_namespace_does_not_exists(catalog: Catalog) -> None:
 
 
 @pytest.fixture()
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_describe_table(catalog: Catalog, mock_datetime_now: None) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -174,6 +221,13 @@ Properties
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_describe_table_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -183,6 +237,13 @@ def test_describe_table_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Table or namespace does not exist: default.doesnotexist\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_schema(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -202,6 +263,13 @@ z  long
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_schema_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -211,6 +279,13 @@ def test_schema_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_spec(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -230,6 +305,13 @@ def test_spec(catalog: Catalog) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_spec_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -240,6 +322,13 @@ def test_spec_does_not_exists(catalog: Catalog) -> None:
 
 
 @pytest.fixture()
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_uuid(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -253,6 +342,13 @@ def test_uuid(catalog: Catalog) -> None:
     assert result.output == """d20125c8-7284-442c-9aea-15fee620737c\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_uuid_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -262,6 +358,13 @@ def test_uuid_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_location(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -274,6 +377,13 @@ def test_location(catalog: Catalog) -> None:
     assert result.output == f"""{catalog.properties.get(WAREHOUSE_LOCATION)}/default/my_table\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_location_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -283,6 +393,13 @@ def test_location_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_drop_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -296,6 +413,13 @@ def test_drop_table(catalog: Catalog) -> None:
     assert result.output == """Dropped table: default.my_table\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_drop_table_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -305,6 +429,13 @@ def test_drop_table_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_drop_namespace(catalog: Catalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
 
@@ -314,6 +445,13 @@ def test_drop_namespace(catalog: Catalog) -> None:
     assert result.output == """Dropped namespace: default\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_drop_namespace_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -323,6 +461,13 @@ def test_drop_namespace_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Namespace does not exist: ('doesnotexist',)\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_namespace(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["create", "namespace", TEST_TABLE_NAMESPACE])
@@ -330,6 +475,13 @@ def test_create_namespace(catalog: InMemoryCatalog) -> None:
     assert result.output == """Created namespace: default\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_namespace_already_exists(catalog: InMemoryCatalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
 
@@ -339,6 +491,13 @@ def test_create_namespace_already_exists(catalog: InMemoryCatalog) -> None:
     assert result.output == "Namespace already exists: ('default',)\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_rename_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -352,6 +511,13 @@ def test_rename_table(catalog: Catalog) -> None:
     assert result.output == """Renamed table from default.my_table to default.my_new_table\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_rename_table_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -361,6 +527,13 @@ def test_rename_table_does_not_exists(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -375,6 +548,13 @@ def test_properties_get_table(catalog: Catalog) -> None:
     assert result.output == "read.split.target.size  134217728\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_table_specific_property(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -389,6 +569,13 @@ def test_properties_get_table_specific_property(catalog: Catalog) -> None:
     assert result.output == "134217728\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_table_specific_property_that_doesnt_exist(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -403,6 +590,13 @@ def test_properties_get_table_specific_property_that_doesnt_exist(catalog: Catal
     assert result.output == "Could not find property doesnotexist on table default.my_table\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_table_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -412,6 +606,13 @@ def test_properties_get_table_does_not_exist(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('doesnotexist',)\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -421,6 +622,13 @@ def test_properties_get_namespace(catalog: Catalog, namespace_properties: Proper
     assert result.output == "location  s3://warehouse/database/location\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_namespace_specific_property(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -430,6 +638,13 @@ def test_properties_get_namespace_specific_property(catalog: Catalog, namespace_
     assert result.output == "s3://warehouse/database/location\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_get_namespace_does_not_exist(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -439,6 +654,13 @@ def test_properties_get_namespace_does_not_exist(catalog: Catalog, namespace_pro
     assert result.output == "Namespace does not exist: ('doesnotexist',)\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_set_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -448,6 +670,13 @@ def test_properties_set_namespace(catalog: Catalog, namespace_properties: Proper
     assert result.output == "Updated location on default\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_set_namespace_that_doesnt_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -457,6 +686,13 @@ def test_properties_set_namespace_that_doesnt_exist(catalog: Catalog) -> None:
     assert result.output == "Namespace does not exist: ('doesnotexist',)\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_set_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -470,6 +706,13 @@ def test_properties_set_table(catalog: Catalog) -> None:
     assert "Writing is WIP" in result.output
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_set_table_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -479,6 +722,13 @@ def test_properties_set_table_does_not_exist(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_remove_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -488,6 +738,13 @@ def test_properties_remove_namespace(catalog: Catalog, namespace_properties: Pro
     assert result.output == "Property location removed from default\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_remove_namespace_that_doesnt_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -497,6 +754,13 @@ def test_properties_remove_namespace_that_doesnt_exist(catalog: Catalog) -> None
     assert result.output == "Namespace does not exist: ('doesnotexist',)\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_remove_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -511,6 +775,13 @@ def test_properties_remove_table(catalog: Catalog) -> None:
     assert "Writing is WIP" in result.output
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_remove_table_property_does_not_exists(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -524,6 +795,13 @@ def test_properties_remove_table_property_does_not_exists(catalog: Catalog) -> N
     assert result.output == "Property doesnotexist does not exist on default.my_table\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_properties_remove_table_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -533,6 +811,13 @@ def test_properties_remove_table_does_not_exist(catalog: Catalog) -> None:
     assert result.output == "Table does not exist: ('default', 'doesnotexist')\n"
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_list_root(catalog: Catalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
 
@@ -542,6 +827,13 @@ def test_json_list_root(catalog: Catalog) -> None:
     assert result.output == """["default"]\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_list_namespace(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -555,6 +847,13 @@ def test_json_list_namespace(catalog: Catalog) -> None:
     assert result.output == """["default.my_table"]\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_describe_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -564,6 +863,13 @@ def test_json_describe_namespace(catalog: Catalog, namespace_properties: Propert
     assert result.output == """{"location": "s3://warehouse/database/location"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_describe_namespace_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -574,6 +880,13 @@ def test_json_describe_namespace_does_not_exists(catalog: Catalog) -> None:
 
 
 @pytest.fixture()
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_describe_table(catalog: Catalog, mock_datetime_now: None) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -590,6 +903,13 @@ def test_json_describe_table(catalog: Catalog, mock_datetime_now: None) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_describe_table_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -602,6 +922,13 @@ def test_json_describe_table_does_not_exists(catalog: Catalog) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_schema(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -618,6 +945,13 @@ def test_json_schema(catalog: Catalog) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_schema_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -627,6 +961,13 @@ def test_json_schema_does_not_exists(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('default', 'doesnotexist')"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_spec(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -640,6 +981,13 @@ def test_json_spec(catalog: Catalog) -> None:
     assert result.output == """{"spec-id":0,"fields":[{"source-id":1,"field-id":1000,"transform":"identity","name":"x"}]}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_spec_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -650,6 +998,13 @@ def test_json_spec_does_not_exists(catalog: Catalog) -> None:
 
 
 @pytest.fixture()
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_uuid(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -663,6 +1018,13 @@ def test_json_uuid(catalog: Catalog) -> None:
     assert result.output == """{"uuid": "d20125c8-7284-442c-9aea-15fee620737c"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_uuid_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -672,6 +1034,13 @@ def test_json_uuid_does_not_exists(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('default', 'doesnotexist')"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_location(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -685,6 +1054,13 @@ def test_json_location(catalog: Catalog) -> None:
     assert result.output == f'"{catalog.properties.get(WAREHOUSE_LOCATION)}/default/my_table"\n'
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_location_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -694,6 +1070,13 @@ def test_json_location_does_not_exists(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('default', 'doesnotexist')"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_drop_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -707,6 +1090,13 @@ def test_json_drop_table(catalog: Catalog) -> None:
     assert result.output == """"Dropped table: default.my_table"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_drop_table_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -716,6 +1106,13 @@ def test_json_drop_table_does_not_exists(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('default', 'doesnotexist')"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_drop_namespace(catalog: Catalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
 
@@ -725,6 +1122,13 @@ def test_json_drop_namespace(catalog: Catalog) -> None:
     assert result.output == """"Dropped namespace: default"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_drop_namespace_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -734,6 +1138,13 @@ def test_json_drop_namespace_does_not_exists(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchNamespaceError", "message": "Namespace does not exist: ('doesnotexist',)"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_rename_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -747,6 +1158,13 @@ def test_json_rename_table(catalog: Catalog) -> None:
     assert result.output == """"Renamed table from default.my_table to default.my_new_table"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_rename_table_does_not_exists(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -756,6 +1174,13 @@ def test_json_rename_table_does_not_exists(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('default', 'doesnotexist')"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -770,6 +1195,13 @@ def test_json_properties_get_table(catalog: Catalog) -> None:
     assert result.output == """{"read.split.target.size": "134217728"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_table_specific_property(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -784,6 +1216,13 @@ def test_json_properties_get_table_specific_property(catalog: Catalog) -> None:
     assert result.output == """"134217728"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_table_specific_property_that_doesnt_exist(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -801,6 +1240,13 @@ def test_json_properties_get_table_specific_property_that_doesnt_exist(catalog: 
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_table_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -810,6 +1256,13 @@ def test_json_properties_get_table_does_not_exist(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('doesnotexist',)"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -819,6 +1272,13 @@ def test_json_properties_get_namespace(catalog: Catalog, namespace_properties: P
     assert result.output == """{"location": "s3://warehouse/database/location"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_namespace_specific_property(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -828,6 +1288,13 @@ def test_json_properties_get_namespace_specific_property(catalog: Catalog, names
     assert result.output == """"s3://warehouse/database/location"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_get_namespace_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -837,6 +1304,13 @@ def test_json_properties_get_namespace_does_not_exist(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchNamespaceError", "message": "Namespace does not exist: ('doesnotexist',)"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_set_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -846,6 +1320,13 @@ def test_json_properties_set_namespace(catalog: Catalog, namespace_properties: P
     assert result.output == """"Updated location on default"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_set_namespace_that_doesnt_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -857,6 +1338,13 @@ def test_json_properties_set_namespace_that_doesnt_exist(catalog: Catalog) -> No
     assert result.output == """{"type": "NoSuchNamespaceError", "message": "Namespace does not exist: ('doesnotexist',)"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_set_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -873,6 +1361,13 @@ def test_json_properties_set_table(catalog: Catalog) -> None:
     assert "Writing is WIP" in result.output
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_set_table_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -884,6 +1379,13 @@ def test_json_properties_set_table_does_not_exist(catalog: Catalog) -> None:
     assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: ('default', 'doesnotexist')"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_remove_namespace(catalog: Catalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
@@ -893,6 +1395,13 @@ def test_json_properties_remove_namespace(catalog: Catalog, namespace_properties
     assert result.output == """"Property location removed from default"\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_remove_namespace_that_doesnt_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
@@ -902,6 +1411,13 @@ def test_json_properties_remove_namespace_that_doesnt_exist(catalog: Catalog) ->
     assert result.output == """{"type": "NoSuchNamespaceError", "message": "Namespace does not exist: ('doesnotexist',)"}\n"""
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_remove_table(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -916,6 +1432,13 @@ def test_json_properties_remove_table(catalog: Catalog) -> None:
     assert "Writing is WIP" in result.output
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_remove_table_property_does_not_exists(catalog: Catalog) -> None:
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -933,6 +1456,13 @@ def test_json_properties_remove_table_property_does_not_exists(catalog: Catalog)
     )
 
 
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_json_properties_remove_table_does_not_exist(catalog: Catalog) -> None:
     # pylint: disable=unused-argument
 
