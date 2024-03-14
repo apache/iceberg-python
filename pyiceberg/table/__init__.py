@@ -2572,13 +2572,11 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
-        partition_summary_limit = self._transaction.table_metadata.properties.get(
-            TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
-        )
-        if isinstance(partition_summary_limit, str):
-            raise ValueError(
-                f"WRITE_PARTITION_SUMMARY_LIMIT in table properties should be int but get str: {partition_summary_limit}"
+        partition_summary_limit = int(
+            self._transaction.table_metadata.properties.get(
+                TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
             )
+        )
         ssc.set_partition_summary_limit(partition_summary_limit)
 
         for data_file in self._added_data_files:

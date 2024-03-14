@@ -147,21 +147,13 @@ def manifest_file() -> ManifestFile:
     )
 
 
-@pytest.fixture
-def data_file() -> DataFile:
-    return DataFile(
-        content=DataFileContent.DATA,
-        record_count=100,
-        file_size_in_bytes=1234,
-    )
-
-
-def test_snapshot_summary_collector(data_file: DataFile) -> None:
+@pytest.mark.integration
+def test_snapshot_summary_collector(table_schema_simple: Schema) -> None:
     ssc = SnapshotSummaryCollector()
 
     assert ssc.build() == {}
-
-    ssc.add_file(data_file)
+    data_file = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
+    ssc.add_file(data_file, schema=table_schema_simple)
 
     assert ssc.build() == {
         'added-data-files': '1',
@@ -170,6 +162,7 @@ def test_snapshot_summary_collector(data_file: DataFile) -> None:
     }
 
 
+@pytest.mark.integration
 def test_snapshot_summary_collector_with_partition() -> None:
     # Given
 

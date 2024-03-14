@@ -23,7 +23,7 @@ from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -272,20 +272,16 @@ class SnapshotSummaryCollector:
     def set_partition_summary_limit(self, limit: int) -> None:
         self.max_changed_partitions_for_summaries = limit
 
-    def add_file(
-        self, data_file: DataFile, partition_spec: Optional[PartitionSpec] = None, schema: Optional[Schema] = None
-    ) -> None:
+    def add_file(self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC) -> None:
         self.metrics.add_file(data_file)
-        if getattr(data_file, "partition", None) is not None and len(data_file.partition.record_fields()) != 0:
-            if partition_spec is None or schema is None:
-                raise ValueError("add data file with partition but without specifying the partiton_spec and schema")
+        if len(data_file.partition.record_fields()) != 0:
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=True, schema=schema)
 
-    def remove_file(self, data_file: DataFile, partition_spec: Optional[PartitionSpec], schema: Optional[Schema]) -> None:
+    def remove_file(
+        self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC
+    ) -> None:
         self.metrics.remove_file(data_file)
-        if getattr(data_file, "partition", None) is not None and len(data_file.partition.record_fields()) != 0:
-            if partition_spec is None or schema is None:
-                raise ValueError("remove data file with partition but without specifying the partiton_spec and schema")
+        if len(data_file.partition.record_fields()) != 0:
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=False, schema=schema)
 
     def update_partition_metrics(self, partition_spec: PartitionSpec, file: DataFile, is_add_file: bool, schema: Schema) -> None:
@@ -303,12 +299,12 @@ class SnapshotSummaryCollector:
         set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
         if changed_partitions_size <= self.max_changed_partitions_for_summaries:
             for partition_path, update_metrics_partition in self.partition_metrics.items():
-                if (summary := self.partition_summary(update_metrics_partition)) and len(summary) != 0:
+                if (summary := self._partition_summary(update_metrics_partition)) and len(summary) != 0:
                     properties[CHANGED_PARTITION_PREFIX + partition_path] = summary
 
         return properties
 
-    def partition_summary(self, update_metrics: UpdateMetrics) -> str:
+    def _partition_summary(self, update_metrics: UpdateMetrics) -> str:
         return ",".join([f"{prop}={val}" for prop, val in update_metrics.to_dict().items()])
 
 
