@@ -42,7 +42,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, SerializeAsAny, field_validator
+from pydantic import Field, field_validator
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
@@ -381,26 +381,6 @@ class Transaction:
             return self._table
 
 
-
-class TableUpdate(IcebergRootModel):
-    root: Union[
-        UpgradeFormatVersionUpdate,
-        AddSchemaUpdate,
-        SetCurrentSchemaUpdate,
-        AddPartitionSpecUpdate,
-        SetDefaultSpecUpdate,
-        AddSortOrderUpdate,
-        SetDefaultSortOrderUpdate,
-        AddSnapshotUpdate,
-        SetSnapshotRefUpdate,
-        RemoveSnapshotsUpdate,
-        RemoveSnapshotRefUpdate,
-        SetLocationUpdate,
-        SetPropertiesUpdate,
-        RemovePropertiesUpdate,
-    ] = Field(..., discriminator='action')
-
-
 class UpgradeFormatVersionUpdate(IcebergBaseModel):
     action: Literal['upgrade-format-version'] = Field(default="upgrade-format-version")
     format_version: int = Field(alias="format-version")
@@ -445,7 +425,7 @@ class SetDefaultSortOrderUpdate(IcebergBaseModel):
 
 
 class AddSnapshotUpdate(IcebergBaseModel):
-    action:  Literal['add-snapshot'] = Field(default="add-snapshot")
+    action: Literal['add-snapshot'] = Field(default="add-snapshot")
     snapshot: Snapshot
 
 
@@ -488,6 +468,27 @@ class RemovePropertiesUpdate(IcebergBaseModel):
     removals: List[str]
 
 
+TableUpdate = Annotated[
+    Union[
+        UpgradeFormatVersionUpdate,
+        AddSchemaUpdate,
+        SetCurrentSchemaUpdate,
+        AddPartitionSpecUpdate,
+        SetDefaultSpecUpdate,
+        AddSortOrderUpdate,
+        SetDefaultSortOrderUpdate,
+        AddSnapshotUpdate,
+        SetSnapshotRefUpdate,
+        RemoveSnapshotsUpdate,
+        RemoveSnapshotRefUpdate,
+        SetLocationUpdate,
+        SetPropertiesUpdate,
+        RemovePropertiesUpdate,
+    ],
+    Field(discriminator='action'),
+]
+
+
 class _TableMetadataUpdateContext:
     _updates: List[TableUpdate]
 
@@ -499,15 +500,11 @@ class _TableMetadataUpdateContext:
 
     def is_added_snapshot(self, snapshot_id: int) -> bool:
         return any(
-            update.snapshot.snapshot_id == snapshot_id
-            for update in self._updates
-            if update.action == TableUpdateAction.add_snapshot
+            update.snapshot.snapshot_id == snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)
         )
 
     def is_added_schema(self, schema_id: int) -> bool:
-        return any(
-            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
-        )
+        return any(update.schema_.schema_id == schema_id for update in self._updates if isinstance(update, AddSchemaUpdate))
 
     def is_added_sort_order(self, sort_order_id: int) -> bool:
         return any(
@@ -768,7 +765,7 @@ class TableRequirement(IcebergBaseModel):
     type: str
 
     @classmethod
-    def get_subclasses(cls):
+    def get_subclasses(cls) -> tuple[str]:
         return tuple(cls.__subclasses__())
 
     @abstractmethod
