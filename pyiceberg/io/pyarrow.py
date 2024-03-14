@@ -1599,7 +1599,6 @@ def fill_parquet_file_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
-    check_schema_parity: bool = True,
 ) -> None:
     """
     Compute and fill the following fields of the DataFile object.
@@ -1619,12 +1618,12 @@ def fill_parquet_file_metadata(
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
     """
-    if check_schema_parity and parquet_metadata.num_columns != len(stats_columns):
+    if parquet_metadata.num_columns != len(stats_columns):
         raise ValueError(
             f"Number of columns in statistics configuration ({len(stats_columns)}) is different from the number of columns in pyarrow table ({parquet_metadata.num_columns})"
         )
 
-    if check_schema_parity and parquet_metadata.num_columns != len(parquet_column_mapping):
+    if parquet_metadata.num_columns != len(parquet_column_mapping):
         raise ValueError(
             f"Number of columns in column mapping ({len(parquet_column_mapping)}) is different from the number of columns in pyarrow table ({parquet_metadata.num_columns})"
         )
@@ -1779,6 +1778,11 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, tasks
         with input_file.open() as input_stream:
             parquet_metadata = pq.read_metadata(input_stream)
 
+        if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
+            raise NotImplementedError(
+                f"Cannot add file {task.file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
+            )
+
         schema = table_metadata.schema()
         data_file = DataFile(
             content=DataFileContent.DATA,
@@ -1797,7 +1801,6 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, tasks
             parquet_metadata=parquet_metadata,
             stats_columns=compute_statistics_plan(schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(schema),
-            check_schema_parity=False,
         )
         yield data_file
 

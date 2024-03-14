@@ -57,7 +57,6 @@ from pyiceberg.expressions import (
     EqualTo,
     Reference,
 )
-from pyiceberg.expressions.literals import StringLiteral
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
@@ -1156,16 +1155,14 @@ class Table:
 
         Args:
             file_paths: The list of full file paths to be added as data files to the table
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
         """
-        if any(not isinstance(field.transform, IdentityTransform) for field in self.metadata.spec().fields):
-            raise NotImplementedError("Cannot add_files to a table with Transform Partitions")
-
-        if self.name_mapping() is None:
-            with self.transaction() as tx:
+        with self.transaction() as tx:
+            if self.name_mapping() is None:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
-
-        with self.transaction() as txn:
-            with txn.update_snapshot().fast_append() as update_snapshot:
+            with tx.update_snapshot().fast_append() as update_snapshot:
                 data_files = _parquet_files_to_data_files(table_metadata=self.metadata, file_paths=file_paths, io=self.io)
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
@@ -2505,25 +2502,13 @@ def _dataframe_to_data_files(
 
 
 def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
-    partition_spec = table_metadata.spec()
-    partition_struct = partition_spec.partition_type(table_metadata.schema())
+    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
+        raise ValueError("Cannot add files to partitioned tables")
 
     for file_path in file_paths:
-        # file_path = 's3://warehouse/default/part1=2024-03-04/part2=ABCD'
-        # ['part1=2024-03-04', 'part2=ABCD']
-        parts = [part for part in file_path.split("/") if "=" in part]
-
-        partition_field_values = {}
-        for part in parts:
-            partition_name, string_value = part.split("=")
-            if partition_field := partition_struct.field_by_name(partition_name):
-                partition_field_values[partition_name] = StringLiteral(string_value).to(partition_field.field_type).value
-
         yield AddFileTask(
             file_path=file_path,
-            partition_field_value=Record(**{
-                field.name: partition_field_values.get(field.name) for field in partition_struct.fields
-            }),
+            partition_field_value=Record(),
         )
 
 

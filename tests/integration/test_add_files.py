@@ -26,10 +26,9 @@ from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -64,6 +63,26 @@ ARROW_TABLE = pa.Table.from_pylist(
     schema=ARROW_SCHEMA,
 )
 
+ARROW_SCHEMA_WITH_IDS = pa.schema([
+    pa.field('foo', pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+    pa.field('bar', pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+    pa.field('baz', pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
+    pa.field('qux', pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
+])
+
+
+ARROW_TABLE_WITH_IDS = pa.Table.from_pylist(
+    [
+        {
+            "foo": True,
+            "bar": "bar_string",
+            "baz": 123,
+            "qux": date(2024, 3, 7),
+        }
+    ],
+    schema=ARROW_SCHEMA_WITH_IDS,
+)
+
 ARROW_SCHEMA_UPDATED = pa.schema([
     ("foo", pa.bool_()),
     ("baz", pa.int32()),
@@ -81,12 +100,6 @@ ARROW_TABLE_UPDATED = pa.Table.from_pylist(
         }
     ],
     schema=ARROW_SCHEMA_UPDATED,
-)
-
-PARTITION_SPEC = PartitionSpec(
-    PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="baz"),
-    PartitionField(source_id=10, field_id=1001, transform=IdentityTransform(), name="qux"),
-    spec_id=0,
 )
 
 
@@ -140,11 +153,11 @@ def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: 
 
 
 @pytest.mark.integration
-def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Catalog) -> None:
-    identifier = "default.partitioned_table"
-    tbl = _create_table(session_catalog, identifier, PARTITION_SPEC)
+def test_add_files_to_unpartitioned_table_raises_file_not_found(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.unpartitioned_raises_not_found"
+    tbl = _create_table(session_catalog, identifier)
 
-    file_paths = [f"s3://warehouse/default/partitioned/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
+    file_paths = [f"s3://warehouse/default/unpartitioned_raises_not_found/test-{i}.parquet" for i in range(5)]
     # write parquet files
     for file_path in file_paths:
         fo = tbl.io.new_output(file_path)
@@ -153,102 +166,26 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
                 writer.write_table(ARROW_TABLE)
 
     # add the parquet files as data files
-    tbl.add_files(file_paths=file_paths)
-
-    # NameMapping must have been set to enable reads
-    assert tbl.name_mapping() is not None
-
-    rows = spark.sql(
-        f"""
-        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
-        FROM {identifier}.all_manifests
-    """
-    ).collect()
-
-    assert [row.added_data_files_count for row in rows] == [5]
-    assert [row.existing_data_files_count for row in rows] == [0]
-    assert [row.deleted_data_files_count for row in rows] == [0]
-
-    df = spark.table(identifier)
-    assert df.count() == 5, "Expected 5 rows"
-    for col in df.columns:
-        assert df.filter(df[col].isNotNull()).count() == 5, "Expected all 5 rows to be non-null"
+    with pytest.raises(FileNotFoundError):
+        tbl.add_files(file_paths=file_paths + ["s3://warehouse/default/unpartitioned_raises_not_found/unknown.parquet"])
 
 
 @pytest.mark.integration
-def test_add_files_to_partitioned_table_hive_style(spark: SparkSession, session_catalog: Catalog) -> None:
-    # Typical Hive Style Partitioning does not have the partition date in the parquet file
-    # It is instead inferred from the partition path
-    identifier = "default.partitioned_hive_table"
-    tbl = _create_table(session_catalog, identifier, PARTITION_SPEC)
+def test_add_files_to_unpartitioned_table_raises_has_field_ids(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.unpartitioned_raises_field_ids"
+    tbl = _create_table(session_catalog, identifier)
 
-    file_paths = [f"s3://warehouse/default/hive/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
+    file_paths = [f"s3://warehouse/default/unpartitioned_raises_field_ids/test-{i}.parquet" for i in range(5)]
     # write parquet files
     for file_path in file_paths:
         fo = tbl.io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA.remove(3).remove(2)) as writer:
-                writer.write_table(ARROW_TABLE.drop_columns(["baz", "qux"]))
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA_WITH_IDS) as writer:
+                writer.write_table(ARROW_TABLE_WITH_IDS)
 
     # add the parquet files as data files
-    tbl.add_files(file_paths=file_paths)
-
-    # NameMapping must have been set to enable reads
-    assert tbl.name_mapping() is not None
-
-    rows = spark.sql(
-        f"""
-        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
-        FROM {identifier}.all_manifests
-    """
-    ).collect()
-
-    assert [row.added_data_files_count for row in rows] == [5]
-    assert [row.existing_data_files_count for row in rows] == [0]
-    assert [row.deleted_data_files_count for row in rows] == [0]
-
-    df = spark.table(identifier)
-    assert df.count() == 5, "Expected 5 rows"
-    for col in df.columns:
-        assert df.filter(df[col].isNotNull()).count() == 5, "Expected all 5 rows to be non-null"
-
-
-@pytest.mark.integration
-def test_add_files_to_partitioned_table_missing_partition(spark: SparkSession, session_catalog: Catalog) -> None:
-    identifier = "default.partitioned_table"
-    tbl = _create_table(session_catalog, identifier, PARTITION_SPEC)
-
-    file_paths = [f"s3://warehouse/default/partitioned_2/baz=123/test-{i}.parquet" for i in range(5)]
-    # write parquet files
-    for file_path in file_paths:
-        fo = tbl.io.new_output(file_path)
-        with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
-                writer.write_table(ARROW_TABLE)
-
-    # add the parquet files as data files
-    tbl.add_files(file_paths=file_paths)
-
-    # NameMapping must have been set to enable reads
-    assert tbl.name_mapping() is not None
-
-    rows = spark.sql(
-        f"""
-        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
-        FROM {identifier}.all_manifests
-    """
-    ).collect()
-
-    assert [row.added_data_files_count for row in rows] == [5]
-    assert [row.existing_data_files_count for row in rows] == [0]
-    assert [row.deleted_data_files_count for row in rows] == [0]
-
-    df = spark.table(identifier)
-    assert df.count() == 5, "Expected 5 rows"
-
-    for col in df.columns:
-        value_count = 0 if col == "qux" else 5
-        assert df.filter(df[col].isNotNull()).count() == value_count, f"Expected {value_count} rows to be non-null"
+    with pytest.raises(NotImplementedError):
+        tbl.add_files(file_paths=file_paths)
 
 
 @pytest.mark.integration
