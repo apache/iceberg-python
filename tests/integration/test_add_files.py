@@ -234,7 +234,7 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(spark: SparkSessio
     df = spark.table(identifier)
     assert df.count() == 6, "Expected 6 rows"
     assert len(df.columns) == 4, "Expected 4 columns"
-    df.show()
+
     for col in df.columns:
         value_count = 1 if col == "quux" else 6
         assert df.filter(df[col].isNotNull()).count() == value_count, f"Expected {value_count} rows to be non-null"

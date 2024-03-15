@@ -1159,6 +1159,9 @@ class Table:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned tables")
+
         with self.transaction() as tx:
             if self.name_mapping() is None:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
