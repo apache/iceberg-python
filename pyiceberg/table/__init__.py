@@ -508,9 +508,7 @@ class _TableMetadataUpdateContext:
 
     def is_added_sort_order(self, sort_order_id: int) -> bool:
         return any(
-            update.sort_order.order_id == sort_order_id
-            for update in self._updates
-            if update.action == TableUpdateAction.add_sort_order
+            update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
 
 
@@ -899,6 +897,7 @@ class AssertDefaultSortOrderId(ValidatableTableRequirement):
                 f"Requirement failed: default sort order id has changed: expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
             )
 
+
 TableRequirement = Annotated[
     Union[
         AssertCreate,
@@ -914,6 +913,7 @@ TableRequirement = Annotated[
 ]
 
 UpdatesAndRequirements = Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]
+
 
 class Namespace(IcebergRootModel[List[str]]):
     """Reference to one or more levels of a namespace."""
