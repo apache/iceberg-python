@@ -1160,7 +1160,7 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         if len(self.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
+            raise ValueError("Cannot add files to partitioned tables")
 
         with self.transaction() as tx:
             if self.name_mapping() is None:
