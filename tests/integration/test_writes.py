@@ -28,14 +28,16 @@ import pyarrow.parquet as pq
 import pytest
 import pytz
 from pyarrow.fs import S3FileSystem
+from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
-from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
+from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
-from pyiceberg.table import _dataframe_to_data_files
+from pyiceberg.table import Table, _dataframe_to_data_files
+from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -50,28 +52,6 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
-
-
-@pytest.fixture()
-def catalog() -> Catalog:
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-    try:
-        catalog.create_namespace("default")
-    except NamespaceAlreadyExistsError:
-        pass
-
-    return catalog
-
 
 TEST_DATA_WITH_NULL = {
     'bool': [False, None, True],
@@ -113,20 +93,6 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=12, name="binary", field_type=BinaryType(), required=False),
     NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
 )
-
-
-@pytest.fixture(scope="session")
-def session_catalog() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
 
 
 @pytest.fixture(scope="session")
@@ -250,40 +216,6 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
     tbl.append(arrow_table_with_null)
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session")
-def spark() -> SparkSession:
-    import importlib.metadata
-    import os
-
-    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-    scala_version = "2.12"
-    iceberg_version = "1.4.3"
-
-    os.environ["PYSPARK_SUBMIT_ARGS"] = (
-        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
-    )
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
-
-    spark = (
-        SparkSession.builder.appName("PyIceberg integration test")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
-        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
-        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.defaultCatalog", "integration")
-        .getOrCreate()
-    )
-
-    return spark
 
 
 @pytest.mark.integration
@@ -425,7 +357,29 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_python_writes_with_spark_snapshot_reads(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
+) -> None:
+    identifier = "default.python_writes_with_spark_snapshot_reads"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    def get_current_snapshot_id(identifier: str) -> int:
+        return (
+            spark.sql(f"SELECT snapshot_id FROM {identifier}.snapshots order by committed_at desc limit 1")
+            .collect()[0]
+            .snapshot_id
+        )
+
+    tbl.overwrite(arrow_table_with_null)
+    assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+    tbl.overwrite(arrow_table_with_null)
+    assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+    tbl.append(arrow_table_with_null)
+    assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize(
     "properties, expected_compression_name",
     [
@@ -441,7 +395,7 @@ def test_write_parquet_compression_properties(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: str,
+    format_version: int,
     properties: Dict[str, Any],
     expected_compression_name: str,
 ) -> None:
@@ -674,5 +628,39 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
             schema_txn.union_by_name(pa_table_with_column.schema)
 
         with txn.update_snapshot().fast_append() as snapshot_update:
-            for data_file in _dataframe_to_data_files(table=tbl, df=pa_table_with_column, file_schema=txn.schema()):
+            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
                 snapshot_update.append_data_file(data_file)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_properties_int_value(
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: int,
+) -> None:
+    # table properties can be set to int, but still serialized to string
+    property_with_int = {"property_name": 42}
+    identifier = "default.test_table_properties_int_value"
+
+    tbl = _create_table(
+        session_catalog, identifier, {"format-version": format_version, **property_with_int}, [arrow_table_with_null]
+    )
+    assert isinstance(tbl.properties["property_name"], str)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_properties_raise_for_none_value(
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: int,
+) -> None:
+    property_with_none = {"property_name": None}
+    identifier = "default.test_table_properties_raise_for_none_value"
+
+    with pytest.raises(ValidationError) as exc_info:
+        _ = _create_table(
+            session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
+        )
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

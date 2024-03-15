@@ -59,8 +59,6 @@ from pyiceberg.catalog import (
     METADATA_LOCATION,
     TABLE_TYPE,
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -79,7 +77,7 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, TableProperties, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -130,17 +128,21 @@ class _HiveClient:
 
     _transport: TTransport
     _client: Client
+    _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, ugi: Optional[str] = None):
         url_parts = urlparse(uri)
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
         self._transport = TTransport.TBufferedTransport(transport)
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
         self._client = Client(protocol)
+        self._ugi = ugi.split(':') if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
+        if self._ugi:
+            self._client.set_ugi(*self._ugi)
         return self._client
 
     def __exit__(
@@ -233,7 +235,7 @@ class HiveCatalog(Catalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"])
+        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
 
     def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -360,6 +362,7 @@ class HiveCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])

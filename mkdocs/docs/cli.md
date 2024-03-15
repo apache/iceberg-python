@@ -36,6 +36,7 @@ Options:
 --catalog TEXT
 --verbose BOOLEAN
 --output [text|json]
+--ugi TEXT
 --uri TEXT
 --credential TEXT
 --help                Show this message and exit.

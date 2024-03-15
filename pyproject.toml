@@ -47,14 +47,14 @@ include = [
 
 [tool.poetry.dependencies]
 python = "^3.8"
-mmhash3 = ">=3.0.0,<4.0.0"
+mmh3 = ">=4.0.0,<5.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
 rich = ">=10.11.0,<14.0.0"
 strictyaml = ">=1.7.0,<2.0.0" # CVE-2020-14343 was fixed in 5.4.
 pydantic = ">=2.0,<3.0,!=2.4.0,!=2.4.1" # 2.4.0, 2.4.1 has a critical bug
 sortedcontainers = "2.4.0"
-fsspec = ">=2023.1.0,<2024.1.0"
+fsspec = ">=2023.1.0,<2025.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<9.0.0"
@@ -79,7 +79,7 @@ pytest-checkdocs = "2.10.1"
 pytest-lazy-fixture = "0.6.3"
 pre-commit = "3.5.0"
 fastavro = "1.9.4"
-coverage = { version = "^7.4.1", extras = ["toml"] }
+coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.11.0"
 moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.9.0"
@@ -149,6 +149,7 @@ warn_unreachable = true
 warn_unused_ignores = true
 disallow_any_generics = true
 disallow_untyped_defs = true
+implicit_reexport = false
 
 [[tool.mypy.overrides]]
 module = "pyarrow.*"
@@ -312,7 +313,7 @@ source = ['pyiceberg/']
 [tool.ruff]
 src = ['pyiceberg','tests']
 extend-exclude = ["dev/provision.py"]
-select = [
+lint.select = [
     "E", # pycodestyle
     "W", # pycodestyle
     "F", # Pyflakes
@@ -322,11 +323,11 @@ select = [
     "I", # isort
     "UP", # pyupgrade
 ]
-ignore = ["E501","E203","B024","B028","UP037"]
+lint.ignore = ["E501","E203","B024","B028","UP037"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
-fixable = ["ALL"]
-unfixable = []
+lint.fixable = ["ALL"]
+lint.unfixable = []
 
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -352,19 +353,19 @@ exclude = [
     "node_modules",
     "venv",
 ]
-per-file-ignores = {}
+lint.per-file-ignores = {}
 # Ignore _all_ violations.
 # Same as Black.
 line-length = 130
 
 # Allow unused variables when underscore-prefixed.
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
-[tool.ruff.pyupgrade]
+[tool.ruff.lint.pyupgrade]
 # Preserve types, even if a file imports `from __future__ import annotations`.
 keep-runtime-typing = true
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 detect-same-package = true
 lines-between-types = 0
 known-first-party = ["pyiceberg", "tests"]

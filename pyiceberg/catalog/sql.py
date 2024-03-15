@@ -44,8 +44,6 @@ from sqlalchemy.orm import (
 from pyiceberg.catalog import (
     METADATA_LOCATION,
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -64,7 +62,7 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -373,7 +371,7 @@ class SqlCatalog(Catalog):
 
         Raises:
             NoSuchTableError: If a table with the given identifier does not exist.
-            CommitFailedException: If the commit failed.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
@@ -567,7 +565,9 @@ class SqlCatalog(Catalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        database_name = self.identifier_to_database(namespace)
+        if not self._namespace_exists(database_name):
+            raise NoSuchNamespaceError(f"Database {database_name} does not exists")
 
         stmt = select(IcebergNamespaceProperties).where(
             IcebergNamespaceProperties.catalog_name == self.name, IcebergNamespaceProperties.namespace == database_name

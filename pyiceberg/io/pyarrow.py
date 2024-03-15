@@ -69,14 +69,14 @@ from pyarrow.fs import (
 )
 from sortedcontainers import SortedList
 
-from pyiceberg.avro.resolver import ResolveError
 from pyiceberg.conversions import to_bytes
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysTrue,
     BooleanExpression,
     BoundTerm,
-    Literal,
 )
+from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
     bind,
@@ -125,6 +125,7 @@ from pyiceberg.schema import (
     visit_with_partner,
 )
 from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
@@ -655,6 +656,10 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     return visit_pyarrow(schema, visitor)
 
 
+def _pyarrow_to_schema_without_ids(schema: pa.Schema) -> Schema:
+    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+
+
 @singledispatch
 def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisitor[T]) -> T:
     """Apply a pyarrow schema visitor to any point within a schema.
@@ -690,7 +695,9 @@ def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 
 @visit_pyarrow.register(pa.ListType)
-def _(obj: pa.ListType, visitor: PyArrowSchemaVisitor[T]) -> T:
+@visit_pyarrow.register(pa.FixedSizeListType)
+@visit_pyarrow.register(pa.LargeListType)
+def _(obj: Union[pa.ListType, pa.LargeListType, pa.FixedSizeListType], visitor: PyArrowSchemaVisitor[T]) -> T:
     visitor.before_list_element(obj.value_field)
     result = visit_pyarrow(obj.value_type, visitor)
     visitor.after_list_element(obj.value_field)
@@ -1714,7 +1721,7 @@ def fill_parquet_file_metadata(
     data_file.split_offsets = split_offsets
 
 
-def write_file(table: Table, tasks: Iterator[WriteTask], file_schema: Optional[Schema] = None) -> Iterator[DataFile]:
+def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     task = next(tasks)
 
     try:
@@ -1724,15 +1731,15 @@ def write_file(table: Table, tasks: Iterator[WriteTask], file_schema: Optional[S
     except StopIteration:
         pass
 
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table.properties)
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
-    file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
-    file_schema = file_schema or table.schema()
-    arrow_file_schema = schema_to_pyarrow(file_schema)
+    file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
+    schema = table_metadata.schema()
+    arrow_file_schema = schema_to_pyarrow(schema)
 
-    fo = table.io.new_output(file_path)
+    fo = io.new_output(file_path)
     row_group_size = PropertyUtil.property_as_int(
-        properties=table.properties,
+        properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
     )
@@ -1751,7 +1758,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask], file_schema: Optional[S
         # sort_order_id=task.sort_order_id,
         sort_order_id=None,
         # Just copy these from the table for now
-        spec_id=table.spec().spec_id,
+        spec_id=table_metadata.default_spec_id,
         equality_ids=None,
         key_metadata=None,
     )
@@ -1759,8 +1766,8 @@ def write_file(table: Table, tasks: Iterator[WriteTask], file_schema: Optional[S
     fill_parquet_file_metadata(
         data_file=data_file,
         parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(file_schema, table.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
     return iter([data_file])
 

@@ -42,14 +42,14 @@ from typing import (
     List,
     Optional,
 )
-from urllib.parse import urlparse
 
 import boto3
 import pytest
 from moto import mock_aws
+from pyspark.sql import SparkSession
 
 from pyiceberg import schema
-from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
@@ -57,8 +57,6 @@ from pyiceberg.io import (
     GCS_PROJECT_ID,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
-    OutputFile,
-    OutputStream,
     fsspec,
     load_file_io,
 )
@@ -88,7 +86,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     from moto.server import ThreadedMotoServer  # type: ignore
 
-    from pyiceberg.io.pyarrow import PyArrowFile, PyArrowFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
 def pytest_collection_modifyitems(items: List[pytest.Item]) -> None:
@@ -894,7 +892,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
             "file_size_in_bytes": 1265950,
             "block_size_in_bytes": 67108864,
@@ -1456,40 +1454,6 @@ def simple_map() -> MapType:
     return MapType(key_id=19, key_type=StringType(), value_id=25, value_type=DoubleType(), value_required=False)
 
 
-class LocalOutputFile(OutputFile):
-    """An OutputFile implementation for local files (for test use only)."""
-
-    def __init__(self, location: str) -> None:
-        parsed_location = urlparse(location)  # Create a ParseResult from the uri
-        if (
-            parsed_location.scheme and parsed_location.scheme != "file"
-        ):  # Validate that an uri is provided with a scheme of `file`
-            raise ValueError("LocalOutputFile location must have a scheme of `file`")
-        elif parsed_location.netloc:
-            raise ValueError(f"Network location is not allowed for LocalOutputFile: {parsed_location.netloc}")
-
-        super().__init__(location=location)
-        self._path = parsed_location.path
-
-    def __len__(self) -> int:
-        """Return the length of an instance of the LocalOutputFile class."""
-        return os.path.getsize(self._path)
-
-    def exists(self) -> bool:
-        return os.path.exists(self._path)
-
-    def to_input_file(self) -> "PyArrowFile":
-        from pyiceberg.io.pyarrow import PyArrowFileIO
-
-        return PyArrowFileIO().new_input(location=self.location)
-
-    def create(self, overwrite: bool = False) -> OutputStream:
-        output_file = open(self._path, "wb" if overwrite else "xb")
-        if not issubclass(type(output_file), OutputStream):
-            raise TypeError("Object returned from LocalOutputFile.create(...) does not match the OutputStream protocol.")
-        return output_file
-
-
 @pytest.fixture(scope="session")
 def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any]) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
@@ -1962,3 +1926,53 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 @pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture(scope="session")
+def session_catalog() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+@pytest.fixture(scope="session")
+def spark() -> SparkSession:
+    import importlib.metadata
+    import os
+
+    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
+    scala_version = "2.12"
+    iceberg_version = "1.4.3"
+
+    os.environ["PYSPARK_SUBMIT_ARGS"] = (
+        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
+        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
+    )
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
+
+    spark = (
+        SparkSession.builder.appName("PyIceberg integration test")
+        .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.cache-enabled", "false")
+        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
+        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
+        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
+        .config("spark.sql.defaultCatalog", "integration")
+        .getOrCreate()
+    )
+
+    return spark

@@ -17,9 +17,11 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from copy import copy
-from typing import Dict
+from typing import Any, Dict
 
+import pyarrow as pa
 import pytest
+from pydantic import ValidationError
 from sortedcontainers import SortedList
 
 from pyiceberg.catalog.noop import NoopCatalog
@@ -42,6 +44,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     AddSnapshotUpdate,
+    AddSortOrderUpdate,
     AssertCreate,
     AssertCurrentSchemaId,
     AssertDefaultSortOrderId,
@@ -51,19 +54,20 @@ from pyiceberg.table import (
     AssertRefSnapshotId,
     AssertTableUUID,
     RemovePropertiesUpdate,
+    SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
-    SnapshotRef,
     StaticTable,
     Table,
     UpdateSchema,
     _apply_table_update,
-    _generate_snapshot_id,
+    _check_schema,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -103,26 +107,26 @@ def test_schema(table_v2: Table) -> None:
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-        schema_id=1,
         identifier_field_ids=[1, 2],
     )
+    assert table_v2.schema().schema_id == 1
 
 
 def test_schemas(table_v2: Table) -> None:
     assert table_v2.schemas() == {
         0: Schema(
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
-            schema_id=0,
             identifier_field_ids=[],
         ),
         1: Schema(
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
             NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
             NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-            schema_id=1,
             identifier_field_ids=[1, 2],
         ),
     }
+    assert table_v2.schemas()[0].schema_id == 0
+    assert table_v2.schemas()[1].schema_id == 1
 
 
 def test_spec(table_v2: Table) -> None:
@@ -262,31 +266,34 @@ def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
 
 def test_table_scan_projection_full_schema(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.select("x", "y", "z").projection() == Schema(
+    projection_schema = scan.select("x", "y", "z").projection()
+    assert projection_schema == Schema(
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-        schema_id=1,
         identifier_field_ids=[1, 2],
     )
+    assert projection_schema.schema_id == 1
 
 
 def test_table_scan_projection_single_column(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.select("y").projection() == Schema(
+    projection_schema = scan.select("y").projection()
+    assert projection_schema == Schema(
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
-        schema_id=1,
         identifier_field_ids=[2],
     )
+    assert projection_schema.schema_id == 1
 
 
 def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.with_case_sensitive(False).select("Y").projection() == Schema(
+    projection_schema = scan.with_case_sensitive(False).select("Y").projection()
+    assert projection_schema == Schema(
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
-        schema_id=1,
         identifier_field_ids=[2],
     )
+    assert projection_schema.schema_id == 1
 
 
 def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
@@ -431,7 +438,7 @@ def test_serialize_set_properties_updates() -> None:
 
 
 def test_add_column(table_v2: Table) -> None:
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     update.add_column(path="b", field_type=IntegerType())
     apply_schema: Schema = update._apply()  # pylint: disable=W0212
     assert len(apply_schema.fields) == 4
@@ -465,7 +472,7 @@ def test_add_primitive_type_column(table_v2: Table) -> None:
 
     for name, type_ in primitive_type.items():
         field_name = f"new_column_{name}"
-        update = UpdateSchema(table_v2)
+        update = UpdateSchema(transaction=table_v2.transaction())
         update.add_column(path=field_name, field_type=type_, doc=f"new_column_{name}")
         new_schema = update._apply()  # pylint: disable=W0212
 
@@ -477,7 +484,7 @@ def test_add_primitive_type_column(table_v2: Table) -> None:
 def test_add_nested_type_column(table_v2: Table) -> None:
     # add struct type column
     field_name = "new_column_struct"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     struct_ = StructType(
         NestedField(1, "lat", DoubleType()),
         NestedField(2, "long", DoubleType()),
@@ -495,7 +502,7 @@ def test_add_nested_type_column(table_v2: Table) -> None:
 def test_add_nested_map_type_column(table_v2: Table) -> None:
     # add map type column
     field_name = "new_column_map"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     map_ = MapType(1, StringType(), 2, IntegerType(), False)
     update.add_column(path=field_name, field_type=map_)
     new_schema = update._apply()  # pylint: disable=W0212
@@ -507,7 +514,7 @@ def test_add_nested_map_type_column(table_v2: Table) -> None:
 def test_add_nested_list_type_column(table_v2: Table) -> None:
     # add list type column
     field_name = "new_column_list"
-    update = UpdateSchema(table_v2)
+    update = UpdateSchema(transaction=table_v2.transaction())
     list_ = ListType(
         element_id=101,
         element_type=StructType(
@@ -662,6 +669,26 @@ def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
     )
 
 
+def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
+    new_sort_order = SortOrder(order_id=table_v2.sort_order().order_id + 1)
+    new_metadata = update_table_metadata(
+        table_v2.metadata,
+        (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1)),
+    )
+    assert len(new_metadata.sort_orders) == 2
+    assert new_metadata.sort_orders[-1] == new_sort_order
+    assert new_metadata.default_sort_order_id == new_sort_order.order_id
+
+
+def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot set current sort order to the last added one when no sort order has been added"):
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=-1),))
+
+    invalid_order_id = 10
+    with pytest.raises(ValueError, match=f"Sort order with id {invalid_order_id} does not exist"):
+        update_table_metadata(table_v2.metadata, (SetDefaultSortOrderUpdate(sort_order_id=invalid_order_id),))
+
+
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     base_metadata = table_v1.metadata
     transaction = table_v1.transaction()
@@ -782,7 +809,7 @@ def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
 
 def test_generate_snapshot_id(table_v2: Table) -> None:
     assert isinstance(_generate_snapshot_id(), int)
-    assert isinstance(table_v2.new_snapshot_id(), int)
+    assert isinstance(table_v2.metadata.new_snapshot_id(), int)
 
 
 def test_assert_create(table_v2: Table) -> None:
@@ -959,20 +986,22 @@ def test_correct_schema() -> None:
     )
 
     # Should use the current schema, instead the one from the snapshot
-    assert t.scan().projection() == Schema(
+    projection_schema = t.scan().projection()
+    assert projection_schema == Schema(
         NestedField(field_id=1, name='x', field_type=LongType(), required=True),
         NestedField(field_id=2, name='y', field_type=LongType(), required=True),
         NestedField(field_id=3, name='z', field_type=LongType(), required=True),
-        schema_id=1,
         identifier_field_ids=[1, 2],
     )
+    assert projection_schema.schema_id == 1
 
     # When we explicitly filter on the commit, we want to have the schema that's linked to the snapshot
-    assert t.scan(snapshot_id=123).projection() == Schema(
+    projection_schema = t.scan(snapshot_id=123).projection()
+    assert projection_schema == Schema(
         NestedField(field_id=1, name='x', field_type=LongType(), required=True),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert projection_schema.schema_id == 0
 
     with pytest.warns(UserWarning, match="Metadata does not contain schema with id: 10"):
         t.scan(snapshot_id=234).projection()
@@ -982,3 +1011,105 @@ def test_correct_schema() -> None:
         _ = t.scan(snapshot_id=-1).projection()
 
     assert "Snapshot not found: -1" in str(exc_info.value)
+
+
+def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.decimal128(18, 6), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ))
+
+    expected = r"""Mismatch in fields:
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field              ┃ Dataframe field                 ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional string  │ 1: foo: optional string         │
+│ ❌ │ 2: bar: required int     │ 2: bar: required decimal\(18, 6\) │
+│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean        │
+└────┴──────────────────────────┴─────────────────────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        _check_schema(table_schema_simple, other_schema)
+
+
+def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ))
+
+    expected = """Mismatch in fields:
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field              ┃ Dataframe field          ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
+│ ❌ │ 2: bar: required int     │ 2: bar: optional int     │
+│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
+└────┴──────────────────────────┴──────────────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        _check_schema(table_schema_simple, other_schema)
+
+
+def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ))
+
+    expected = """Mismatch in fields:
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field              ┃ Dataframe field          ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
+│ ❌ │ 2: bar: required int     │ Missing                  │
+│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
+└────┴──────────────────────────┴──────────────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        _check_schema(table_schema_simple, other_schema)
+
+
+def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("baz", pa.bool_(), nullable=True),
+        pa.field("new_field", pa.date32(), nullable=True),
+    ))
+
+    expected = r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
+
+    with pytest.raises(ValueError, match=expected):
+        _check_schema(table_schema_simple, other_schema)
+
+
+def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
+    # metadata properties are all strings
+    for k, v in example_table_metadata_v2["properties"].items():
+        assert isinstance(k, str)
+        assert isinstance(v, str)
+    metadata = TableMetadataV2(**example_table_metadata_v2)
+    for k, v in metadata.properties.items():
+        assert isinstance(k, str)
+        assert isinstance(v, str)
+
+    # property can be set to int, but still serialized as string
+    property_with_int = {"property_name": 42}
+    new_example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_int}
+    assert isinstance(new_example_table_metadata_v2["properties"]["property_name"], int)
+    new_metadata = TableMetadataV2(**new_example_table_metadata_v2)
+    assert isinstance(new_metadata.properties["property_name"], str)
+
+
+def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[str, Any]) -> None:
+    property_with_none = {"property_name": None}
+    example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_none}
+    with pytest.raises(ValidationError) as exc_info:
+        TableMetadataV2(**example_table_metadata_v2)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

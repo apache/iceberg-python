@@ -208,6 +208,27 @@ def test_create_table_with_no_database(
 
 
 @mock_aws
+def test_create_table_with_glue_catalog_id(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    catalog_id = "444444444444"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(
+        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.id": catalog_id}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier, table_schema_nested)
+    assert table.identifier == (catalog_name,) + identifier
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+    glue = boto3.client("glue")
+    databases = glue.get_databases()
+    assert databases["DatabaseList"][0]["CatalogId"] == catalog_id
+
+
+@mock_aws
 def test_create_duplicated_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:

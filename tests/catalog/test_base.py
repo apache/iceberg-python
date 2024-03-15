@@ -16,6 +16,9 @@
 #  under the License.
 # pylint:disable=redefined-outer-name
 
+
+import uuid
+from pathlib import PosixPath
 from typing import (
     Dict,
     List,
@@ -26,12 +29,11 @@ from typing import (
 
 import pyarrow as pa
 import pytest
+from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
-    Identifier,
-    Properties,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -41,7 +43,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
+from pyiceberg.io import WAREHOUSE, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -52,16 +54,23 @@ from pyiceberg.table import (
     SetCurrentSchemaUpdate,
     Table,
     TableIdentifier,
+    update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
+from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import IntegerType, LongType, NestedField
+
+DEFAULT_WAREHOUSE_LOCATION = "file:///tmp/warehouse"
 
 
 class InMemoryCatalog(Catalog):
-    """An in-memory catalog implementation for testing purposes."""
+    """
+    An in-memory catalog implementation that uses in-memory data-structures to store the namespaces and tables.
+
+    This is useful for test, demo, and playground but not in production as data is not persisted.
+    """
 
     __tables: Dict[Identifier, Table]
     __namespaces: Dict[Identifier, Properties]
@@ -70,6 +79,7 @@ class InMemoryCatalog(Catalog):
         super().__init__(name, **properties)
         self.__tables = {}
         self.__namespaces = {}
+        self._warehouse_location = properties.get(WAREHOUSE, DEFAULT_WAREHOUSE_LOCATION)
 
     def create_table(
         self,
@@ -79,6 +89,7 @@ class InMemoryCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        table_uuid: Optional[uuid.UUID] = None,
     ) -> Table:
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
@@ -91,24 +102,26 @@ class InMemoryCatalog(Catalog):
             if namespace not in self.__namespaces:
                 self.__namespaces[namespace] = {}
 
-            new_location = location or f's3://warehouse/{"/".join(identifier)}/data'
-            metadata = TableMetadataV1(**{
-                "format-version": 1,
-                "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
-                "location": new_location,
-                "last-updated-ms": 1602638573874,
-                "last-column-id": schema.highest_field_id,
-                "schema": schema.model_dump(),
-                "partition-spec": partition_spec.model_dump()["fields"],
-                "properties": properties,
-                "current-snapshot-id": -1,
-                "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
-            })
+            if not location:
+                location = f'{self._warehouse_location}/{"/".join(identifier)}'
+
+            metadata_location = self._get_metadata_location(location=location)
+            metadata = new_table_metadata(
+                schema=schema,
+                partition_spec=partition_spec,
+                sort_order=sort_order,
+                location=location,
+                properties=properties,
+                table_uuid=table_uuid,
+            )
+            io = load_file_io({**self.properties, **properties}, location=location)
+            self._write_metadata(metadata, io, metadata_location)
+
             table = Table(
                 identifier=identifier,
                 metadata=metadata,
-                metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                io=load_file_io(),
+                metadata_location=metadata_location,
+                io=io,
                 catalog=self,
             )
             self.__tables[identifier] = table
@@ -118,37 +131,29 @@ class InMemoryCatalog(Catalog):
         raise NotImplementedError
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        new_metadata: Optional[TableMetadata] = None
-        metadata_location = ""
-        for update in table_request.updates:
-            if isinstance(update, AddSchemaUpdate):
-                add_schema_update: AddSchemaUpdate = update
-                identifier = tuple(table_request.identifier.namespace.root) + (table_request.identifier.name,)
-                table = self.__tables[identifier]
-                new_metadata = new_table_metadata(
-                    add_schema_update.schema_,
-                    table.metadata.partition_specs[0],
-                    table.sort_order(),
-                    table.location(),
-                    table.properties,
-                    table.metadata.table_uuid,
-                )
-
-                table = Table(
-                    identifier=identifier,
-                    metadata=new_metadata,
-                    metadata_location=f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json',
-                    io=load_file_io(),
-                    catalog=self,
-                )
-
-                self.__tables[identifier] = table
-                metadata_location = f's3://warehouse/{"/".join(identifier)}/metadata/metadata.json'
-
-        return CommitTableResponse(
-            metadata=new_metadata.model_dump() if new_metadata else {},
-            metadata_location=metadata_location if metadata_location else "",
+        identifier_tuple = self.identifier_to_tuple_without_catalog(
+            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
+        current_table = self.load_table(identifier_tuple)
+        base_metadata = current_table.metadata
+
+        for requirement in table_request.requirements:
+            requirement.validate(base_metadata)
+
+        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        if updated_metadata == base_metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+        # write new metadata
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+
+        # update table state
+        current_table.metadata = updated_metadata
+
+        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         identifier = self.identifier_to_tuple_without_catalog(identifier)
@@ -183,7 +188,7 @@ class InMemoryCatalog(Catalog):
             identifier=to_identifier,
             metadata=table.metadata,
             metadata_location=table.metadata_location,
-            io=load_file_io(),
+            io=self._load_file_io(properties=table.metadata.properties, location=table.metadata_location),
             catalog=self,
         )
         return self.__tables[to_identifier]
@@ -255,8 +260,8 @@ class InMemoryCatalog(Catalog):
 
 
 @pytest.fixture
-def catalog() -> InMemoryCatalog:
-    return InMemoryCatalog("test.in.memory.catalog", **{"test.key": "test.value"})
+def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
+    return InMemoryCatalog("test.in_memory.catalog", **{WAREHOUSE: tmp_path.absolute().as_posix(), "test.key": "test.value"})
 
 
 TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
@@ -267,7 +272,6 @@ TEST_TABLE_SCHEMA = Schema(
     NestedField(2, "y", LongType(), doc="comment"),
     NestedField(3, "z", LongType()),
 )
-TEST_TABLE_LOCATION = "protocol://some/location"
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"key1": "value1", "key2": "value2"}
 NO_SUCH_TABLE_ERROR = "Table does not exist: \\('com', 'organization', 'department', 'my_table'\\)"
@@ -277,13 +281,15 @@ NO_SUCH_NAMESPACE_ERROR = "Namespace does not exist: \\('com', 'organization', '
 NAMESPACE_NOT_EMPTY_ERROR = "Namespace is not empty: \\('com', 'organization', 'department'\\)"
 
 
-def given_catalog_has_a_table(catalog: InMemoryCatalog) -> Table:
+def given_catalog_has_a_table(
+    catalog: InMemoryCatalog,
+    properties: Properties = EMPTY_DICT,
+) -> Table:
     return catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
-        properties=TEST_TABLE_PROPERTIES,
+        properties=properties or TEST_TABLE_PROPERTIES,
     )
 
 
@@ -327,11 +333,23 @@ def test_create_table(catalog: InMemoryCatalog) -> None:
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
-        location=TEST_TABLE_LOCATION,
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+
+
+def test_create_table_location_override(catalog: InMemoryCatalog) -> None:
+    new_location = f"{catalog._warehouse_location}/new_location"
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        location=new_location,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+    assert table.location() == new_location
 
 
 @pytest.mark.parametrize(
@@ -355,8 +373,6 @@ def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_si
     table = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
         schema=pyarrow_schema_simple_without_ids,
-        location=TEST_TABLE_LOCATION,
-        partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )
     assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
@@ -395,6 +411,17 @@ def test_load_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
 def test_table_raises_error_on_table_not_found(catalog: InMemoryCatalog) -> None:
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
         catalog.load_table(TEST_TABLE_IDENTIFIER)
+
+
+def test_table_exists(catalog: InMemoryCatalog) -> None:
+    # Given
+    given_catalog_has_a_table(catalog)
+    # Then
+    assert catalog.table_exists(TEST_TABLE_IDENTIFIER)
+
+
+def test_table_exists_on_table_not_found(catalog: InMemoryCatalog) -> None:
+    assert not catalog.table_exists(TEST_TABLE_IDENTIFIER)
 
 
 def test_drop_table(catalog: InMemoryCatalog) -> None:
@@ -617,8 +644,9 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
 
     # Then
     assert response.metadata.table_uuid == given_table.metadata.table_uuid
-    assert len(response.metadata.schemas) == 1
-    assert response.metadata.schemas[0] == new_schema
+    assert len(response.metadata.schemas) == 2
+    assert response.metadata.schemas[1] == new_schema
+    assert response.metadata.current_schema_id == new_schema.schema_id
 
 
 def test_add_column(catalog: InMemoryCatalog) -> None:
@@ -631,9 +659,9 @@ def test_add_column(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 1
 
     transaction = given_table.transaction()
     transaction.update_schema().add_column(path="new_column2", field_type=IntegerType(), doc="doc").commit()
@@ -645,9 +673,9 @@ def test_add_column(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
         NestedField(field_id=5, name="new_column2", field_type=IntegerType(), required=False, doc="doc"),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 2
 
 
 def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
@@ -661,9 +689,9 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 1
 
     with given_table.transaction() as tx:
         tx.update_schema().add_column(path="new_column2", field_type=IntegerType(), doc="doc").commit()
@@ -674,11 +702,25 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
         NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         NestedField(field_id=4, name="new_column1", field_type=IntegerType(), required=False),
         NestedField(field_id=5, name="new_column2", field_type=IntegerType(), required=False, doc="doc"),
-        schema_id=0,
         identifier_field_ids=[],
     )
+    assert given_table.schema().schema_id == 2
 
 
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
-    assert s == "test.in.memory.catalog (<class 'test_base.InMemoryCatalog'>)"
+    assert s == "test.in_memory.catalog (<class 'test_base.InMemoryCatalog'>)"
+
+
+def test_table_properties_int_value(catalog: InMemoryCatalog) -> None:
+    # table properties can be set to int, but still serialized to string
+    property_with_int = {"property_name": 42}
+    given_table = given_catalog_has_a_table(catalog, properties=property_with_int)
+    assert isinstance(given_table.properties["property_name"], str)
+
+
+def test_table_properties_raise_for_none_value(catalog: InMemoryCatalog) -> None:
+    property_with_none = {"property_name": None}
+    with pytest.raises(ValidationError) as exc_info:
+        _ = given_catalog_has_a_table(catalog, properties=property_with_none)
+    assert "None type is not a supported value in properties: property_name" in str(exc_info.value)

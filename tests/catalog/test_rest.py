@@ -16,14 +16,14 @@
 #  under the License.
 # pylint: disable=redefined-outer-name,unused-argument
 import os
-from typing import Any, Dict, cast
+from typing import Any, Callable, Dict, cast
 from unittest import mock
 
 import pytest
 from requests_mock import Mocker
 
 import pyiceberg
-from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
+from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -36,6 +36,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -46,6 +47,10 @@ TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
 TEST_AUTH_URL = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
+TEST_SCOPE = "openid_offline_corpds_ds_profile"
+TEST_AUDIENCE = "test_audience"
+TEST_RESOURCE = "test_resource"
+
 TEST_HEADERS = {
     "Content-type": "application/json",
     "X-Client-Version": "0.14.1",
@@ -108,6 +113,8 @@ def test_token_200(rest_mock: Mocker) -> None:
             "token_type": "Bearer",
             "expires_in": 86400,
             "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "scope": "openid offline",
+            "refresh_token": "refresh_token",
         },
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
@@ -116,6 +123,101 @@ def test_token_200(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
         == f"Bearer {TEST_TOKEN}"
     )
+
+
+def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
+        == f"Bearer {TEST_TOKEN}"
+    )
+
+
+def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog(
+            "rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE
+        )._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_AUDIENCE in mock_request.last_request.text
+    assert TEST_RESOURCE in mock_request.last_request.text
+
+
+def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_AUDIENCE not in mock_request.last_request.text
+    assert TEST_RESOURCE not in mock_request.last_request.text
+
+
+def test_token_with_default_scope(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
+    )
+    assert "catalog" in mock_request.last_request.text
+
+
+def test_token_with_custom_scope(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_SCOPE in mock_request.last_request.text
 
 
 def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
@@ -165,6 +267,45 @@ def test_config_200(requests_mock: Mocker) -> None:
     history = requests_mock.request_history
     assert history[1].method == "GET"
     assert history[1].url == "https://iceberg-test-catalog/v1/config?warehouse=s3%3A%2F%2Fsome-bucket"
+
+
+def test_properties_sets_headers(requests_mock: Mocker) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+
+    catalog = RestCatalog(
+        "rest", uri=TEST_URI, warehouse="s3://some-bucket", **{"header.Content-Type": "application/vnd.api+json"}
+    )
+
+    assert (
+        catalog._session.headers.get("Content-type") == "application/vnd.api+json"
+    ), "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+
+    assert (
+        requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json"
+    ), "Config request did not include expected 'Content-Type' header"
+
+
+def test_config_sets_headers(requests_mock: Mocker) -> None:
+    namespace = "leden"
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {"header.Content-Type": "application/vnd.api+json"}, "overrides": {}},
+        status_code=200,
+    )
+    requests_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": [namespace], "properties": {}}, status_code=200)
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+    catalog.create_namespace(namespace)
+
+    assert (
+        catalog._session.headers.get("Content-type") == "application/vnd.api+json"
+    ), "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+    assert (
+        requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json"
+    ), "Create namespace request did not include expected 'Content-Type' header"
 
 
 def test_token_400(rest_mock: Mocker) -> None:
@@ -267,24 +408,39 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
-def test_list_namespaces_419(rest_mock: Mocker) -> None:
+def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
     new_token = "new_jwt_token"
     new_header = dict(TEST_HEADERS)
     new_header["Authorization"] = f"Bearer {new_token}"
 
-    rest_mock.post(
+    namespaces = rest_mock.register_uri(
+        "GET",
         f"{TEST_URI}v1/namespaces",
-        json={
-            "error": {
-                "message": "Authorization expired.",
-                "type": "AuthorizationExpiredError",
-                "code": 419,
-            }
-        },
-        status_code=419,
-        request_headers=TEST_HEADERS,
+        [
+            {
+                "status_code": 419,
+                "json": {
+                    "error": {
+                        "message": "Authorization expired.",
+                        "type": "AuthorizationExpiredError",
+                        "code": 419,
+                    }
+                },
+                "headers": TEST_HEADERS,
+            },
+            {
+                "status_code": 200,
+                "json": {"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+                "headers": new_header,
+            },
+            {
+                "status_code": 200,
+                "json": {"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+                "headers": new_header,
+            },
+        ],
     )
-    rest_mock.post(
+    tokens = rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
         json={
             "access_token": new_token,
@@ -294,12 +450,6 @@ def test_list_namespaces_419(rest_mock: Mocker) -> None:
         },
         status_code=200,
     )
-    rest_mock.get(
-        f"{TEST_URI}v1/namespaces",
-        json={"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
-        status_code=200,
-        request_headers=new_header,
-    )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
     assert catalog.list_namespaces() == [
         ("default",),
@@ -307,6 +457,17 @@ def test_list_namespaces_419(rest_mock: Mocker) -> None:
         ("fokko",),
         ("system",),
     ]
+    assert namespaces.call_count == 2
+    assert tokens.call_count == 1
+
+    assert catalog.list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+    assert namespaces.call_count == 3
+    assert tokens.call_count == 1
 
 
 def test_create_namespace_200(rest_mock: Mocker) -> None:
@@ -483,6 +644,26 @@ def test_load_table_404(rest_mock: Mocker) -> None:
     assert "Table does not exist" in str(e.value)
 
 
+def test_table_exist_200(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.table_exists(("fokko", "table"))
+
+
+def test_table_exist_500(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=500,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.table_exists(("fokko", "table"))
+
+
 def test_drop_table_404(rest_mock: Mocker) -> None:
     rest_mock.delete(
         f"{TEST_URI}v1/namespaces/fokko/tables/does_not_exists",
@@ -558,6 +739,64 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
             properties={"owner": "fokko"},
         )
     assert "Table already exists" in str(e.value)
+
+
+def test_create_table_if_not_exists_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    def json_callback() -> Callable[[Any, Any], Dict[str, Any]]:
+        call_count = 0
+
+        def callback(request: Any, context: Any) -> Dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                context.status_code = 200
+                return example_table_metadata_no_snapshot_v1_rest_json
+            else:
+                context.status_code = 409
+                return {
+                    "error": {
+                        "message": "Table already exists: fokko.already_exists in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                        "type": "AlreadyExistsException",
+                        "code": 409,
+                    }
+                }
+
+        return callback
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json=json_callback(),
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table1 = catalog.create_table(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=None,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+        ),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    table2 = catalog.create_table_if_not_exists(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=None,
+        partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id")),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    assert table1 == table2
 
 
 def test_create_table_419(rest_mock: Mocker, table_schema_simple: Schema) -> None:

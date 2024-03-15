@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
@@ -49,6 +49,8 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
+from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
@@ -218,6 +220,11 @@ class TableMetadataCommonFields(IcebergBaseModel):
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
 
+    # validators
+    @field_validator('properties', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
+
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot by snapshot_id."""
         return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
@@ -225,6 +232,59 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def schema_by_id(self, schema_id: int) -> Optional[Schema]:
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
+
+    def schema(self) -> Schema:
+        """Return the schema for this table."""
+        return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
+
+    def spec(self) -> PartitionSpec:
+        """Return the partition spec of this table."""
+        return next(spec for spec in self.partition_specs if spec.spec_id == self.default_spec_id)
+
+    def specs(self) -> Dict[int, PartitionSpec]:
+        """Return a dict the partition specs this table."""
+        return {spec.spec_id: spec for spec in self.partition_specs}
+
+    def new_snapshot_id(self) -> int:
+        """Generate a new snapshot-id that's not in use."""
+        snapshot_id = _generate_snapshot_id()
+        while self.snapshot_by_id(snapshot_id) is not None:
+            snapshot_id = _generate_snapshot_id()
+
+        return snapshot_id
+
+    def current_snapshot(self) -> Optional[Snapshot]:
+        """Get the current snapshot for this table, or None if there is no current snapshot."""
+        if self.current_snapshot_id is not None:
+            return self.snapshot_by_id(self.current_snapshot_id)
+        return None
+
+    def next_sequence_number(self) -> int:
+        return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
+
+    def sort_order_by_id(self, sort_order_id: int) -> Optional[SortOrder]:
+        """Get the sort order by sort_order_id."""
+        return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
+
+    @field_serializer('current_snapshot_id')
+    def serialize_current_snapshot_id(self, current_snapshot_id: Optional[int]) -> Optional[int]:
+        if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
+            return -1
+        return current_snapshot_id
+
+
+def _generate_snapshot_id() -> int:
+    """Generate a new Snapshot ID from a UUID.
+
+    Returns: An 64 bit long
+    """
+    rnd_uuid = uuid.uuid4()
+    snapshot_id = int.from_bytes(
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
+    )
+    snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
+
+    return snapshot_id
 
 
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
@@ -310,7 +370,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
 
         data[LAST_PARTITION_ID] = max(
-            [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]], default=PARTITION_FIELD_ID_START
+            [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]],
+            default=PARTITION_FIELD_ID_START - 1,
         )
 
         return data

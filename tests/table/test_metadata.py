@@ -29,7 +29,6 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromByteStream
-from pyiceberg.table import SortOrder
 from pyiceberg.table.metadata import (
     TableMetadataUtil,
     TableMetadataV1,
@@ -37,7 +36,7 @@ from pyiceberg.table.metadata import (
     new_table_metadata,
 )
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
-from pyiceberg.table.sorting import NullOrder, SortDirection, SortField
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
@@ -120,7 +119,6 @@ def test_v1_metadata_parsing_directly(example_table_metadata_v1: Dict[str, Any])
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
             NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
             NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-            schema_id=0,
             identifier_field_ids=[],
         )
     ]
