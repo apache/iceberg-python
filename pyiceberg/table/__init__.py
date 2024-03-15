@@ -958,6 +958,11 @@ class Table:
         """
         return Transaction(self)
 
+    @property
+    def inspect(self) -> InspectTable:
+        """Return the InspectTable object to browse the table metadata."""
+        return InspectTable(self)
+
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
         fresh = self.catalog.load_table(self.identifier[1:])
@@ -2962,3 +2967,49 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
         return partition_field.field_id not in self._deletes and partition_field.transform == transform
+
+
+class InspectTable:
+    tbl: Table
+
+    def __init__(self, tbl: Table) -> None:
+        self.tbl = tbl
+
+        try:
+            import pyarrow as pa  # noqa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
+
+    def snapshots(self) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots_schema = pa.schema([
+            pa.field('committed_at', pa.timestamp(unit='ms'), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('parent_id', pa.int64(), nullable=True),
+            pa.field('operation', pa.string(), nullable=True),
+            pa.field('manifest_list', pa.string(), nullable=False),
+            pa.field('summary', pa.map_(pa.string(), pa.string()), nullable=True),
+        ])
+        snapshots = []
+        for snapshot in self.tbl.metadata.snapshots:
+            if summary := snapshot.summary:
+                operation = summary.operation.value
+                additional_properties = snapshot.summary.additional_properties
+            else:
+                operation = None
+                additional_properties = None
+
+            snapshots.append({
+                'committed_at': datetime.datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'snapshot_id': snapshot.snapshot_id,
+                'parent_id': snapshot.parent_snapshot_id,
+                'operation': str(operation),
+                'manifest_list': snapshot.manifest_list,
+                'summary': additional_properties,
+            })
+
+        return pa.Table.from_pylist(
+            snapshots,
+            schema=snapshots_schema,
+        )
