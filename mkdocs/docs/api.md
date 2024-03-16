@@ -302,6 +302,39 @@ The nested lists indicate the different Arrow buffers, where the first write res
 
 <!-- prettier-ignore-end -->
 
+### Add Files
+
+Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
+
+```
+# Given that these parquet files have schema consistent with the Iceberg table
+
+file_paths = [
+    "s3a://warehouse/default/existing-1.parquet",
+    "s3a://warehouse/default/existing-2.parquet",
+]
+
+# They can be added to the table without rewriting them
+
+tbl.add_files(file_paths=file_paths)
+
+# A new snapshot is committed to the table with manifests pointing to the existing parquet files
+```
+
+<!-- prettier-ignore-start -->
+
+!!! note "Name Mapping"
+    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
+
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+
+!!! warning "Maintenance Operations"
+    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
+
+<!-- prettier-ignore-end -->
+
 ## Schema evolution
 
 PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).

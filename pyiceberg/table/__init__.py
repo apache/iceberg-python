@@ -33,6 +33,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -115,6 +116,7 @@ from pyiceberg.typedef import (
     Identifier,
     KeyDefaultDict,
     Properties,
+    Record,
 )
 from pyiceberg.types import (
     IcebergType,
@@ -1146,6 +1148,27 @@ class Table:
                     )
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
+
+    def add_files(self, file_paths: List[str]) -> None:
+        """
+        Shorthand API for adding files as data files to the table.
+
+        Args:
+            file_paths: The list of full file paths to be added as data files to the table
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot add files to partitioned tables")
+
+        with self.transaction() as tx:
+            if self.name_mapping() is None:
+                tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
+            with tx.update_snapshot().fast_append() as update_snapshot:
+                data_files = _parquet_files_to_data_files(table_metadata=self.metadata, file_paths=file_paths, io=self.io)
+                for data_file in data_files:
+                    update_snapshot.append_data_file(data_file)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -2444,6 +2467,12 @@ class WriteTask:
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
 
+@dataclass(frozen=True)
+class AddFileTask:
+    file_path: str
+    partition_field_value: Record
+
+
 def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
     return f'{location}/metadata/{commit_uuid}-m{num}.avro'
 
@@ -2473,6 +2502,29 @@ def _dataframe_to_data_files(
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+
+
+def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
+    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
+        raise ValueError("Cannot add files to partitioned tables")
+
+    for file_path in file_paths:
+        yield AddFileTask(
+            file_path=file_path,
+            partition_field_value=Record(),
+        )
+
+
+def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
+    """Convert a list files into DataFiles.
+
+    Returns:
+        An iterable that supplies DataFiles that describe the parquet files.
+    """
+    from pyiceberg.io.pyarrow import parquet_files_to_data_files
+
+    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
