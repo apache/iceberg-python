@@ -525,12 +525,15 @@ def test_summaries_with_only_nulls(
         'total-records': '2',
     }
 
-    assert summaries[0] == {
-        'total-data-files': '0',
-        'total-delete-files': '0',
+    assert summaries[2] == {
+        'removed-files-size': '4239',
         'total-equality-deletes': '0',
-        'total-files-size': '0',
         'total-position-deletes': '0',
+        'deleted-data-files': '1',
+        'total-delete-files': '0',
+        'total-files-size': '0',
+        'deleted-records': '2',
+        'total-data-files': '0',
         'total-records': '0',
     }
 

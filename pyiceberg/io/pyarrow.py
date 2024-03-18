@@ -124,7 +124,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+from pyiceberg.table import AddFileTask, PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
@@ -1770,6 +1770,39 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
     return iter([data_file])
+
+
+def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[AddFileTask]) -> Iterator[DataFile]:
+    for task in tasks:
+        input_file = io.new_input(task.file_path)
+        with input_file.open() as input_stream:
+            parquet_metadata = pq.read_metadata(input_stream)
+
+        if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
+            raise NotImplementedError(
+                f"Cannot add file {task.file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
+            )
+
+        schema = table_metadata.schema()
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=task.file_path,
+            file_format=FileFormat.PARQUET,
+            partition=task.partition_field_value,
+            record_count=parquet_metadata.num_rows,
+            file_size_in_bytes=len(input_file),
+            sort_order_id=None,
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+        )
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=parquet_metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+        yield data_file
 
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
