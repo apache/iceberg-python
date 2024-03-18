@@ -46,6 +46,7 @@ from pyiceberg.expressions.literals import (
     StringLiteral,
     TimeLiteral,
     TimestampLiteral,
+    UUIDLiteral,
     literal,
 )
 from pyiceberg.types import (
@@ -914,3 +915,4 @@ assert_type(literal(123.4), Literal[float])
 assert_type(literal(bytes([0x01, 0x02, 0x03])), Literal[bytes])
 assert_type(literal(Decimal("19.25")), Literal[Decimal])
 assert_type({literal(1), literal(2), literal(3)}, Set[Literal[int]])
+assert_type(literal(uuid.uuid4()), UUIDLiteral)
