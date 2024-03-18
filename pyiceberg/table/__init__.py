@@ -33,7 +33,6 @@ from typing import (
     Dict,
     Generic,
     Iterable,
-    Iterator,
     List,
     Literal,
     Optional,
@@ -1170,9 +1169,6 @@ class Table:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        if len(self.spec().fields) > 0:
-            raise ValueError("Cannot add files to partitioned tables")
-
         with self.transaction() as tx:
             if self.name_mapping() is None:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
@@ -2515,17 +2511,6 @@ def _dataframe_to_data_files(
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
 
 
-def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
-    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
-        raise ValueError("Cannot add files to partitioned tables")
-
-    for file_path in file_paths:
-        yield AddFileTask(
-            file_path=file_path,
-            partition_field_value=Record(),
-        )
-
-
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
@@ -2534,8 +2519,7 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):

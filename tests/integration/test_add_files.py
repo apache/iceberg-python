@@ -26,9 +26,10 @@ from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.transforms import IdentityTransform, MonthTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -238,3 +239,71 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(spark: SparkSessio
     for col in df.columns:
         value_count = 1 if col == "quux" else 6
         assert df.filter(df[col].isNotNull()).count() == value_count, f"Expected {value_count} rows to be non-null"
+
+
+@pytest.mark.integration
+def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.partitioned_table"
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="baz"),
+        PartitionField(source_id=10, field_id=1001, transform=MonthTransform(), name="qux_month"),
+        spec_id=0,
+    )
+
+    tbl = _create_table(session_catalog, identifier, partition_spec)
+
+    date_iter = iter([date(2024, 3, 7), date(2024, 3, 8), date(2024, 3, 16), date(2024, 3, 18), date(2024, 3, 19)])
+
+    file_paths = [f"s3://warehouse/default/partitioned/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(
+                    pa.Table.from_pylist(
+                        [
+                            {
+                                "foo": True,
+                                "bar": "bar_string",
+                                "baz": 123,
+                                "qux": next(date_iter),
+                            }
+                        ],
+                        schema=ARROW_SCHEMA,
+                    )
+                )
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+
+    # NameMapping must have been set to enable reads
+    assert tbl.name_mapping() is not None
+
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [5]
+    assert [row.existing_data_files_count for row in rows] == [0]
+    assert [row.deleted_data_files_count for row in rows] == [0]
+
+    df = spark.table(identifier)
+    assert df.count() == 5, "Expected 5 rows"
+    for col in df.columns:
+        assert df.filter(df[col].isNotNull()).count() == 5, "Expected all 5 rows to be non-null"
+
+    partition_rows = spark.sql(
+        f"""
+        SELECT partition, record_count, file_count
+        FROM {identifier}.partitions
+    """
+    ).collect()
+
+    assert [row.record_count for row in partition_rows] == [5]
+    assert [row.file_count for row in partition_rows] == [5]
+    assert [(row.partition.baz, row.partition.qux_month) for row in partition_rows] == [(123, 650)]
