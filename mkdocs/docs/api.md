@@ -295,7 +295,6 @@ long: [[4.896029,-122.431297,6.0989,2.349014],[6.56667]]
 
 The nested lists indicate the different Arrow buffers, where the first write results into a buffer, and the second append in a separate buffer. This is expected since it will read two parquet files.
 
-
 To avoid any type errors during writing, you can enforce the PyArrow table types using the Iceberg table schema:
 
 ```python
@@ -303,12 +302,11 @@ from pyiceberg.catalog import load_catalog
 import pyarrow as pa
 
 catalog = load_catalog("default")
-table = catalog.load_table('default.cities')
+table = catalog.load_table("default.cities")
 schema = table.schema().as_arrow()
 
 df = pa.Table.from_pylist(
-    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}],
-    schema=schema
+    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}], schema=schema
 )
 
 table.append(df)
