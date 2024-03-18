@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import math
 import os
 import time
 import uuid
@@ -720,3 +721,17 @@ def test_inspect_snapshots(
         ('total-position-deletes', '0'),
         ('total-equality-deletes', '0'),
     ]
+
+    lhs = spark.table(f"{identifier}.snapshots").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if column == 'summary':
+                # Arrow returns a list of tuples, instead of a dict
+                right = dict(right)
+
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
+
+            assert left == right, f"Difference in column {column}: {left} != {right}"

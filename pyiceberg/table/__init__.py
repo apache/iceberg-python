@@ -3061,7 +3061,7 @@ class InspectTable:
                 additional_properties = None
 
             snapshots.append({
-                'committed_at': datetime.datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'committed_at': datetime.datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
                 'snapshot_id': snapshot.snapshot_id,
                 'parent_id': snapshot.parent_snapshot_id,
                 'operation': str(operation),
