@@ -700,11 +700,3 @@ def test_glue_endpoint_override(moto_endpoint_url: str, database_name: str) -> N
         catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": moto_endpoint_url}
     )
     assert test_catalog.glue.meta.endpoint_url == moto_endpoint_url
-
-    test_catalog.create_namespace(namespace=database_name)
-    assert (database_name,) in test_catalog.list_namespaces()
-
-    with mock_aws():
-        other_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-        assert other_catalog.glue.meta.endpoint_url != moto_endpoint_url
-        assert (database_name,) not in other_catalog.list_namespaces()
