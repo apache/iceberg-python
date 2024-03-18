@@ -609,6 +609,19 @@ class UUIDLiteral(Literal[bytes]):
     def _(self, _: UUIDType) -> Literal[bytes]:
         return self
 
+    @to.register(FixedType)
+    def _(self, type_var: FixedType) -> Literal[bytes]:
+        if len(type_var) == UUID_BYTES_LENGTH:
+            return FixedLiteral(self.value)
+        else:
+            raise TypeError(
+                f"Cannot convert UUIDLiteral into {type_var}, different length: {len(type_var)} <> {UUID_BYTES_LENGTH}"
+            )
+
+    @to.register(BinaryType)
+    def _(self, _: BinaryType) -> Literal[bytes]:
+        return BinaryLiteral(self.value)
+
 
 class FixedLiteral(Literal[bytes]):
     def __init__(self, value: bytes) -> None:
