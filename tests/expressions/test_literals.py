@@ -875,14 +875,14 @@ def test_decimal_literal_dencrement() -> None:
 
 
 def test_uuid_literal_initialization() -> None:
-    test_uuid = uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")
+    test_uuid = uuid.uuid4()
     uuid_literal = literal(test_uuid)
     assert isinstance(uuid_literal, Literal)
     assert test_uuid.bytes == uuid_literal.value
 
 
 def test_uuid_to_fixed() -> None:
-    test_uuid = uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")
+    test_uuid = uuid.uuid4()
     uuid_literal = literal(test_uuid)
     fixed_literal = uuid_literal.to(FixedType(16))
     assert isinstance(fixed_literal, FixedLiteral)
