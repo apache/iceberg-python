@@ -886,11 +886,9 @@ def test_uuid_to_fixed() -> None:
     uuid_literal = literal(test_uuid)
     fixed_literal = uuid_literal.to(FixedType(16))
     assert test_uuid.bytes == fixed_literal.value
-
     with pytest.raises(TypeError) as e:
         uuid_literal.to(FixedType(15))
     assert "Cannot convert UUIDLiteral into fixed[15], different length: 15 <> 16" in str(e.value)
-
     assert isinstance(fixed_literal, FixedLiteral)  # type: ignore
 
 
