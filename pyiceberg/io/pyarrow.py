@@ -1603,7 +1603,7 @@ class DataFileStatistics:
     null_value_counts: Dict[int, int]
     nan_value_counts: Dict[int, int]
     column_aggregates: Dict[int, StatsAggregator]
-    split_offsets: Optional[List[int]] = None
+    split_offsets: List[int]
 
     def _partition_value(self, partition_field: PartitionField, schema: Schema) -> Any:
         if partition_field.source_id not in self.column_aggregates:
