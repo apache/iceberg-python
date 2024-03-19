@@ -25,24 +25,24 @@ tests = ["arrow", "dask[dataframe]", "docker", "pytest", "pytest-mock"]
 
 [[package]]
 name = "aiobotocore"
-version = "2.11.2"
+version = "2.12.1"
 description = "Async client for aws services using botocore and aiohttp"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "aiobotocore-2.11.2-py3-none-any.whl", hash = "sha256:487fede588040bfa3a43df945275c28c1c73ca75bf705295adb9fbadd2e89be7"},
-    {file = "aiobotocore-2.11.2.tar.gz", hash = "sha256:6dd7352248e3523019c5a54a395d2b1c31080697fc80a9ad2672de4eec8c7abd"},
+    {file = "aiobotocore-2.12.1-py3-none-any.whl", hash = "sha256:6a9a3d646cf422f45fdc1e4256e78563ebffba64733bc9b8ca9123614e8ba9af"},
+    {file = "aiobotocore-2.12.1.tar.gz", hash = "sha256:8706b28f16f93c541f6ed50352115a79d8f3499539f8d0bb70aa0f7a5379c1fe"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.7.4.post0,<4.0.0"
 aioitertools = ">=0.5.1,<1.0.0"
-botocore = ">=1.33.2,<1.34.35"
+botocore = ">=1.34.41,<1.34.52"
 wrapt = ">=1.10.10,<2.0.0"
 
 [package.extras]
-awscli = ["awscli (>=1.31.2,<1.32.35)"]
-boto3 = ["boto3 (>=1.33.2,<1.34.35)"]
+awscli = ["awscli (>=1.32.41,<1.32.52)"]
+boto3 = ["boto3 (>=1.34.41,<1.34.52)"]
 
 [[package]]
 name = "aiohttp"
@@ -351,13 +351,13 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.34.34"
+version = "1.34.51"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">= 3.8"
 files = [
-    {file = "botocore-1.34.34-py3-none-any.whl", hash = "sha256:cd060b0d88ebb2b893f1411c1db7f2ba66cc18e52dcc57ad029564ef5fec437b"},
-    {file = "botocore-1.34.34.tar.gz", hash = "sha256:54093dc97372bb7683f5c61a279aa8240408abf3b2cc494ae82a9a90c1b784b5"},
+    {file = "botocore-1.34.51-py3-none-any.whl", hash = "sha256:01d5156247f991b3466a8404e3d7460a9ecbd9b214f9992d6ba797d9ddc6f120"},
+    {file = "botocore-1.34.51.tar.gz", hash = "sha256:5086217442e67dd9de36ec7e87a0c663f76b7790d5fb6a12de565af95e87e319"},
 ]
 
 [package.dependencies]
@@ -4451,4 +4451,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "58712a40e7860a50fdae2d88a61b96ce68444fd2b222d7aece84f5b4a3a21681"
+content-hash = "3820d07422950d39d070b6aa05a87e2e5422a97555ba7e2700a7e84afea9a064"
