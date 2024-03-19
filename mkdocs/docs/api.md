@@ -330,6 +330,13 @@ tbl.add_files(file_paths=file_paths)
 
 <!-- prettier-ignore-start -->
 
+!!! note "Partitions"
+    `add_files` only requires the client to read the existing parquet files' metadata footer in order to infer the partition value of each file. This implementation also supports adding files to Iceberg tables with partition transforms like MonthTransform, and TruncateTransform which preserve the order of the values after the transformation (Any Transform that has `preserves_order` property set to True is supported).
+
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+
 !!! warning "Maintenance Operations"
     Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
 

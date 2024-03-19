@@ -29,7 +29,7 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import IdentityTransform, MonthTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform, MonthTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -255,7 +255,7 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
 
     date_iter = iter([date(2024, 3, 7), date(2024, 3, 8), date(2024, 3, 16), date(2024, 3, 18), date(2024, 3, 19)])
 
-    file_paths = [f"s3://warehouse/default/partitioned/baz=123/qux=2024-03-07/test-{i}.parquet" for i in range(5)]
+    file_paths = [f"s3://warehouse/default/partitioned/test-{i}.parquet" for i in range(5)]
     # write parquet files
     for file_path in file_paths:
         fo = tbl.io.new_output(file_path)
@@ -307,3 +307,41 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
     assert [row.record_count for row in partition_rows] == [5]
     assert [row.file_count for row in partition_rows] == [5]
     assert [(row.partition.baz, row.partition.qux_month) for row in partition_rows] == [(123, 650)]
+
+
+@pytest.mark.integration
+def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.partitioned_table_2"
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=4, field_id=1000, transform=BucketTransform(num_buckets=3), name="baz_bucket_3"),
+        spec_id=0,
+    )
+
+    tbl = _create_table(session_catalog, identifier, partition_spec)
+
+    int_iter = iter(range(5))
+
+    file_paths = [f"s3://warehouse/default/partitioned_2/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(
+                    pa.Table.from_pylist(
+                        [
+                            {
+                                "foo": True,
+                                "bar": "bar_string",
+                                "baz": next(int_iter),
+                                "qux": date(2024, 3, 7),
+                            }
+                        ],
+                        schema=ARROW_SCHEMA,
+                    )
+                )
+
+    # add the parquet files as data files
+    with pytest.raises(ValueError):
+        tbl.add_files(file_paths=file_paths)
