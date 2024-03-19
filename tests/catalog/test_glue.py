@@ -692,3 +692,11 @@ def test_commit_table_properties(
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+
+
+def test_glue_endpoint_override(moto_endpoint_url: str, database_name: str) -> None:
+    catalog_name = "glue"
+    test_catalog = GlueCatalog(
+        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": moto_endpoint_url}
+    )
+    assert test_catalog.glue.meta.endpoint_url == moto_endpoint_url
