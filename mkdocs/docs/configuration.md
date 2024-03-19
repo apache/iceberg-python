@@ -81,6 +81,8 @@ For the FileIO there are several configuration options available:
 
 ### S3
 
+<!-- markdown-link-check-disable -->
+
 | Key                  | Example                  | Description                                                                                                                                                                                                                                               |
 | -------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | s3.endpoint          | https://10.0.19.25/      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud. |
@@ -91,7 +93,11 @@ For the FileIO there are several configuration options available:
 | s3.proxy-uri         | http://my.proxy.com:8080 | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                     | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
 
+<!-- markdown-link-check-enable-->
+
 ### HDFS
+
+<!-- markdown-link-check-disable -->
 
 | Key                  | Example             | Description                                      |
 | -------------------- | ------------------- | ------------------------------------------------ |
@@ -100,7 +106,11 @@ For the FileIO there are several configuration options available:
 | hdfs.user            | user                | Configure the HDFS username used for connection. |
 | hdfs.kerberos_ticket | kerberos_ticket     | Configure the path to the Kerberos ticket cache. |
 
+<!-- markdown-link-check-enable-->
+
 ### Azure Data lake
+
+<!-- markdown-link-check-disable -->
 
 | Key                     | Example                                                                                   | Description                                                                                                                                                                                                                                                                            |
 | ----------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -112,7 +122,11 @@ For the FileIO there are several configuration options available:
 | adlfs.client-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The client-id                                                                                                                                                                                                                                                                          |
 | adlfs.client-secret     | oCA3R6P\*ka#oa1Sms2J74z...                                                                | The client-secret                                                                                                                                                                                                                                                                      |
 
+<!-- markdown-link-check-enable-->
+
 ### Google Cloud Storage
+
+<!-- markdown-link-check-disable -->
 
 | Key                        | Example             | Description                                                                                                                                                                                                                                                                                    |
 | -------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -127,6 +141,8 @@ For the FileIO there are several configuration options available:
 | gcs.endpoint               | http://0.0.0.0:4443 | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint.                                            |
 | gcs.default-location       | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                                                                         |
 | gcs.version-aware          | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                                                              |
+
+<!-- markdown-link-check-enable-->
 
 ## REST Catalog
 
@@ -145,16 +161,23 @@ catalog:
       cabundle: /absolute/path/to/cabundle.pem
 ```
 
-| Key                    | Example                 | Description                                                                                        |
-| ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                    | https://rest-catalog/ws | URI identifying the REST Server                                                                    |
-| ugi                    | t-1234:secret           | Hadoop UGI for Hive client.                                                                        |
-| credential             | t-1234:secret           | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token                  | FEW23.DFSDF.FSDF        | Bearer token value to use for `Authorization` header                                               |
-| rest.sigv4-enabled     | true                    | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region    | us-east-1               | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name      | execute-api             | The service signing name to use when SigV4 signing a request                                       |
-| rest.authorization-url | https://auth-service/cc | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+<!-- markdown-link-check-disable -->
+
+| Key                    | Example                          | Description                                                                                        |
+| ---------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| uri                    | https://rest-catalog/ws          | URI identifying the REST Server                                                                    |
+| ugi                    | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
+| credential             | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+| token                  | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
+| scope                  | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource               | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience               | rest_catalog                     | Logical name of target resource or service                                                         |
+| rest.sigv4-enabled     | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region    | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name      | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+| rest.authorization-url | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+
+<!-- markdown-link-check-enable-->
 
 ### Headers in RESTCatalog
 
@@ -263,3 +286,7 @@ catalog:
 # Concurrency
 
 PyIceberg uses multiple threads to parallelize operations. The number of workers can be configured by supplying a `max-workers` entry in the configuration file, or by setting the `PYICEBERG_MAX_WORKERS` environment variable. The default value depends on the system hardware and Python version. See [the Python documentation](https://docs.python.org/3/library/concurrent.futures.html#threadpoolexecutor) for more details.
+
+# Backward Compatibility
+
+Previous versions of Java (`<1.4.0`) implementations incorrectly assume the optional attribute `current-snapshot-id` to be a required attribute in TableMetadata. This means that if `current-snapshot-id` is missing in the metadata file (e.g. on table creation), the application will throw an exception without being able to load the table. This assumption has been corrected in more recent Iceberg versions. However, it is possible to force PyIceberg to create a table with a metadata file that will be compatible with previous versions. This can be configured by setting the `legacy-current-snapshot-id` entry as "True" in the configuration file, or by setting the `LEGACY_CURRENT_SNAPSHOT_ID` environment variable. Refer to the [PR discussion](https://github.com/apache/iceberg-python/pull/473) for more details on the issue

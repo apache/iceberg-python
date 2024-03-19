@@ -892,7 +892,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
             "file_size_in_bytes": 1265950,
             "block_size_in_bytes": 67108864,
@@ -1961,9 +1961,11 @@ def spark() -> SparkSession:
 
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
+        .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
+        .config("spark.sql.catalog.integration.cache-enabled", "false")
         .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
         .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
         .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")

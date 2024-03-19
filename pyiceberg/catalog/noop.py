@@ -28,10 +28,9 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
-    SortOrder,
     Table,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 
 if TYPE_CHECKING:

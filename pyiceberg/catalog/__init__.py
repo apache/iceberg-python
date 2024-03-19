@@ -53,11 +53,11 @@ from pyiceberg.table import (
     SetDefaultSortOrderUpdate,
     SetDefaultSpecUpdate,
     Table,
-    TableMetadata,
     TableRequirement,
     TableUpdate,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import (
     EMPTY_DICT,
     Identifier,
@@ -695,6 +695,13 @@ class Catalog(ABC):
                 sort_order=sort_order,
                 properties=properties,
             )
+
+    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+        try:
+            self.load_table(identifier)
+            return True
+        except NoSuchTableError:
+            return False
 
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:

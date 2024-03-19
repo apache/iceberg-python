@@ -47,14 +47,14 @@ include = [
 
 [tool.poetry.dependencies]
 python = "^3.8"
-mmhash3 = ">=3.0.0,<4.0.0"
+mmh3 = ">=4.0.0,<5.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
 rich = ">=10.11.0,<14.0.0"
 strictyaml = ">=1.7.0,<2.0.0" # CVE-2020-14343 was fixed in 5.4.
 pydantic = ">=2.0,<3.0,!=2.4.0,!=2.4.1" # 2.4.0, 2.4.1 has a critical bug
 sortedcontainers = "2.4.0"
-fsspec = ">=2023.1.0,<2024.1.0"
+fsspec = ">=2023.1.0,<2025.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<9.0.0"
@@ -73,7 +73,7 @@ psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
 getdaft = { version = ">=0.2.12", optional = true }
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "7.4.4"
 pytest-checkdocs = "2.10.1"
 pytest-lazy-fixture = "0.6.3"
@@ -86,9 +86,478 @@ typing-extensions = "4.9.0"
 pytest-mock = "3.12.0"
 pyspark = "3.5.0"
 cython = "3.0.8"
+deptry = "^0.14.0"
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "snappy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "zstandard.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic_core.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pytest.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fastavro.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mmh3.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "hive_metastore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "thrift.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "requests_mock.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "click.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "rich.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fsspec.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "s3fs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "azure.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "adlfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "gcsfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "packaging.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "boto3"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "botocore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mypy_boto3_glue.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "moto"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiobotocore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiohttp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "duckdb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ray.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "daft.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyparsing.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyspark.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "strictyaml.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sortedcontainers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sqlalchemy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "Cython.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "setuptools.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tenacity.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "snappy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "zstandard.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic_core.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pytest.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fastavro.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mmh3.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "hive_metastore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "thrift.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "requests_mock.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "click.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "rich.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fsspec.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "s3fs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "azure.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "adlfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "gcsfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "packaging.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "boto3"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "botocore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mypy_boto3_glue.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "moto"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiobotocore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiohttp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "duckdb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ray.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "daft.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyparsing.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyspark.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "strictyaml.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sortedcontainers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sqlalchemy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "Cython.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "setuptools.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tenacity.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "snappy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "zstandard.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic_core.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pytest.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fastavro.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mmh3.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "hive_metastore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "thrift.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "requests_mock.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "click.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "rich.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fsspec.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "s3fs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "azure.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "adlfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "gcsfs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "packaging.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "boto3"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "botocore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mypy_boto3_glue.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "moto"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiobotocore.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiohttp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "duckdb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ray.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "daft.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyparsing.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyspark.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "strictyaml.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sortedcontainers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sqlalchemy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "Cython.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "setuptools.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tenacity.*"
 ignore_missing_imports = true
 
 [tool.poetry.scripts]
@@ -149,6 +618,7 @@ warn_unreachable = true
 warn_unused_ignores = true
 disallow_any_generics = true
 disallow_untyped_defs = true
+implicit_reexport = false
 
 [[tool.mypy.overrides]]
 module = "pyarrow.*"

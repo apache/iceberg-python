@@ -28,8 +28,8 @@ import pyarrow.parquet as pq
 import pytest
 from pyarrow.fs import FileType, LocalFileSystem
 
-from pyiceberg.avro.resolver import ResolveError
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -53,8 +53,8 @@ from pyiceberg.expressions import (
     GreaterThan,
     Not,
     Or,
-    literal,
 )
+from pyiceberg.expressions.literals import literal
 from pyiceberg.io import InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,

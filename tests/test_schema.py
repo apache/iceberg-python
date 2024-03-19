@@ -23,8 +23,8 @@ import pytest
 
 from pyiceberg import schema
 from pyiceberg.exceptions import ResolveError, ValidationError
-from pyiceberg.expressions import Accessor
 from pyiceberg.schema import (
+    Accessor,
     Schema,
     build_position_accessors,
     promote,
@@ -1600,3 +1600,19 @@ def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
     )
 
     assert new_schema == expected_schema
+
+
+def test_arrow_schema() -> None:
+    base_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+    )
+
+    expected_schema = pa.schema([
+        pa.field("foo", pa.string(), nullable=False),
+        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ])
+
+    assert base_schema.as_arrow() == expected_schema

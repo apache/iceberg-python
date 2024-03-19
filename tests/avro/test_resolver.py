@@ -32,7 +32,7 @@ from pyiceberg.avro.reader import (
     StringReader,
     StructReader,
 )
-from pyiceberg.avro.resolver import ResolveError, resolve_reader, resolve_writer
+from pyiceberg.avro.resolver import resolve_reader, resolve_writer
 from pyiceberg.avro.writer import (
     BinaryWriter,
     DefaultWriter,
@@ -44,6 +44,7 @@ from pyiceberg.avro.writer import (
     StringWriter,
     StructWriter,
 )
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS
 from pyiceberg.schema import Schema

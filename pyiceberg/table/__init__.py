@@ -33,6 +33,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -42,10 +43,12 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, SerializeAsAny
+from pydantic import Field, field_validator
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
+import pyiceberg.expressions.parser as parser
+import pyiceberg.expressions.visitors as visitors
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysTrue,
@@ -53,10 +56,7 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     Reference,
-    parser,
-    visitors,
 )
-from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator, inclusive_projection
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
@@ -72,7 +72,6 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     INITIAL_PARTITION_SPEC_ID,
     PARTITION_FIELD_ID_START,
-    IdentityTransform,
     PartitionField,
     PartitionSpec,
     _PartitionNameGenerator,
@@ -109,7 +108,7 @@ from pyiceberg.table.snapshots import (
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import SortOrder
-from pyiceberg.transforms import TimeTransform, Transform, VoidTransform
+from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -117,6 +116,7 @@ from pyiceberg.typedef import (
     Identifier,
     KeyDefaultDict,
     Properties,
+    Record,
 )
 from pyiceberg.types import (
     IcebergType,
@@ -125,6 +125,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    transform_dict_value_to_str,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
@@ -212,6 +213,9 @@ class TableProperties:
 
     METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
 
+    WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
+    WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
+
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION = 2
@@ -294,17 +298,21 @@ class Transaction:
 
         return self
 
-    def set_properties(self, **updates: str) -> Transaction:
+    def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: Any) -> Transaction:
         """Set properties.
 
         When a property is already set, it will be overwritten.
 
         Args:
-            updates: The properties set on the table.
+            properties: The properties set on the table.
+            kwargs: properties can also be pass as kwargs.
 
         Returns:
             The alter table builder.
         """
+        if properties and kwargs:
+            raise ValueError("Cannot pass both properties and kwargs")
+        updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
@@ -317,7 +325,12 @@ class Transaction:
         Returns:
             A new UpdateSchema.
         """
-        return UpdateSchema(self, allow_incompatible_changes=allow_incompatible_changes, case_sensitive=case_sensitive)
+        return UpdateSchema(
+            self,
+            allow_incompatible_changes=allow_incompatible_changes,
+            case_sensitive=case_sensitive,
+            name_mapping=self._table.name_mapping(),
+        )
 
     def update_snapshot(self) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
@@ -373,77 +386,56 @@ class Transaction:
             return self._table
 
 
-class TableUpdateAction(Enum):
-    upgrade_format_version = "upgrade-format-version"
-    add_schema = "add-schema"
-    set_current_schema = "set-current-schema"
-    add_spec = "add-spec"
-    set_default_spec = "set-default-spec"
-    add_sort_order = "add-sort-order"
-    set_default_sort_order = "set-default-sort-order"
-    add_snapshot = "add-snapshot"
-    set_snapshot_ref = "set-snapshot-ref"
-    remove_snapshots = "remove-snapshots"
-    remove_snapshot_ref = "remove-snapshot-ref"
-    set_location = "set-location"
-    set_properties = "set-properties"
-    remove_properties = "remove-properties"
-
-
-class TableUpdate(IcebergBaseModel):
-    action: TableUpdateAction
-
-
-class UpgradeFormatVersionUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.upgrade_format_version
+class UpgradeFormatVersionUpdate(IcebergBaseModel):
+    action: Literal['upgrade-format-version'] = Field(default="upgrade-format-version")
     format_version: int = Field(alias="format-version")
 
 
-class AddSchemaUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_schema
+class AddSchemaUpdate(IcebergBaseModel):
+    action: Literal['add-schema'] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
     # This field is required: https://github.com/apache/iceberg/pull/7445
     last_column_id: int = Field(alias="last-column-id")
 
 
-class SetCurrentSchemaUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_current_schema
+class SetCurrentSchemaUpdate(IcebergBaseModel):
+    action: Literal['set-current-schema'] = Field(default="set-current-schema")
     schema_id: int = Field(
         alias="schema-id", description="Schema ID to set as current, or -1 to set last added schema", default=-1
     )
 
 
-class AddPartitionSpecUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_spec
+class AddPartitionSpecUpdate(IcebergBaseModel):
+    action: Literal['add-spec'] = Field(default="add-spec")
     spec: PartitionSpec
 
 
-class SetDefaultSpecUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_default_spec
+class SetDefaultSpecUpdate(IcebergBaseModel):
+    action: Literal['set-default-spec'] = Field(default="set-default-spec")
     spec_id: int = Field(
         alias="spec-id", description="Partition spec ID to set as the default, or -1 to set last added spec", default=-1
     )
 
 
-class AddSortOrderUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_sort_order
+class AddSortOrderUpdate(IcebergBaseModel):
+    action: Literal['add-sort-order'] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
 
 
-class SetDefaultSortOrderUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_default_sort_order
+class SetDefaultSortOrderUpdate(IcebergBaseModel):
+    action: Literal['set-default-sort-order'] = Field(default="set-default-sort-order")
     sort_order_id: int = Field(
         alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order", default=-1
     )
 
 
-class AddSnapshotUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_snapshot
+class AddSnapshotUpdate(IcebergBaseModel):
+    action: Literal['add-snapshot'] = Field(default="add-snapshot")
     snapshot: Snapshot
 
 
-class SetSnapshotRefUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_snapshot_ref
+class SetSnapshotRefUpdate(IcebergBaseModel):
+    action: Literal['set-snapshot-ref'] = Field(default="set-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
@@ -452,29 +444,54 @@ class SetSnapshotRefUpdate(TableUpdate):
     min_snapshots_to_keep: Annotated[Optional[int], Field(alias="min-snapshots-to-keep", default=None)]
 
 
-class RemoveSnapshotsUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.remove_snapshots
+class RemoveSnapshotsUpdate(IcebergBaseModel):
+    action: Literal['remove-snapshots'] = Field(default="remove-snapshots")
     snapshot_ids: List[int] = Field(alias="snapshot-ids")
 
 
-class RemoveSnapshotRefUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.remove_snapshot_ref
+class RemoveSnapshotRefUpdate(IcebergBaseModel):
+    action: Literal['remove-snapshot-ref'] = Field(default="remove-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
 
 
-class SetLocationUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_location
+class SetLocationUpdate(IcebergBaseModel):
+    action: Literal['set-location'] = Field(default="set-location")
     location: str
 
 
-class SetPropertiesUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_properties
+class SetPropertiesUpdate(IcebergBaseModel):
+    action: Literal['set-properties'] = Field(default="set-properties")
     updates: Dict[str, str]
 
+    @field_validator('updates', mode='before')
+    def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
+        return transform_dict_value_to_str(properties)
 
-class RemovePropertiesUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.remove_properties
+
+class RemovePropertiesUpdate(IcebergBaseModel):
+    action: Literal['remove-properties'] = Field(default="remove-properties")
     removals: List[str]
+
+
+TableUpdate = Annotated[
+    Union[
+        UpgradeFormatVersionUpdate,
+        AddSchemaUpdate,
+        SetCurrentSchemaUpdate,
+        AddPartitionSpecUpdate,
+        SetDefaultSpecUpdate,
+        AddSortOrderUpdate,
+        SetDefaultSortOrderUpdate,
+        AddSnapshotUpdate,
+        SetSnapshotRefUpdate,
+        RemoveSnapshotsUpdate,
+        RemoveSnapshotRefUpdate,
+        SetLocationUpdate,
+        SetPropertiesUpdate,
+        RemovePropertiesUpdate,
+    ],
+    Field(discriminator='action'),
+]
 
 
 class _TableMetadataUpdateContext:
@@ -488,21 +505,15 @@ class _TableMetadataUpdateContext:
 
     def is_added_snapshot(self, snapshot_id: int) -> bool:
         return any(
-            update.snapshot.snapshot_id == snapshot_id
-            for update in self._updates
-            if update.action == TableUpdateAction.add_snapshot
+            update.snapshot.snapshot_id == snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)
         )
 
     def is_added_schema(self, schema_id: int) -> bool:
-        return any(
-            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
-        )
+        return any(update.schema_.schema_id == schema_id for update in self._updates if isinstance(update, AddSchemaUpdate))
 
     def is_added_sort_order(self, sort_order_id: int) -> bool:
         return any(
-            update.sort_order.order_id == sort_order_id
-            for update in self._updates
-            if update.action == TableUpdateAction.add_sort_order
+            update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
 
 
@@ -753,7 +764,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     return new_metadata.model_copy(deep=True)
 
 
-class TableRequirement(IcebergBaseModel):
+class ValidatableTableRequirement(IcebergBaseModel):
     type: str
 
     @abstractmethod
@@ -769,7 +780,7 @@ class TableRequirement(IcebergBaseModel):
         ...
 
 
-class AssertCreate(TableRequirement):
+class AssertCreate(ValidatableTableRequirement):
     """The table must not already exist; used for create transactions."""
 
     type: Literal["assert-create"] = Field(default="assert-create")
@@ -779,7 +790,7 @@ class AssertCreate(TableRequirement):
             raise CommitFailedException("Table already exists")
 
 
-class AssertTableUUID(TableRequirement):
+class AssertTableUUID(ValidatableTableRequirement):
     """The table UUID must match the requirement's `uuid`."""
 
     type: Literal["assert-table-uuid"] = Field(default="assert-table-uuid")
@@ -792,7 +803,7 @@ class AssertTableUUID(TableRequirement):
             raise CommitFailedException(f"Table UUID does not match: {self.uuid} != {base_metadata.table_uuid}")
 
 
-class AssertRefSnapshotId(TableRequirement):
+class AssertRefSnapshotId(ValidatableTableRequirement):
     """The table branch or tag identified by the requirement's `ref` must reference the requirement's `snapshot-id`.
 
     if `snapshot-id` is `null` or missing, the ref must not already exist.
@@ -817,7 +828,7 @@ class AssertRefSnapshotId(TableRequirement):
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 
 
-class AssertLastAssignedFieldId(TableRequirement):
+class AssertLastAssignedFieldId(ValidatableTableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""
 
     type: Literal["assert-last-assigned-field-id"] = Field(default="assert-last-assigned-field-id")
@@ -832,7 +843,7 @@ class AssertLastAssignedFieldId(TableRequirement):
             )
 
 
-class AssertCurrentSchemaId(TableRequirement):
+class AssertCurrentSchemaId(ValidatableTableRequirement):
     """The table's current schema id must match the requirement's `current-schema-id`."""
 
     type: Literal["assert-current-schema-id"] = Field(default="assert-current-schema-id")
@@ -847,7 +858,7 @@ class AssertCurrentSchemaId(TableRequirement):
             )
 
 
-class AssertLastAssignedPartitionId(TableRequirement):
+class AssertLastAssignedPartitionId(ValidatableTableRequirement):
     """The table's last assigned partition id must match the requirement's `last-assigned-partition-id`."""
 
     type: Literal["assert-last-assigned-partition-id"] = Field(default="assert-last-assigned-partition-id")
@@ -862,7 +873,7 @@ class AssertLastAssignedPartitionId(TableRequirement):
             )
 
 
-class AssertDefaultSpecId(TableRequirement):
+class AssertDefaultSpecId(ValidatableTableRequirement):
     """The table's default spec id must match the requirement's `default-spec-id`."""
 
     type: Literal["assert-default-spec-id"] = Field(default="assert-default-spec-id")
@@ -877,7 +888,7 @@ class AssertDefaultSpecId(TableRequirement):
             )
 
 
-class AssertDefaultSortOrderId(TableRequirement):
+class AssertDefaultSortOrderId(ValidatableTableRequirement):
     """The table's default sort order id must match the requirement's `default-sort-order-id`."""
 
     type: Literal["assert-default-sort-order-id"] = Field(default="assert-default-sort-order-id")
@@ -891,6 +902,20 @@ class AssertDefaultSortOrderId(TableRequirement):
                 f"Requirement failed: default sort order id has changed: expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
             )
 
+
+TableRequirement = Annotated[
+    Union[
+        AssertCreate,
+        AssertTableUUID,
+        AssertRefSnapshotId,
+        AssertLastAssignedFieldId,
+        AssertCurrentSchemaId,
+        AssertLastAssignedPartitionId,
+        AssertDefaultSpecId,
+        AssertDefaultSortOrderId,
+    ],
+    Field(discriminator='type'),
+]
 
 UpdatesAndRequirements = Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]
 
@@ -913,8 +938,8 @@ class TableIdentifier(IcebergBaseModel):
 
 class CommitTableRequest(IcebergBaseModel):
     identifier: TableIdentifier = Field()
-    requirements: Tuple[SerializeAsAny[TableRequirement], ...] = Field(default_factory=tuple)
-    updates: Tuple[SerializeAsAny[TableUpdate], ...] = Field(default_factory=tuple)
+    requirements: Tuple[TableRequirement, ...] = Field(default_factory=tuple)
+    updates: Tuple[TableUpdate, ...] = Field(default_factory=tuple)
 
 
 class CommitTableResponse(IcebergBaseModel):
@@ -1134,6 +1159,27 @@ class Table:
                     )
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
+
+    def add_files(self, file_paths: List[str]) -> None:
+        """
+        Shorthand API for adding files as data files to the table.
+
+        Args:
+            file_paths: The list of full file paths to be added as data files to the table
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        if len(self.spec().fields) > 0:
+            raise ValueError("Cannot add files to partitioned tables")
+
+        with self.transaction() as tx:
+            if self.name_mapping() is None:
+                tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
+            with tx.update_snapshot().fast_append() as update_snapshot:
+                data_files = _parquet_files_to_data_files(table_metadata=self.metadata, file_paths=file_paths, io=self.io)
+                for data_file in data_files:
+                    update_snapshot.append_data_file(data_file)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -1375,7 +1421,9 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
 
     if len(relevant_entries) > 0:
-        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
+        evaluator = visitors._InclusiveMetricsEvaluator(
+            POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path)
+        )
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -1399,7 +1447,7 @@ class DataScan(TableScan):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1466,7 +1514,7 @@ class DataScan(TableScan):
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-        metrics_evaluator = _InclusiveMetricsEvaluator(
+        metrics_evaluator = visitors._InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
@@ -2430,6 +2478,12 @@ class WriteTask:
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
 
+@dataclass(frozen=True)
+class AddFileTask:
+    file_path: str
+    partition_field_value: Record
+
+
 def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
     return f'{location}/metadata/{commit_uuid}-m{num}.avro'
 
@@ -2459,6 +2513,29 @@ def _dataframe_to_data_files(
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+
+
+def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
+    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
+        raise ValueError("Cannot add files to partitioned tables")
+
+    for file_path in file_paths:
+        yield AddFileTask(
+            file_path=file_path,
+            partition_field_value=Record(),
+        )
+
+
+def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
+    """Convert a list files into DataFiles.
+
+    Returns:
+        An iterable that supplies DataFiles that describe the parquet files.
+    """
+    from pyiceberg.io.pyarrow import parquet_files_to_data_files
+
+    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
@@ -2554,9 +2631,19 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
     def _summary(self) -> Summary:
         ssc = SnapshotSummaryCollector()
+        partition_summary_limit = int(
+            self._transaction.table_metadata.properties.get(
+                TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
+            )
+        )
+        ssc.set_partition_summary_limit(partition_summary_limit)
 
         for data_file in self._added_data_files:
-            ssc.add_file(data_file=data_file)
+            ssc.add_file(
+                data_file=data_file,
+                partition_spec=self._transaction.table_metadata.spec(),
+                schema=self._transaction.table_metadata.schema(),
+            )
 
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)

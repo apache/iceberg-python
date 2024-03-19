@@ -361,7 +361,6 @@ def test_revert_changes(simple_table: Table, table_schema_simple: Schema) -> Non
             NestedField(field_id=1, name='foo', field_type=StringType(), required=False),
             NestedField(field_id=2, name='bar', field_type=IntegerType(), required=True),
             NestedField(field_id=3, name='baz', field_type=BooleanType(), required=False),
-            schema_id=0,
             identifier_field_ids=[2],
         ),
         1: Schema(
@@ -369,11 +368,12 @@ def test_revert_changes(simple_table: Table, table_schema_simple: Schema) -> Non
             NestedField(field_id=2, name='bar', field_type=IntegerType(), required=True),
             NestedField(field_id=3, name='baz', field_type=BooleanType(), required=False),
             NestedField(field_id=4, name='data', field_type=IntegerType(), required=False),
-            schema_id=1,
             identifier_field_ids=[2],
         ),
     }
     assert simple_table.schema().schema_id == 0
+    assert simple_table.schemas()[0].schema_id == 0
+    assert simple_table.schemas()[1].schema_id == 1
 
 
 @pytest.mark.integration
@@ -672,9 +672,13 @@ def test_rename_simple(simple_table: Table) -> None:
     with simple_table.update_schema() as schema_update:
         schema_update.rename_column("foo", "vo")
 
+    with simple_table.transaction() as txn:
+        with txn.update_schema() as schema_update:
+            schema_update.rename_column("bar", "var")
+
     assert simple_table.schema() == Schema(
         NestedField(field_id=1, name="vo", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=2, name="var", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
         identifier_field_ids=[2],
     )
@@ -682,7 +686,7 @@ def test_rename_simple(simple_table: Table) -> None:
     # Check that the name mapping gets updated
     assert simple_table.name_mapping() == NameMapping([
         MappedField(field_id=1, names=['foo', 'vo']),
-        MappedField(field_id=2, names=['bar']),
+        MappedField(field_id=2, names=['bar', 'var']),
         MappedField(field_id=3, names=['baz']),
     ])
 

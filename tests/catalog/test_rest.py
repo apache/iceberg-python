@@ -23,7 +23,7 @@ import pytest
 from requests_mock import Mocker
 
 import pyiceberg
-from pyiceberg.catalog import PropertiesUpdateSummary, Table, load_catalog
+from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -36,6 +36,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -46,6 +47,10 @@ TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
 TEST_AUTH_URL = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
+TEST_SCOPE = "openid_offline_corpds_ds_profile"
+TEST_AUDIENCE = "test_audience"
+TEST_RESOURCE = "test_resource"
+
 TEST_HEADERS = {
     "Content-type": "application/json",
     "X-Client-Version": "0.14.1",
@@ -134,6 +139,85 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
         == f"Bearer {TEST_TOKEN}"
     )
+
+
+def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog(
+            "rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE
+        )._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_AUDIENCE in mock_request.last_request.text
+    assert TEST_RESOURCE in mock_request.last_request.text
+
+
+def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_AUDIENCE not in mock_request.last_request.text
+    assert TEST_RESOURCE not in mock_request.last_request.text
+
+
+def test_token_with_default_scope(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
+    )
+    assert "catalog" in mock_request.last_request.text
+
+
+def test_token_with_custom_scope(rest_mock: Mocker) -> None:
+    mock_request = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": TEST_TOKEN,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+        request_headers=OAUTH_TEST_HEADERS,
+    )
+    assert (
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)._session.headers["Authorization"]
+        == f"Bearer {TEST_TOKEN}"
+    )
+    assert TEST_SCOPE in mock_request.last_request.text
 
 
 def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
@@ -558,6 +642,26 @@ def test_load_table_404(rest_mock: Mocker) -> None:
     with pytest.raises(NoSuchTableError) as e:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_table(("fokko", "does_not_exists"))
     assert "Table does not exist" in str(e.value)
+
+
+def test_table_exist_200(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.table_exists(("fokko", "table"))
+
+
+def test_table_exist_500(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=500,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.table_exists(("fokko", "table"))
 
 
 def test_drop_table_404(rest_mock: Mocker) -> None:
