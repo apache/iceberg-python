@@ -389,10 +389,6 @@ class DataFile(Record):
         """
         return self.file_path == other.file_path if isinstance(other, DataFile) else False
 
-    def update(self, other: Dict[str, Any]) -> None:
-        for k, v in other.items():
-            self.__setattr__(k, v)
-
 
 MANIFEST_ENTRY_SCHEMAS = {
     1: Schema(

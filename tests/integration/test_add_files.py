@@ -343,5 +343,49 @@ def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, sessio
                 )
 
     # add the parquet files as data files
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=file_paths)
+    assert "Cannot infer partition value from parquet metadata for a non-linear Partition Field: baz_bucket_3 with transform bucket[3]" in str(exc_info.value)
+
+
+@pytest.mark.integration
+def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.partitioned_table_3"
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="baz"),
+        spec_id=0,
+    )
+
+    tbl = _create_table(session_catalog, identifier, partition_spec)
+
+    file_paths = [f"s3://warehouse/default/partitioned_3/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(
+                    pa.Table.from_pylist(
+                        [
+                            {
+                                "foo": True,
+                                "bar": "bar_string",
+                                "baz": 123,
+                                "qux": date(2024, 3, 7),
+                            },
+                            {
+                                "foo": True,
+                                "bar": "bar_string",
+                                "baz": 124,
+                                "qux": date(2024, 3, 7),
+                            }
+                        ],
+                        schema=ARROW_SCHEMA,
+                    )
+                )
+
+    # add the parquet files as data files
+    with pytest.raises(ValueError) as exc_info:
+        tbl.add_files(file_paths=file_paths)
+    assert "Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: baz. lower_value=123, upper_value=124" in str(exc_info.value)

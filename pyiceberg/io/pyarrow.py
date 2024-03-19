@@ -1595,7 +1595,7 @@ def parquet_path_to_id_mapping(
     return result
 
 
-@dataclass
+@dataclass(frozen=True)
 class DataFileStatistics:
     record_count: int
     column_sizes: Dict[int, int]
@@ -1611,7 +1611,7 @@ class DataFileStatistics:
 
         if not partition_field.transform.preserves_order:
             raise ValueError(
-                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field. {partition_field}"
+                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
             )
 
         lower_value = partition_record_value(
@@ -1626,7 +1626,7 @@ class DataFileStatistics:
         )
         if lower_value != upper_value:
             raise ValueError(
-                f"Cannot infer partition value from parquet metadata as there are more than one partition values: {lower_value=}, {upper_value=}"
+                f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
         return lower_value
 
@@ -1796,6 +1796,11 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
             writer.write_table(task.df, row_group_size=row_group_size)
 
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=writer.writer.metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
     data_file = DataFile(
         content=DataFileContent.DATA,
         file_path=file_path,
@@ -1810,13 +1815,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         spec_id=table_metadata.default_spec_id,
         equality_ids=None,
         key_metadata=None,
+        **statistics.to_serialized_dict(),
     )
-    statistics = data_file_statistics_from_parquet_metadata(
-        parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(schema),
-    )
-    data_file.update(statistics.to_serialized_dict())
+
     return iter([data_file])
 
 
@@ -1841,15 +1842,14 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
             file_path=file_path,
             file_format=FileFormat.PARQUET,
             partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
-            record_count=parquet_metadata.num_rows,
             file_size_in_bytes=len(input_file),
             sort_order_id=None,
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
             key_metadata=None,
+            **statistics.to_serialized_dict(),
         )
 
-        data_file.update(statistics.to_serialized_dict())
         yield data_file
 
 

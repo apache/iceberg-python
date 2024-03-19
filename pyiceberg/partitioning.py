@@ -404,7 +404,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     Return the Partition Record representation of the value.
 
     The value is first converted to internal partition representation.
-    For example, UUID is converted to str, DateType to epoch-days, etc.
+    For example, UUID is converted to bytes[16], DateType to days since epoch, etc.
 
     Then the corresponding PartitionField's transform is applied to return
     the final partition record value.
