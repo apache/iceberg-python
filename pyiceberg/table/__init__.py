@@ -433,31 +433,10 @@ class CreateTableTransaction(Transaction):
         return super().commit_transaction()
 
 
-class TableUpdateAction(Enum):
-    assign_uuid = "assign-uuid"
-    upgrade_format_version = "upgrade-format-version"
-    add_schema = "add-schema"
-    set_current_schema = "set-current-schema"
-    add_spec = "add-spec"
-    set_default_spec = "set-default-spec"
-    add_sort_order = "add-sort-order"
-    set_default_sort_order = "set-default-sort-order"
-    add_snapshot = "add-snapshot"
-    set_snapshot_ref = "set-snapshot-ref"
-    remove_snapshots = "remove-snapshots"
-    remove_snapshot_ref = "remove-snapshot-ref"
-    set_location = "set-location"
-    set_properties = "set-properties"
-    remove_properties = "remove-properties"
-
-
-class TableUpdate(IcebergBaseModel):
-    action: TableUpdateAction
-
-
-class AssignUUIDUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.assign_uuid
+class AssignUUIDUpdate(IcebergBaseModel):
+    action: Literal['assign-uuid'] = Field(default="assign-uuid")
     uuid: uuid.UUID
+
 
 class UpgradeFormatVersionUpdate(IcebergBaseModel):
     action: Literal['upgrade-format-version'] = Field(default="upgrade-format-version")
@@ -548,6 +527,7 @@ class RemovePropertiesUpdate(IcebergBaseModel):
 
 TableUpdate = Annotated[
     Union[
+        AssignUUIDUpdate,
         UpgradeFormatVersionUpdate,
         AddSchemaUpdate,
         SetCurrentSchemaUpdate,

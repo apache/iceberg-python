@@ -49,8 +49,7 @@ from pyiceberg.table import (
     StagedTable,
     Table,
 )
-from pyiceberg.table.metadata import new_table_metadata
-from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
