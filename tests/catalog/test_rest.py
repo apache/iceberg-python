@@ -644,6 +644,26 @@ def test_load_table_404(rest_mock: Mocker) -> None:
     assert "Table does not exist" in str(e.value)
 
 
+def test_table_exist_200(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.table_exists(("fokko", "table"))
+
+
+def test_table_exist_500(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=500,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.table_exists(("fokko", "table"))
+
+
 def test_drop_table_404(rest_mock: Mocker) -> None:
     rest_mock.delete(
         f"{TEST_URI}v1/namespaces/fokko/tables/does_not_exists",

@@ -48,9 +48,9 @@ from pyiceberg.table import (
     CreateTableTransaction,
     StagedTable,
     Table,
-    TableMetadata,
 )
 from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -720,6 +720,13 @@ class Catalog(ABC):
         delete_files(io, manifest_lists_to_delete, MANIFEST_LIST)
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
+
+    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+        try:
+            self.load_table(identifier)
+            return True
+        except NoSuchTableError:
+            return False
 
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:

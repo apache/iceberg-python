@@ -194,6 +194,16 @@ static_table = StaticTable.from_metadata(
 
 The static-table is considered read-only.
 
+## Check if a table exists
+
+To check whether the `bids` table exists:
+
+```python
+catalog.table_exists("docs_example.bids")
+```
+
+Returns `True` if the table already exists.
+
 ## Write support
 
 With PyIceberg 0.6.0 write support is added through Arrow. Let's consider an Arrow Table:
@@ -285,10 +295,60 @@ long: [[4.896029,-122.431297,6.0989,2.349014],[6.56667]]
 
 The nested lists indicate the different Arrow buffers, where the first write results into a buffer, and the second append in a separate buffer. This is expected since it will read two parquet files.
 
+To avoid any type errors during writing, you can enforce the PyArrow table types using the Iceberg table schema:
+
+```python
+from pyiceberg.catalog import load_catalog
+import pyarrow as pa
+
+catalog = load_catalog("default")
+table = catalog.load_table("default.cities")
+schema = table.schema().as_arrow()
+
+df = pa.Table.from_pylist(
+    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}], schema=schema
+)
+
+table.append(df)
+```
+
 <!-- prettier-ignore-start -->
 
 !!! example "Under development"
     Writing using PyIceberg is still under development. Support for [partial overwrites](https://github.com/apache/iceberg-python/issues/268) and writing to [partitioned tables](https://github.com/apache/iceberg-python/issues/208) is planned and being worked on.
+
+<!-- prettier-ignore-end -->
+
+### Add Files
+
+Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
+
+```
+# Given that these parquet files have schema consistent with the Iceberg table
+
+file_paths = [
+    "s3a://warehouse/default/existing-1.parquet",
+    "s3a://warehouse/default/existing-2.parquet",
+]
+
+# They can be added to the table without rewriting them
+
+tbl.add_files(file_paths=file_paths)
+
+# A new snapshot is committed to the table with manifests pointing to the existing parquet files
+```
+
+<!-- prettier-ignore-start -->
+
+!!! note "Name Mapping"
+    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
+
+<!-- prettier-ignore-end -->
+
+<!-- prettier-ignore-start -->
+
+!!! warning "Maintenance Operations"
+    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
 
 <!-- prettier-ignore-end -->
 
@@ -501,6 +561,20 @@ assert table.properties == {"abc": "def"}
 table = table.transaction().remove_properties("abc").commit_transaction()
 
 assert table.properties == {}
+```
+
+## Snapshot properties
+
+Optionally, Snapshot properties can be set while writing to a table using `append` or `overwrite` API:
+
+```python
+tbl.append(df, snapshot_properties={"abc": "def"})
+
+# or
+
+tbl.overwrite(df, snapshot_properties={"abc": "def"})
+
+assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
 ## Query the data
