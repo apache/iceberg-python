@@ -458,8 +458,6 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
 
 TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2], Field(discriminator="format_version")]
 
-EMPTY_METADATA = TableMetadataV1(location="", schema=Schema(), last_column_id=-1, partition_spec=[])
-
 
 def new_table_metadata(
     schema: Schema,
