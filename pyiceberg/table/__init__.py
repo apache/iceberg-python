@@ -699,7 +699,7 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
         update={
             "partition_specs": [update.spec] if update.initial_change else base_metadata.partition_specs + [update.spec],
             "last_partition_id": max(
-                max([field.field_id for field in update.spec.fields] + [0]),
+                max([field.field_id for field in update.spec.fields], default=0),
                 base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
             ),
         }
@@ -853,12 +853,8 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
 
 def construct_table_metadata(updates: Tuple[TableUpdate, ...]) -> TableMetadata:
     table_metadata = TableMetadataV1(location="", last_column_id=-1, schema=Schema())
-    context = _TableMetadataUpdateContext()
-    for update in updates:
-        table_metadata = _apply_table_update(update, table_metadata, context)
-
-    updated_metadata_data = copy(table_metadata.model_dump())
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    table_metadata = update_table_metadata(table_metadata, updates)
+    return TableMetadataUtil.parse_obj(table_metadata.model_dump())
 
 
 class ValidatableTableRequirement(IcebergBaseModel):
