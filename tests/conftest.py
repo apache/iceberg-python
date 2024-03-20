@@ -1894,8 +1894,8 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
 
 @pytest.fixture(name="s3", scope="module")
 def fixture_s3_client() -> boto3.client:
-    with mock_aws():
-        yield boto3.client("s3")
+    """Real S3 client for AWS Integration Tests."""
+    yield boto3.client("s3")
 
 
 def clean_up(test_catalog: Catalog) -> None:
