@@ -657,15 +657,6 @@ def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.initial_change:
-        context.add_update(update)
-        return base_metadata.model_copy(
-            update={
-                "last_column_id": update.last_column_id,
-                "schemas": [update.schema_],
-            }
-        )
-
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
@@ -673,7 +664,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     return base_metadata.model_copy(
         update={
             "last_column_id": update.last_column_id,
-            "schemas": base_metadata.schemas + [update.schema_],
+            "schemas": [update.schema_] if update.initial_change else base_metadata.schemas + [update.schema_],
         }
     )
 
@@ -700,25 +691,13 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(AddPartitionSpecUpdate)
 def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.initial_change:
-        context.add_update(update)
-        return base_metadata.model_copy(
-            update={
-                "partition_specs": [update.spec],
-                "last_partition_id": max(
-                    max([field.field_id for field in update.spec.fields] + [0]),
-                    base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
-                ),
-            }
-        )
-
     for spec in base_metadata.partition_specs:
-        if spec.spec_id == update.spec.spec_id:
+        if spec.spec_id == update.spec.spec_id and not update.initial_change:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
     context.add_update(update)
     return base_metadata.model_copy(
         update={
-            "partition_specs": base_metadata.partition_specs + [update.spec],
+            "partition_specs": [update.spec] if update.initial_change else base_metadata.partition_specs + [update.spec],
             "last_partition_id": max(
                 max([field.field_id for field in update.spec.fields] + [0]),
                 base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
@@ -822,15 +801,9 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
-    if update.initial_change:
-        return base_metadata.model_copy(
-            update={
-                "sort_orders": [update.sort_order],
-            }
-        )
     return base_metadata.model_copy(
         update={
-            "sort_orders": base_metadata.sort_orders + [update.sort_order],
+            "sort_orders": [update.sort_order] if update.initial_change else base_metadata.sort_orders + [update.sort_order],
         }
     )
 
