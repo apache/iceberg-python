@@ -79,6 +79,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    UUIDType,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -1926,6 +1927,16 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 @pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture
+def bound_reference_binary() -> BoundReference[str]:
+    return BoundReference(field=NestedField(1, "field", BinaryType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture
+def bound_reference_uuid() -> BoundReference[str]:
+    return BoundReference(field=NestedField(1, "field", UUIDType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture(scope="session")
