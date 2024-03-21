@@ -913,3 +913,15 @@ def test_resolve_table_location_warehouse(hive_database: HiveDatabase) -> None:
 
     location = catalog._resolve_table_location(None, "database", "table")
     assert location == "/tmp/warehouse/database.db/table"
+
+
+def test_resolve_table_location_using_db_location(hive_database: HiveDatabase) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, warehouse="/tmp/warehouse/", uri=HIVE_METASTORE_FAKE_URL)
+
+    hive_database.locationUri = "hdfs://tmp/warehouse/database.db"
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_database.return_value = hive_database
+
+    location = catalog._resolve_table_location(None, "database", "table")
+    assert location == "tmp/warehouse/database.db/table"
