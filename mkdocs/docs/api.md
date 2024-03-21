@@ -319,6 +319,38 @@ table.append(df)
 
 <!-- prettier-ignore-end -->
 
+## Inspecting tables
+
+To explore the table metadata, tables can be inspected.
+
+### Snapshots
+
+Inspect the snapshots of the table:
+
+```python
+table.inspect.snapshots()
+```
+
+```
+pyarrow.Table
+committed_at: timestamp[ms] not null
+snapshot_id: int64 not null
+parent_id: int64
+operation: string
+manifest_list: string not null
+summary: map<string, string>
+  child 0, entries: struct<key: string not null, value: string> not null
+      child 0, key: string not null
+      child 1, value: string
+----
+committed_at: [[2024-03-15 15:01:25.682,2024-03-15 15:01:25.730,2024-03-15 15:01:25.772]]
+snapshot_id: [[805611270568163028,3679426539959220963,5588071473139865870]]
+parent_id: [[null,805611270568163028,3679426539959220963]]
+operation: [["append","overwrite","append"]]
+manifest_list: [["s3://warehouse/default/table_metadata_snapshots/metadata/snap-805611270568163028-0-43637daf-ea4b-4ceb-b096-a60c25481eb5.avro","s3://warehouse/default/table_metadata_snapshots/metadata/snap-3679426539959220963-0-8be81019-adf1-4bb6-a127-e15217bd50b3.avro","s3://warehouse/default/table_metadata_snapshots/metadata/snap-5588071473139865870-0-1382dd7e-5fbc-4c51-9776-a832d7d0984e.avro"]]
+summary: [[keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","1","0","3","5459","0","0"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-records",...,"total-equality-deletes","total-files-size","deleted-data-files","deleted-records","removed-files-size"]values:["5459","1","3","1","3",...,"0","5459","1","3","5459"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","2","0","6","10918","0","0"]]]
+```
+
 ### Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
