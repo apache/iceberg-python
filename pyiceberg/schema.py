@@ -64,6 +64,8 @@ from pyiceberg.types import (
 )
 
 if TYPE_CHECKING:
+    import pyarrow as pa
+
     from pyiceberg.table.name_mapping import (
         NameMapping,
     )
@@ -179,6 +181,12 @@ class Schema(IcebergBaseModel):
     def as_struct(self) -> StructType:
         """Return the schema as a struct."""
         return StructType(*self.fields)
+
+    def as_arrow(self) -> "pa.Schema":
+        """Return the schema as an Arrow schema."""
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        return schema_to_pyarrow(self)
 
     def find_field(self, name_or_id: Union[str, int], case_sensitive: bool = True) -> NestedField:
         """Find a field using a field name or field ID.

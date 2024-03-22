@@ -18,7 +18,17 @@
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
+from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, update_snapshot_summaries
+from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import Record
+from pyiceberg.types import (
+    BooleanType,
+    IntegerType,
+    NestedField,
+    StringType,
+)
 
 
 @pytest.fixture
@@ -137,26 +147,66 @@ def manifest_file() -> ManifestFile:
     )
 
 
-@pytest.fixture
-def data_file() -> DataFile:
-    return DataFile(
-        content=DataFileContent.DATA,
-        record_count=100,
-        file_size_in_bytes=1234,
-    )
-
-
-def test_snapshot_summary_collector(data_file: DataFile) -> None:
+@pytest.mark.integration
+def test_snapshot_summary_collector(table_schema_simple: Schema) -> None:
     ssc = SnapshotSummaryCollector()
 
     assert ssc.build() == {}
-
-    ssc.add_file(data_file)
+    data_file = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
+    ssc.add_file(data_file, schema=table_schema_simple)
 
     assert ssc.build() == {
         'added-data-files': '1',
         'added-files-size': '1234',
         'added-records': '100',
+    }
+
+
+@pytest.mark.integration
+def test_snapshot_summary_collector_with_partition() -> None:
+    # Given
+
+    ssc = SnapshotSummaryCollector()
+
+    assert ssc.build() == {}
+    schema = Schema(
+        NestedField(field_id=1, name="bool_field", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="string_field", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name='int_field'))
+    data_file_1 = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
+    data_file_2 = DataFile(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(int_field=2))
+    # When
+    ssc.add_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_2, schema=schema, partition_spec=spec)
+
+    # Then
+    assert ssc.build() == {
+        'added-files-size': '1234',
+        'removed-files-size': '5555',
+        'added-data-files': '1',
+        'deleted-data-files': '2',
+        'added-records': '100',
+        'deleted-records': '300',
+        'changed-partition-count': '2',
+    }
+
+    # When
+    ssc.set_partition_summary_limit(10)
+
+    # Then
+    assert ssc.build() == {
+        'added-files-size': '1234',
+        'removed-files-size': '5555',
+        'added-data-files': '1',
+        'deleted-data-files': '2',
+        'added-records': '100',
+        'deleted-records': '300',
+        'changed-partition-count': '2',
+        'partitions.int_field=1': 'added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100',
+        'partitions.int_field=2': 'removed-files-size=4321,deleted-data-files=1,deleted-records=200',
     }
 
 

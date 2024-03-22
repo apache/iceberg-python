@@ -758,7 +758,6 @@ def test_invalid_uuid_conversions() -> None:
             DecimalType(9, 2),
             StringType(),
             FixedType(1),
-            BinaryType(),
         ],
     )
 
@@ -880,6 +879,25 @@ def test_uuid_literal_initialization() -> None:
     uuid_literal = literal(test_uuid)
     assert isinstance(uuid_literal, Literal)
     assert test_uuid.bytes == uuid_literal.value
+
+
+def test_uuid_to_fixed() -> None:
+    test_uuid = uuid.uuid4()
+    uuid_literal = literal(test_uuid)
+    fixed_literal = uuid_literal.to(FixedType(16))
+    assert test_uuid.bytes == fixed_literal.value
+    with pytest.raises(TypeError) as e:
+        uuid_literal.to(FixedType(15))
+    assert "Cannot convert UUIDLiteral into fixed[15], different length: 15 <> 16" in str(e.value)
+    assert isinstance(fixed_literal, FixedLiteral)  # type: ignore
+
+
+def test_uuid_to_binary() -> None:
+    test_uuid = uuid.uuid4()
+    uuid_literal = literal(test_uuid)
+    binary_literal = uuid_literal.to(BinaryType())
+    assert test_uuid.bytes == binary_literal.value
+    assert isinstance(binary_literal, BinaryLiteral)  # type: ignore
 
 
 #   __  __      ___

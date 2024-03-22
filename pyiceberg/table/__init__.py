@@ -33,7 +33,6 @@ from typing import (
     Dict,
     Generic,
     Iterable,
-    Iterator,
     List,
     Literal,
     Optional,
@@ -43,7 +42,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, SerializeAsAny, field_validator
+from pydantic import Field, field_validator
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
@@ -213,6 +212,9 @@ class TableProperties:
 
     METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
 
+    WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
+    WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
+
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION = 2
@@ -329,13 +331,13 @@ class Transaction:
             name_mapping=self._table.name_mapping(),
         )
 
-    def update_snapshot(self) -> UpdateSnapshot:
+    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
             A new UpdateSnapshot
         """
-        return UpdateSnapshot(self, io=self._table.io)
+        return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
 
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
@@ -383,77 +385,56 @@ class Transaction:
             return self._table
 
 
-class TableUpdateAction(Enum):
-    upgrade_format_version = "upgrade-format-version"
-    add_schema = "add-schema"
-    set_current_schema = "set-current-schema"
-    add_spec = "add-spec"
-    set_default_spec = "set-default-spec"
-    add_sort_order = "add-sort-order"
-    set_default_sort_order = "set-default-sort-order"
-    add_snapshot = "add-snapshot"
-    set_snapshot_ref = "set-snapshot-ref"
-    remove_snapshots = "remove-snapshots"
-    remove_snapshot_ref = "remove-snapshot-ref"
-    set_location = "set-location"
-    set_properties = "set-properties"
-    remove_properties = "remove-properties"
-
-
-class TableUpdate(IcebergBaseModel):
-    action: TableUpdateAction
-
-
-class UpgradeFormatVersionUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.upgrade_format_version
+class UpgradeFormatVersionUpdate(IcebergBaseModel):
+    action: Literal['upgrade-format-version'] = Field(default="upgrade-format-version")
     format_version: int = Field(alias="format-version")
 
 
-class AddSchemaUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_schema
+class AddSchemaUpdate(IcebergBaseModel):
+    action: Literal['add-schema'] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
     # This field is required: https://github.com/apache/iceberg/pull/7445
     last_column_id: int = Field(alias="last-column-id")
 
 
-class SetCurrentSchemaUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_current_schema
+class SetCurrentSchemaUpdate(IcebergBaseModel):
+    action: Literal['set-current-schema'] = Field(default="set-current-schema")
     schema_id: int = Field(
         alias="schema-id", description="Schema ID to set as current, or -1 to set last added schema", default=-1
     )
 
 
-class AddPartitionSpecUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_spec
+class AddPartitionSpecUpdate(IcebergBaseModel):
+    action: Literal['add-spec'] = Field(default="add-spec")
     spec: PartitionSpec
 
 
-class SetDefaultSpecUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_default_spec
+class SetDefaultSpecUpdate(IcebergBaseModel):
+    action: Literal['set-default-spec'] = Field(default="set-default-spec")
     spec_id: int = Field(
         alias="spec-id", description="Partition spec ID to set as the default, or -1 to set last added spec", default=-1
     )
 
 
-class AddSortOrderUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_sort_order
+class AddSortOrderUpdate(IcebergBaseModel):
+    action: Literal['add-sort-order'] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
 
 
-class SetDefaultSortOrderUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_default_sort_order
+class SetDefaultSortOrderUpdate(IcebergBaseModel):
+    action: Literal['set-default-sort-order'] = Field(default="set-default-sort-order")
     sort_order_id: int = Field(
         alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order", default=-1
     )
 
 
-class AddSnapshotUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.add_snapshot
+class AddSnapshotUpdate(IcebergBaseModel):
+    action: Literal['add-snapshot'] = Field(default="add-snapshot")
     snapshot: Snapshot
 
 
-class SetSnapshotRefUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_snapshot_ref
+class SetSnapshotRefUpdate(IcebergBaseModel):
+    action: Literal['set-snapshot-ref'] = Field(default="set-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
@@ -462,23 +443,23 @@ class SetSnapshotRefUpdate(TableUpdate):
     min_snapshots_to_keep: Annotated[Optional[int], Field(alias="min-snapshots-to-keep", default=None)]
 
 
-class RemoveSnapshotsUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.remove_snapshots
+class RemoveSnapshotsUpdate(IcebergBaseModel):
+    action: Literal['remove-snapshots'] = Field(default="remove-snapshots")
     snapshot_ids: List[int] = Field(alias="snapshot-ids")
 
 
-class RemoveSnapshotRefUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.remove_snapshot_ref
+class RemoveSnapshotRefUpdate(IcebergBaseModel):
+    action: Literal['remove-snapshot-ref'] = Field(default="remove-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
 
 
-class SetLocationUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_location
+class SetLocationUpdate(IcebergBaseModel):
+    action: Literal['set-location'] = Field(default="set-location")
     location: str
 
 
-class SetPropertiesUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.set_properties
+class SetPropertiesUpdate(IcebergBaseModel):
+    action: Literal['set-properties'] = Field(default="set-properties")
     updates: Dict[str, str]
 
     @field_validator('updates', mode='before')
@@ -486,9 +467,30 @@ class SetPropertiesUpdate(TableUpdate):
         return transform_dict_value_to_str(properties)
 
 
-class RemovePropertiesUpdate(TableUpdate):
-    action: TableUpdateAction = TableUpdateAction.remove_properties
+class RemovePropertiesUpdate(IcebergBaseModel):
+    action: Literal['remove-properties'] = Field(default="remove-properties")
     removals: List[str]
+
+
+TableUpdate = Annotated[
+    Union[
+        UpgradeFormatVersionUpdate,
+        AddSchemaUpdate,
+        SetCurrentSchemaUpdate,
+        AddPartitionSpecUpdate,
+        SetDefaultSpecUpdate,
+        AddSortOrderUpdate,
+        SetDefaultSortOrderUpdate,
+        AddSnapshotUpdate,
+        SetSnapshotRefUpdate,
+        RemoveSnapshotsUpdate,
+        RemoveSnapshotRefUpdate,
+        SetLocationUpdate,
+        SetPropertiesUpdate,
+        RemovePropertiesUpdate,
+    ],
+    Field(discriminator='action'),
+]
 
 
 class _TableMetadataUpdateContext:
@@ -502,21 +504,15 @@ class _TableMetadataUpdateContext:
 
     def is_added_snapshot(self, snapshot_id: int) -> bool:
         return any(
-            update.snapshot.snapshot_id == snapshot_id
-            for update in self._updates
-            if update.action == TableUpdateAction.add_snapshot
+            update.snapshot.snapshot_id == snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)
         )
 
     def is_added_schema(self, schema_id: int) -> bool:
-        return any(
-            update.schema_.schema_id == schema_id for update in self._updates if update.action == TableUpdateAction.add_schema
-        )
+        return any(update.schema_.schema_id == schema_id for update in self._updates if isinstance(update, AddSchemaUpdate))
 
     def is_added_sort_order(self, sort_order_id: int) -> bool:
         return any(
-            update.sort_order.order_id == sort_order_id
-            for update in self._updates
-            if update.action == TableUpdateAction.add_sort_order
+            update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
 
 
@@ -767,7 +763,7 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     return new_metadata.model_copy(deep=True)
 
 
-class TableRequirement(IcebergBaseModel):
+class ValidatableTableRequirement(IcebergBaseModel):
     type: str
 
     @abstractmethod
@@ -783,7 +779,7 @@ class TableRequirement(IcebergBaseModel):
         ...
 
 
-class AssertCreate(TableRequirement):
+class AssertCreate(ValidatableTableRequirement):
     """The table must not already exist; used for create transactions."""
 
     type: Literal["assert-create"] = Field(default="assert-create")
@@ -793,7 +789,7 @@ class AssertCreate(TableRequirement):
             raise CommitFailedException("Table already exists")
 
 
-class AssertTableUUID(TableRequirement):
+class AssertTableUUID(ValidatableTableRequirement):
     """The table UUID must match the requirement's `uuid`."""
 
     type: Literal["assert-table-uuid"] = Field(default="assert-table-uuid")
@@ -806,7 +802,7 @@ class AssertTableUUID(TableRequirement):
             raise CommitFailedException(f"Table UUID does not match: {self.uuid} != {base_metadata.table_uuid}")
 
 
-class AssertRefSnapshotId(TableRequirement):
+class AssertRefSnapshotId(ValidatableTableRequirement):
     """The table branch or tag identified by the requirement's `ref` must reference the requirement's `snapshot-id`.
 
     if `snapshot-id` is `null` or missing, the ref must not already exist.
@@ -831,7 +827,7 @@ class AssertRefSnapshotId(TableRequirement):
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 
 
-class AssertLastAssignedFieldId(TableRequirement):
+class AssertLastAssignedFieldId(ValidatableTableRequirement):
     """The table's last assigned column id must match the requirement's `last-assigned-field-id`."""
 
     type: Literal["assert-last-assigned-field-id"] = Field(default="assert-last-assigned-field-id")
@@ -846,7 +842,7 @@ class AssertLastAssignedFieldId(TableRequirement):
             )
 
 
-class AssertCurrentSchemaId(TableRequirement):
+class AssertCurrentSchemaId(ValidatableTableRequirement):
     """The table's current schema id must match the requirement's `current-schema-id`."""
 
     type: Literal["assert-current-schema-id"] = Field(default="assert-current-schema-id")
@@ -861,7 +857,7 @@ class AssertCurrentSchemaId(TableRequirement):
             )
 
 
-class AssertLastAssignedPartitionId(TableRequirement):
+class AssertLastAssignedPartitionId(ValidatableTableRequirement):
     """The table's last assigned partition id must match the requirement's `last-assigned-partition-id`."""
 
     type: Literal["assert-last-assigned-partition-id"] = Field(default="assert-last-assigned-partition-id")
@@ -876,7 +872,7 @@ class AssertLastAssignedPartitionId(TableRequirement):
             )
 
 
-class AssertDefaultSpecId(TableRequirement):
+class AssertDefaultSpecId(ValidatableTableRequirement):
     """The table's default spec id must match the requirement's `default-spec-id`."""
 
     type: Literal["assert-default-spec-id"] = Field(default="assert-default-spec-id")
@@ -891,7 +887,7 @@ class AssertDefaultSpecId(TableRequirement):
             )
 
 
-class AssertDefaultSortOrderId(TableRequirement):
+class AssertDefaultSortOrderId(ValidatableTableRequirement):
     """The table's default sort order id must match the requirement's `default-sort-order-id`."""
 
     type: Literal["assert-default-sort-order-id"] = Field(default="assert-default-sort-order-id")
@@ -905,6 +901,20 @@ class AssertDefaultSortOrderId(TableRequirement):
                 f"Requirement failed: default sort order id has changed: expected {self.default_sort_order_id}, found {base_metadata.default_sort_order_id}"
             )
 
+
+TableRequirement = Annotated[
+    Union[
+        AssertCreate,
+        AssertTableUUID,
+        AssertRefSnapshotId,
+        AssertLastAssignedFieldId,
+        AssertCurrentSchemaId,
+        AssertLastAssignedPartitionId,
+        AssertDefaultSpecId,
+        AssertDefaultSortOrderId,
+    ],
+    Field(discriminator='type'),
+]
 
 UpdatesAndRequirements = Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]
 
@@ -927,8 +937,8 @@ class TableIdentifier(IcebergBaseModel):
 
 class CommitTableRequest(IcebergBaseModel):
     identifier: TableIdentifier = Field()
-    requirements: Tuple[SerializeAsAny[TableRequirement], ...] = Field(default_factory=tuple)
-    updates: Tuple[SerializeAsAny[TableUpdate], ...] = Field(default_factory=tuple)
+    requirements: Tuple[TableRequirement, ...] = Field(default_factory=tuple)
+    updates: Tuple[TableUpdate, ...] = Field(default_factory=tuple)
 
 
 class CommitTableResponse(IcebergBaseModel):
@@ -959,6 +969,11 @@ class Table:
             The transaction object
         """
         return Transaction(self)
+
+    @property
+    def inspect(self) -> InspectTable:
+        """Return the InspectTable object to browse the table metadata."""
+        return InspectTable(self)
 
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
@@ -1101,12 +1116,13 @@ class Table:
         else:
             return None
 
-    def append(self, df: pa.Table) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
             import pyarrow as pa
@@ -1122,7 +1138,7 @@ class Table:
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:
-            with txn.update_snapshot().fast_append() as update_snapshot:
+            with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
                 # skip writing data files if the dataframe is empty
                 if df.shape[0] > 0:
                     data_files = _dataframe_to_data_files(
@@ -1131,7 +1147,9 @@ class Table:
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
 
-    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+    def overwrite(
+        self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+    ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
 
@@ -1139,6 +1157,7 @@ class Table:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
+            snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
             import pyarrow as pa
@@ -1157,7 +1176,7 @@ class Table:
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:
-            with txn.update_snapshot().overwrite() as update_snapshot:
+            with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
                 # skip writing data files if the dataframe is empty
                 if df.shape[0] > 0:
                     data_files = _dataframe_to_data_files(
@@ -1176,9 +1195,6 @@ class Table:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        if len(self.spec().fields) > 0:
-            raise ValueError("Cannot add files to partitioned tables")
-
         with self.transaction() as tx:
             if self.name_mapping() is None:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
@@ -2718,17 +2734,6 @@ def _dataframe_to_data_files(
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
 
 
-def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
-    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
-        raise ValueError("Cannot add files to partitioned tables")
-
-    for file_path in file_paths:
-        yield AddFileTask(
-            file_path=file_path,
-            partition_field_value=Record(),
-        )
-
-
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
@@ -2737,8 +2742,7 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
@@ -2754,6 +2758,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         transaction: Transaction,
         io: FileIO,
         commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -2765,6 +2770,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
         self._added_data_files = []
+        self.snapshot_properties = snapshot_properties
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
@@ -2832,11 +2838,21 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
 
-    def _summary(self) -> Summary:
+    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         ssc = SnapshotSummaryCollector()
+        partition_summary_limit = int(
+            self._transaction.table_metadata.properties.get(
+                TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
+            )
+        )
+        ssc.set_partition_summary_limit(partition_summary_limit)
 
         for data_file in self._added_data_files:
-            ssc.add_file(data_file=data_file)
+            ssc.add_file(
+                data_file=data_file,
+                partition_spec=self._transaction.table_metadata.spec(),
+                schema=self._transaction.table_metadata.schema(),
+            )
 
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
@@ -2845,7 +2861,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
 
         return update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **ssc.build()),
+            summary=Summary(operation=self._operation, **ssc.build(), **snapshot_properties),
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
@@ -2854,7 +2870,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
-        summary = self._summary()
+        summary = self._summary(self.snapshot_properties)
 
         manifest_list_file_path = _generate_manifest_list_path(
             location=self._transaction.table_metadata.location,
@@ -2969,13 +2985,17 @@ class OverwriteFiles(_MergingSnapshotProducer):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
+    _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO) -> None:
+    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str]) -> None:
         self._transaction = transaction
         self._io = io
+        self._snapshot_properties = snapshot_properties
 
     def fast_append(self) -> FastAppendFiles:
-        return FastAppendFiles(operation=Operation.APPEND, transaction=self._transaction, io=self._io)
+        return FastAppendFiles(
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+        )
 
     def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(
@@ -2984,6 +3004,7 @@ class UpdateSnapshot:
             else Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
+            snapshot_properties=self._snapshot_properties,
         )
 
 
@@ -3228,6 +3249,52 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
         return partition_field.field_id not in self._deletes and partition_field.transform == transform
+
+
+class InspectTable:
+    tbl: Table
+
+    def __init__(self, tbl: Table) -> None:
+        self.tbl = tbl
+
+        try:
+            import pyarrow as pa  # noqa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
+
+    def snapshots(self) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots_schema = pa.schema([
+            pa.field('committed_at', pa.timestamp(unit='ms'), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('parent_id', pa.int64(), nullable=True),
+            pa.field('operation', pa.string(), nullable=True),
+            pa.field('manifest_list', pa.string(), nullable=False),
+            pa.field('summary', pa.map_(pa.string(), pa.string()), nullable=True),
+        ])
+        snapshots = []
+        for snapshot in self.tbl.metadata.snapshots:
+            if summary := snapshot.summary:
+                operation = summary.operation.value
+                additional_properties = snapshot.summary.additional_properties
+            else:
+                operation = None
+                additional_properties = None
+
+            snapshots.append({
+                'committed_at': datetime.datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'snapshot_id': snapshot.snapshot_id,
+                'parent_id': snapshot.parent_snapshot_id,
+                'operation': str(operation),
+                'manifest_list': snapshot.manifest_list,
+                'summary': additional_properties,
+            })
+
+        return pa.Table.from_pylist(
+            snapshots,
+            schema=snapshots_schema,
+        )
 
 
 def ancestors_between(to_snapshot: int, from_snapshot: Optional[int], table: Table) -> Iterable[Snapshot]:
