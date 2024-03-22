@@ -1284,7 +1284,6 @@ class TableScan(ABC):
     row_filter: BooleanExpression
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
-    snapshot_id: Optional[int]
     options: Properties
     limit: Optional[int]
 
@@ -1294,7 +1293,6 @@ class TableScan(ABC):
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
@@ -1302,33 +1300,11 @@ class TableScan(ABC):
         self.row_filter = _parse_row_filter(row_filter)
         self.selected_fields = selected_fields
         self.case_sensitive = case_sensitive
-        self.snapshot_id = snapshot_id
         self.options = options
         self.limit = limit
 
-    def snapshot(self) -> Optional[Snapshot]:
-        if self.snapshot_id:
-            return self.table.snapshot_by_id(self.snapshot_id)
-        return self.table.current_snapshot()
-
-    def projection(self) -> Schema:
-        current_schema = self.table.schema()
-        if self.snapshot_id is not None:
-            snapshot = self.table.snapshot_by_id(self.snapshot_id)
-            if snapshot is not None:
-                if snapshot.schema_id is not None:
-                    snapshot_schema = self.table.schemas().get(snapshot.schema_id)
-                    if snapshot_schema is not None:
-                        current_schema = snapshot_schema
-                    else:
-                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
-            else:
-                raise ValueError(f"Snapshot not found: {self.snapshot_id}")
-
-        if "*" in self.selected_fields:
-            return current_schema
-
-        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+    @abstractmethod
+    def projection(self) -> Schema: ...
 
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
@@ -1343,13 +1319,8 @@ class TableScan(ABC):
         """Create a copy of this table scan with updated fields."""
         return type(self)(**{**self.__dict__, **overrides})
 
-    def use_ref(self: S, name: str) -> S:
-        if self.snapshot_id:
-            raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
-        if snapshot := self.table.snapshot_by_name(name):
-            return self.update(snapshot_id=snapshot.snapshot_id)
-
-        raise ValueError(f"Cannot scan unknown ref={name}")
+    @abstractmethod
+    def use_ref(self: S, name: str) -> S: ...
 
     def select(self: S, *field_names: str) -> S:
         if "*" in self.selected_fields:
@@ -1361,6 +1332,47 @@ class TableScan(ABC):
 
     def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
         return self.update(case_sensitive=case_sensitive)
+
+    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
+        spec = self.table.specs()[spec_id]
+        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+
+    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
+        spec = self.table.specs()[spec_id]
+        partition_type = spec.partition_type(self.table.schema())
+        partition_schema = Schema(*partition_type.fields)
+        partition_expr = self.partition_filters[spec_id]
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _EvaluatorExpression methods bound to a single
+        # shared instance across multiple threads.
+        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
+            data_file.partition
+        )
+
+    def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
+        """Ensure that no manifests are loaded that contain deletes that are older than the data.
+
+        Args:
+            min_data_sequence_number (int): The minimal sequence number.
+            manifest (ManifestFile): A ManifestFile that can be either data or deletes.
+
+        Returns:
+            Boolean indicating if it is either a data file, or a relevant delete file.
+        """
+        return manifest.content == ManifestContent.DATA or (
+            # Not interested in deletes that are older than the data
+            manifest.content == ManifestContent.DELETES
+            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
+        )
+
+    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
+        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        return project(self.row_filter)
+
+    @cached_property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return KeyDefaultDict(self._build_partition_projection)
 
 
 class ScanTask(ABC):
@@ -1440,6 +1452,8 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 
 class DataScan(TableScan):
+    snapshot_id: Optional[int]
+
     def __init__(
         self,
         table: Table,
@@ -1450,48 +1464,40 @@ class DataScan(TableScan):
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
-        super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
+        super().__init__(table, row_filter, selected_fields, case_sensitive, options, limit)
+        self.snapshot_id = snapshot_id
 
-    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
-        return project(self.row_filter)
+    def snapshot(self) -> Optional[Snapshot]:
+        if self.snapshot_id:
+            return self.table.snapshot_by_id(self.snapshot_id)
+        return self.table.current_snapshot()
 
-    @cached_property
-    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
-        return KeyDefaultDict(self._build_partition_projection)
+    def projection(self) -> Schema:
+        current_schema = self.table.schema()
+        if self.snapshot_id is not None:
+            snapshot = self.table.snapshot_by_id(self.snapshot_id)
+            if snapshot is not None:
+                if snapshot.schema_id is not None:
+                    snapshot_schema = self.table.schemas().get(snapshot.schema_id)
+                    if snapshot_schema is not None:
+                        current_schema = snapshot_schema
+                    else:
+                        warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
+            else:
+                raise ValueError(f"Snapshot not found: {self.snapshot_id}")
 
-    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        spec = self.table.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        if "*" in self.selected_fields:
+            return current_schema
 
-    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
-        spec = self.table.specs()[spec_id]
-        partition_type = spec.partition_type(self.table.schema())
-        partition_schema = Schema(*partition_type.fields)
-        partition_expr = self.partition_filters[spec_id]
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
-            data_file.partition
-        )
+    def use_ref(self: S, name: str) -> S:
+        if self.snapshot_id:  # type: ignore
+            raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")  # type: ignore
+        if snapshot := self.table.snapshot_by_name(name):
+            return self.update(snapshot_id=snapshot.snapshot_id)
 
-    def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
-        """Ensure that no manifests are loaded that contain deletes that are older than the data.
-
-        Args:
-            min_data_sequence_number (int): The minimal sequence number.
-            manifest (ManifestFile): A ManifestFile that can be either data or deletes.
-
-        Returns:
-            Boolean indicating if it is either a data file, or a relevant delete file.
-        """
-        return manifest.content == ManifestContent.DATA or (
-            # Not interested in deletes that are older than the data
-            manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
-        )
+        raise ValueError(f"Cannot scan unknown ref={name}")
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -1595,7 +1601,7 @@ class DataScan(TableScan):
         return ray.data.from_arrow(self.to_arrow())
 
 
-class IncrementalAppendScan(DataScan):
+class BaseIncrementalScan(TableScan):
     to_snapshot_id: Optional[int]
     from_snapshot_id_exclusive: Optional[int]
 
@@ -1605,35 +1611,55 @@ class IncrementalAppendScan(DataScan):
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
         to_snapshot_id: Optional[int] = None,
         from_snapshot_id_exclusive: Optional[int] = None,
     ):
-        super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
+        super().__init__(table, row_filter, selected_fields, case_sensitive, options, limit)
         self.to_snapshot_id = to_snapshot_id
         self.from_snapshot_id_exclusive = from_snapshot_id_exclusive
 
     def to_snapshot(self: S, to_snapshot_id: int) -> S:
+        """Instructs this scan to look for changes up to a particular snapshot (inclusive).
+
+        If the end snapshot is not configured, it defaults to the current table snapshot (inclusive).
+
+        Args:
+            to_snapshot_id: the end snapshot ID (inclusive)
+
+        Returns:
+            this for method chaining
+        """
         return self.update(to_snapshot_id=to_snapshot_id)
 
     def from_snapshot_exclusive(self: S, from_snapshot_id: int) -> S:
-        return self.update(from_snapshot_id_exclusive=from_snapshot_id)
+        """Instructs this scan to look for changes starting from a particular snapshot (exclusive).
 
-    def update(self: S, **overrides: Any) -> S:
-        """Create a copy of this table scan with updated fields."""
-        return type(self)(**{**self.__dict__, **overrides})
+        If the start snapshot is not configured, it defaults to the oldest ancestor of the end snapshot (inclusive).
 
-    def use_ref(self: S, name: str) -> S:
-        raise NotImplementedError("Not implemented for IncrementalAppendScan yet.")
-
-    def plan_files(self) -> Iterable[FileScanTask]:
-        """Plans the relevant files by filtering on the PartitionSpecs.
+        Args:
+            from_snapshot_id: the start snapshot ID (exclusive)
 
         Returns:
-            List of FileScanTasks that contain both data and delete files.
+            this for method chaining
         """
+        return self.update(from_snapshot_id_exclusive=from_snapshot_id)
+
+    def use_ref(self: S, name: str) -> S:
+        raise NotImplementedError("Not implemented for IncrementalScan yet.")
+
+    def projection(self) -> Schema:
+        current_schema = self.table.schema()
+        if "*" in self.selected_fields:
+            return current_schema
+
+        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+
+    @abstractmethod
+    def _do_plan_files(self, from_snapshot_id_exclusive: int, to_snapshot_id: int) -> Iterable[FileScanTask]: ...
+
+    def plan_files(self) -> Iterable[FileScanTask]:
         if self.from_snapshot_id_exclusive is None and self.to_snapshot_id is None and self.table.current_snapshot() is None:
             return iter([])
 
@@ -1651,10 +1677,67 @@ class IncrementalAppendScan(DataScan):
                 raise ValueError(
                     f"Starting snapshot (exclusive) {self.from_snapshot_id_exclusive} is not a parent ancestor of end snapshot {self.to_snapshot_id}"
                 )
+        return self._do_plan_files(self.from_snapshot_id_exclusive, self.to_snapshot_id)  # type: ignore
 
+    def to_arrow(self) -> pa.Table:
+        from pyiceberg.io.pyarrow import project_table
+
+        return project_table(
+            self.plan_files(),
+            self.table,
+            self.row_filter,
+            self.projection(),
+            case_sensitive=self.case_sensitive,
+            limit=self.limit,
+        )
+
+    def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
+        return self.to_arrow().to_pandas(**kwargs)
+
+    def to_duckdb(self, table_name: str, connection: Optional[DuckDBPyConnection] = None) -> DuckDBPyConnection:
+        import duckdb
+
+        con = connection or duckdb.connect(database=":memory:")
+        con.register(table_name, self.to_arrow())
+
+        return con
+
+    def to_ray(self) -> ray.data.dataset.Dataset:
+        import ray
+
+        return ray.data.from_arrow(self.to_arrow())
+
+
+class IncrementalAppendScan(BaseIncrementalScan):
+    def __init__(
+        self,
+        table: Table,
+        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
+        selected_fields: Tuple[str, ...] = ("*",),
+        case_sensitive: bool = True,
+        options: Properties = EMPTY_DICT,
+        limit: Optional[int] = None,
+        to_snapshot_id: Optional[int] = None,
+        from_snapshot_id_exclusive: Optional[int] = None,
+    ):
+        super().__init__(
+            table,
+            row_filter,
+            selected_fields,
+            case_sensitive,
+            options,
+            limit,
+            to_snapshot_id,
+            from_snapshot_id_exclusive,
+        )
+
+    def use_ref(self: S, name: str) -> S:
+        raise NotImplementedError("Not implemented for IncrementalAppendScan yet.")
+
+    def _do_plan_files(self, from_snapshot_id_exclusive: int, to_snapshot_id: int) -> Iterable[FileScanTask]:
         snapshots_between = [
             snapshot
-            for snapshot in ancestors_between(self.to_snapshot_id, self.from_snapshot_id_exclusive, self.table)
+            for snapshot in ancestors_between(to_snapshot_id, from_snapshot_id_exclusive, self.table)
             if snapshot.summary.operation == Operation.APPEND  # type: ignore
         ]
 
