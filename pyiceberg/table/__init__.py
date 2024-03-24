@@ -33,7 +33,6 @@ from typing import (
     Dict,
     Generic,
     Iterable,
-    Iterator,
     List,
     Literal,
     Optional,
@@ -332,13 +331,13 @@ class Transaction:
             name_mapping=self._table.name_mapping(),
         )
 
-    def update_snapshot(self) -> UpdateSnapshot:
+    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
             A new UpdateSnapshot
         """
-        return UpdateSnapshot(self, io=self._table.io)
+        return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
 
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
@@ -971,6 +970,11 @@ class Table:
         """
         return Transaction(self)
 
+    @property
+    def inspect(self) -> InspectTable:
+        """Return the InspectTable object to browse the table metadata."""
+        return InspectTable(self)
+
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
         fresh = self.catalog.load_table(self.identifier[1:])
@@ -1095,12 +1099,13 @@ class Table:
         else:
             return None
 
-    def append(self, df: pa.Table) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
             import pyarrow as pa
@@ -1116,7 +1121,7 @@ class Table:
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:
-            with txn.update_snapshot().fast_append() as update_snapshot:
+            with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
                 # skip writing data files if the dataframe is empty
                 if df.shape[0] > 0:
                     data_files = _dataframe_to_data_files(
@@ -1125,7 +1130,9 @@ class Table:
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
 
-    def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE) -> None:
+    def overwrite(
+        self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+    ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
 
@@ -1133,6 +1140,7 @@ class Table:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
+            snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
             import pyarrow as pa
@@ -1151,7 +1159,7 @@ class Table:
         _check_schema(self.schema(), other_schema=df.schema)
 
         with self.transaction() as txn:
-            with txn.update_snapshot().overwrite() as update_snapshot:
+            with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
                 # skip writing data files if the dataframe is empty
                 if df.shape[0] > 0:
                     data_files = _dataframe_to_data_files(
@@ -1170,9 +1178,6 @@ class Table:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        if len(self.spec().fields) > 0:
-            raise ValueError("Cannot add files to partitioned tables")
-
         with self.transaction() as tx:
             if self.name_mapping() is None:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
@@ -2515,17 +2520,6 @@ def _dataframe_to_data_files(
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
 
 
-def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
-    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
-        raise ValueError("Cannot add files to partitioned tables")
-
-    for file_path in file_paths:
-        yield AddFileTask(
-            file_path=file_path,
-            partition_field_value=Record(),
-        )
-
-
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
@@ -2534,8 +2528,7 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
@@ -2551,6 +2544,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         transaction: Transaction,
         io: FileIO,
         commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -2562,6 +2556,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
         self._added_data_files = []
+        self.snapshot_properties = snapshot_properties
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
@@ -2629,7 +2624,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
 
         return added_manifests.result() + delete_manifests.result() + existing_manifests.result()
 
-    def _summary(self) -> Summary:
+    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         ssc = SnapshotSummaryCollector()
         partition_summary_limit = int(
             self._transaction.table_metadata.properties.get(
@@ -2652,7 +2647,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
 
         return update_snapshot_summaries(
-            summary=Summary(operation=self._operation, **ssc.build()),
+            summary=Summary(operation=self._operation, **ssc.build(), **snapshot_properties),
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
@@ -2661,7 +2656,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
-        summary = self._summary()
+        summary = self._summary(self.snapshot_properties)
 
         manifest_list_file_path = _generate_manifest_list_path(
             location=self._transaction.table_metadata.location,
@@ -2776,13 +2771,17 @@ class OverwriteFiles(_MergingSnapshotProducer):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
+    _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO) -> None:
+    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str]) -> None:
         self._transaction = transaction
         self._io = io
+        self._snapshot_properties = snapshot_properties
 
     def fast_append(self) -> FastAppendFiles:
-        return FastAppendFiles(operation=Operation.APPEND, transaction=self._transaction, io=self._io)
+        return FastAppendFiles(
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+        )
 
     def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(
@@ -2791,6 +2790,7 @@ class UpdateSnapshot:
             else Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
+            snapshot_properties=self._snapshot_properties,
         )
 
 
@@ -3035,3 +3035,49 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
         return partition_field.field_id not in self._deletes and partition_field.transform == transform
+
+
+class InspectTable:
+    tbl: Table
+
+    def __init__(self, tbl: Table) -> None:
+        self.tbl = tbl
+
+        try:
+            import pyarrow as pa  # noqa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
+
+    def snapshots(self) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots_schema = pa.schema([
+            pa.field('committed_at', pa.timestamp(unit='ms'), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('parent_id', pa.int64(), nullable=True),
+            pa.field('operation', pa.string(), nullable=True),
+            pa.field('manifest_list', pa.string(), nullable=False),
+            pa.field('summary', pa.map_(pa.string(), pa.string()), nullable=True),
+        ])
+        snapshots = []
+        for snapshot in self.tbl.metadata.snapshots:
+            if summary := snapshot.summary:
+                operation = summary.operation.value
+                additional_properties = snapshot.summary.additional_properties
+            else:
+                operation = None
+                additional_properties = None
+
+            snapshots.append({
+                'committed_at': datetime.datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'snapshot_id': snapshot.snapshot_id,
+                'parent_id': snapshot.parent_snapshot_id,
+                'operation': str(operation),
+                'manifest_list': snapshot.manifest_list,
+                'summary': additional_properties,
+            })
+
+        return pa.Table.from_pylist(
+            snapshots,
+            schema=snapshots_schema,
+        )
