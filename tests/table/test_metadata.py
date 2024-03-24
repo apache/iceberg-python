@@ -233,6 +233,11 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
 
     expected_spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bar"))
 
+    expected_sort_order = SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
+    )
+
     expected = TableMetadataV1(
         location="s3://some_v1_location/",
         table_uuid=actual.table_uuid,
@@ -250,20 +255,15 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
         snapshots=[],
         snapshot_log=[],
         metadata_log=[],
-        sort_orders=[
-            SortOrder(
-                SortField(
-                    source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST
-                ),
-                order_id=1,
-            )
-        ],
+        sort_orders=[expected_sort_order],
         default_sort_order_id=1,
         refs={},
         format_version=1,
     )
 
     assert actual.model_dump() == expected.model_dump()
+    assert actual.partition_specs == [expected_spec]
+    assert actual.sort_orders == [expected_sort_order]
 
 
 def test_invalid_format_version(example_table_metadata_v1: Dict[str, Any]) -> None:

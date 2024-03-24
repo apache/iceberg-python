@@ -66,7 +66,6 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     Table,
-    construct_table_metadata,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import TableMetadata
@@ -454,7 +453,7 @@ class GlueCatalog(Catalog):
             for requirement in table_request.requirements:
                 requirement.validate(base_metadata)
 
-            updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+            updated_metadata = update_table_metadata(base_metadata=base_metadata, updates=table_request.updates)
             if updated_metadata == base_metadata:
                 # no changes, do nothing
                 return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
@@ -485,7 +484,9 @@ class GlueCatalog(Catalog):
             return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
         except NoSuchTableError:
             # Create the table
-            updated_metadata = construct_table_metadata(table_request.updates)
+            updated_metadata = update_table_metadata(
+                base_metadata=self.empty_table_metadata(), updates=table_request.updates, enforce_validation=True
+            )
             new_metadata_version = 0
             new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
             self._write_metadata(

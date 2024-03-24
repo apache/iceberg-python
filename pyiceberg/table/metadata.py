@@ -366,6 +366,11 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
                 fields = data[PARTITION_SPEC]
                 data[PARTITION_SPECS] = [{SPEC_ID: INITIAL_SPEC_ID, FIELDS: fields}]
                 data[DEFAULT_SPEC_ID] = INITIAL_SPEC_ID
+            elif data.get("partition_spec") is not None:
+                # Promote the spec from partition_spec to partition-specs
+                fields = data["partition_spec"]
+                data[PARTITION_SPECS] = [{SPEC_ID: INITIAL_SPEC_ID, FIELDS: fields}]
+                data[DEFAULT_SPEC_ID] = INITIAL_SPEC_ID
             else:
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
 
@@ -389,7 +394,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         Returns:
             The TableMetadata with the sort_orders set, if not provided.
         """
-        if not data.get(SORT_ORDERS):
+        if not data.get(SORT_ORDERS) and not data.get("sort_orders"):
             data[SORT_ORDERS] = [UNSORTED_SORT_ORDER]
         return data
 

@@ -92,7 +92,6 @@ from pyiceberg.table.metadata import (
     SUPPORTED_TABLE_FORMAT_VERSION,
     TableMetadata,
     TableMetadataUtil,
-    TableMetadataV1,
 )
 from pyiceberg.table.name_mapping import (
     NameMapping,
@@ -404,7 +403,7 @@ class CreateTableTransaction(Transaction):
         if spec.is_unpartitioned():
             self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC, initial_change=True),)
         else:
-            self._updates += AddPartitionSpecUpdate(spec=spec, initial_change=True)
+            self._updates += (AddPartitionSpecUpdate(spec=spec, initial_change=True),)
         self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
         sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
@@ -661,13 +660,15 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
+    metadata_updates: Dict[str, Any] = {
+        "last_column_id": update.last_column_id,
+        "schemas": [update.schema_] if update.initial_change else base_metadata.schemas + [update.schema_],
+    }
+    if update.initial_change and base_metadata.format_version == 1:
+        metadata_updates["schema_"] = update.schema_
+
     context.add_update(update)
-    return base_metadata.model_copy(
-        update={
-            "last_column_id": update.last_column_id,
-            "schemas": [update.schema_] if update.initial_change else base_metadata.schemas + [update.schema_],
-        }
-    )
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(SetCurrentSchemaUpdate)
@@ -686,8 +687,13 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
     if schema is None:
         raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
+    metadata_updates: Dict[str, Any] = {"current_schema_id": new_schema_id}
+
+    if base_metadata.format_version == 1:
+        metadata_updates["schema_"] = schema
+
     context.add_update(update)
-    return base_metadata.model_copy(update={"current_schema_id": new_schema_id})
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(AddPartitionSpecUpdate)
@@ -695,16 +701,20 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
     for spec in base_metadata.partition_specs:
         if spec.spec_id == update.spec.spec_id and not update.initial_change:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
+
+    metadata_updates: Dict[str, Any] = {
+        "partition_specs": [update.spec] if update.initial_change else base_metadata.partition_specs + [update.spec],
+        "last_partition_id": max(
+            max([field.field_id for field in update.spec.fields], default=0),
+            base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
+        ),
+    }
+
+    if update.initial_change and base_metadata.format_version == 1:
+        metadata_updates["spec"] = update.spec.fields
+
     context.add_update(update)
-    return base_metadata.model_copy(
-        update={
-            "partition_specs": [update.spec] if update.initial_change else base_metadata.partition_specs + [update.spec],
-            "last_partition_id": max(
-                max([field.field_id for field in update.spec.fields], default=0),
-                base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
-            ),
-        }
-    )
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(SetDefaultSpecUpdate)
@@ -716,17 +726,17 @@ def _(update: SetDefaultSpecUpdate, base_metadata: TableMetadata, context: _Tabl
             raise ValueError("Cannot set current partition spec to last added one when no partition spec has been added")
     if new_spec_id == base_metadata.default_spec_id:
         return base_metadata
-    found_spec_id = False
-    for spec in base_metadata.partition_specs:
-        found_spec_id = spec.spec_id == new_spec_id
-        if found_spec_id:
-            break
 
-    if not found_spec_id:
+    spec = base_metadata.specs().get(new_spec_id)
+    if spec is None:
         raise ValueError(f"Failed to find spec with id {new_spec_id}")
 
+    metadata_updates: Dict[str, Any] = {"default_spec_id": new_spec_id}
+    if base_metadata.format_version == 1:
+        metadata_updates["partition_spec"] = spec.fields
+
     context.add_update(update)
-    return base_metadata.model_copy(update={"default_spec_id": new_spec_id})
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(AddSnapshotUpdate)
@@ -833,12 +843,15 @@ def _(
     return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
 
 
-def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...]) -> TableMetadata:
+def update_table_metadata(
+    base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...], enforce_validation: bool = False
+) -> TableMetadata:
     """Update the table metadata with the given updates in one transaction.
 
     Args:
         base_metadata: The base metadata to be updated.
         updates: The updates in one transaction.
+        enforce_validation: Whether to trigger validation after applying the updates.
 
     Returns:
         The metadata with the updates applied.
@@ -849,13 +862,10 @@ def update_table_metadata(base_metadata: TableMetadata, updates: Tuple[TableUpda
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
 
-    return new_metadata.model_copy(deep=True)
-
-
-def construct_table_metadata(updates: Tuple[TableUpdate, ...]) -> TableMetadata:
-    table_metadata = TableMetadataV1(location="", last_column_id=-1, schema=Schema())
-    table_metadata = update_table_metadata(table_metadata, updates)
-    return TableMetadataUtil.parse_obj(table_metadata.model_dump())
+    if enforce_validation:
+        return TableMetadataUtil.parse_obj(new_metadata.model_dump())
+    else:
+        return new_metadata.model_copy(deep=True)
 
 
 class ValidatableTableRequirement(IcebergBaseModel):

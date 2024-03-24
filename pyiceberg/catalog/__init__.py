@@ -49,7 +49,7 @@ from pyiceberg.table import (
     StagedTable,
     Table,
 )
-from pyiceberg.table.metadata import TableMetadata, new_table_metadata
+from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -790,6 +790,10 @@ class Catalog(ABC):
         )
 
         return properties_update_summary, updated_properties
+
+    @staticmethod
+    def empty_table_metadata() -> TableMetadata:
+        return TableMetadataV1(location="", last_column_id=-1, schema=Schema())
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""

@@ -479,6 +479,7 @@ def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Sch
     assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
 
 
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_create_table_transaction(
     test_catalog: Catalog,
     s3: boto3.client,
@@ -486,12 +487,16 @@ def test_create_table_transaction(
     table_name: str,
     database_name: str,
     athena: AthenaQueryHelper,
+    format_version: int,
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
 
     with test_catalog.create_table_transaction(
-        identifier, table_schema_nested, get_s3_path(get_bucket_name(), database_name, table_name)
+        identifier,
+        table_schema_nested,
+        get_s3_path(get_bucket_name(), database_name, table_name),
+        properties={"format-version": format_version},
     ) as txn:
         df = pa.Table.from_pylist(
             [
