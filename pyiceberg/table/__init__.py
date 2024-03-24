@@ -1147,8 +1147,6 @@ class Table:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
@@ -1160,8 +1158,7 @@ class Table:
 
         _check_schema(self.schema(), other_schema=df.schema)
         # safe to cast
-        pyarrow_schema = schema_to_pyarrow(self.schema())
-        df = df.cast(pyarrow_schema)
+        df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
