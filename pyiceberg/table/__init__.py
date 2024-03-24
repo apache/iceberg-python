@@ -426,7 +426,7 @@ class CreateTableTransaction(Transaction):
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
 
-        In the case of a create table transaction, the only requirement is AssertCreate.
+        In the case of a CreateTableTransaction, the only requirement is AssertCreate.
         Returns:
             The table with the updates applied.
         """
