@@ -20,6 +20,7 @@ import errno
 import json
 import logging
 import os
+from copy import copy
 from functools import lru_cache, partial
 from typing import (
     Any,
@@ -338,3 +339,14 @@ class FsspecFileIO(FileIO):
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
         return self._scheme_to_fs[scheme](self.properties)
+
+    def __getstate__(self) -> Dict[str, Any]:
+        """Create a dictionary of the FsSpecFileIO fields used when pickling."""
+        fileio_copy = copy(self.__dict__)
+        fileio_copy["get_fs"] = None
+        return fileio_copy
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Deserialize the state into a FsSpecFileIO instance."""
+        self.__dict__ = state
+        self.get_fs = lru_cache(self._get_fs)
