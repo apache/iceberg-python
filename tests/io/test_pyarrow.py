@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 
 import os
+import pickle
 import tempfile
 from datetime import date
 from typing import Any, List, Optional
@@ -254,6 +255,14 @@ def test_raise_on_opening_a_local_file_not_found() -> None:
             f.open()
 
         assert "[Errno 2] Failed to open local file" in str(exc_info.value)
+
+
+def test_pickle_pyarrow_file_io() -> None:
+    f = PyArrowFileIO()
+    serialized = pickle.dumps(f)
+    assert serialized is not None
+    deserialized = pickle.loads(serialized)
+    assert deserialized is not None
 
 
 def test_raise_on_opening_an_s3_file_no_permission() -> None:
