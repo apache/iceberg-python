@@ -1119,6 +1119,8 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema(self.schema(), other_schema=df.schema)
+        # safe to cast
+        df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
