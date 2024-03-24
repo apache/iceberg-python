@@ -387,47 +387,49 @@ class Transaction:
 
 
 class CreateTableTransaction(Transaction):
-    @staticmethod
-    def create_changes(table_metadata: TableMetadata) -> Tuple[TableUpdate, ...]:
-        changes = [
+    def _initial_changes(self, table_metadata: TableMetadata) -> None:
+        """Set the initial changes that can reconstruct the initial table metadata when creating the CreateTableTransaction."""
+        self._updates += (
             AssignUUIDUpdate(uuid=table_metadata.table_uuid),
             UpgradeFormatVersionUpdate(format_version=table_metadata.format_version),
-        ]
+        )
 
         schema: Schema = table_metadata.schema()
-        changes.append(AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id, initial_change=True))
-        changes.append(SetCurrentSchemaUpdate(schema_id=-1))
+        self._updates += (
+            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id, initial_change=True),
+            SetCurrentSchemaUpdate(schema_id=-1),
+        )
 
         spec: PartitionSpec = table_metadata.spec()
         if spec.is_unpartitioned():
-            changes.append(AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC, initial_change=True))
+            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC, initial_change=True),)
         else:
-            changes.append(AddPartitionSpecUpdate(spec=spec, initial_change=True))
-        changes.append(SetDefaultSpecUpdate(spec_id=-1))
+            self._updates += AddPartitionSpecUpdate(spec=spec, initial_change=True)
+        self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
         sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
         if sort_order is None or sort_order.is_unsorted:
-            changes.append(AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER, initial_change=True))
+            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER, initial_change=True),)
         else:
-            changes.append(AddSortOrderUpdate(sort_order=sort_order, initial_change=True))
-        changes.append(SetDefaultSortOrderUpdate(sort_order_id=-1))
+            self._updates += (AddSortOrderUpdate(sort_order=sort_order, initial_change=True),)
+        self._updates += (SetDefaultSortOrderUpdate(sort_order_id=-1),)
 
-        changes.append(SetLocationUpdate(location=table_metadata.location))
-        changes.append(SetPropertiesUpdate(updates=table_metadata.properties))
-
-        return tuple(changes)
+        self._updates += (
+            SetLocationUpdate(location=table_metadata.location),
+            SetPropertiesUpdate(updates=table_metadata.properties),
+        )
 
     def __init__(self, table: StagedTable):
         super().__init__(table, autocommit=False)
-        self._updates = self.create_changes(table.metadata)
+        self._initial_changes(table.metadata)
 
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
 
+        In the case of a create table transaction, the only requirement is AssertCreate.
         Returns:
             The table with the updates applied.
         """
-        # In the case of a create table transaction, the only requirement is AssertCreate.
         self._requirements = (AssertCreate(),)
         return super().commit_transaction()
 
