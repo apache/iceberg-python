@@ -15,12 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import math
 import os
 import time
 import uuid
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -135,15 +136,19 @@ def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
 
 
-def _create_table(session_catalog: Catalog, identifier: str, properties: Properties, data: List[pa.Table]) -> Table:
+def _create_table(
+    session_catalog: Catalog, identifier: str, properties: Properties, data: Optional[List[pa.Table]] = None
+) -> Table:
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
     tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties=properties)
-    for d in data:
-        tbl.append(d)
+
+    if data:
+        for d in data:
+            tbl.append(d)
 
     return tbl
 
@@ -721,3 +726,69 @@ def test_table_properties_raise_for_none_value(
             session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
         )
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_snapshots(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_metadata_snapshots"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    tbl.overwrite(arrow_table_with_null)
+    # should produce a DELETE entry
+    tbl.overwrite(arrow_table_with_null)
+    # Since we don't rewrite, this should produce a new manifest with an ADDED entry
+    tbl.append(arrow_table_with_null)
+
+    df = tbl.inspect.snapshots()
+
+    assert df.column_names == [
+        'committed_at',
+        'snapshot_id',
+        'parent_id',
+        'operation',
+        'manifest_list',
+        'summary',
+    ]
+
+    for committed_at in df['committed_at']:
+        assert isinstance(committed_at.as_py(), datetime)
+
+    for snapshot_id in df['snapshot_id']:
+        assert isinstance(snapshot_id.as_py(), int)
+
+    assert df['parent_id'][0].as_py() is None
+    assert df['parent_id'][1:] == df['snapshot_id'][:2]
+
+    assert [operation.as_py() for operation in df['operation']] == ['append', 'overwrite', 'append']
+
+    for manifest_list in df['manifest_list']:
+        assert manifest_list.as_py().startswith("s3://")
+
+    assert df['summary'][0].as_py() == [
+        ('added-files-size', '5459'),
+        ('added-data-files', '1'),
+        ('added-records', '3'),
+        ('total-data-files', '1'),
+        ('total-delete-files', '0'),
+        ('total-records', '3'),
+        ('total-files-size', '5459'),
+        ('total-position-deletes', '0'),
+        ('total-equality-deletes', '0'),
+    ]
+
+    lhs = spark.table(f"{identifier}.snapshots").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if column == 'summary':
+                # Arrow returns a list of tuples, instead of a dict
+                right = dict(right)
+
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
+
+            assert left == right, f"Difference in column {column}: {left} != {right}"

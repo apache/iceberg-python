@@ -33,7 +33,6 @@ from typing import (
     Dict,
     Generic,
     Iterable,
-    Iterator,
     List,
     Literal,
     Optional,
@@ -1064,6 +1063,11 @@ class Table:
         """
         return Transaction(self)
 
+    @property
+    def inspect(self) -> InspectTable:
+        """Return the InspectTable object to browse the table metadata."""
+        return InspectTable(self)
+
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
         fresh = self.catalog.load_table(self.identifier[1:])
@@ -1267,9 +1271,6 @@ class Table:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        if len(self.spec().fields) > 0:
-            raise ValueError("Cannot add files to partitioned tables")
-
         with self.transaction() as tx:
             if self.name_mapping() is None:
                 tx.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self.schema().name_mapping.model_dump_json()})
@@ -2632,17 +2633,6 @@ def _dataframe_to_data_files(
     yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
 
 
-def add_file_tasks_from_file_paths(file_paths: List[str], table_metadata: TableMetadata) -> Iterator[AddFileTask]:
-    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
-        raise ValueError("Cannot add files to partitioned tables")
-
-    for file_path in file_paths:
-        yield AddFileTask(
-            file_path=file_path,
-            partition_field_value=Record(),
-        )
-
-
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
@@ -2651,8 +2641,7 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    tasks = add_file_tasks_from_file_paths(file_paths, table_metadata)
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, tasks=tasks)
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
 class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
@@ -3159,3 +3148,49 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
     def _is_duplicate_partition(self, transform: Transform[Any, Any], partition_field: PartitionField) -> bool:
         return partition_field.field_id not in self._deletes and partition_field.transform == transform
+
+
+class InspectTable:
+    tbl: Table
+
+    def __init__(self, tbl: Table) -> None:
+        self.tbl = tbl
+
+        try:
+            import pyarrow as pa  # noqa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
+
+    def snapshots(self) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots_schema = pa.schema([
+            pa.field('committed_at', pa.timestamp(unit='ms'), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('parent_id', pa.int64(), nullable=True),
+            pa.field('operation', pa.string(), nullable=True),
+            pa.field('manifest_list', pa.string(), nullable=False),
+            pa.field('summary', pa.map_(pa.string(), pa.string()), nullable=True),
+        ])
+        snapshots = []
+        for snapshot in self.tbl.metadata.snapshots:
+            if summary := snapshot.summary:
+                operation = summary.operation.value
+                additional_properties = snapshot.summary.additional_properties
+            else:
+                operation = None
+                additional_properties = None
+
+            snapshots.append({
+                'committed_at': datetime.datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'snapshot_id': snapshot.snapshot_id,
+                'parent_id': snapshot.parent_snapshot_id,
+                'operation': str(operation),
+                'manifest_list': snapshot.manifest_list,
+                'summary': additional_properties,
+            })
+
+        return pa.Table.from_pylist(
+            snapshots,
+            schema=snapshots_schema,
+        )
