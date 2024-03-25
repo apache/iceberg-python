@@ -63,7 +63,7 @@ from pyiceberg.table import (
     TableIdentifier,
     UpdateSchema,
     _apply_table_update,
-    _check_schema,
+    _check_schema_compatible,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -1033,7 +1033,7 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema(table_schema_simple, other_schema)
+        _check_schema_compatible(table_schema_simple, other_schema)
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
@@ -1054,7 +1054,7 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema(table_schema_simple, other_schema)
+        _check_schema_compatible(table_schema_simple, other_schema)
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
@@ -1074,7 +1074,7 @@ def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema(table_schema_simple, other_schema)
+        _check_schema_compatible(table_schema_simple, other_schema)
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
@@ -1088,7 +1088,7 @@ def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
     expected = r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema(table_schema_simple, other_schema)
+        _check_schema_compatible(table_schema_simple, other_schema)
 
 
 def test_table_properties(example_table_metadata_v2: Dict[str, Any]) -> None:
