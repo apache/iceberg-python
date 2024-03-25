@@ -2759,26 +2759,26 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
     sort_order_options = _get_partition_sort_order(partition_columns, reverse=False)
     sorted_arrow_table_indices = pc.sort_indices(arrow_table, **sort_order_options)
 
-    # Efficiently avoid applying the grouping algorithm when the table is already sorted
-    slice_instructions: list[dict[str, Any]] = []
+    # group table by partition scheme
     if verify_table_already_sorted(sorted_arrow_table_indices):
-        slice_instructions = [{"offset": 0, "length": 1}]
+        arrow_table_grouped_by_partition = arrow_table
     else:
-        # group table by partition scheme
         arrow_table_grouped_by_partition = arrow_table.take(sorted_arrow_table_indices)
 
-        reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
-        reverse_sort_indices = pc.sort_indices(arrow_table_grouped_by_partition, **reversing_sort_order_options).to_pylist()
+    slice_instructions: list[dict[str, Any]] = []
 
-        last = len(reverse_sort_indices)
-        reverse_sort_indices_size = len(reverse_sort_indices)
-        ptr = 0
-        while ptr < reverse_sort_indices_size:
-            group_size = last - reverse_sort_indices[ptr]
-            offset = reverse_sort_indices[ptr]
-            slice_instructions.append({"offset": offset, "length": group_size})
-            last = reverse_sort_indices[ptr]
-            ptr = ptr + group_size
+    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
+    reverse_sort_indices = pc.sort_indices(arrow_table_grouped_by_partition, **reversing_sort_order_options).to_pylist()
+
+    last = len(reverse_sort_indices)
+    reverse_sort_indices_size = len(reverse_sort_indices)
+    ptr = 0
+    while ptr < reverse_sort_indices_size:
+        group_size = last - reverse_sort_indices[ptr]
+        offset = reverse_sort_indices[ptr]
+        slice_instructions.append({"offset": offset, "length": group_size})
+        last = reverse_sort_indices[ptr]
+        ptr = ptr + group_size
 
     table_partitions: list[TablePartition] = _get_table_partitions(
         arrow_table_grouped_by_partition, iceberg_table_metadata.spec(), iceberg_table_metadata.schema(), slice_instructions

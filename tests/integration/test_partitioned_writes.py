@@ -16,14 +16,13 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Union
 
 import pyarrow as pa
 import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.utils import AnalysisException
-from zoneinfo import ZoneInfo
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
@@ -637,7 +636,7 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
             EqualTo(
                 Reference("timestamptz"),
                 TimestampLiteral(
-                    _to_partition_representation(TimestamptzType(), datetime(2023, 1, 1, 19, 25, 00, tzinfo=ZoneInfo("UTC")))
+                    _to_partition_representation(TimestamptzType(), datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc))
                 ),
             ),
         ),
