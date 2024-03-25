@@ -1433,6 +1433,30 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         return ROWS_MIGHT_MATCH
 
 
+def strict_projection(
+    schema: Schema, spec: PartitionSpec, case_sensitive: bool = True
+) -> Callable[[BooleanExpression], BooleanExpression]:
+    return StrictProjection(schema, spec, case_sensitive).project
+
+
+class StrictProjection(ProjectionEvaluator):
+    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> BooleanExpression:
+        parts = self.spec.fields_by_source_id(predicate.term.ref().field.field_id)
+
+        result: BooleanExpression = AlwaysFalse()
+        for part in parts:
+            # consider (ts > 2019-01-01T01:00:00) with day(ts) and hour(ts)
+            # projections: d >= 2019-01-02 and h >= 2019-01-01-02 (note the inclusive bounds).
+            # any timestamp where either projection predicate is true must match the original
+            # predicate. For example, ts = 2019-01-01T03:00:00 matches the hour projection but not
+            # the day, but does match the original predicate.
+            strict_projection = part.transform.strict_project(name=part.name, pred=predicate)
+            if strict_projection is not None:
+                result = Or(result, strict_projection)
+
+        return result
+
+
 class _StrictMetricsEvaluator(_MetricsEvaluator):
     struct: StructType
     expr: BooleanExpression
