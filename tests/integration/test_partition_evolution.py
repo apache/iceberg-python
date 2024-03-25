@@ -92,7 +92,7 @@ def _table_v2(catalog: Catalog) -> Table:
 
 
 def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: str) -> Table:
-    tbl_name = "default.test_schema_evolution"
+    tbl_name = "default.test_partition_evolution"
     try:
         catalog.drop_table(tbl_name)
     except NoSuchTableError:
@@ -488,3 +488,5 @@ def _validate_new_partition_fields(
     assert len(spec.fields) == len(expected_partition_fields)
     for i in range(len(spec.fields)):
         assert spec.fields[i] == expected_partition_fields[i]
+    if table.format_version == 1:
+        assert table.metadata.partition_spec == [field.model_dump() for field in spec.fields]

@@ -603,8 +603,12 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
     if schema is None:
         raise ValueError(f"Schema with id {new_schema_id} does not exist")
 
+    metadata_updates: Dict[str, Any] = {"current_schema_id": new_schema_id}
+    if base_metadata.format_version == 1:
+        metadata_updates["schema_"] = schema
+
     context.add_update(update)
-    return base_metadata.model_copy(update={"current_schema_id": new_schema_id})
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(AddPartitionSpecUpdate)
@@ -631,17 +635,17 @@ def _(update: SetDefaultSpecUpdate, base_metadata: TableMetadata, context: _Tabl
         new_spec_id = max(spec.spec_id for spec in base_metadata.partition_specs)
     if new_spec_id == base_metadata.default_spec_id:
         return base_metadata
-    found_spec_id = False
-    for spec in base_metadata.partition_specs:
-        found_spec_id = spec.spec_id == new_spec_id
-        if found_spec_id:
-            break
 
-    if not found_spec_id:
+    spec = base_metadata.specs().get(new_spec_id)
+    if spec is None:
         raise ValueError(f"Failed to find spec with id {new_spec_id}")
 
+    metadata_updates: Dict[str, Any] = {"default_spec_id": new_spec_id}
+    if base_metadata.format_version == 1:
+        metadata_updates["partition_spec"] = [field.model_dump() for field in spec.fields]
+
     context.add_update(update)
-    return base_metadata.model_copy(update={"default_spec_id": new_spec_id})
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(AddSnapshotUpdate)

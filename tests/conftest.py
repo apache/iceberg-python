@@ -532,6 +532,7 @@ EXAMPLE_TABLE_METADATA_V1 = {
     "last-column-id": 3,
     "schema": {
         "type": "struct",
+        "identifier-field-ids": [1, 2],
         "fields": [
             {"id": 1, "name": "x", "required": True, "type": "long"},
             {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
