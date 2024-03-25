@@ -115,14 +115,7 @@ from pyiceberg.table.snapshots import (
 )
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.transforms import TimeTransform, Transform, VoidTransform
-from pyiceberg.typedef import (
-    EMPTY_DICT,
-    IcebergBaseModel,
-    IcebergRootModel,
-    Identifier,
-    KeyDefaultDict,
-    Properties,
-)
+from pyiceberg.typedef import EMPTY_DICT, IcebergBaseModel, IcebergRootModel, Identifier, KeyDefaultDict, Properties, Record
 from pyiceberg.types import (
     IcebergType,
     ListType,
@@ -1141,6 +1134,29 @@ class Table:
                     )
                     for data_file in data_files:
                         update_snapshot.append_data_file(data_file)
+
+    # to discuss whether we want a table property like partition_overwrite_mode in the pyiceberg monthly sync
+    def dynamic_overwrite(self, df: pa.Table) -> None:
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
+        _check_schema(self.schema(), other_schema=df.schema)
+
+        with self.transaction() as txn:
+            with txn.update_snapshot().dynamic_overwrite() as update_snapshot:
+                # skip writing data files if the dataframe is empty
+                if df.shape[0] > 0:
+                    data_files = _dataframe_to_data_files(
+                        table_metadata=self.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self.io
+                    )
+                    for data_file in data_files:
+                        update_snapshot.append_data_file(data_file)
+                        update_snapshot.delete_partition(data_file.partition)
 
     def overwrite(self, df: pa.Table, overwrite_filter: Union[str, BooleanExpression] = ALWAYS_TRUE) -> None:
         """
@@ -2478,7 +2494,8 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
     _io: FileIO
-    _deleted_data_files: Optional[DeletedDataFiles]
+    _overwritten_partitions: Set[Record]
+    _deleted_data_files: Optional[DeletedDataFiles]  # todo remove optional??
 
     # _manifests_compositions:  Any #list[Callable[[_MergingSnapshotProducer], List[ManifestFile]]]
     def __init__(
@@ -2499,9 +2516,14 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
         self._added_data_files = []
+        self._overwritten_partitions = set()
 
     def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
         self._added_data_files.append(data_file)
+        return self
+
+    def delete_partition(self, partition: Record) -> _MergingSnapshotProducer:
+        self._overwritten_partitions.add(partition)
         return self
 
     @abstractmethod
@@ -2578,7 +2600,6 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         if self._deleted_data_files is not None and isinstance(self._deleted_data_files, ExplicitlyDeletedDataFiles):
             for data_file in self._deleted_data_files.deleted_files:
                 ssc.remove_file(data_file=data_file)
-
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if self._parent_snapshot_id is not None
@@ -2586,6 +2607,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
 
         summary_to_update = Summary(operation=self._operation, **ssc.build())
+
         return update_snapshot_summaries(
             summary=summary_to_update,
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
@@ -2846,6 +2868,57 @@ class FastAppendFiles(_MergingSnapshotProducer):
         return []
 
 
+# to discuss whether we want a table property like partition_overwrite_mode in the pyiceberg monthly sync
+class DynamicOverwriteFiles(_MergingSnapshotProducer):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._deleted_data_files = ExplicitlyDeletedDataFiles()
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """To determine if there are any existing manifest files.
+
+        In the case of a full overwrite, all the previous manifests are considered deleted.
+        """
+        return []
+
+    def _filtered_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to refresh existing entries with new status as delete in new manifest.
+
+        With a full overwrite, any data file entry that was not deleted became deleted, otherwise skipping the entry.
+        """
+        if self._parent_snapshot_id is None:
+            return []
+        else:
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if previous_snapshot is None:
+                # This should never happen since you cannot overwrite an empty table
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+            def _get_refreshed_entries(manifest: ManifestFile) -> List[ManifestEntry]:
+                filtered_entries = []
+                for manifest_entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True):
+                    if manifest_entry.data_file.partition in self._overwritten_partitions:
+                        if manifest_entry.data_file.content != DataFileContent.DATA:
+                            # Delete files which fall into partition filter do not need to go into the new manifest
+                            continue
+                        status = ManifestEntryStatus.DELETED
+                        if self._deleted_data_files is None or not isinstance(
+                            self._deleted_data_files, ExplicitlyDeletedDataFiles
+                        ):
+                            raise ValueError(f"Partial overwrite with {self._deleted_data_files=}")
+                        self._deleted_data_files.delete_file(manifest_entry.data_file)
+                    else:
+                        status = ManifestEntryStatus.EXISTING
+                    manifest_entry.status = status
+                    filtered_entries.append(manifest_entry)
+                return filtered_entries
+
+            executor = ExecutorFactory.get_or_create()
+            list_of_list_of_entries = executor.map(_get_refreshed_entries, previous_snapshot.manifests(self._io))
+            list_of_entries = list(chain(*list_of_list_of_entries))
+            return list_of_entries
+
+
 class OverwriteFiles(_MergingSnapshotProducer):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -2974,6 +3047,9 @@ class UpdateSnapshot:
 
     def fast_append(self) -> FastAppendFiles:
         return FastAppendFiles(operation=Operation.APPEND, transaction=self._transaction, io=self._io)
+
+    def dynamic_overwrite(self) -> DynamicOverwriteFiles:
+        return DynamicOverwriteFiles(operation=Operation.OVERWRITE, transaction=self._transaction, io=self._io)
 
     def overwrite(
         self, overwrite_filter: Union[str, BooleanExpression] = ALWAYS_TRUE

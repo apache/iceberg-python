@@ -445,6 +445,8 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     tbl.overwrite(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
     tbl.overwrite(arrow_table_with_null, overwrite_filter="int=1")
+    tbl.dynamic_overwrite(arrow_table_with_null)
+    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
 
     rows = spark.sql(
         f"""
@@ -455,9 +457,10 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append', 'overwrite', 'append', 'overwrite']
+    assert operations == ['append', 'append', 'overwrite', 'append', 'overwrite', 'overwrite', 'overwrite']
 
     summaries = [row.summary for row in rows]
+
     # append 3 new data files with 3 records, giving a total of 3 files and 3 records
     assert summaries[0] == {
         'added-data-files': '3',
@@ -524,6 +527,36 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         'total-data-files': '7',
         'total-records': '7',
     }
+    # dynamic overwrite which touches all partition keys and thus delete all datafiles, adding 3 new data files and 3 records, so total data files and records are 7 - 7 + 3 = 3
+    assert summaries[5] == {
+        'added-data-files': '3',
+        'total-equality-deletes': '0',
+        'added-records': '3',
+        'total-position-deletes': '0',
+        'added-files-size': '15029',
+        'total-delete-files': '0',
+        'total-files-size': '15029',
+        'total-data-files': '3',
+        'total-records': '3',
+        'removed-files-size': '34297',
+        'deleted-data-files': '7',
+        'deleted-records': '7',
+    }
+    # dynamic overwrite which touches 2 partition values and gets 2 data files deleted. so total data files are 3 - 2 + 2 =3
+    assert summaries[6] == {
+        'removed-files-size': '9634',
+        'added-data-files': '2',
+        'total-equality-deletes': '0',
+        'added-records': '2',
+        'deleted-data-files': '2',
+        'total-position-deletes': '0',
+        'added-files-size': '9634',
+        'total-delete-files': '0',
+        'deleted-records': '2',
+        'total-files-size': '15029',
+        'total-data-files': '3',
+        'total-records': '3',
+    }
 
 
 @pytest.mark.integration
@@ -547,22 +580,38 @@ def test_data_files_with_table_partitioned_with_null(
     tbl.overwrite(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
     tbl.overwrite(arrow_table_with_null, overwrite_filter="int=1")
+    tbl.dynamic_overwrite(arrow_table_with_null)
+    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
 
-    # first append links to 1 manifest file (M1)
-    # second append's manifest list links to  2 manifest files (M1, M2)
-    # third operation of static overwrite's manifest list is linked to 2 manifest files (M3 which has 6 deleted entries from M1 and M2; M4 which has 3 added files)
-    # fourth operation of append manifest list abandons M3 since it has no existing or added entries and keeps M4 and added M5 with 3 added files
-    # fifth operation of static overwrite's manifest list is linked to one filtered manifest M7 which filters and merges M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation
-    # also links to M6 which adds 3 entries.
-    # so we have flattened list of [[M1], [M1, M2], [M3, M4], [M4, M5], [M6, M7]]
+    # Snapshot 1: first append links to 1 manifest file (M1)
+    # Snapshot 2: second append's manifest list links to  2 manifest files (M1, M2)
+    # Snapshot 3: third operation of full static overwrite's manifest list is linked to 2 manifest files (M3 which has 3 added files; M4 which has 6 deleted entries from M1 and M2)
+    # Snapshot 4: fourth operation of append manifest list abandons M4 since it has no existing or added entries and keeps M3 and added M5 with 3 added files
+    # Snapshot 5: fifth operation of static overwrite's manifest list is linked to one filtered manifest M7 which filters and merges M5 and M6 where each has 1 entrys are deleted (int=1 matching the filter) and 2 entries marked as existed, this operation
+    #             also links to M6 which adds 3 entries.
+    # Snapshot 6: six operation of dynamic overwrite with 3 partition keys links its manifestlist to 2 new manifest lists:
+    #             one M8 for adding 3 new datafiles
+    #             one M9 for filtered previous manifest file which deletes all 7 data files from S5([M6, M7])
+    # Snapshot 7: seventh operation of dynamic overwrite with 2 partition keys links its manifestlist to 2 new manifest lists:
+    #             one M10 for adding 3 new datafiles
+    #             one M11 for filtered previous manifest file which deletes 2 out of 3 data files added from S6
+    #             and keeps the remaining one as existing.
+
+    # So we have flattened list of [[M1], [M1, M2], [M3, M4], [M3, M5], [M6, M7], [M8, M9], [M10, M11]]
+    #                           for[ S1,   S2,      S3,       S4,       S5,       S6,       S7        ].
+
     # where: add      exist      delete    added_by
     # M1      3         0           0        S1
     # M2      3         0           0        S2
-    # M3      0         0           6        S3
-    # M4      3         0           0        S3
+    # M3      3         0           0        S3
+    # M4      0         0           6        S3
     # M5      3         0           0        S4
     # M6      3         0           0        S5
     # M7      0         4           2        S5
+    # M8      3         0           0        S6
+    # M9      0         0           7        S6
+    # M10     2         0           0        S7
+    # M11     0         1           2        S7
 
     spark.sql(
         f"""
@@ -575,9 +624,10 @@ def test_data_files_with_table_partitioned_with_null(
         FROM {identifier}.all_manifests
     """
     ).collect()
-    assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0, 3, 3, 3, 0]
-    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 4]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 2]
+
+    assert [row.added_data_files_count for row in rows] == [3, 3, 3, 3, 0, 3, 3, 3, 0, 3, 0, 2, 0]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 0, 6, 0, 0, 0, 2, 0, 7, 0, 2]
 
 
 @pytest.mark.integration

@@ -199,3 +199,7 @@ class Record(StructProtocol):
     def record_fields(self) -> List[str]:
         """Return values of all the fields of the Record class except those specified in skip_fields."""
         return [self.__getattribute__(v) if hasattr(self, v) else None for v in self._position_to_field_name]
+
+    def __hash__(self) -> int:
+        """Return hash value of the Record class."""
+        return hash(str(self))
