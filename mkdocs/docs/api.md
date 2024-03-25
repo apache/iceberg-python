@@ -164,7 +164,9 @@ catalog.create_table(
     schema=schema,
 )
 ```
+
 To create a table with some subsequent changes in a transaction:
+
 ```python
 with catalog.create_table_transaction(
     identifier="docs_example.bids",
@@ -181,7 +183,6 @@ with catalog.create_table_transaction(
 
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
 ```
-
 
 ## Load a table
 
