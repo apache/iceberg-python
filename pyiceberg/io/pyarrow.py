@@ -1784,7 +1784,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
     schema = table_metadata.schema()
-    arrow_file_schema = schema_to_pyarrow(schema)
+    arrow_file_schema = schema.as_arrow()
 
     fo = io.new_output(file_path)
     row_group_size = PropertyUtil.property_as_int(
