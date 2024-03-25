@@ -1127,7 +1127,7 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
-        # safe to cast
+        # the two schemas are compatible so safe to cast
         df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
@@ -1167,7 +1167,7 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
-        # safe to cast
+        # the two schemas are compatible so safe to cast
         df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
