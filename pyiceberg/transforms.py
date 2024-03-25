@@ -551,10 +551,10 @@ class IdentityTransform(Transform[S, S]):
             return pred.as_unbound(Reference(name))
         elif isinstance(pred, BoundLiteralPredicate):
             return pred.as_unbound(Reference(name), pred.literal)
-        elif isinstance(pred, (BoundIn, BoundNotIn)):
+        elif isinstance(pred, BoundSetPredicate):
             return pred.as_unbound(Reference(name), pred.literals)
         else:
-            raise ValueError(f"Could not project: {pred}")
+            return None
 
     def strict_project(self, name: str, pred: BoundPredicate[Any]) -> Optional[UnboundPredicate[Any]]:
         if isinstance(pred, BoundUnaryPredicate):
@@ -564,7 +564,7 @@ class IdentityTransform(Transform[S, S]):
         elif isinstance(pred, BoundSetPredicate):
             return pred.as_unbound(Reference(name), pred.literals)
         else:
-            raise ValueError(f"Could not project: {pred}")
+            return None
 
     @property
     def preserves_order(self) -> bool:

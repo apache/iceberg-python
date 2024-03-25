@@ -1451,8 +1451,8 @@ class StrictProjection(ProjectionEvaluator):
             # predicate. For example, ts = 2019-01-01T03:00:00 matches the hour projection but not
             # the day, but does match the original predicate.
             strict_projection = part.transform.strict_project(name=part.name, pred=predicate)
-            if incl_projection is not None:
-                result = Or(result, incl_projection)
+            if strict_projection is not None:
+                result = Or(result, strict_projection)
 
         return result
 
