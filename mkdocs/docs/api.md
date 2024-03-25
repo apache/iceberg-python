@@ -165,6 +165,34 @@ catalog.create_table(
 )
 ```
 
+To create or replace a table if it already exists:
+
+```python
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import (
+    DoubleType,
+    StringType,
+    NestedField,
+)
+
+catalog = load_catalog("default")
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_or_replace_table(
+    identifier="docs_example.bids",
+    schema=schema,
+    location="s3://pyiceberg",
+)
+```
+
+If the table with the specified identifier already exist then the table metadata will be updated with the provided parameters (schema, location, etc.).
+
 ## Load a table
 
 ### Catalog table

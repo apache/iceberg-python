@@ -1777,7 +1777,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         self._added_name_to_id[full_name] = new_id
         self._id_to_parent[new_id] = parent_full_path
 
-        new_type = assign_fresh_schema_ids(field_type, self.assign_new_column_id)
+        new_type = assign_fresh_schema_ids(schema_or_type=field_type, next_id=self.assign_new_column_id)
         field = NestedField(field_id=new_id, name=name, field_type=new_type, required=required, doc=doc)
 
         if parent_id in self._adds:
