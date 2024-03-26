@@ -1127,8 +1127,9 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
-        # the two schemas are compatible so safe to cast
-        df = df.cast(self.schema().as_arrow())
+        # cast if the two schemas are compatible but not equal
+        if self.schema().as_arrow() != df.schema:
+            df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
@@ -1167,8 +1168,9 @@ class Table:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
-        # the two schemas are compatible so safe to cast
-        df = df.cast(self.schema().as_arrow())
+        # cast if the two schemas are compatible but not equal
+        if self.schema().as_arrow() != df.schema:
+            df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
