@@ -2711,12 +2711,17 @@ def get_partition_columns(iceberg_table_metadata: TableMetadata, arrow_table: pa
     arrow_table_cols = set(arrow_table.column_names)
     partition_cols = []
     for transform_field in iceberg_table_metadata.spec().fields:
-        column_name = iceberg_table_metadata.schema().find_column_name(transform_field.source_id)
-        if not column_name:
+        nested_field = iceberg_table_metadata.schema().find_field(transform_field.source_id)
+        if not nested_field:
             raise ValueError(f"{transform_field=} could not be found in {iceberg_table_metadata.schema()}.")
-        if column_name not in arrow_table_cols:
+        source_column_name = nested_field.name
+        if source_column_name not in arrow_table_cols:
             continue
-        partition_cols.append(column_name)
+        # partition_cols.append(source_column_name)
+
+        transform_column_name = transform_field.name
+        
+        arrow_table = arrow_table.with(name=transform_column_name, value=transform_field.transform(nested_field.field_type)()) 
     return partition_cols
 
 
