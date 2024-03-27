@@ -17,7 +17,7 @@
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from datetime import date
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 from uuid import UUID
 
 import mmh3 as mmh3
@@ -30,32 +30,42 @@ from pydantic import (
 )
 from typing_extensions import Annotated
 
-from pyiceberg import transforms
 from pyiceberg.expressions import (
     BoundEqualTo,
     BoundGreaterThan,
     BoundGreaterThanOrEqual,
     BoundIn,
+    BoundIsNull,
     BoundLessThan,
     BoundLessThanOrEqual,
+    BoundLiteralPredicate,
+    BoundNotEqualTo,
     BoundNotIn,
     BoundNotNull,
     BoundNotStartsWith,
     BoundReference,
     BoundStartsWith,
     EqualTo,
+    GreaterThan,
     GreaterThanOrEqual,
     In,
+    LessThan,
     LessThanOrEqual,
+    LiteralPredicate,
+    NotEqualTo,
     NotIn,
     NotNull,
     NotStartsWith,
     Reference,
+    SetPredicate,
     StartsWith,
+    UnaryPredicate,
+    UnboundPredicate,
 )
 from pyiceberg.expressions.literals import (
     DateLiteral,
     DecimalLiteral,
+    LongLiteral,
     TimestampLiteral,
     literal,
 )
@@ -74,7 +84,7 @@ from pyiceberg.transforms import (
     YearTransform,
     parse_transform,
 )
-from pyiceberg.typedef import UTF8
+from pyiceberg.typedef import UTF8, L
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -438,7 +448,7 @@ def test_truncate_method(type_var: PrimitiveType, value: Any, expected_human_str
 
 
 def test_unknown_transform() -> None:
-    unknown_transform = transforms.UnknownTransform("unknown")  # type: ignore
+    unknown_transform = UnknownTransform("unknown")  # type: ignore
     assert str(unknown_transform) == str(eval(repr(unknown_transform)))
     with pytest.raises(AttributeError):
         unknown_transform.transform(StringType())("test")
@@ -603,9 +613,7 @@ def bound_reference_decimal() -> BoundReference[Decimal]:
 
 @pytest.fixture
 def bound_reference_long() -> BoundReference[int]:
-    return BoundReference(
-        field=NestedField(1, "field", DecimalType(8, 2), required=False), accessor=Accessor(position=0, inner=None)
-    )
+    return BoundReference(field=NestedField(1, "field", LongType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 def test_projection_bucket_unary(bound_reference_str: BoundReference[str]) -> None:
@@ -958,3 +966,845 @@ def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundRe
     assert TruncateTransform(2).project(
         "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))
     ) == NotStartsWith(term="name", literal=literal("he"))
+
+
+def _test_projection(lhs: Optional[UnboundPredicate[L]], rhs: Optional[UnboundPredicate[L]]) -> None:
+    assert type(lhs) == type(lhs), f"Different classes: {type(lhs)} != {type(rhs)}"
+    if lhs is None and rhs is None:
+        # Both null
+        pass
+    elif isinstance(lhs, UnaryPredicate) and isinstance(rhs, UnaryPredicate):
+        # Nothing more to check
+        pass
+    elif isinstance(lhs, LiteralPredicate) and isinstance(rhs, LiteralPredicate):
+        assert lhs.literal == rhs.literal, f"Different literal: {lhs.literal} != {rhs.literal}"
+    elif isinstance(lhs, SetPredicate) and isinstance(rhs, SetPredicate):
+        assert lhs.literals == rhs.literals, f"Different literals: {lhs.literals} != {rhs.literals}"
+    else:
+        raise ValueError(f"Comparing unrelated: {lhs} <> {rhs}")
+
+
+def test_month_projection_strict_epoch(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("1970-01-01").to(DateType())
+    transform: Transform[Any, int] = MonthTransform()
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-1)),  # In Java this is human string 1970-01
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("1969-12-31").to(DateType())
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={DateLiteral(-1), DateLiteral(0)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_month_projection_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("2017-01-01").to(DateType())  # == 564 months since epoch
+    transform: Transform[Any, int] = MonthTransform()
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(564)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(564)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(564)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(563)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(564)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("2017-12-02").to(DateType())
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(575), LongLiteral(564)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_negative_month_projection_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("1969-01-01").to(DateType())  # == 564 months since epoch
+    transform: Transform[Any, int] = MonthTransform()
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(-12)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(-12)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-12)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-13)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(-12)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("1969-12-31").to(DateType())
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(-1), LongLiteral(-12)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_month_projection_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("2017-12-31").to(DateType())  # == 575 months since epoch
+    transform: Transform[Any, int] = MonthTransform()
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(575)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(576)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(575)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(575)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(575)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("2017-01-01").to(DateType())
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(575), LongLiteral(564)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_negative_month_projection_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("1969-12-31").to(DateType())  # == -1 month since epoch
+    transform: Transform[Any, int] = MonthTransform()
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(-1)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(0)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(-1)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-1)),
+    )
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(-1)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("1969-11-01").to(DateType())
+    _test_projection(
+        transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(-1), LongLiteral(-2)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_day_strict(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("2017-01-01").to(DateType())
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(17167)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(17168)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(17167)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(17166)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(17167)),
+    )
+    _test_projection(
+        lhs=DayTransform().strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("2017-12-31").to(DateType())
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(17531), LongLiteral(17167)}),
+    )
+    _test_projection(
+        lhs=DayTransform().strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_day_negative_strict(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("1969-12-30").to(DateType())
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(-2)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(-1)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(-2)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-3)),
+    )
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(-2)),
+    )
+    _test_projection(
+        lhs=DayTransform().strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("1969-12-28").to(DateType())
+    _test_projection(
+        DayTransform().strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(-2), LongLiteral(-4)}),
+    )
+    _test_projection(
+        lhs=DayTransform().strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_year_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("2017-01-01").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(47)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(47)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(47)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(46)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(47)),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("2016-12-31").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(46), LongLiteral(47)}),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_negative_year_strict_lower_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("1970-01-01").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(0)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-1)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(0)),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("1969-12-31").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(-1), LongLiteral(0)}),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_year_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("2017-12-31").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(47)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(48)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(47)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(47)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(47)),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("2016-01-01").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(46), LongLiteral(47)}),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_negative_year_strict_upper_bound(bound_reference_date: BoundReference[int]) -> None:
+    date = literal("1969-12-31").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThan(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=DateLiteral(-1)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_date, literal=date)),
+        LessThan(term="name", literal=LongLiteral(0)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=DateLiteral(-1)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_date, literal=date)),
+        GreaterThan(term="name", literal=LongLiteral(-1)),
+    )
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_date, literal=date)),
+        NotEqualTo(term="name", literal=DateLiteral(-1)),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundEqualTo(term=bound_reference_date, literal=date)), rhs=None
+    )
+
+    another_date = literal("1970-01-01").to(DateType())
+    _test_projection(
+        YearTransform().strict_project(name="name", pred=BoundNotIn(term=bound_reference_date, literals={date, another_date})),
+        NotIn(term="name", literals={LongLiteral(-1), LongLiteral(0)}),
+    )
+    _test_projection(
+        lhs=YearTransform().strict_project(name="name", pred=BoundIn(term=bound_reference_date, literals={date, another_date})),
+        rhs=None,
+    )
+
+
+def test_strict_bucket_integer(bound_reference_long: BoundReference[int]) -> None:
+    value = literal(100)
+    transform: Transform[Any, int] = BucketTransform(num_buckets=10)
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_long, literal=value)),
+        rhs=LessThan(term="name", literal=literal(6)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_long, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_long, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_long, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_long, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_long, literal=value)),
+        rhs=None,
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundNotIn(term=bound_reference_long, literals={literal(100 - 1), value, literal(100 + 1)})
+        ),
+        rhs=NotIn(term=Reference("name"), literals={6, 7, 8}),
+    )
+
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundIn(term=bound_reference_long, literals={literal(100 - 1), value, literal(100 + 1)})
+        ),
+        rhs=None,
+    )
+
+
+def test_strict_bucket_decimal(bound_reference_decimal: BoundReference[int]) -> None:
+    value = literal(Decimal("100.00"))
+    transform: Transform[Any, int] = BucketTransform(num_buckets=10)
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_decimal, literal=value)),
+        rhs=LessThan(term="name", literal=literal(2)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_decimal, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_decimal, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_decimal, literal=value)),
+        rhs=None,
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_decimal, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_decimal, literal=value)),
+        rhs=None,
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name",
+            pred=BoundNotIn(
+                term=bound_reference_decimal, literals={literal(Decimal("99.00")), value, literal(Decimal("101.00"))}
+            ),
+        ),
+        rhs=NotIn(term=Reference("name"), literals={2, 6}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name",
+            pred=BoundIn(term=bound_reference_decimal, literals={literal(Decimal("99.00")), value, literal(Decimal("101.00"))}),
+        ),
+        rhs=None,
+    )
+
+
+def test_strict_bucket_string(bound_reference_str: BoundReference[int]) -> None:
+    value = literal("abcdefg")
+    transform: Transform[Any, int] = BucketTransform(num_buckets=10)
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_str, literal=value)),
+        rhs=LessThan(term="name", literal=literal(4)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_str, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_str, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_str, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_str, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_str, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundNotIn(term=bound_reference_str, literals={literal("abcdefg"), literal("abcdefgabc")})
+        ),
+        rhs=NotIn(term=Reference("name"), literals={4, 9}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundIn(term=bound_reference_str, literals={literal("abcdefg"), literal("abcdefgabc")})
+        ),
+        rhs=None,
+    )
+
+
+def test_strict_bucket_bytes(bound_reference_binary: BoundReference[int]) -> None:
+    value = literal(str.encode("abcdefg"))
+    transform: Transform[Any, int] = BucketTransform(num_buckets=10)
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_binary, literal=value)),
+        rhs=LessThan(term="name", literal=literal(4)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_binary, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_binary, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_binary, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_binary, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_binary, literal=value)),
+        rhs=None,
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundNotIn(term=bound_reference_binary, literals={value, literal(str.encode("abcdehij"))})
+        ),
+        rhs=NotIn(term=Reference("name"), literals={4, 6}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundIn(term=bound_reference_binary, literals={value, literal(str.encode("abcdehij"))})
+        ),
+        rhs=None,
+    )
+
+
+def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
+    value = literal(UUID('12345678123456781234567812345678'))
+    transform: Transform[Any, int] = BucketTransform(num_buckets=10)
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_uuid, literal=value)),
+        rhs=LessThan(term="name", literal=literal(1)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundEqualTo(term=bound_reference_uuid, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_uuid, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_uuid, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_uuid, literal=value)), rhs=None
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_uuid, literal=value)),
+        rhs=None,
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name",
+            pred=BoundNotIn(term=bound_reference_uuid, literals={value, literal(UUID('12345678123456781234567812345679'))}),
+        ),
+        rhs=NotIn(term=Reference("name"), literals={1, 4}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name",
+            pred=BoundIn(term=bound_reference_uuid, literals={value, literal(UUID('12345678123456781234567812345679'))}),
+        ),
+        rhs=None,
+    )
+
+
+def test_strict_identity_projection(bound_reference_long: BoundReference[int]) -> None:
+    transform: Transform[Any, Any] = IdentityTransform()
+    predicates = [
+        BoundNotNull(term=bound_reference_long),
+        BoundIsNull(term=bound_reference_long),
+        BoundLessThan(term=bound_reference_long, literal=literal(100)),
+        BoundLessThanOrEqual(term=bound_reference_long, literal=literal(101)),
+        BoundGreaterThan(term=bound_reference_long, literal=literal(102)),
+        BoundGreaterThanOrEqual(term=bound_reference_long, literal=literal(103)),
+        BoundEqualTo(term=bound_reference_long, literal=literal(104)),
+        BoundNotEqualTo(term=bound_reference_long, literal=literal(105)),
+    ]
+    for predicate in predicates:
+        if isinstance(predicate, BoundLiteralPredicate):
+            _test_projection(
+                lhs=transform.strict_project(
+                    name="name",
+                    pred=predicate,
+                ),
+                rhs=predicate.as_unbound(term=Reference("name"), literal=predicate.literal),
+            )
+        else:
+            _test_projection(
+                lhs=transform.strict_project(
+                    name="name",
+                    pred=predicate,
+                ),
+                rhs=predicate.as_unbound(term=Reference("name")),
+            )
+
+
+def test_truncate_strict_integer_lower_bound(bound_reference_long: BoundReference[int]) -> None:
+    value = literal(100)
+    transform: Transform[Any, Any] = TruncateTransform(width=10)
+
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_long, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=LongLiteral(100)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_long, literal=value)),
+        rhs=LessThanOrEqual(term=Reference("name"), literal=LongLiteral(100)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_long, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=LongLiteral(100)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_long, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=LongLiteral(90)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundNotIn(term=bound_reference_long, literals={literal(99), literal(100), literal(101)})
+        ),
+        rhs=NotIn(term=Reference("name"), literals={literal(90), literal(100)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundIn(term=bound_reference_long, literals={literal(99), literal(100), literal(101)})
+        ),
+        rhs=None,
+    )
+
+
+def test_truncate_strict_integer_upper_bound(bound_reference_long: BoundReference[int]) -> None:
+    value = literal(99)
+    transform: Transform[Any, Any] = TruncateTransform(width=10)
+
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_long, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=LongLiteral(90)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_long, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=LongLiteral(100)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_long, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=LongLiteral(90)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_long, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=LongLiteral(90)),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundNotIn(term=bound_reference_long, literals={literal(99), literal(100), literal(101)})
+        ),
+        rhs=NotIn(term=Reference("name"), literals={literal(90), literal(100)}),
+    )
+    _test_projection(
+        lhs=transform.strict_project(
+            name="name", pred=BoundIn(term=bound_reference_long, literals={literal(99), literal(100), literal(101)})
+        ),
+        rhs=None,
+    )
+
+
+def test_truncate_strict_decimal_lower_bound(bound_reference_decimal: BoundReference[Decimal]) -> None:
+    value = literal(Decimal("100.00"))
+    transform: Transform[Any, Any] = TruncateTransform(width=10)
+
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_decimal, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=Decimal("100.00")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_decimal, literal=value)),
+        rhs=LessThanOrEqual(term=Reference("name"), literal=Decimal("100.00")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_decimal, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=Decimal("100.00")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_decimal, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=Decimal("99.90")),
+    )
+    set_of_literals = {literal(Decimal("99.00")), literal(Decimal("100.00")), literal(Decimal("101.00"))}
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_decimal, literals=set_of_literals)),
+        rhs=NotIn(term=Reference("name"), literals=set_of_literals),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_decimal, literals=set_of_literals)), rhs=None
+    )
+
+
+def test_truncate_strict_decimal_upper_bound(bound_reference_decimal: BoundReference[Decimal]) -> None:
+    value = literal(Decimal("99.99"))
+    transform: Transform[Any, Any] = TruncateTransform(width=10)
+
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_decimal, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=Decimal("99.90")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_decimal, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=Decimal("100.00")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_decimal, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=Decimal("99.90")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_decimal, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=Decimal("99.90")),
+    )
+    set_of_literals = {literal(Decimal("98.99")), literal(Decimal("99.99")), literal(Decimal("100.99"))}
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_decimal, literals=set_of_literals)),
+        rhs=NotIn(
+            term=Reference("name"), literals={literal(Decimal("98.90")), literal(Decimal("99.90")), literal(Decimal("100.90"))}
+        ),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_decimal, literals=set_of_literals)), rhs=None
+    )
+
+
+def test_string_strict(bound_reference_str: BoundReference[str]) -> None:
+    value = literal("abcdefg")
+    transform: Transform[Any, Any] = TruncateTransform(width=5)
+
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_str, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=literal("abcde")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_str, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=literal("abcde")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_str, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=literal("abcde")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_str, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=literal("abcde")),
+    )
+    set_of_literals = {literal("abcde"), literal("abcdefg")}
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_str, literals=set_of_literals)),
+        rhs=NotEqualTo(term=Reference("name"), literal=literal("abcde")),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_str, literals=set_of_literals)), rhs=None
+    )
+
+
+def test_strict_binary(bound_reference_binary: BoundReference[str]) -> None:
+    value = literal(b"abcdefg")
+    transform: Transform[Any, Any] = TruncateTransform(width=5)
+    abcde = literal(b"abcde")
+
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_binary, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=abcde),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_binary, literal=value)),
+        rhs=LessThan(term=Reference("name"), literal=abcde),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_binary, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=abcde),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_binary, literal=value)),
+        rhs=GreaterThan(term=Reference("name"), literal=abcde),
+    )
+    set_of_literals = {literal(b"abcde"), literal(b"abcdefg")}
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundNotIn(term=bound_reference_binary, literals=set_of_literals)),
+        rhs=NotEqualTo(term=Reference("name"), literal=abcde),
+    )
+    _test_projection(
+        lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_binary, literals=set_of_literals)), rhs=None
+    )

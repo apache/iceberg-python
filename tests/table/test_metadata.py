@@ -262,6 +262,7 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
     )
 
     assert actual.model_dump() == expected.model_dump()
+    assert actual.schemas == [expected_schema]
     assert actual.partition_specs == [expected_spec]
     assert actual.sort_orders == [expected_sort_order]
 
