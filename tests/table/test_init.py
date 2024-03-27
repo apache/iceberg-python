@@ -1216,7 +1216,6 @@ def test_partition() -> None:
     )
 
 
-@pytest.mark.adrian
 def test_partition_with_hidden_partitioning() -> None:
     import pyarrow as pa
 
