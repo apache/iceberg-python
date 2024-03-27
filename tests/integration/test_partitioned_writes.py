@@ -30,7 +30,7 @@ from pyiceberg.expressions import BooleanExpression, EqualTo, IsNull, Reference
 from pyiceberg.expressions.literals import (
     TimestampLiteral,
 )
-from pyiceberg.partitioning import PartitionField, PartitionSpec, _to_partition_representation
+from pyiceberg.partitioning import PartitionField, PartitionSpec, arrow_to_iceberg_representation
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
@@ -670,13 +670,13 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
         ('long', 'long is NULL'),
         ('long', IsNull(Reference("long"))),
         ('date', "date='2023-01-01'"),
-        ('date', EqualTo(Reference("date"), _to_partition_representation(DateType(), date(2023, 1, 1)))),
+        ('date', EqualTo(Reference("date"), arrow_to_iceberg_representation(DateType(), date(2023, 1, 1)))),
         ('date', 'date is NULL'),
         ('date', IsNull(Reference("date"))),
         ('timestamp', "timestamp='2023-01-01T19:25:00'"),
         (
             'timestamp',
-            EqualTo(Reference("timestamp"), _to_partition_representation(TimestampType(), datetime(2023, 1, 1, 19, 25))),
+            EqualTo(Reference("timestamp"), arrow_to_iceberg_representation(TimestampType(), datetime(2023, 1, 1, 19, 25))),
         ),
         ('timestamp', 'timestamp is NULL'),
         ('timestamp', IsNull(Reference("timestamp"))),
@@ -686,7 +686,7 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
             EqualTo(
                 Reference("timestamptz"),
                 TimestampLiteral(
-                    _to_partition_representation(TimestamptzType(), datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc))
+                    arrow_to_iceberg_representation(TimestamptzType(), datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc))
                 ),
             ),
         ),

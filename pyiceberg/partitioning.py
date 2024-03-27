@@ -387,7 +387,7 @@ class PartitionKey:
                 raise ValueError("partition_fields must contain exactly one field.")
             partition_field = partition_fields[0]
             iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
-            iceberg_typed_value = _to_partition_representation(iceberg_type, raw_partition_field_value.value)
+            iceberg_typed_value = arrow_to_iceberg_representation(iceberg_type, raw_partition_field_value.value)
             transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
             iceberg_typed_key_values[partition_field.name] = transformed_value
         return Record(**iceberg_typed_key_values)
@@ -397,26 +397,26 @@ class PartitionKey:
 
 
 @singledispatch
-def _to_partition_representation(type: IcebergType, value: Any) -> Any:
+def arrow_to_iceberg_representation(type: IcebergType, value: Any) -> Any:
     return TypeError(f"Unsupported partition field type: {type}")
 
 
-@_to_partition_representation.register(TimestampType)
-@_to_partition_representation.register(TimestamptzType)
+@arrow_to_iceberg_representation.register(TimestampType)
+@arrow_to_iceberg_representation.register(TimestamptzType)
 def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
     return datetime_to_micros(value) if value is not None else None
 
 
-@_to_partition_representation.register(DateType)
+@arrow_to_iceberg_representation.register(DateType)
 def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
     return date_to_days(value) if value is not None else None
 
 
-@_to_partition_representation.register(UUIDType)
+@arrow_to_iceberg_representation.register(UUIDType)
 def _(type: IcebergType, value: Optional[uuid.UUID]) -> Optional[str]:
     return str(value) if value is not None else None
 
 
-@_to_partition_representation.register(PrimitiveType)
+@arrow_to_iceberg_representation.register(PrimitiveType)
 def _(type: IcebergType, value: Optional[Any]) -> Optional[Any]:
     return value

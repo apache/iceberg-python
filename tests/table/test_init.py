@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 import uuid
 from copy import copy
+from datetime import datetime
 from typing import Any, Dict
 
 import pyarrow as pa
@@ -65,6 +66,10 @@ from pyiceberg.table import (
     _check_schema,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
+    get_partition_columns,
+    pad_transformed_columns,
+    partition,
+    remove_padding,
     update_table_metadata,
     verify_table_already_sorted,
 )
@@ -81,7 +86,12 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
-from pyiceberg.transforms import BucketTransform, IdentityTransform
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    IdentityTransform,
+)
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1132,3 +1142,114 @@ def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[s
 )
 def test_verify_table_already_sorted(input_sorted_indices: pa.Array, expected_sorted_or_not: bool) -> None:
     assert verify_table_already_sorted(input_sorted_indices) == expected_sorted_or_not
+
+
+def test_pad_transformed_columns_and_get_partition_cols() -> None:
+    import pyarrow as pa
+
+    test_pa_schema = pa.schema([("foo", pa.string()), ("bar", pa.int64()), ("baz", pa.timestamp(unit="us"))])
+    test_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=TimestampType(), required=False),
+        schema_id=1,
+    )
+    test_data = {
+        'foo': ['a', None, 'z'],
+        'bar': [1, 2, 3],
+        'baz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    }
+    arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="foo_identity"),
+        PartitionField(source_id=3, field_id=1003, transform=DayTransform(), name="baz_day"),
+    )
+
+    # when
+    padded, padded_cols = pad_transformed_columns(partition_spec, test_schema, arrow_table)
+    # then
+    assert padded['baz_day'].to_pylist() == [19358, None, 19417]
+    assert padded.column_names == ["foo", "bar", "baz", "baz_day"]
+
+    # when
+    cols = get_partition_columns(partition_spec, test_schema, arrow_table)
+    # then
+    assert cols == ["foo", "baz_day"]
+
+    # when
+    table_removed_columns = remove_padding(padded, padded_cols)
+    # then
+    assert table_removed_columns == arrow_table
+
+
+def test_partition() -> None:
+    import pyarrow as pa
+
+    test_pa_schema = pa.schema([('year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_schema = Schema(
+        NestedField(field_id=1, name='year', field_type=StringType(), required=False),
+        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        schema_id=1,
+    )
+    test_data = {
+        'year': [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
+        'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+        'animal': ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
+    }
+    arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
+        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
+    )
+    result = partition(partition_spec, test_schema, arrow_table)
+    assert {table_partition.partition_key.partition for table_partition in result} == {
+        Record(n_legs_identity=2, year_identity=2020),
+        Record(n_legs_identity=100, year_identity=2021),
+        Record(n_legs_identity=4, year_identity=2021),
+        Record(n_legs_identity=4, year_identity=2022),
+        Record(n_legs_identity=2, year_identity=2022),
+        Record(n_legs_identity=5, year_identity=2019),
+    }
+    assert (
+        pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
+    )
+
+
+@pytest.mark.adrian
+def test_partition_with_hidden_partitioning() -> None:
+    import pyarrow as pa
+
+    test_pa_schema = pa.schema([('ts', pa.timestamp('ms')), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_schema = Schema(
+        NestedField(field_id=1, name='ts', field_type=TimestampType(), required=False),
+        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        schema_id=1,
+    )
+    test_data = {
+        'ts': [
+            datetime(2023, 1, 1, 19, 25, 00),
+            None,
+            datetime(2023, 1, 1, 20, 00, 00),
+            datetime(2023, 1, 1, 19, 25, 00),
+            datetime(2023, 3, 1, 19, 25, 00),
+        ],
+        'n_legs': [2, 2, 2, 4, 4],
+        'animal': ["Flamingo", "Parrot", "Parrot", "Horse", "Dog"],
+    }
+    arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
+        PartitionField(source_id=1, field_id=1001, transform=DayTransform(), name="ts_day"),
+    )
+    result = partition(partition_spec, test_schema, arrow_table)
+    assert {table_partition.partition_key.partition for table_partition in result} == {
+        Record(n_legs_identity=2, ts_day=19358),
+        Record(n_legs_identity=2, ts_day=None),
+        Record(n_legs_identity=4, ts_day=19417),
+        Record(n_legs_identity=4, ts_day=19358),
+    }
+    assert (
+        pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
+    )
