@@ -164,7 +164,7 @@ def table_v1_with_null_partitioned(session_catalog: Catalog, arrow_table_with_nu
         "timestamptz",
         "timestamp",
         "binary",
-    ]  
+    ]
     for partition_col in partition_cols:
         identifier = f"default.arrow_table_v1_with_null_partitioned_on_col_{partition_col}"
 
@@ -420,7 +420,6 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, part_col: str) -> N
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 row for {col}"
 
 
-@pytest.mark.newyork
 def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_table_summaries"
 

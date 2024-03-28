@@ -217,6 +217,9 @@ class TableProperties:
 
     PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
 
+    WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
+    WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
+
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
 
@@ -2485,8 +2488,8 @@ def _add_and_move_fields(
 class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
-    df: pa.Table
     schema: Schema
+    record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
     partition_key: Optional[PartitionKey] = None
 
@@ -2532,13 +2535,19 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.io.pyarrow import write_file
+    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
 
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
-
-    # this commented old line seems to be bug (not the correct way to check whether the table is partitioned), remember to highlight in pull request review
-    # if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
+    target_file_size = PropertyUtil.property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+    if target_file_size is None:
+        raise ValueError(
+            "Fail to get neither TableProperties.WRITE_TARGET_FILE_SIZE_BYTES nor WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT for writing target data file."
+        )
 
     if any(len(spec.fields) > 0 for spec in table_metadata.partition_specs):
         partitions = partition(table_metadata, df)
@@ -2549,18 +2558,22 @@ def _dataframe_to_data_files(
                 WriteTask(
                     write_uuid=write_uuid,
                     task_id=next(counter),
-                    df=partition.arrow_table_partition,
+                    record_batches=batches,
                     partition_key=partition.partition_key,
                     schema=table_metadata.schema(),
                 )
                 for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
             ]),
         )
     else:
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([WriteTask(write_uuid=write_uuid, task_id=next(counter), df=df, schema=table_metadata.schema())]),
+            tasks=iter([
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                for batches in bin_pack_arrow_table(df, target_file_size)
+            ]),
         )
 
 
