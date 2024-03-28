@@ -145,7 +145,15 @@ TABLE_ROOT_ID = -1
 _JAVA_LONG_MAX = 9223372036854775807
 
 
-def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
+def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") -> None:
+    """
+    Check if the `table_schema` is compatible with `other_schema`.
+
+    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+
+    Raises:
+        ValueError: If the schemas are not compatible.
+    """
     from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
 
     name_mapping = table_schema.name_mapping
@@ -1118,7 +1126,10 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        _check_schema(self.schema(), other_schema=df.schema)
+        _check_schema_compatible(self.schema(), other_schema=df.schema)
+        # cast if the two schemas are compatible but not equal
+        if self.schema().as_arrow() != df.schema:
+            df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
@@ -1156,7 +1167,10 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        _check_schema(self.schema(), other_schema=df.schema)
+        _check_schema_compatible(self.schema(), other_schema=df.schema)
+        # cast if the two schemas are compatible but not equal
+        if self.schema().as_arrow() != df.schema:
+            df = df.cast(self.schema().as_arrow())
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
