@@ -43,7 +43,7 @@ from sqlalchemy.orm import (
 
 from pyiceberg.catalog import (
     METADATA_LOCATION,
-    Catalog,
+    MetastoreCatalog,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -93,7 +93,7 @@ class IcebergNamespaceProperties(SqlCatalogBaseTable):
     property_value: Mapped[str] = mapped_column(String(1000), nullable=False)
 
 
-class SqlCatalog(Catalog):
+class SqlCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 

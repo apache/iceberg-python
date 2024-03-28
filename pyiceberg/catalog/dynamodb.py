@@ -33,7 +33,7 @@ from pyiceberg.catalog import (
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
-    Catalog,
+    MetastoreCatalog,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -79,7 +79,7 @@ ACTIVE = "ACTIVE"
 ITEM = "Item"
 
 
-class DynamoDbCatalog(Catalog):
+class DynamoDbCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
         session = boto3.Session(
