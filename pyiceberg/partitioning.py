@@ -218,7 +218,8 @@ class PartitionSpec(IcebergBaseModel):
         for field in self.fields:
             source_type = schema.find_type(field.source_id)
             result_type = field.transform.result_type(source_type)
-            nested_fields.append(NestedField(field.field_id, field.name, result_type, required=False))
+            required = schema.find_field(field.source_id).required
+            nested_fields.append(NestedField(field.field_id, field.name, result_type, required=required))
         return StructType(*nested_fields)
 
     def partition_to_path(self, data: Record, schema: Schema) -> str:
@@ -387,14 +388,31 @@ class PartitionKey:
             if len(partition_fields) != 1:
                 raise ValueError("partition_fields must contain exactly one field.")
             partition_field = partition_fields[0]
-            iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
-            iceberg_typed_value = _to_partition_representation(iceberg_type, raw_partition_field_value.value)
-            transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
-            iceberg_typed_key_values[partition_field.name] = transformed_value
+            iceberg_typed_key_values[partition_field.name] = partition_record_value(
+                partition_field=partition_field,
+                value=raw_partition_field_value.value,
+                schema=self.schema,
+            )
         return Record(**iceberg_typed_key_values)
 
     def to_path(self) -> str:
         return self.partition_spec.partition_to_path(self.partition, self.schema)
+
+
+def partition_record_value(partition_field: PartitionField, value: Any, schema: Schema) -> Any:
+    """
+    Return the Partition Record representation of the value.
+
+    The value is first converted to internal partition representation.
+    For example, UUID is converted to bytes[16], DateType to days since epoch, etc.
+
+    Then the corresponding PartitionField's transform is applied to return
+    the final partition record value.
+    """
+    iceberg_type = schema.find_field(name_or_id=partition_field.source_id).field_type
+    iceberg_typed_value = _to_partition_representation(iceberg_type, value)
+    transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
+    return transformed_value
 
 
 @singledispatch

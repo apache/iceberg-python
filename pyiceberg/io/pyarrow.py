@@ -69,8 +69,8 @@ from pyarrow.fs import (
 )
 from sortedcontainers import SortedList
 
-from pyiceberg.avro.resolver import ResolveError
 from pyiceberg.conversions import to_bytes
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysTrue,
     BooleanExpression,
@@ -111,6 +111,7 @@ from pyiceberg.manifest import (
     DataFileContent,
     FileFormat,
 )
+from pyiceberg.partitioning import PartitionField, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
     PartnerAccessor,
     PreOrderSchemaVisitor,
@@ -945,13 +946,9 @@ def _task_to_table(
     projected_field_ids: Set[int],
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
-    row_counts: List[int],
     limit: Optional[int] = None,
     name_mapping: Optional[NameMapping] = None,
 ) -> Optional[pa.Table]:
-    if limit and sum(row_counts) >= limit:
-        return None
-
     _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with fs.open_input_file(path) as fin:
@@ -1013,11 +1010,6 @@ def _task_to_table(
 
         if len(arrow_table) < 1:
             return None
-
-        if limit is not None and sum(row_counts) >= limit:
-            return None
-
-        row_counts.append(len(arrow_table))
 
         return to_requested_schema(projected_schema, file_project_schema, arrow_table)
 
@@ -1084,7 +1076,6 @@ def project_table(
         id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
     }.union(extract_field_ids(bound_row_filter))
 
-    row_counts: List[int] = []
     deletes_per_file = _read_all_delete_files(fs, tasks)
     executor = ExecutorFactory.get_or_create()
     futures = [
@@ -1097,21 +1088,21 @@ def project_table(
             projected_field_ids,
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
-            row_counts,
             limit,
             table.name_mapping(),
         )
         for task in tasks
     ]
-
+    total_row_count = 0
     # for consistent ordering, we need to maintain future order
     futures_index = {f: i for i, f in enumerate(futures)}
     completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
     for future in concurrent.futures.as_completed(futures):
         completed_futures.add(future)
-
+        if table_result := future.result():
+            total_row_count += len(table_result)
         # stop early if limit is satisfied
-        if limit is not None and sum(row_counts) >= limit:
+        if limit is not None and total_row_count >= limit:
             break
 
     # by now, we've either completed all tasks or satisfied the limit
@@ -1594,29 +1585,88 @@ def parquet_path_to_id_mapping(
     return result
 
 
-def fill_parquet_file_metadata(
-    data_file: DataFile,
+@dataclass(frozen=True)
+class DataFileStatistics:
+    record_count: int
+    column_sizes: Dict[int, int]
+    value_counts: Dict[int, int]
+    null_value_counts: Dict[int, int]
+    nan_value_counts: Dict[int, int]
+    column_aggregates: Dict[int, StatsAggregator]
+    split_offsets: List[int]
+
+    def _partition_value(self, partition_field: PartitionField, schema: Schema) -> Any:
+        if partition_field.source_id not in self.column_aggregates:
+            return None
+
+        if not partition_field.transform.preserves_order:
+            raise ValueError(
+                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
+            )
+
+        lower_value = partition_record_value(
+            partition_field=partition_field,
+            value=self.column_aggregates[partition_field.source_id].current_min,
+            schema=schema,
+        )
+        upper_value = partition_record_value(
+            partition_field=partition_field,
+            value=self.column_aggregates[partition_field.source_id].current_max,
+            schema=schema,
+        )
+        if lower_value != upper_value:
+            raise ValueError(
+                f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
+            )
+        return lower_value
+
+    def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
+        return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
+
+    def to_serialized_dict(self) -> Dict[str, Any]:
+        lower_bounds = {}
+        upper_bounds = {}
+
+        for k, agg in self.column_aggregates.items():
+            _min = agg.min_as_bytes()
+            if _min is not None:
+                lower_bounds[k] = _min
+            _max = agg.max_as_bytes()
+            if _max is not None:
+                upper_bounds[k] = _max
+        return {
+            "record_count": self.record_count,
+            "column_sizes": self.column_sizes,
+            "value_counts": self.value_counts,
+            "null_value_counts": self.null_value_counts,
+            "nan_value_counts": self.nan_value_counts,
+            "lower_bounds": lower_bounds,
+            "upper_bounds": upper_bounds,
+            "split_offsets": self.split_offsets,
+        }
+
+
+def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
-) -> None:
+) -> DataFileStatistics:
     """
-    Compute and fill the following fields of the DataFile object.
+    Compute and return DataFileStatistics that includes the following.
 
-    - file_format
+    - record_count
     - column_sizes
     - value_counts
     - null_value_counts
     - nan_value_counts
-    - lower_bounds
-    - upper_bounds
+    - column_aggregates
     - split_offsets
 
     Args:
-        data_file (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
         parquet_metadata (pyarrow.parquet.FileMetaData): A pyarrow metadata object.
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
+        parquet_column_mapping (Dict[str, int]): The mapping of the parquet file name to the field ID
     """
     if parquet_metadata.num_columns != len(stats_columns):
         raise ValueError(
@@ -1695,35 +1745,24 @@ def fill_parquet_file_metadata(
 
     split_offsets.sort()
 
-    lower_bounds = {}
-    upper_bounds = {}
-
-    for k, agg in col_aggs.items():
-        _min = agg.min_as_bytes()
-        if _min is not None:
-            lower_bounds[k] = _min
-        _max = agg.max_as_bytes()
-        if _max is not None:
-            upper_bounds[k] = _max
-
     for field_id in invalidate_col:
-        del lower_bounds[field_id]
-        del upper_bounds[field_id]
+        del col_aggs[field_id]
         del null_value_counts[field_id]
 
-    data_file.record_count = parquet_metadata.num_rows
-    data_file.column_sizes = column_sizes
-    data_file.value_counts = value_counts
-    data_file.null_value_counts = null_value_counts
-    data_file.nan_value_counts = nan_value_counts
-    data_file.lower_bounds = lower_bounds
-    data_file.upper_bounds = upper_bounds
-    data_file.split_offsets = split_offsets
+    return DataFileStatistics(
+        record_count=parquet_metadata.num_rows,
+        column_sizes=column_sizes,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        nan_value_counts=nan_value_counts,
+        column_aggregates=col_aggs,
+        split_offsets=split_offsets,
+    )
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     schema = table_metadata.schema()
-    arrow_file_schema = schema_to_pyarrow(schema)
+    arrow_file_schema = schema.as_arrow()
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
     row_group_size = PropertyUtil.property_as_int(
@@ -1739,6 +1778,11 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
                 writer.write(pa.Table.from_batches(task.record_batches), row_group_size=row_group_size)
 
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=writer.writer.metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
         data_file = DataFile(
             content=DataFileContent.DATA,
             file_path=file_path,
@@ -1753,13 +1797,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
             key_metadata=None,
+            **statistics.to_serialized_dict(),
         )
-        fill_parquet_file_metadata(
-            data_file=data_file,
-            parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
-        )
+
         return data_file
 
     executor = ExecutorFactory.get_or_create()
@@ -1782,6 +1822,38 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
         largest_bin_first=False,
     )
     return bin_packed_record_batches
+
+
+def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
+    for file_path in file_paths:
+        input_file = io.new_input(file_path)
+        with input_file.open() as input_stream:
+            parquet_metadata = pq.read_metadata(input_stream)
+
+        if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
+            raise NotImplementedError(
+                f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
+            )
+        schema = table_metadata.schema()
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=parquet_metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
+            file_size_in_bytes=len(input_file),
+            sort_order_id=None,
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+            **statistics.to_serialized_dict(),
+        )
+
+        yield data_file
 
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"

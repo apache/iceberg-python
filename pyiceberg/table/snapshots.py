@@ -15,19 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 import time
+from collections import defaultdict
 from enum import Enum
-from typing import (
-    Any,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-)
+from typing import Any, DefaultDict, Dict, List, Mapping, Optional
 
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel
 
 ADDED_DATA_FILES = 'added-data-files'
@@ -52,8 +49,8 @@ TOTAL_DATA_FILES = 'total-data-files'
 TOTAL_DELETE_FILES = 'total-delete-files'
 TOTAL_RECORDS = 'total-records'
 TOTAL_FILE_SIZE = 'total-files-size'
-
-
+CHANGED_PARTITION_COUNT_PROP = 'changed-partition-count'
+CHANGED_PARTITION_PREFIX = "partitions."
 OPERATION = "operation"
 
 
@@ -75,6 +72,97 @@ class Operation(Enum):
     def __repr__(self) -> str:
         """Return the string representation of the Operation class."""
         return f"Operation.{self.name}"
+
+
+class UpdateMetrics:
+    added_file_size: int
+    removed_file_size: int
+    added_data_files: int
+    removed_data_files: int
+    added_eq_delete_files: int
+    removed_eq_delete_files: int
+    added_pos_delete_files: int
+    removed_pos_delete_files: int
+    added_delete_files: int
+    removed_delete_files: int
+    added_records: int
+    deleted_records: int
+    added_pos_deletes: int
+    removed_pos_deletes: int
+    added_eq_deletes: int
+    removed_eq_deletes: int
+
+    def __init__(self) -> None:
+        self.added_file_size = 0
+        self.removed_file_size = 0
+        self.added_data_files = 0
+        self.removed_data_files = 0
+        self.added_eq_delete_files = 0
+        self.removed_eq_delete_files = 0
+        self.added_pos_delete_files = 0
+        self.removed_pos_delete_files = 0
+        self.added_delete_files = 0
+        self.removed_delete_files = 0
+        self.added_records = 0
+        self.deleted_records = 0
+        self.added_pos_deletes = 0
+        self.removed_pos_deletes = 0
+        self.added_eq_deletes = 0
+        self.removed_eq_deletes = 0
+
+    def add_file(self, data_file: DataFile) -> None:
+        self.added_file_size += data_file.file_size_in_bytes
+
+        if data_file.content == DataFileContent.DATA:
+            self.added_data_files += 1
+            self.added_records += data_file.record_count
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self.added_delete_files += 1
+            self.added_pos_delete_files += 1
+            self.added_pos_deletes += data_file.record_count
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            self.added_delete_files += 1
+            self.added_eq_delete_files += 1
+            self.added_eq_deletes += data_file.record_count
+        else:
+            raise ValueError(f"Unknown data file content: {data_file.content}")
+
+    def remove_file(self, data_file: DataFile) -> None:
+        self.removed_file_size += data_file.file_size_in_bytes
+
+        if data_file.content == DataFileContent.DATA:
+            self.removed_data_files += 1
+            self.deleted_records += data_file.record_count
+        elif data_file.content == DataFileContent.POSITION_DELETES:
+            self.removed_delete_files += 1
+            self.removed_pos_delete_files += 1
+            self.removed_pos_deletes += data_file.record_count
+        elif data_file.content == DataFileContent.EQUALITY_DELETES:
+            self.removed_delete_files += 1
+            self.removed_eq_delete_files += 1
+            self.removed_eq_deletes += data_file.record_count
+        else:
+            raise ValueError(f"Unknown data file content: {data_file.content}")
+
+    def to_dict(self) -> Dict[str, str]:
+        properties: Dict[str, str] = {}
+        set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
+        set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
+        set_when_positive(properties, self.added_data_files, ADDED_DATA_FILES)
+        set_when_positive(properties, self.removed_data_files, DELETED_DATA_FILES)
+        set_when_positive(properties, self.added_eq_delete_files, ADDED_EQUALITY_DELETE_FILES)
+        set_when_positive(properties, self.removed_eq_delete_files, REMOVED_EQUALITY_DELETE_FILES)
+        set_when_positive(properties, self.added_pos_delete_files, ADDED_POSITION_DELETE_FILES)
+        set_when_positive(properties, self.removed_pos_delete_files, REMOVED_POSITION_DELETE_FILES)
+        set_when_positive(properties, self.added_delete_files, ADDED_DELETE_FILES)
+        set_when_positive(properties, self.removed_delete_files, REMOVED_DELETE_FILES)
+        set_when_positive(properties, self.added_records, ADDED_RECORDS)
+        set_when_positive(properties, self.deleted_records, DELETED_RECORDS)
+        set_when_positive(properties, self.added_pos_deletes, ADDED_POSITION_DELETES)
+        set_when_positive(properties, self.removed_pos_deletes, REMOVED_POSITION_DELETES)
+        set_when_positive(properties, self.added_eq_deletes, ADDED_EQUALITY_DELETES)
+        set_when_positive(properties, self.removed_eq_deletes, REMOVED_EQUALITY_DELETES)
+        return properties
 
 
 class Summary(IcebergBaseModel, Mapping[str, str]):
@@ -172,99 +260,52 @@ class SnapshotLogEntry(IcebergBaseModel):
 
 
 class SnapshotSummaryCollector:
-    added_file_size: int
-    removed_file_size: int
-    added_data_files: int
-    removed_data_files: int
-    added_eq_delete_files: int
-    removed_eq_delete_files: int
-    added_pos_delete_files: int
-    removed_pos_delete_files: int
-    added_delete_files: int
-    removed_delete_files: int
-    added_records: int
-    deleted_records: int
-    added_pos_deletes: int
-    removed_pos_deletes: int
-    added_eq_deletes: int
-    removed_eq_deletes: int
+    metrics: UpdateMetrics
+    partition_metrics: DefaultDict[str, UpdateMetrics]
+    max_changed_partitions_for_summaries: int
 
     def __init__(self) -> None:
-        self.added_file_size = 0
-        self.removed_file_size = 0
-        self.added_data_files = 0
-        self.removed_data_files = 0
-        self.added_eq_delete_files = 0
-        self.removed_eq_delete_files = 0
-        self.added_pos_delete_files = 0
-        self.removed_pos_delete_files = 0
-        self.added_delete_files = 0
-        self.removed_delete_files = 0
-        self.added_records = 0
-        self.deleted_records = 0
-        self.added_pos_deletes = 0
-        self.removed_pos_deletes = 0
-        self.added_eq_deletes = 0
-        self.removed_eq_deletes = 0
+        self.metrics = UpdateMetrics()
+        self.partition_metrics = defaultdict(UpdateMetrics)
+        self.max_changed_partitions_for_summaries = 0
 
-    def add_file(self, data_file: DataFile) -> None:
-        self.added_file_size += data_file.file_size_in_bytes
+    def set_partition_summary_limit(self, limit: int) -> None:
+        self.max_changed_partitions_for_summaries = limit
 
-        if data_file.content == DataFileContent.DATA:
-            self.added_data_files += 1
-            self.added_records += data_file.record_count
-        elif data_file.content == DataFileContent.POSITION_DELETES:
-            self.added_delete_files += 1
-            self.added_pos_delete_files += 1
-            self.added_pos_deletes += data_file.record_count
-        elif data_file.content == DataFileContent.EQUALITY_DELETES:
-            self.added_delete_files += 1
-            self.added_eq_delete_files += 1
-            self.added_eq_deletes += data_file.record_count
+    def add_file(self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC) -> None:
+        self.metrics.add_file(data_file)
+        if len(data_file.partition.record_fields()) != 0:
+            self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=True, schema=schema)
+
+    def remove_file(
+        self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC
+    ) -> None:
+        self.metrics.remove_file(data_file)
+        if len(data_file.partition.record_fields()) != 0:
+            self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=False, schema=schema)
+
+    def update_partition_metrics(self, partition_spec: PartitionSpec, file: DataFile, is_add_file: bool, schema: Schema) -> None:
+        partition_path = partition_spec.partition_to_path(file.partition, schema)
+        partition_metrics: UpdateMetrics = self.partition_metrics[partition_path]
+
+        if is_add_file:
+            partition_metrics.add_file(file)
         else:
-            raise ValueError(f"Unknown data file content: {data_file.content}")
-
-    def remove_file(self, data_file: DataFile) -> None:
-        self.removed_file_size += data_file.file_size_in_bytes
-
-        if data_file.content == DataFileContent.DATA:
-            self.removed_data_files += 1
-            self.deleted_records += data_file.record_count
-        elif data_file.content == DataFileContent.POSITION_DELETES:
-            self.removed_delete_files += 1
-            self.removed_pos_delete_files += 1
-            self.removed_pos_deletes += data_file.record_count
-        elif data_file.content == DataFileContent.EQUALITY_DELETES:
-            self.removed_delete_files += 1
-            self.removed_eq_delete_files += 1
-            self.removed_eq_deletes += data_file.record_count
-        else:
-            raise ValueError(f"Unknown data file content: {data_file.content}")
+            partition_metrics.remove_file(file)
 
     def build(self) -> Dict[str, str]:
-        def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
-            if num > 0:
-                properties[property_name] = str(num)
-
-        properties: Dict[str, str] = {}
-        set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
-        set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
-        set_when_positive(properties, self.added_data_files, ADDED_DATA_FILES)
-        set_when_positive(properties, self.removed_data_files, DELETED_DATA_FILES)
-        set_when_positive(properties, self.added_eq_delete_files, ADDED_EQUALITY_DELETE_FILES)
-        set_when_positive(properties, self.removed_eq_delete_files, REMOVED_EQUALITY_DELETE_FILES)
-        set_when_positive(properties, self.added_pos_delete_files, ADDED_POSITION_DELETE_FILES)
-        set_when_positive(properties, self.removed_pos_delete_files, REMOVED_POSITION_DELETE_FILES)
-        set_when_positive(properties, self.added_delete_files, ADDED_DELETE_FILES)
-        set_when_positive(properties, self.removed_delete_files, REMOVED_DELETE_FILES)
-        set_when_positive(properties, self.added_records, ADDED_RECORDS)
-        set_when_positive(properties, self.deleted_records, DELETED_RECORDS)
-        set_when_positive(properties, self.added_pos_deletes, ADDED_POSITION_DELETES)
-        set_when_positive(properties, self.removed_pos_deletes, REMOVED_POSITION_DELETES)
-        set_when_positive(properties, self.added_eq_deletes, ADDED_EQUALITY_DELETES)
-        set_when_positive(properties, self.removed_eq_deletes, REMOVED_EQUALITY_DELETES)
+        properties = self.metrics.to_dict()
+        changed_partitions_size = len(self.partition_metrics)
+        set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
+        if changed_partitions_size <= self.max_changed_partitions_for_summaries:
+            for partition_path, update_metrics_partition in self.partition_metrics.items():
+                if (summary := self._partition_summary(update_metrics_partition)) and len(summary) != 0:
+                    properties[CHANGED_PARTITION_PREFIX + partition_path] = summary
 
         return properties
+
+    def _partition_summary(self, update_metrics: UpdateMetrics) -> str:
+        return ",".join([f"{prop}={val}" for prop, val in update_metrics.to_dict().items()])
 
 
 def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
@@ -366,3 +407,8 @@ def update_snapshot_summaries(
     )
 
     return summary
+
+
+def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
+    if num > 0:
+        properties[property_name] = str(num)

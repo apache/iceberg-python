@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import inspect
+from copy import copy
 from datetime import date, datetime, time
 from enum import Enum
 from tempfile import TemporaryDirectory
@@ -26,7 +27,7 @@ from _decimal import Decimal
 from fastavro import reader, writer
 
 import pyiceberg.avro.file as avro
-from pyiceberg.avro.codecs import DeflateCodec
+from pyiceberg.avro.codecs.deflate import DeflateCodec
 from pyiceberg.avro.file import META_SCHEMA, AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
@@ -111,7 +112,7 @@ def todict(obj: Any) -> Any:
         return obj.value
     elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
         return [todict(v) for v in obj]
-    elif hasattr(obj, "__dict__"):
+    elif isinstance(obj, Record):
         return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
     else:
         return obj
@@ -258,8 +259,6 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
         sort_order_id=4,
         spec_id=3,
     )
-    if format_version == 1:
-        data_file.block_size_in_bytes = DEFAULT_BLOCK_SIZE
 
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
@@ -277,15 +276,43 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
         with open(tmp_avro_file, "wb") as out:
             writer(out, schema, [todict(entry)])
 
+        # Read as V2
         with avro.AvroFile[ManifestEntry](
-            PyArrowFileIO().new_input(tmp_avro_file),
-            MANIFEST_ENTRY_SCHEMAS[format_version],
-            {-1: ManifestEntry, 2: DataFile},
+            input_file=PyArrowFileIO().new_input(tmp_avro_file),
+            read_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            read_types={-1: ManifestEntry, 2: DataFile},
         ) as avro_reader:
             it = iter(avro_reader)
             avro_entry = next(it)
 
             assert entry == avro_entry
+
+        # Read as the original version
+        with avro.AvroFile[ManifestEntry](
+            input_file=PyArrowFileIO().new_input(tmp_avro_file),
+            read_schema=MANIFEST_ENTRY_SCHEMAS[format_version],
+            read_types={-1: ManifestEntry, 2: DataFile},
+        ) as avro_reader:
+            it = iter(avro_reader)
+            avro_entry = next(it)
+
+            if format_version == 1:
+                v1_datafile = copy(data_file)
+                # Not part of V1
+                v1_datafile.equality_ids = None
+
+                assert avro_entry == ManifestEntry(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=8638475580105682862,
+                    # Not part of v1
+                    data_sequence_number=None,
+                    file_sequence_number=None,
+                    data_file=v1_datafile,
+                )
+            elif format_version == 2:
+                assert entry == avro_entry
+            else:
+                raise ValueError(f"Unsupported version: {format_version}")
 
 
 @pytest.mark.parametrize("is_required", [True, False])

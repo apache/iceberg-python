@@ -79,6 +79,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    UUIDType,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -892,7 +893,7 @@ manifest_entry_records = [
         "data_file": {
             "file_path": "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=1/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00002.parquet",
             "file_format": "PARQUET",
-            "partition": {"VendorID": 1, "tpep_pickup_datetime": 1925},
+            "partition": {"VendorID": 1, "tpep_pickup_datetime": None},
             "record_count": 95050,
             "file_size_in_bytes": 1265950,
             "block_size_in_bytes": 67108864,
@@ -1858,8 +1859,8 @@ def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_nam
 
 @pytest.fixture(name="s3", scope="module")
 def fixture_s3_client() -> boto3.client:
-    with mock_aws():
-        yield boto3.client("s3")
+    """Real S3 client for AWS Integration Tests."""
+    yield boto3.client("s3")
 
 
 def clean_up(test_catalog: Catalog) -> None:
@@ -1926,6 +1927,16 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 @pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture
+def bound_reference_binary() -> BoundReference[str]:
+    return BoundReference(field=NestedField(1, "field", BinaryType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+@pytest.fixture
+def bound_reference_uuid() -> BoundReference[str]:
+    return BoundReference(field=NestedField(1, "field", UUIDType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
 @pytest.fixture(scope="session")
