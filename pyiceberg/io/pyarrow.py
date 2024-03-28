@@ -1721,7 +1721,7 @@ def write_file(table: Table, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table.properties)
 
     file_path = f'{table.location()}/data/{task.generate_data_file_filename("parquet")}'
-    file_schema = schema_to_pyarrow(table.schema())
+    file_schema = table.schema().as_arrow()
 
     fo = table.io.new_output(file_path)
     row_group_size = PropertyUtil.property_as_int(
