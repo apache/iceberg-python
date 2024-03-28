@@ -41,7 +41,6 @@ from pyiceberg.typedef import EMPTY_DICT, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
-    DateType,
     IcebergType,
     IntegerType,
     ListType,
@@ -51,8 +50,6 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
-    TimestampType,
-    TimestamptzType,
     TimeType,
 )
 
@@ -289,10 +286,7 @@ def partition_field_to_data_file_partition_field(partition_field_type: IcebergTy
 
 
 @partition_field_to_data_file_partition_field.register(LongType)
-@partition_field_to_data_file_partition_field.register(DateType)
 @partition_field_to_data_file_partition_field.register(TimeType)
-@partition_field_to_data_file_partition_field.register(TimestampType)
-@partition_field_to_data_file_partition_field.register(TimestamptzType)
 def _(partition_field_type: PrimitiveType) -> IntegerType:
     return IntegerType()
 

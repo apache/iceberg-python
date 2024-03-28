@@ -1761,54 +1761,46 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    task = next(tasks)
+    for task in tasks:
+        parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
-    try:
-        _ = next(tasks)
-        # If there are more tasks, raise an exception
-        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
-    except StopIteration:
-        pass
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'  # generate_data_file_filename
+        schema = table_metadata.schema()
+        arrow_file_schema = schema.as_arrow()
 
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
+        fo = io.new_output(file_path)
+        row_group_size = PropertyUtil.property_as_int(
+            properties=table_metadata.properties,
+            property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+            default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
+        )
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
+                writer.write_table(task.df, row_group_size=row_group_size)
 
-    file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
-    schema = table_metadata.schema()
-    arrow_file_schema = schema.as_arrow()
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=writer.writer.metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=task.partition_key.partition if task.partition_key else Record(),
+            file_size_in_bytes=len(fo),
+            # After this has been fixed:
+            # https://github.com/apache/iceberg-python/issues/271
+            # sort_order_id=task.sort_order_id,
+            sort_order_id=None,
+            # Just copy these from the table for now
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+            **statistics.to_serialized_dict(),
+        )
 
-    fo = io.new_output(file_path)
-    row_group_size = PropertyUtil.property_as_int(
-        properties=table_metadata.properties,
-        property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
-        default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
-    )
-    with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-            writer.write_table(task.df, row_group_size=row_group_size)
-
-    statistics = data_file_statistics_from_parquet_metadata(
-        parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(schema),
-    )
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=file_path,
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=len(fo),
-        # After this has been fixed:
-        # https://github.com/apache/iceberg-python/issues/271
-        # sort_order_id=task.sort_order_id,
-        sort_order_id=None,
-        # Just copy these from the table for now
-        spec_id=table_metadata.default_spec_id,
-        equality_ids=None,
-        key_metadata=None,
-        **statistics.to_serialized_dict(),
-    )
-
-    return iter([data_file])
+        yield data_file
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
