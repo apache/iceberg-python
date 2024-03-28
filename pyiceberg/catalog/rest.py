@@ -61,6 +61,7 @@ from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CreateTableTransaction,
     StagedTable,
     Table,
     TableIdentifier,
@@ -540,19 +541,6 @@ class RestCatalog(Catalog):
         return TableResponse(**response.json())
 
     @retry(**_RETRY_ARGS)
-    def _create_staged_table(
-        self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
-        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
-        sort_order: SortOrder = UNSORTED_SORT_ORDER,
-        properties: Properties = EMPTY_DICT,
-    ) -> StagedTable:
-        table_response = self._create_table(identifier, schema, location, partition_spec, sort_order, properties, True)
-        return self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
-
-    @retry(**_RETRY_ARGS)
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -562,8 +550,38 @@ class RestCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
-        table_response = self._create_table(identifier, schema, location, partition_spec, sort_order, properties)
+        table_response = self._create_table(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+            stage_create=False,
+        )
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+
+    @retry(**_RETRY_ARGS)
+    def create_table_transaction(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> CreateTableTransaction:
+        table_response = self._create_table(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+            stage_create=True,
+        )
+        staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
+        return CreateTableTransaction(staged_table)
 
     @retry(**_RETRY_ARGS)
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
@@ -758,6 +776,14 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a table exists.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            bool: True if the table exists, False otherwise.
+        """
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))

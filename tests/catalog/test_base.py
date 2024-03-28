@@ -34,6 +34,7 @@ from pytest_lazyfixture import lazy_fixture
 
 from pyiceberg.catalog import (
     Catalog,
+    MetastoreCatalog,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -65,7 +66,7 @@ from pyiceberg.types import IntegerType, LongType, NestedField
 DEFAULT_WAREHOUSE_LOCATION = "file:///tmp/warehouse"
 
 
-class InMemoryCatalog(Catalog):
+class InMemoryCatalog(MetastoreCatalog):
     """
     An in-memory catalog implementation that uses in-memory data-structures to store the namespaces and tables.
 

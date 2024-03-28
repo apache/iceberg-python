@@ -45,7 +45,7 @@ from pyiceberg.catalog import (
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
-    Catalog,
+    MetastoreCatalog,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -278,7 +278,7 @@ def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id
     event_system.register("provide-client-params.glue", add_glue_catalog_id)
 
 
-class GlueCatalog(Catalog):
+class GlueCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
 
@@ -485,7 +485,7 @@ class GlueCatalog(Catalog):
         except NoSuchTableError:
             # Create the table
             updated_metadata = update_table_metadata(
-                base_metadata=self.empty_table_metadata(), updates=table_request.updates, enforce_validation=True
+                base_metadata=self._empty_table_metadata(), updates=table_request.updates, enforce_validation=True
             )
             new_metadata_version = 0
             new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
