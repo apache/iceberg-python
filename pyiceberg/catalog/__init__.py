@@ -45,6 +45,7 @@ from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CommitTableRetryableExceptions,
     Table,
 )
 from pyiceberg.table.metadata import TableMetadata
@@ -415,6 +416,14 @@ class Catalog(ABC):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
+        """
+
+    @abstractmethod
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        """Return list of retryable table commit exception for the catalog.
+
+        Returns:
+            CommitTableRetryableExceptions: Collection of commit exceptions to handle.
         """
 
     @abstractmethod

@@ -48,6 +48,7 @@ from pyiceberg.catalog import (
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
+    CommitStateUnknownException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -59,7 +60,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, CommitTableRetryableExceptions, Table, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -359,6 +360,9 @@ class SqlCatalog(Catalog):
             except IntegrityError as e:
                 raise TableAlreadyExistsError(f"Table {to_database_name}.{to_table_name} already exists") from e
         return self.load_table(to_identifier)
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        return CommitTableRetryableExceptions((CommitStateUnknownException, NoSuchTableError), (CommitFailedException,))
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update one or more tables.

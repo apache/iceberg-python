@@ -54,12 +54,14 @@ from pyiceberg.table import (
     AssertRefSnapshotId,
     AssertTableUUID,
     CommitTableRequest,
+    CommitTableRetryableExceptions,
     RemovePropertiesUpdate,
     SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     StaticTable,
     Table,
+    TableCommitRetry,
     TableIdentifier,
     UpdateSchema,
     _apply_table_update,
@@ -83,6 +85,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import BucketTransform, IdentityTransform
+from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1139,3 +1142,122 @@ def test_serialize_commit_table_request() -> None:
 
     deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
     assert request == deserialized_request
+
+
+def test_non_commit_failure_retry() -> None:
+    class CustomException(Exception):
+        pass
+
+    class TestTableCommitRetiesCustomError:
+        def __init__(self) -> None:
+            self.count: int = 0
+            self.refresh_count: int = 0
+            self.properties: Properties = {
+                "commit.retry.num-retries": "3",
+                "commit.retry.max-wait-ms": "0",
+                "commit.retry.min-wait-ms": "0",
+            }
+            self.commit_retry_exceptions = CommitTableRetryableExceptions((), ())
+
+        def refresh(self) -> None:
+            self.refresh_count += 1
+
+        @TableCommitRetry
+        def my_function(self) -> None:
+            self.count += 1
+            raise CustomException
+
+    test_table_commits_retry = TestTableCommitRetiesCustomError()
+
+    with pytest.raises(CustomException):
+        test_table_commits_retry.my_function()
+    assert test_table_commits_retry.count == 1
+    assert test_table_commits_retry.refresh_count == 0
+
+
+def test_custom_retry_commit_config() -> None:
+    class TestTableCommitReties:
+        def __init__(self) -> None:
+            self.count: int = 0
+            self.refresh_count: int = 0
+            self.properties: Properties = {
+                "commit.retry.num-retries": "3",
+                "commit.retry.max-wait-ms": "0",
+                "commit.retry.min-wait-ms": "0",
+            }
+            self.commit_retry_exceptions = CommitTableRetryableExceptions((), (CommitFailedException,))
+
+        def refresh(self) -> None:
+            self.refresh_count += 1
+
+        @TableCommitRetry
+        def my_function(self) -> None:
+            self.count += 1
+            raise CommitFailedException
+
+    test_table_commits_retry = TestTableCommitReties()
+
+    with pytest.raises(CommitFailedException):
+        test_table_commits_retry.my_function()
+    assert test_table_commits_retry.count == 3
+    assert test_table_commits_retry.refresh_count == 2
+
+
+def test_invalid_commit_retry_config() -> None:
+    class TestTableCommitReties:
+        def __init__(self) -> None:
+            self.count: int = 0
+            self.refresh_count: int = 0
+            self.properties: Properties = {
+                "commit.retry.num-retries": "I AM INVALID",
+                "commit.retry.max-wait-ms": "0",
+                "commit.retry.min-wait-ms": "0",
+            }
+            self.commit_retry_exceptions = CommitTableRetryableExceptions((), (CommitFailedException,))
+
+        def refresh(self) -> None:
+            self.refresh_count += 1
+
+        @TableCommitRetry
+        def my_function(self) -> None:
+            self.count += 1
+            raise CommitFailedException
+
+    test_table_commits_retry = TestTableCommitReties()
+
+    with pytest.raises(CommitFailedException):
+        with pytest.warns(
+            UserWarning, match="Expected an integer for table property commit.retry.num-retries, got: I AM INVALID"
+        ):
+            test_table_commits_retry.my_function()
+    assert test_table_commits_retry.count == 4
+    assert test_table_commits_retry.refresh_count == 3
+
+
+def test_table_commit_retry() -> None:
+    class TestTableCommitReties:
+        def __init__(self) -> None:
+            self.count: int = 0
+            self.refresh_count: int = 0
+            self.properties: Properties = {
+                "commit.retry.max-wait-ms": "0",
+                "commit.retry.min-wait-ms": "0",
+            }
+            self.commit_retry_exceptions = CommitTableRetryableExceptions((), (CommitFailedException,))
+
+        def refresh(self) -> None:
+            self.refresh_count += 1
+
+        @TableCommitRetry
+        def my_function(self) -> str:
+            self.count += 1
+            if self.count < 4:
+                raise CommitFailedException
+            else:
+                return "PASS"
+
+    test_table_commits_retry = TestTableCommitReties()
+
+    assert test_table_commits_retry.my_function() == "PASS"
+    assert test_table_commits_retry.count == 4
+    assert test_table_commits_retry.refresh_count == 3

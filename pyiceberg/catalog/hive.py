@@ -74,7 +74,14 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, TableProperties, update_table_metadata
+from pyiceberg.table import (
+    CommitTableRequest,
+    CommitTableResponse,
+    CommitTableRetryableExceptions,
+    Table,
+    TableProperties,
+    update_table_metadata,
+)
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -350,6 +357,9 @@ class HiveCatalog(Catalog):
         lock_request: LockRequest = LockRequest(component=[lock_component], user=getpass.getuser(), hostname=socket.gethostname())
 
         return lock_request
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        return CommitTableRetryableExceptions((NoSuchTableError, NoSuchIcebergTableError), ())
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
