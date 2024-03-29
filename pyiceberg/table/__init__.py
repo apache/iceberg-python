@@ -1128,6 +1128,12 @@ class Table:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
+        supported = {IdentityTransform}
+        if not all(type(field.transform) in supported for field in self.metadata.spec().fields):
+            raise ValueError(
+                f"All transforms are not supported, expected: {supported}, but get: {[str(field) for field in self.metadata.spec().fields if field.transform not in supported]}."
+            )
+
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
         if self.schema().as_arrow() != df.schema:
@@ -2550,7 +2556,7 @@ def _dataframe_to_data_files(
         )
 
     if len(table_metadata.spec().fields) > 0:
-        partitions = partition(table_metadata, df)
+        partitions = partition(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -3152,30 +3158,23 @@ def _get_partition_sort_order(partition_columns: list[str], reverse: bool = Fals
     return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
 
 
-def group_by_partition_scheme(
-    iceberg_table_metadata: TableMetadata, arrow_table: pa.Table, partition_columns: list[str]
-) -> pa.Table:
+def group_by_partition_scheme(arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
     """Given a table, sort it by current partition scheme."""
-    from pyiceberg.transforms import IdentityTransform
-
-    supported = {IdentityTransform}
-    if not all(type(field.transform) in supported for field in iceberg_table_metadata.spec().fields):
-        raise ValueError(
-            f"Not all transforms are supported, expected: {supported}, but get: {[str(field) for field in iceberg_table_metadata.spec().fields if field.transform not in supported]}."
-        )
-
-    # only works for identity
+    # only works for identity for now
     sort_options = _get_partition_sort_order(partition_columns, reverse=False)
     sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
     return sorted_arrow_table
 
 
-def get_partition_columns(iceberg_table_metadata: TableMetadata) -> list[str]:
+def get_partition_columns(
+    spec: PartitionSpec,
+    schema: Schema,
+) -> list[str]:
     partition_cols = []
-    for partition_field in iceberg_table_metadata.spec().fields:
-        column_name = iceberg_table_metadata.schema().find_column_name(partition_field.source_id)
+    for partition_field in spec.fields:
+        column_name = schema.find_column_name(partition_field.source_id)
         if not column_name:
-            raise ValueError(f"{partition_field=} could not be found in {iceberg_table_metadata.schema()}.")
+            raise ValueError(f"{partition_field=} could not be found in {schema}.")
         partition_cols.append(column_name)
     return partition_cols
 
@@ -3199,19 +3198,18 @@ def _get_table_partitions(
     }
 
     table_partitions = []
-    for inst in sorted_slice_instructions:
+    for idx, inst in enumerate(sorted_slice_instructions):
         partition_slice = arrow_table.slice(**inst)
         fieldvalues = [
-            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][inst["offset"]])
+            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
             for partition_field in partition_fields
         ]
         partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
         table_partitions.append(TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
-
     return table_partitions
 
 
-def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> Iterable[TablePartition]:
+def partition(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> Iterable[TablePartition]:
     """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
 
     Example:
@@ -3235,8 +3233,8 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
     """
     import pyarrow as pa
 
-    partition_columns = get_partition_columns(iceberg_table_metadata)
-    arrow_table = group_by_partition_scheme(iceberg_table_metadata, arrow_table, partition_columns)
+    partition_columns = get_partition_columns(spec=spec, schema=schema)
+    arrow_table = group_by_partition_scheme(arrow_table, partition_columns)
 
     reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
     reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
@@ -3252,8 +3250,6 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
         last = reversed_indices[ptr]
         ptr = ptr + group_size
 
-    table_partitions: list[TablePartition] = _get_table_partitions(
-        arrow_table, iceberg_table_metadata.spec(), iceberg_table_metadata.schema(), slice_instructions
-    )
+    table_partitions: list[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
 
     return table_partitions

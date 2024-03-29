@@ -66,6 +66,7 @@ from pyiceberg.table import (
     _check_schema_compatible,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
+    partition,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
@@ -82,7 +83,11 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
-from pyiceberg.transforms import BucketTransform, IdentityTransform
+from pyiceberg.transforms import (
+    BucketTransform,
+    IdentityTransform,
+)
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1139,3 +1144,38 @@ def test_serialize_commit_table_request() -> None:
 
     deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
     assert request == deserialized_request
+
+
+
+def test_partition() -> None:
+    import pyarrow as pa
+
+    test_pa_schema = pa.schema([('year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_schema = Schema(
+        NestedField(field_id=1, name='year', field_type=StringType(), required=False),
+        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        schema_id=1,
+    )
+    test_data = {
+        'year': [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
+        'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+        'animal': ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
+    }
+    arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
+        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
+    )
+    result = partition(partition_spec, test_schema, arrow_table)
+    assert {table_partition.partition_key.partition for table_partition in result} == {
+        Record(n_legs_identity=2, year_identity=2020),
+        Record(n_legs_identity=100, year_identity=2021),
+        Record(n_legs_identity=4, year_identity=2021),
+        Record(n_legs_identity=4, year_identity=2022),
+        Record(n_legs_identity=2, year_identity=2022),
+        Record(n_legs_identity=5, year_identity=2019),
+    }
+    assert (
+        pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
+    )
