@@ -23,8 +23,8 @@ import pytest
 import pytz
 from pyspark.sql import SparkSession
 
-from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
+from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
@@ -42,28 +42,6 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
-
-
-@pytest.fixture()
-def catalog() -> Catalog:
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-    try:
-        catalog.create_namespace("default")
-    except NamespaceAlreadyExistsError:
-        pass
-
-    return catalog
-
 
 TEST_DATA_WITH_NULL = {
     'bool': [False, None, True],
@@ -110,20 +88,6 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=11, name="binary", field_type=BinaryType(), required=False),
     NestedField(field_id=12, name="fixed", field_type=FixedType(16), required=False),
 )
-
-
-@pytest.fixture(scope="session")
-def session_catalog() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
 
 
 @pytest.fixture(scope="session")
@@ -372,40 +336,6 @@ def test_query_filter_appended_null_partitioned(spark: SparkSession, part_col: s
     for col in TEST_DATA_WITH_NULL.keys():
         df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 4, f"Expected 6 rows for {col}"
-
-
-@pytest.fixture(scope="session")
-def spark() -> SparkSession:
-    import importlib.metadata
-    import os
-
-    spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-    scala_version = "2.12"
-    iceberg_version = "1.4.3"
-
-    os.environ["PYSPARK_SUBMIT_ARGS"] = (
-        f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
-    )
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
-
-    spark = (
-        SparkSession.builder.appName("PyIceberg integration test")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
-        .config("spark.sql.catalog.integration.uri", "http://localhost:8181")
-        .config("spark.sql.catalog.integration.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config("spark.sql.catalog.integration.warehouse", "s3://warehouse/wh/")
-        .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
-        .config("spark.sql.catalog.integration.s3.path-style-access", "true")
-        .config("spark.sql.defaultCatalog", "integration")
-        .getOrCreate()
-    )
-
-    return spark
 
 
 @pytest.mark.integration
