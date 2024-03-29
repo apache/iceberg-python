@@ -28,6 +28,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CommitTableRetryableExceptions,
     Table,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -72,6 +73,9 @@ class NoopCatalog(Catalog):
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         raise NotImplementedError
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        return CommitTableRetryableExceptions((), ())
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         raise NotImplementedError

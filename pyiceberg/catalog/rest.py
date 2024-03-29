@@ -61,6 +61,7 @@ from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CommitTableRetryableExceptions,
     Table,
     TableIdentifier,
 )
@@ -615,6 +616,9 @@ class RestCatalog(Catalog):
             self._handle_non_200_response(exc, {404: NoSuchTableError, 409: TableAlreadyExistsError})
 
         return self.load_table(to_identifier)
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        return CommitTableRetryableExceptions((CommitStateUnknownException,), (CommitFailedException,))
 
     @retry(**_RETRY_ARGS)
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:

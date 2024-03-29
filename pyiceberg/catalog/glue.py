@@ -62,7 +62,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, CommitTableRetryableExceptions, Table, update_table_metadata
 from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -416,6 +416,14 @@ class GlueCatalog(Catalog):
             TableAlreadyExistsError: If the table already exists
         """
         raise NotImplementedError
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        """Return commit exceptions that can be retried by the table.
+
+        Returns:
+            CommitTableRetryableExceptions: The retryable exceptions.
+        """
+        return CommitTableRetryableExceptions((NoSuchTableError,), (CommitFailedException,))
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.

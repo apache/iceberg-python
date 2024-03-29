@@ -37,6 +37,8 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
+    CommitStateUnknownException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
@@ -50,6 +52,7 @@ from pyiceberg.table import (
     AddSchemaUpdate,
     CommitTableRequest,
     CommitTableResponse,
+    CommitTableRetryableExceptions,
     Namespace,
     SetCurrentSchemaUpdate,
     Table,
@@ -129,6 +132,9 @@ class InMemoryCatalog(Catalog):
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         raise NotImplementedError
+
+    def _accepted_commit_retry_exceptions(self) -> CommitTableRetryableExceptions:
+        return CommitTableRetryableExceptions((CommitStateUnknownException, NoSuchTableError), (CommitFailedException,))
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         identifier_tuple = self.identifier_to_tuple_without_catalog(
