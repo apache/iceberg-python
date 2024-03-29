@@ -61,7 +61,7 @@ You either need to install `s3fs`, `adlfs`, `gcsfs`, or `pyarrow` to be able to 
 
 ## Connecting to a catalog
 
-Iceberg leverages the [catalog to have one centralized place to organize the tables](https://iceberg.apache.org/catalog/). This can be a traditional Hive catalog to store your Iceberg tables next to the rest, a vendor solution like the AWS Glue catalog, or an implementation of Icebergs' own [REST protocol](https://github.com/apache/iceberg/tree/main/open-api). Checkout the [configuration](configuration.md) page to find all the configuration details.
+Iceberg leverages the [catalog to have one centralized place to organize the tables](https://iceberg.apache.org/concepts/catalog/). This can be a traditional Hive catalog to store your Iceberg tables next to the rest, a vendor solution like the AWS Glue catalog, or an implementation of Icebergs' own [REST protocol](https://github.com/apache/iceberg/tree/main/open-api). Checkout the [configuration](configuration.md) page to find all the configuration details.
 
 For the sake of demonstration, we'll configure the catalog to use the `SqlCatalog` implementation, which will store information in a local `sqlite` database. We'll also configure the catalog to store data files in the local filesystem instead of an object store. This should not be used in production due to the limited scalability.
 
