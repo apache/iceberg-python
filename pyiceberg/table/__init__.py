@@ -1052,10 +1052,12 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if self.schema().as_arrow() != df.schema:
-            df = df.cast(self.schema().as_arrow())
+        if schema_to_pyarrow(self.schema()) != df.schema:
+            df = df.cast(schema_to_pyarrow(self.schema()))
 
         merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
 
@@ -1090,10 +1092,12 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if self.schema().as_arrow() != df.schema:
-            df = df.cast(self.schema().as_arrow())
+        if schema_to_pyarrow(self.schema()) != df.schema:
+            df = df.cast(schema_to_pyarrow(self.schema()))
 
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
