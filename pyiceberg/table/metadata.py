@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_serializer, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
@@ -49,6 +49,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
@@ -225,6 +226,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def schema_by_id(self, schema_id: int) -> Optional[Schema]:
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
+
+    @field_serializer('current_snapshot_id')
+    def serialize_current_snapshot_id(self, current_snapshot_id: Optional[int]) -> Optional[int]:
+        if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
+            return -1
+        return current_snapshot_id
 
 
 class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
