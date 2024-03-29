@@ -2505,7 +2505,7 @@ class WriteTask:
 
     def generate_data_file_path(self, extension: str) -> str:
         if self.partition_key:
-            file_path = f"{self.generate_data_file_partition_path()}/{self. generate_data_file_filename(extension)}"
+            file_path = f"{self.generate_data_file_partition_path()}/{self.generate_data_file_filename(extension)}"
             return file_path
         else:
             return self.generate_data_file_filename(extension)
@@ -2549,7 +2549,7 @@ def _dataframe_to_data_files(
             "Fail to get neither TableProperties.WRITE_TARGET_FILE_SIZE_BYTES nor WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT for writing target data file."
         )
 
-    if any(len(spec.fields) > 0 for spec in table_metadata.partition_specs):
+    if len(table_metadata.spec().fields) > 0:
         partitions = partition(table_metadata, df)
         yield from write_file(
             io=io,
@@ -3155,15 +3155,13 @@ def _get_partition_sort_order(partition_columns: list[str], reverse: bool = Fals
 def group_by_partition_scheme(
     iceberg_table_metadata: TableMetadata, arrow_table: pa.Table, partition_columns: list[str]
 ) -> pa.Table:
-    """Given a table sort it by current partition scheme with all transform functions supported."""
+    """Given a table, sort it by current partition scheme."""
     from pyiceberg.transforms import IdentityTransform
 
     supported = {IdentityTransform}
-    if not all(
-        type(field.transform) in supported for field in iceberg_table_metadata.spec().fields if field in partition_columns
-    ):
+    if not all(type(field.transform) in supported for field in iceberg_table_metadata.spec().fields):
         raise ValueError(
-            f"Not all transforms are supported, get: {[transform in supported for transform in iceberg_table_metadata.spec().fields]}."
+            f"Not all transforms are supported, expected: {supported}, but get: {[str(field) for field in iceberg_table_metadata.spec().fields if field.transform not in supported]}."
         )
 
     # only works for identity
@@ -3172,15 +3170,12 @@ def group_by_partition_scheme(
     return sorted_arrow_table
 
 
-def get_partition_columns(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> list[str]:
-    arrow_table_cols = set(arrow_table.column_names)
+def get_partition_columns(iceberg_table_metadata: TableMetadata) -> list[str]:
     partition_cols = []
-    for transform_field in iceberg_table_metadata.spec().fields:
-        column_name = iceberg_table_metadata.schema().find_column_name(transform_field.source_id)
+    for partition_field in iceberg_table_metadata.spec().fields:
+        column_name = iceberg_table_metadata.schema().find_column_name(partition_field.source_id)
         if not column_name:
-            raise ValueError(f"{transform_field=} could not be found in {iceberg_table_metadata.schema()}.")
-        if column_name not in arrow_table_cols:
-            continue
+            raise ValueError(f"{partition_field=} could not be found in {iceberg_table_metadata.schema()}.")
         partition_cols.append(column_name)
     return partition_cols
 
@@ -3240,7 +3235,7 @@ def partition(iceberg_table_metadata: TableMetadata, arrow_table: pa.Table) -> I
     """
     import pyarrow as pa
 
-    partition_columns = get_partition_columns(iceberg_table_metadata, arrow_table)
+    partition_columns = get_partition_columns(iceberg_table_metadata)
     arrow_table = group_by_partition_scheme(iceberg_table_metadata, arrow_table, partition_columns)
 
     reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)

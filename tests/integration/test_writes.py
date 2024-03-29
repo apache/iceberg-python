@@ -247,7 +247,7 @@ def test_query_filter_without_data(spark: SparkSession, col: str, format_version
     identifier = f"default.arrow_table_v{format_version}_without_data"
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
+    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
@@ -256,8 +256,8 @@ def test_query_filter_without_data(spark: SparkSession, col: str, format_version
 def test_query_filter_only_nulls(spark: SparkSession, col: str, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 2 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
+    assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
+    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration

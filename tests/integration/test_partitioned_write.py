@@ -114,6 +114,18 @@ def arrow_table_with_null() -> pa.Table:
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
+@pytest.fixture(scope="session")
+def arrow_table_without_data(pa_schema: pa.Schema) -> pa.Table:
+    """PyArrow table with all kinds of columns"""
+    return pa.Table.from_pylist([], schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
+    """PyArrow table with all kinds of columns"""
+    return pa.Table.from_pylist([{}, {}], schema=pa_schema)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def table_v1_with_null_partitioned(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     partition_cols = [
@@ -148,6 +160,77 @@ def table_v1_with_null_partitioned(session_catalog: Catalog, arrow_table_with_nu
         )
         tbl.append(arrow_table_with_null)
 
+        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_without_data_partitioned(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
+    partition_cols = [
+        'int',
+        'bool',
+        'string',
+        "string_long",
+        "long",
+        "float",
+        "double",
+        "date",
+        "timestamptz",
+        "timestamp",
+        "binary",
+    ]
+    for partition_col in partition_cols:
+        identifier = f"default.arrow_table_v1_without_data_partitioned_on_col_{partition_col}"
+
+        try:
+            session_catalog.drop_table(identifier=identifier)
+        except NoSuchTableError:
+            pass
+        nested_field = TABLE_SCHEMA.find_field(partition_col)
+        source_id = nested_field.field_id
+        tbl = session_catalog.create_table(
+            identifier=identifier,
+            schema=TABLE_SCHEMA,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
+            ),
+            properties={'format-version': '1'},
+        )
+        tbl.append(arrow_table_without_data)
+        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v1_with_only_nulls_partitioned(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
+    partition_cols = [
+        'int',
+        'bool',
+        'string',
+        "string_long",
+        "long",
+        "float",
+        "double",
+        "date",
+        "timestamptz",
+        "timestamp",
+        "binary",
+    ]
+    for partition_col in partition_cols:
+        identifier = f"default.arrow_table_v1_with_only_nulls_partitioned_on_col_{partition_col}"
+        try:
+            session_catalog.drop_table(identifier=identifier)
+        except NoSuchTableError:
+            pass
+        nested_field = TABLE_SCHEMA.find_field(partition_col)
+        source_id = nested_field.field_id
+        tbl = session_catalog.create_table(
+            identifier=identifier,
+            schema=TABLE_SCHEMA,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
+            ),
+            properties={'format-version': '1'},
+        )
+        tbl.append(arrow_table_with_only_nulls)
         assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
 
 
@@ -214,7 +297,6 @@ def table_v2_with_null_partitioned(session_catalog: Catalog, arrow_table_with_nu
             pass
         nested_field = TABLE_SCHEMA.find_field(partition_col)
         source_id = nested_field.field_id
-
         tbl = session_catalog.create_table(
             identifier=identifier,
             schema=TABLE_SCHEMA,
@@ -225,6 +307,42 @@ def table_v2_with_null_partitioned(session_catalog: Catalog, arrow_table_with_nu
         )
         tbl.append(arrow_table_with_null)
 
+        assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def table_v2_without_data_partitioned(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
+    partition_cols = [
+        'int',
+        'bool',
+        'string',
+        "string_long",
+        "long",
+        "float",
+        "double",
+        "date",
+        "timestamptz",
+        "timestamp",
+        "binary",
+    ]
+    for partition_col in partition_cols:
+        identifier = f"default.arrow_table_v2_without_data_partitioned_on_col_{partition_col}"
+
+        try:
+            session_catalog.drop_table(identifier=identifier)
+        except NoSuchTableError:
+            pass
+        nested_field = TABLE_SCHEMA.find_field(partition_col)
+        source_id = nested_field.field_id
+        tbl = session_catalog.create_table(
+            identifier=identifier,
+            schema=TABLE_SCHEMA,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
+            ),
+            properties={'format-version': '2'},
+        )
+        tbl.append(arrow_table_without_data)
         assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
 
@@ -320,9 +438,36 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
 def test_query_filter_null_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}"
     df = spark.table(identifier)
-    df.show(20, False)
+    assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in TEST_DATA_WITH_NULL.keys():
-        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz']
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_filter_without_data_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v{format_version}_without_data_partitioned_on_col_{part_col}"
+    df = spark.table(identifier)
+    for col in TEST_DATA_WITH_NULL.keys():
+        assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz']
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_query_filter_only_nulls_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
+    identifier = f"default.arrow_table_v1_with_only_nulls_partitioned_on_col_{part_col}"
+    df = spark.table(identifier)
+    for col in TEST_DATA_WITH_NULL.keys():
+        assert df.where(f"{col} is null").count() == 2, f"Expected 2 row for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
 
 
 @pytest.mark.integration
@@ -335,7 +480,8 @@ def test_query_filter_appended_null_partitioned(spark: SparkSession, part_col: s
     df = spark.table(identifier)
     for col in TEST_DATA_WITH_NULL.keys():
         df = spark.table(identifier)
-        assert df.where(f"{col} is not null").count() == 4, f"Expected 6 rows for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 4 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 2, f"Expected 2 null rows for {col}"
 
 
 @pytest.mark.integration
@@ -347,7 +493,8 @@ def test_query_filter_v1_v2_append_null(spark: SparkSession, part_col: str) -> N
     df = spark.table(identifier)
     for col in TEST_DATA_WITH_NULL.keys():
         df = spark.table(identifier)
-        assert df.where(f"{col} is not null").count() == 4, f"Expected 4 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 4 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 2, f"Expected 2 null rows for {col}"
 
 
 def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
