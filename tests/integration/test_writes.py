@@ -31,10 +31,12 @@ from pyarrow.fs import S3FileSystem
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
-from pyiceberg.catalog import Catalog, Properties, Table, load_catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
+from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,

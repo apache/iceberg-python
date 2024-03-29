@@ -54,7 +54,6 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     BoundTerm,
     BoundUnaryPredicate,
-    L,
     Not,
     Or,
     UnboundPredicate,
@@ -63,7 +62,7 @@ from pyiceberg.expressions.literals import Literal
 from pyiceberg.manifest import DataFile, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import EMPTY_DICT, StructProtocol
+from pyiceberg.typedef import EMPTY_DICT, L, StructProtocol
 from pyiceberg.types import (
     DoubleType,
     FloatType,
