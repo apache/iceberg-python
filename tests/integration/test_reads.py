@@ -230,7 +230,6 @@ def test_ray_nan_rewritten(catalog: Catalog) -> None:
 def test_ray_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan(row_filter=NotNaN("col_numeric"), selected_fields=("idx",)).to_ray()
-    print(ray_dataset.take())
     assert ray_dataset.count() == 2
 
 
