@@ -1146,6 +1146,40 @@ def test_serialize_commit_table_request() -> None:
     assert request == deserialized_request
 
 
+def test_partition_for_demo() -> None:
+    import pyarrow as pa
+
+    test_pa_schema = pa.schema([('year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_schema = Schema(
+        NestedField(field_id=1, name='year', field_type=StringType(), required=False),
+        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        schema_id=1,
+    )
+    test_data = {
+        'year': [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
+        'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+        'animal': ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
+    }
+    arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
+        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
+    )
+    result = partition(partition_spec, test_schema, arrow_table)
+    assert {table_partition.partition_key.partition for table_partition in result} == {
+        Record(n_legs_identity=2, year_identity=2020),
+        Record(n_legs_identity=100, year_identity=2021),
+        Record(n_legs_identity=4, year_identity=2021),
+        Record(n_legs_identity=4, year_identity=2022),
+        Record(n_legs_identity=2, year_identity=2022),
+        Record(n_legs_identity=5, year_identity=2019),
+    }
+    assert (
+        pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
+    )
+
+
 def test_identity_partition_on_multi_columns() -> None:
     import pyarrow as pa
 
@@ -1185,11 +1219,9 @@ def test_identity_partition_on_multi_columns() -> None:
         result = partition(partition_spec, test_schema, arrow_table)
 
         assert {table_partition.partition_key.partition for table_partition in result} == expected
-        assert (
-            pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows
-            == arrow_table.num_rows
-        )
-        assert pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).sort_by([
+        concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
+        assert concatenated_arrow_table.num_rows == arrow_table.num_rows
+        assert concatenated_arrow_table.sort_by([
             ('born_year', 'ascending'),
             ('n_legs', 'ascending'),
             ('animal', 'ascending'),
