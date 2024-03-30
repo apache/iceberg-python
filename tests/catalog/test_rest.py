@@ -277,23 +277,35 @@ def test_properties_sets_headers(requests_mock: Mocker) -> None:
     )
 
     catalog = RestCatalog(
-        "rest", uri=TEST_URI, warehouse="s3://some-bucket", **{"header.Content-Type": "application/vnd.api+json"}
+        "rest",
+        uri=TEST_URI,
+        warehouse="s3://some-bucket",
+        **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
     )
 
     assert (
-        catalog._session.headers.get("Content-type") == "application/vnd.api+json"
-    ), "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+        catalog._session.headers.get("Content-type") == "application/json"
+    ), "Expected 'Content-Type' default header not to be overwritten"
+    assert (
+        requests_mock.last_request.headers["Content-type"] == "application/json"
+    ), "Config request did not include expected 'Content-Type' header"
 
     assert (
-        requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json"
-    ), "Config request did not include expected 'Content-Type' header"
+        catalog._session.headers.get("Customized-Header") == "some/value"
+    ), "Expected 'Customized-Header' header to be 'some/value'"
+    assert (
+        requests_mock.last_request.headers["Customized-Header"] == "some/value"
+    ), "Config request did not include expected 'Customized-Header' header"
 
 
 def test_config_sets_headers(requests_mock: Mocker) -> None:
     namespace = "leden"
     requests_mock.get(
         f"{TEST_URI}v1/config",
-        json={"defaults": {"header.Content-Type": "application/vnd.api+json"}, "overrides": {}},
+        json={
+            "defaults": {"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
+            "overrides": {},
+        },
         status_code=200,
     )
     requests_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": [namespace], "properties": {}}, status_code=200)
@@ -301,11 +313,18 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     catalog.create_namespace(namespace)
 
     assert (
-        catalog._session.headers.get("Content-type") == "application/vnd.api+json"
-    ), "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+        catalog._session.headers.get("Content-type") == "application/json"
+    ), "Expected 'Content-Type' default header not to be overwritten"
     assert (
-        requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json"
+        requests_mock.last_request.headers["Content-type"] == "application/json"
     ), "Create namespace request did not include expected 'Content-Type' header"
+
+    assert (
+        catalog._session.headers.get("Customized-Header") == "some/value"
+    ), "Expected 'Customized-Header' header to be 'some/value'"
+    assert (
+        requests_mock.last_request.headers["Customized-Header"] == "some/value"
+    ), "Create namespace request did not include expected 'Customized-Header' header"
 
 
 def test_token_400(rest_mock: Mocker) -> None:

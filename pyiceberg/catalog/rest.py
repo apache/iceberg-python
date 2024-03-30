@@ -480,12 +480,12 @@ class RestCatalog(Catalog):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
 
     def _config_headers(self, session: Session) -> None:
+        header_properties = self._extract_headers_from_properties()
+        session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
-        header_properties = self._extract_headers_from_properties()
-        session.headers.update(header_properties)
 
     def _extract_headers_from_properties(self) -> Dict[str, str]:
         return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
