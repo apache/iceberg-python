@@ -47,7 +47,6 @@ from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
 import pyiceberg.expressions.parser as parser
-import pyiceberg.expressions.visitors as visitors
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysTrue,
@@ -55,6 +54,12 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     Reference,
+)
+from pyiceberg.expressions.visitors import (
+    _InclusiveMetricsEvaluator,
+    expression_evaluator,
+    inclusive_projection,
+    manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
@@ -1440,9 +1445,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
 
     if len(relevant_entries) > 0:
-        evaluator = visitors._InclusiveMetricsEvaluator(
-            POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path)
-        )
+        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -1466,7 +1469,7 @@ class DataScan(TableScan):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1475,7 +1478,7 @@ class DataScan(TableScan):
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table.specs()[spec_id]
@@ -1486,9 +1489,7 @@ class DataScan(TableScan):
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
-            data_file.partition
-        )
+        return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
     def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
@@ -1533,7 +1534,7 @@ class DataScan(TableScan):
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-        metrics_evaluator = visitors._InclusiveMetricsEvaluator(
+        metrics_evaluator = _InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
