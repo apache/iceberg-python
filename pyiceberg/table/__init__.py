@@ -145,7 +145,15 @@ TABLE_ROOT_ID = -1
 _JAVA_LONG_MAX = 9223372036854775807
 
 
-def _check_schema(table_schema: Schema, other_schema: "pa.Schema") -> None:
+def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") -> None:
+    """
+    Check if the `table_schema` is compatible with `other_schema`.
+
+    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+
+    Raises:
+        ValueError: If the schemas are not compatible.
+    """
     from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
 
     name_mapping = table_schema.name_mapping
@@ -206,6 +214,9 @@ class TableProperties:
     PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT = 1024 * 1024
 
     PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
+
+    WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
+    WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
 
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
@@ -1118,7 +1129,11 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        _check_schema(self.schema(), other_schema=df.schema)
+        _check_schema_compatible(self.schema(), other_schema=df.schema)
+        # cast if the two schemas are compatible but not equal
+        table_arrow_schema = self.schema().as_arrow()
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
@@ -1156,7 +1171,11 @@ class Table:
         if len(self.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        _check_schema(self.schema(), other_schema=df.schema)
+        _check_schema_compatible(self.schema(), other_schema=df.schema)
+        # cast if the two schemas are compatible but not equal
+        table_arrow_schema = self.schema().as_arrow()
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
@@ -2472,7 +2491,7 @@ def _add_and_move_fields(
 class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
-    df: pa.Table
+    record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
 
     # Later to be extended with partition information
@@ -2507,7 +2526,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.io.pyarrow import write_file
+    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
 
     if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
         raise ValueError("Cannot write to partitioned tables")
@@ -2515,9 +2534,19 @@ def _dataframe_to_data_files(
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
 
+    target_file_size = PropertyUtil.property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+    yield from write_file(
+        io=io,
+        table_metadata=table_metadata,
+        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, target_file_size)]),  # type: ignore
+    )
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
