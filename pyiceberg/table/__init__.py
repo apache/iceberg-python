@@ -1173,8 +1173,9 @@ class Table:
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if self.schema().as_arrow() != df.schema:
-            df = df.cast(self.schema().as_arrow())
+        table_arrow_schema = self.schema().as_arrow()
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
