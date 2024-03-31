@@ -480,7 +480,6 @@ def test_write_parquet_other_properties(
     properties: Dict[str, Any],
     expected_kwargs: Dict[str, Any],
 ) -> None:
-    print(type(mocker))
     identifier = "default.test_write_parquet_other_properties"
 
     # The properties we test cannot be checked on the resulting Parquet file, so we spy on the ParquetWriter call instead
