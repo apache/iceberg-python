@@ -52,7 +52,7 @@ from pyiceberg.io.pyarrow import (
     MetricsMode,
     PyArrowStatisticsCollector,
     compute_statistics_plan,
-    fill_parquet_file_metadata,
+    data_file_statistics_from_parquet_metadata,
     match_metrics_mode,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
@@ -81,7 +81,7 @@ class TestStruct:
     y: Optional[float]
 
 
-def construct_test_table() -> Tuple[Any, Any, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -172,7 +172,7 @@ def construct_test_table() -> Tuple[Any, Any, Union[TableMetadataV1, TableMetada
         with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
             writer.write_table(table)
 
-        return f.getvalue(), metadata_collector[0], table_metadata
+    return metadata_collector[0], table_metadata
 
 
 def get_current_schema(
@@ -182,48 +182,28 @@ def get_current_schema(
 
 
 def test_record_count() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
     assert datafile.record_count == 4
 
 
-def test_file_size() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
-
-    schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
-    )
-
-    assert datafile.file_size_in_bytes == len(file_bytes)
-
-
 def test_value_counts() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert datafile.value_counts[1] == 4
@@ -236,17 +216,15 @@ def test_value_counts() -> None:
 
 
 def test_column_sizes() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.column_sizes) == 7
     # these values are an artifact of how the write_table encodes the columns
@@ -258,17 +236,15 @@ def test_column_sizes() -> None:
 
 
 def test_null_and_nan_counts() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.null_value_counts) == 7
     assert datafile.null_value_counts[1] == 1
@@ -287,17 +263,15 @@ def test_null_and_nan_counts() -> None:
 
 
 def test_bounds() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.lower_bounds) == 2
     assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaa"
@@ -332,18 +306,16 @@ def test_metrics_mode_parsing() -> None:
 
 
 def test_metrics_mode_none() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "none"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 0
     assert len(datafile.null_value_counts) == 0
@@ -353,18 +325,16 @@ def test_metrics_mode_none() -> None:
 
 
 def test_metrics_mode_counts() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "counts"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -374,18 +344,16 @@ def test_metrics_mode_counts() -> None:
 
 
 def test_metrics_mode_full() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "full"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -401,18 +369,16 @@ def test_metrics_mode_full() -> None:
 
 
 def test_metrics_mode_non_default_trunc() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "truncate(2)"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -428,19 +394,17 @@ def test_metrics_mode_non_default_trunc() -> None:
 
 
 def test_column_metrics_mode() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "truncate(2)"
     table_metadata.properties["write.metadata.metrics.column.strings"] = "none"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 6
     assert len(datafile.null_value_counts) == 6
@@ -455,7 +419,7 @@ def test_column_metrics_mode() -> None:
     assert 1 not in datafile.upper_bounds
 
 
-def construct_test_table_primitive_types() -> Tuple[Any, Any, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -527,22 +491,20 @@ def construct_test_table_primitive_types() -> Tuple[Any, Any, Union[TableMetadat
         with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
             writer.write_table(table)
 
-        return f.getvalue(), metadata_collector[0], table_metadata
+    return metadata_collector[0], table_metadata
 
 
 def test_metrics_primitive_types() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table_primitive_types()
+    metadata, table_metadata = construct_test_table_primitive_types()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "truncate(2)"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 12
     assert len(datafile.null_value_counts) == 12
@@ -579,7 +541,7 @@ def test_metrics_primitive_types() -> None:
     assert datafile.upper_bounds[12] == b"wp"
 
 
-def construct_test_table_invalid_upper_bound() -> Tuple[Any, Any, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table_invalid_upper_bound() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -627,22 +589,20 @@ def construct_test_table_invalid_upper_bound() -> Tuple[Any, Any, Union[TableMet
         with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
             writer.write_table(table)
 
-        return f.getvalue(), metadata_collector[0], table_metadata
+    return metadata_collector[0], table_metadata
 
 
 def test_metrics_invalid_upper_bound() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table_invalid_upper_bound()
+    metadata, table_metadata = construct_test_table_invalid_upper_bound()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
     table_metadata.properties["write.metadata.metrics.default"] = "truncate(2)"
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 4
     assert len(datafile.null_value_counts) == 4
@@ -660,17 +620,15 @@ def test_metrics_invalid_upper_bound() -> None:
 
 
 def test_offsets() -> None:
-    (file_bytes, metadata, table_metadata) = construct_test_table()
+    metadata, table_metadata = construct_test_table()
 
     schema = get_current_schema(table_metadata)
-    datafile = DataFile()
-    fill_parquet_file_metadata(
-        datafile,
-        metadata,
-        len(file_bytes),
-        compute_statistics_plan(schema, table_metadata.properties),
-        parquet_path_to_id_mapping(schema),
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    datafile = DataFile(**statistics.to_serialized_dict())
 
     assert datafile.split_offsets is not None
     assert len(datafile.split_offsets) == 1

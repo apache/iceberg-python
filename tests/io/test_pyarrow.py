@@ -18,6 +18,7 @@
 
 import os
 import tempfile
+from datetime import date
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -27,8 +28,8 @@ import pyarrow.parquet as pq
 import pytest
 from pyarrow.fs import FileType, LocalFileSystem
 
-from pyiceberg.avro.resolver import ResolveError
 from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -52,15 +53,18 @@ from pyiceberg.expressions import (
     GreaterThan,
     Not,
     Or,
-    literal,
 )
+from pyiceberg.expressions.literals import literal
 from pyiceberg.io import InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PyArrowFile,
     PyArrowFileIO,
+    StatsAggregator,
     _ConvertToArrowSchema,
+    _primitive_to_physical,
     _read_deletes,
+    bin_pack_arrow_table,
     expression_to_pyarrow,
     project_table,
     schema_to_pyarrow,
@@ -68,7 +72,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, Table
+from pyiceberg.table import FileScanTask, Table, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
@@ -84,12 +88,33 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
     TimestampType,
     TimestamptzType,
     TimeType,
 )
+
+
+def test_pyarrow_infer_local_fs_from_path() -> None:
+    """Test path with `file` scheme and no scheme both use LocalFileSystem"""
+    assert isinstance(PyArrowFileIO().new_output("file://tmp/warehouse")._filesystem, LocalFileSystem)
+    assert isinstance(PyArrowFileIO().new_output("/tmp/warehouse")._filesystem, LocalFileSystem)
+
+
+def test_pyarrow_local_fs_can_create_path_without_parent_dir() -> None:
+    """Test LocalFileSystem can create path without first creating the parent directories"""
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        file_path = f"{tmpdirname}/foo/bar/baz.txt"
+        output_file = PyArrowFileIO().new_output(file_path)
+        parent_path = os.path.dirname(file_path)
+        assert output_file._filesystem.get_file_info(parent_path).type == FileType.NotFound
+        try:
+            with output_file.create() as f:
+                f.write(b"foo")
+        except Exception:
+            pytest.fail("Failed to write to file without parent directory")
 
 
 def test_pyarrow_input_file() -> None:
@@ -324,57 +349,57 @@ def test_schema_to_pyarrow_schema(table_schema_nested: Schema) -> None:
     actual = schema_to_pyarrow(table_schema_nested)
     expected = """foo: string
   -- field metadata --
-  field_id: '1'
+  PARQUET:field_id: '1'
 bar: int32 not null
   -- field metadata --
-  field_id: '2'
+  PARQUET:field_id: '2'
 baz: bool
   -- field metadata --
-  field_id: '3'
+  PARQUET:field_id: '3'
 qux: list<element: string not null> not null
   child 0, element: string not null
     -- field metadata --
-    field_id: '5'
+    PARQUET:field_id: '5'
   -- field metadata --
-  field_id: '4'
+  PARQUET:field_id: '4'
 quux: map<string, map<string, int32>> not null
   child 0, entries: struct<key: string not null, value: map<string, int32> not null> not null
       child 0, key: string not null
       -- field metadata --
-      field_id: '7'
+      PARQUET:field_id: '7'
       child 1, value: map<string, int32> not null
           child 0, entries: struct<key: string not null, value: int32 not null> not null
               child 0, key: string not null
           -- field metadata --
-          field_id: '9'
+          PARQUET:field_id: '9'
               child 1, value: int32 not null
           -- field metadata --
-          field_id: '10'
+          PARQUET:field_id: '10'
       -- field metadata --
-      field_id: '8'
+      PARQUET:field_id: '8'
   -- field metadata --
-  field_id: '6'
+  PARQUET:field_id: '6'
 location: list<element: struct<latitude: float, longitude: float> not null> not null
   child 0, element: struct<latitude: float, longitude: float> not null
       child 0, latitude: float
       -- field metadata --
-      field_id: '13'
+      PARQUET:field_id: '13'
       child 1, longitude: float
       -- field metadata --
-      field_id: '14'
+      PARQUET:field_id: '14'
     -- field metadata --
-    field_id: '12'
+    PARQUET:field_id: '12'
   -- field metadata --
-  field_id: '11'
+  PARQUET:field_id: '11'
 person: struct<name: string, age: int32 not null>
   child 0, name: string
     -- field metadata --
-    field_id: '16'
+    PARQUET:field_id: '16'
   child 1, age: int32 not null
     -- field metadata --
-    field_id: '17'
+    PARQUET:field_id: '17'
   -- field metadata --
-  field_id: '15'"""
+  PARQUET:field_id: '15'"""
     assert repr(actual) == expected
 
 
@@ -443,17 +468,15 @@ def test_string_type_to_pyarrow() -> None:
 
 def test_binary_type_to_pyarrow() -> None:
     iceberg_type = BinaryType()
-    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.binary()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
-    expected = pa.struct(
-        [
-            pa.field("foo", pa.string(), nullable=True, metadata={"field_id": "1"}),
-            pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
-            pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
-        ]
-    )
+    expected = pa.struct([
+        pa.field("foo", pa.string(), nullable=True, metadata={"field_id": "1"}),
+        pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
+        pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
+    ])
     assert visit(table_schema_simple.as_struct(), _ConvertToArrowSchema()) == expected
 
 
@@ -685,6 +708,24 @@ def schema_list_of_structs() -> Schema:
 
 
 @pytest.fixture
+def schema_map_of_structs() -> Schema:
+    return Schema(
+        NestedField(
+            5,
+            "locations",
+            MapType(
+                key_id=51,
+                value_id=52,
+                key_type=StringType(),
+                value_type=StructType(NestedField(511, "lat", DoubleType()), NestedField(512, "long", DoubleType())),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+
+
+@pytest.fixture
 def schema_map() -> Schema:
     return Schema(
         NestedField(
@@ -796,6 +837,25 @@ def file_list_of_structs(schema_list_of_structs: Schema, tmpdir: str) -> str:
 
 
 @pytest.fixture
+def file_map_of_structs(schema_map_of_structs: Schema, tmpdir: str) -> str:
+    pyarrow_schema = schema_to_pyarrow(
+        schema_map_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_map_of_structs.model_dump_json(), UTF8)}
+    )
+    return _write_table_to_file(
+        f"file:{tmpdir}/e.parquet",
+        pyarrow_schema,
+        pa.Table.from_pylist(
+            [
+                {"locations": {"1": {"lat": 52.371807, "long": 4.896029}, "2": {"lat": 52.387386, "long": 4.646219}}},
+                {"locations": {}},
+                {"locations": {"3": {"lat": 52.078663, "long": 4.288788}, "4": {"lat": 52.387386, "long": 4.646219}}},
+            ],
+            schema=pyarrow_schema,
+        ),
+    )
+
+
+@pytest.fixture
 def file_map(schema_map: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_map, metadata={ICEBERG_SCHEMA: bytes(schema_map.model_dump_json(), UTF8)})
     return _write_table_to_file(
@@ -890,22 +950,22 @@ def test_projection_add_column(file_int: str) -> None:
 list: list<element: int32>
   child 0, element: int32
     -- field metadata --
-    field_id: '21'
+    PARQUET:field_id: '21'
 map: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
       -- field metadata --
-      field_id: '31'
+      PARQUET:field_id: '31'
       child 1, value: string
       -- field metadata --
-      field_id: '32'
+      PARQUET:field_id: '32'
 location: struct<lat: double, lon: double>
   child 0, lat: double
     -- field metadata --
-    field_id: '41'
+    PARQUET:field_id: '41'
   child 1, lon: double
     -- field metadata --
-    field_id: '42'"""
+    PARQUET:field_id: '42'"""
     )
 
 
@@ -916,7 +976,11 @@ def test_read_list(schema_list: Schema, file_list: str) -> None:
     for actual, expected in zip(result_table.columns[0], [list(range(1, 10)), list(range(2, 20)), list(range(3, 30))]):
         assert actual.as_py() == expected
 
-    assert repr(result_table.schema) == "ids: list<item: int32>\n  child 0, item: int32"
+    assert (
+        repr(result_table.schema)
+        == """ids: list<element: int32>
+  child 0, element: int32"""
+    )
 
 
 def test_read_map(schema_map: Schema, file_map: str) -> None:
@@ -929,9 +993,9 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     assert (
         repr(result_table.schema)
         == """properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string> not null
+  child 0, entries: struct<key: string not null, value: string not null> not null
       child 0, key: string not null
-      child 1, value: string"""
+      child 1, value: string not null"""
     )
 
 
@@ -955,10 +1019,10 @@ def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
       -- field metadata --
-      field_id: '3'
+      PARQUET:field_id: '3'
       child 1, value: string
       -- field metadata --
-      field_id: '4'"""
+      PARQUET:field_id: '4'"""
     )
 
 
@@ -1006,7 +1070,7 @@ def test_projection_filter(schema_int: Schema, file_int: str) -> None:
         repr(result_table.schema)
         == """id: int32
   -- field metadata --
-  field_id: '1'"""
+  PARQUET:field_id: '1'"""
     )
 
 
@@ -1065,7 +1129,11 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
         assert actual.as_py() == {"lat": expected}
 
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "location: struct<lat: double not null> not null\n  child 0, lat: double not null"
+    assert (
+        repr(result_table.schema)
+        == """location: struct<lat: double not null> not null
+  child 0, lat: double not null"""
+    )
 
 
 def test_projection_nested_new_field(file_struct: str) -> None:
@@ -1084,7 +1152,11 @@ def test_projection_nested_new_field(file_struct: str) -> None:
     for actual, expected in zip(result_table.columns[0], [None, None, None]):
         assert actual.as_py() == {"null": expected}
     assert len(result_table.columns[0]) == 3
-    assert repr(result_table.schema) == "location: struct<null: double> not null\n  child 0, null: double"
+    assert (
+        repr(result_table.schema)
+        == """location: struct<null: double> not null
+  child 0, null: double"""
+    )
 
 
 def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> None:
@@ -1113,7 +1185,10 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
     assert len(result_table.columns[0]) == 3
     assert (
         repr(result_table.schema)
-        == "location: struct<lat: double, null: double, long: double> not null\n  child 0, lat: double\n  child 1, null: double\n  child 2, long: double"
+        == """location: struct<lat: double, null: double, long: double> not null
+  child 0, lat: double
+  child 1, null: double
+  child 2, long: double"""
     )
 
 
@@ -1138,28 +1213,75 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
     result_table = project(schema, [file_list_of_structs])
     assert len(result_table.columns) == 1
     assert len(result_table.columns[0]) == 3
+    results = [row.as_py() for row in result_table.columns[0]]
+    assert results == [
+        [
+            {'latitude': 52.371807, 'longitude': 4.896029, 'altitude': None},
+            {'latitude': 52.387386, 'longitude': 4.646219, 'altitude': None},
+        ],
+        [],
+        [
+            {'latitude': 52.078663, 'longitude': 4.288788, 'altitude': None},
+            {'latitude': 52.387386, 'longitude': 4.646219, 'altitude': None},
+        ],
+    ]
+    assert (
+        repr(result_table.schema)
+        == """locations: list<element: struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, element: struct<latitude: double not null, longitude: double not null, altitude: double>
+      child 0, latitude: double not null
+      child 1, longitude: double not null
+      child 2, altitude: double"""
+    )
+
+
+def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_structs: str) -> None:
+    schema = Schema(
+        NestedField(
+            5,
+            "locations",
+            MapType(
+                key_id=51,
+                value_id=52,
+                key_type=StringType(),
+                value_type=StructType(
+                    NestedField(511, "latitude", DoubleType()),
+                    NestedField(512, "longitude", DoubleType()),
+                    NestedField(513, "altitude", DoubleType(), required=False),
+                ),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+
+    result_table = project(schema, [file_map_of_structs])
+    assert len(result_table.columns) == 1
+    assert len(result_table.columns[0]) == 3
     for actual, expected in zip(
         result_table.columns[0],
         [
             [
-                {"latitude": 52.371807, "longitude": 4.896029, "altitude": None},
-                {"latitude": 52.387386, "longitude": 4.646219, "altitude": None},
+                ("1", {"latitude": 52.371807, "longitude": 4.896029, "altitude": None}),
+                ("2", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
             ],
             [],
             [
-                {"latitude": 52.078663, "longitude": 4.288788, "altitude": None},
-                {"latitude": 52.387386, "longitude": 4.646219, "altitude": None},
+                ("3", {"latitude": 52.078663, "longitude": 4.288788, "altitude": None}),
+                ("4", {"latitude": 52.387386, "longitude": 4.646219, "altitude": None}),
             ],
         ],
     ):
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
-        == """locations: list<item: struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, item: struct<latitude: double not null, longitude: double not null, altitude: double>
-      child 0, latitude: double not null
-      child 1, longitude: double not null
-      child 2, altitude: double"""
+        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
+      child 0, key: string not null
+      child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
+          child 0, latitude: double not null
+          child 1, longitude: double not null
+          child 2, altitude: double"""
     )
 
 
@@ -1184,10 +1306,10 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
         == """location: struct<lat: double, long: double>
   child 0, lat: double
     -- field metadata --
-    field_id: '41'
+    PARQUET:field_id: '41'
   child 1, long: double
     -- field metadata --
-    field_id: '42'"""
+    PARQUET:field_id: '42'"""
     )
 
 
@@ -1549,3 +1671,65 @@ def test_parse_location() -> None:
 def test_make_compatible_name() -> None:
     assert make_compatible_name("label/abc") == "label_x2Fabc"
     assert make_compatible_name("label?abc") == "label_x3Fabc"
+
+
+@pytest.mark.parametrize(
+    "vals, primitive_type, expected_result",
+    [
+        ([None, 2, 1], IntegerType(), 1),
+        ([1, None, 2], IntegerType(), 1),
+        ([None, None, None], IntegerType(), None),
+        ([None, date(2024, 2, 4), date(2024, 1, 2)], DateType(), date(2024, 1, 2)),
+        ([date(2024, 1, 2), None, date(2024, 2, 4)], DateType(), date(2024, 1, 2)),
+        ([None, None, None], DateType(), None),
+    ],
+)
+def test_stats_aggregator_update_min(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats.update_min(val)
+
+    assert stats.current_min == expected_result
+
+
+@pytest.mark.parametrize(
+    "vals, primitive_type, expected_result",
+    [
+        ([None, 2, 1], IntegerType(), 2),
+        ([1, None, 2], IntegerType(), 2),
+        ([None, None, None], IntegerType(), None),
+        ([None, date(2024, 2, 4), date(2024, 1, 2)], DateType(), date(2024, 2, 4)),
+        ([date(2024, 1, 2), None, date(2024, 2, 4)], DateType(), date(2024, 2, 4)),
+        ([None, None, None], DateType(), None),
+    ],
+)
+def test_stats_aggregator_update_max(vals: List[Any], primitive_type: PrimitiveType, expected_result: Any) -> None:
+    stats = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats.update_max(val)
+
+    assert stats.current_max == expected_result
+
+
+def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
+    # default packs to 1 bin since the table is small
+    bin_packed = bin_pack_arrow_table(
+        arrow_table_with_null, target_file_size=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    )
+    assert len(list(bin_packed)) == 1
+
+    # as long as table is smaller than default target size, it should pack to 1 bin
+    bigger_arrow_tbl = pa.concat_tables([arrow_table_with_null] * 10)
+    assert bigger_arrow_tbl.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT)
+    assert len(list(bin_packed)) == 1
+
+    # unless we override the target size to be smaller
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=arrow_table_with_null.nbytes)
+    assert len(list(bin_packed)) == 10
+
+    # and will produce half the number of files if we double the target size
+    bin_packed = bin_pack_arrow_table(bigger_arrow_tbl, target_file_size=arrow_table_with_null.nbytes * 2)
+    assert len(list(bin_packed)) == 5

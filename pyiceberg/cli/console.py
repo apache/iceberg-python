@@ -59,11 +59,22 @@ def catch_exception() -> Callable:  # type: ignore
 @click.option("--catalog")
 @click.option("--verbose", type=click.BOOL)
 @click.option("--output", type=click.Choice(["text", "json"]), default="text")
+@click.option("--ugi")
 @click.option("--uri")
 @click.option("--credential")
 @click.pass_context
-def run(ctx: Context, catalog: Optional[str], verbose: bool, output: str, uri: Optional[str], credential: Optional[str]) -> None:
+def run(
+    ctx: Context,
+    catalog: Optional[str],
+    verbose: bool,
+    output: str,
+    ugi: Optional[str],
+    uri: Optional[str],
+    credential: Optional[str],
+) -> None:
     properties = {}
+    if ugi:
+        properties["ugi"] = ugi
     if uri:
         properties["uri"] = uri
     if credential:
@@ -207,6 +218,23 @@ def version(ctx: Context) -> None:
 
 
 @run.group()
+def create() -> None:
+    """Operation to create a namespace."""
+
+
+@create.command()
+@click.argument("identifier")
+@click.pass_context
+@catch_exception()
+def namespace(ctx: Context, identifier: str) -> None:
+    """Create a namespace."""
+    catalog, output = _catalog_and_output(ctx)
+
+    catalog.create_namespace(identifier)
+    output.text(f"Created namespace: {identifier}")
+
+
+@run.group()
 def drop() -> None:
     """Operations to drop a namespace or table."""
 
@@ -223,11 +251,11 @@ def table(ctx: Context, identifier: str) -> None:  # noqa: F811
     output.text(f"Dropped table: {identifier}")
 
 
-@drop.command()
+@drop.command()  # type: ignore
 @click.argument("identifier")
 @click.pass_context
 @catch_exception()
-def namespace(ctx: Context, identifier: str) -> None:
+def namespace(ctx: Context, identifier: str) -> None:  # noqa: F811
     """Drop a namespace."""
     catalog, output = _catalog_and_output(ctx)
 

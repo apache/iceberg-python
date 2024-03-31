@@ -14,19 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import time
+from collections import defaultdict
 from enum import Enum
-from typing import (
-    Any,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-)
+from typing import Any, DefaultDict, Dict, List, Mapping, Optional
 
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel
 
 ADDED_DATA_FILES = 'added-data-files'
@@ -51,8 +49,8 @@ TOTAL_DATA_FILES = 'total-data-files'
 TOTAL_DELETE_FILES = 'total-delete-files'
 TOTAL_RECORDS = 'total-records'
 TOTAL_FILE_SIZE = 'total-files-size'
-
-
+CHANGED_PARTITION_COUNT_PROP = 'changed-partition-count'
+CHANGED_PARTITION_PREFIX = "partitions."
 OPERATION = "operation"
 
 
@@ -76,101 +74,7 @@ class Operation(Enum):
         return f"Operation.{self.name}"
 
 
-class Summary(IcebergBaseModel, Mapping[str, str]):
-    """A class that stores the summary information for a Snapshot.
-
-    The snapshot summary’s operation field is used by some operations,
-    like snapshot expiration, to skip processing certain snapshots.
-    """
-
-    operation: Operation = Field()
-    _additional_properties: Dict[str, str] = PrivateAttr()
-
-    def __init__(self, operation: Operation, **data: Any) -> None:
-        super().__init__(operation=operation, **data)
-        self._additional_properties = data
-
-    def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
-        """Return a key as it is a map."""
-        if __key.lower() == 'operation':
-            return self.operation
-        else:
-            return self._additional_properties.get(__key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        """Set a key as it is a map."""
-        if key.lower() == 'operation':
-            self.operation = value
-        else:
-            self._additional_properties[key] = value
-
-    def __len__(self) -> int:
-        """Return the number of keys in the summary."""
-        # Operation is required
-        return 1 + len(self._additional_properties)
-
-    @model_serializer
-    def ser_model(self) -> Dict[str, str]:
-        return {
-            "operation": str(self.operation.value),
-            **self._additional_properties,
-        }
-
-    @property
-    def additional_properties(self) -> Dict[str, str]:
-        return self._additional_properties
-
-    def __repr__(self) -> str:
-        """Return the string representation of the Summary class."""
-        repr_properties = f", **{repr(self._additional_properties)}" if self._additional_properties else ""
-        return f"Summary({repr(self.operation)}{repr_properties})"
-
-    def __eq__(self, other: Any) -> bool:
-        """Compare if the summary is equal to another summary."""
-        return (
-            self.operation == other.operation and self.additional_properties == other.additional_properties
-            if isinstance(other, Summary)
-            else False
-        )
-
-
-class Snapshot(IcebergBaseModel):
-    snapshot_id: int = Field(alias="snapshot-id")
-    parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
-    sequence_number: Optional[int] = Field(alias="sequence-number", default=None)
-    timestamp_ms: int = Field(alias="timestamp-ms")
-    manifest_list: Optional[str] = Field(
-        alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
-    )
-    summary: Optional[Summary] = Field(default=None)
-    schema_id: Optional[int] = Field(alias="schema-id", default=None)
-
-    def __str__(self) -> str:
-        """Return the string representation of the Snapshot class."""
-        operation = f"{self.summary.operation}: " if self.summary else ""
-        parent_id = f", parent_id={self.parent_snapshot_id}" if self.parent_snapshot_id else ""
-        schema_id = f", schema_id={self.schema_id}" if self.schema_id is not None else ""
-        result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
-        return result_str
-
-    def manifests(self, io: FileIO) -> List[ManifestFile]:
-        if self.manifest_list is not None:
-            file = io.new_input(self.manifest_list)
-            return list(read_manifest_list(file))
-        return []
-
-
-class MetadataLogEntry(IcebergBaseModel):
-    metadata_file: str = Field(alias="metadata-file")
-    timestamp_ms: int = Field(alias="timestamp-ms")
-
-
-class SnapshotLogEntry(IcebergBaseModel):
-    snapshot_id: int = Field(alias="snapshot-id")
-    timestamp_ms: int = Field(alias="timestamp-ms")
-
-
-class SnapshotSummaryCollector:
+class UpdateMetrics:
     added_file_size: int
     removed_file_size: int
     added_data_files: int
@@ -240,11 +144,7 @@ class SnapshotSummaryCollector:
         else:
             raise ValueError(f"Unknown data file content: {data_file.content}")
 
-    def build(self) -> Dict[str, str]:
-        def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
-            if num > 0:
-                properties[property_name] = str(num)
-
+    def to_dict(self) -> Dict[str, str]:
         properties: Dict[str, str] = {}
         set_when_positive(properties, self.added_file_size, ADDED_FILE_SIZE)
         set_when_positive(properties, self.removed_file_size, REMOVED_FILE_SIZE)
@@ -262,8 +162,150 @@ class SnapshotSummaryCollector:
         set_when_positive(properties, self.removed_pos_deletes, REMOVED_POSITION_DELETES)
         set_when_positive(properties, self.added_eq_deletes, ADDED_EQUALITY_DELETES)
         set_when_positive(properties, self.removed_eq_deletes, REMOVED_EQUALITY_DELETES)
+        return properties
+
+
+class Summary(IcebergBaseModel, Mapping[str, str]):
+    """A class that stores the summary information for a Snapshot.
+
+    The snapshot summary’s operation field is used by some operations,
+    like snapshot expiration, to skip processing certain snapshots.
+    """
+
+    operation: Operation = Field()
+    _additional_properties: Dict[str, str] = PrivateAttr()
+
+    def __init__(self, operation: Operation, **data: Any) -> None:
+        super().__init__(operation=operation, **data)
+        self._additional_properties = data
+
+    def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
+        """Return a key as it is a map."""
+        if __key.lower() == 'operation':
+            return self.operation
+        else:
+            return self._additional_properties.get(__key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Set a key as it is a map."""
+        if key.lower() == 'operation':
+            self.operation = value
+        else:
+            self._additional_properties[key] = value
+
+    def __len__(self) -> int:
+        """Return the number of keys in the summary."""
+        # Operation is required
+        return 1 + len(self._additional_properties)
+
+    @model_serializer
+    def ser_model(self) -> Dict[str, str]:
+        return {
+            "operation": str(self.operation.value),
+            **self._additional_properties,
+        }
+
+    @property
+    def additional_properties(self) -> Dict[str, str]:
+        return self._additional_properties
+
+    def __repr__(self) -> str:
+        """Return the string representation of the Summary class."""
+        repr_properties = f", **{repr(self._additional_properties)}" if self._additional_properties else ""
+        return f"Summary({repr(self.operation)}{repr_properties})"
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare if the summary is equal to another summary."""
+        return (
+            self.operation == other.operation and self.additional_properties == other.additional_properties
+            if isinstance(other, Summary)
+            else False
+        )
+
+
+class Snapshot(IcebergBaseModel):
+    snapshot_id: int = Field(alias="snapshot-id")
+    parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
+    sequence_number: Optional[int] = Field(alias="sequence-number", default=None)
+    timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
+    manifest_list: Optional[str] = Field(
+        alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
+    )
+    summary: Optional[Summary] = Field(default=None)
+    schema_id: Optional[int] = Field(alias="schema-id", default=None)
+
+    def __str__(self) -> str:
+        """Return the string representation of the Snapshot class."""
+        operation = f"{self.summary.operation}: " if self.summary else ""
+        parent_id = f", parent_id={self.parent_snapshot_id}" if self.parent_snapshot_id else ""
+        schema_id = f", schema_id={self.schema_id}" if self.schema_id is not None else ""
+        result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
+        return result_str
+
+    def manifests(self, io: FileIO) -> List[ManifestFile]:
+        if self.manifest_list is not None:
+            file = io.new_input(self.manifest_list)
+            return list(read_manifest_list(file))
+        return []
+
+
+class MetadataLogEntry(IcebergBaseModel):
+    metadata_file: str = Field(alias="metadata-file")
+    timestamp_ms: int = Field(alias="timestamp-ms")
+
+
+class SnapshotLogEntry(IcebergBaseModel):
+    snapshot_id: int = Field(alias="snapshot-id")
+    timestamp_ms: int = Field(alias="timestamp-ms")
+
+
+class SnapshotSummaryCollector:
+    metrics: UpdateMetrics
+    partition_metrics: DefaultDict[str, UpdateMetrics]
+    max_changed_partitions_for_summaries: int
+
+    def __init__(self) -> None:
+        self.metrics = UpdateMetrics()
+        self.partition_metrics = defaultdict(UpdateMetrics)
+        self.max_changed_partitions_for_summaries = 0
+
+    def set_partition_summary_limit(self, limit: int) -> None:
+        self.max_changed_partitions_for_summaries = limit
+
+    def add_file(self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC) -> None:
+        self.metrics.add_file(data_file)
+        if len(data_file.partition.record_fields()) != 0:
+            self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=True, schema=schema)
+
+    def remove_file(
+        self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC
+    ) -> None:
+        self.metrics.remove_file(data_file)
+        if len(data_file.partition.record_fields()) != 0:
+            self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=False, schema=schema)
+
+    def update_partition_metrics(self, partition_spec: PartitionSpec, file: DataFile, is_add_file: bool, schema: Schema) -> None:
+        partition_path = partition_spec.partition_to_path(file.partition, schema)
+        partition_metrics: UpdateMetrics = self.partition_metrics[partition_path]
+
+        if is_add_file:
+            partition_metrics.add_file(file)
+        else:
+            partition_metrics.remove_file(file)
+
+    def build(self) -> Dict[str, str]:
+        properties = self.metrics.to_dict()
+        changed_partitions_size = len(self.partition_metrics)
+        set_when_positive(properties, changed_partitions_size, CHANGED_PARTITION_COUNT_PROP)
+        if changed_partitions_size <= self.max_changed_partitions_for_summaries:
+            for partition_path, update_metrics_partition in self.partition_metrics.items():
+                if (summary := self._partition_summary(update_metrics_partition)) and len(summary) != 0:
+                    properties[CHANGED_PARTITION_PREFIX + partition_path] = summary
 
         return properties
+
+    def _partition_summary(self, update_metrics: UpdateMetrics) -> str:
+        return ",".join([f"{prop}={val}" for prop, val in update_metrics.to_dict().items()])
 
 
 def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str]) -> Summary:
@@ -277,23 +319,30 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
     }:
         summary[prop] = '0'
 
-    if value := previous_summary.get(TOTAL_DATA_FILES):
-        summary[DELETED_DATA_FILES] = value
-    if value := previous_summary.get(TOTAL_DELETE_FILES):
-        summary[REMOVED_DELETE_FILES] = value
-    if value := previous_summary.get(TOTAL_RECORDS):
-        summary[DELETED_RECORDS] = value
-    if value := previous_summary.get(TOTAL_FILE_SIZE):
-        summary[REMOVED_FILE_SIZE] = value
-    if value := previous_summary.get(TOTAL_POSITION_DELETES):
-        summary[REMOVED_POSITION_DELETES] = value
-    if value := previous_summary.get(TOTAL_EQUALITY_DELETES):
-        summary[REMOVED_EQUALITY_DELETES] = value
+    def get_prop(prop: str) -> int:
+        value = previous_summary.get(prop) or '0'
+        try:
+            return int(value)
+        except ValueError as e:
+            raise ValueError(f"Could not parse summary property {prop} to an int: {value}") from e
+
+    if value := get_prop(TOTAL_DATA_FILES):
+        summary[DELETED_DATA_FILES] = str(value)
+    if value := get_prop(TOTAL_DELETE_FILES):
+        summary[REMOVED_DELETE_FILES] = str(value)
+    if value := get_prop(TOTAL_RECORDS):
+        summary[DELETED_RECORDS] = str(value)
+    if value := get_prop(TOTAL_FILE_SIZE):
+        summary[REMOVED_FILE_SIZE] = str(value)
+    if value := get_prop(TOTAL_POSITION_DELETES):
+        summary[REMOVED_POSITION_DELETES] = str(value)
+    if value := get_prop(TOTAL_EQUALITY_DELETES):
+        summary[REMOVED_EQUALITY_DELETES] = str(value)
 
     return summary
 
 
-def _update_snapshot_summaries(
+def update_snapshot_summaries(
     summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
     if summary.operation not in {Operation.APPEND, Operation.OVERWRITE}:
@@ -358,3 +407,8 @@ def _update_snapshot_summaries(
     )
 
     return summary
+
+
+def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
+    if num > 0:
+        properties[property_name] = str(num)

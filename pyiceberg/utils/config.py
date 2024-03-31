@@ -16,6 +16,7 @@
 # under the License.
 import logging
 import os
+from distutils.util import strtobool
 from typing import List, Optional
 
 import strictyaml
@@ -125,8 +126,8 @@ class Config:
             env_var_lower = env_var.lower()
             if env_var_lower.startswith(PYICEBERG.lower()):
                 key = env_var_lower[len(PYICEBERG) :]
-                parts = key.split("__")
-                parts_normalized = [part.replace("_", "-") for part in parts]
+                parts = key.split("__", maxsplit=2)
+                parts_normalized = [part.replace('__', '.').replace("_", "-") for part in parts]
                 set_property(config, parts_normalized, config_value)
 
         return config
@@ -153,4 +154,20 @@ class Config:
                 catalog_conf = catalogs[catalog_name_lower]
                 assert isinstance(catalog_conf, dict), f"Configuration path catalogs.{catalog_name_lower} needs to be an object"
                 return catalog_conf
+        return None
+
+    def get_int(self, key: str) -> Optional[int]:
+        if (val := self.config.get(key)) is not None:
+            try:
+                return int(val)  # type: ignore
+            except ValueError as err:
+                raise ValueError(f"{key} should be an integer or left unset. Current value: {val}") from err
+        return None
+
+    def get_bool(self, key: str) -> Optional[bool]:
+        if (val := self.config.get(key)) is not None:
+            try:
+                return strtobool(val)  # type: ignore
+            except ValueError as err:
+                raise ValueError(f"{key} should be a boolean or left unset. Current value: {val}") from err
         return None

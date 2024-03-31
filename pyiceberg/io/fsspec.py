@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 """FileIO implementation for reading and writing table files that uses fsspec compatible filesystems."""
+
 import errno
 import json
 import logging
@@ -98,7 +99,7 @@ SIGNERS: Dict[str, Callable[[Properties, AWSRequest], AWSRequest]] = {"S3V4RestS
 
 
 def _file(_: Properties) -> LocalFileSystem:
-    return LocalFileSystem()
+    return LocalFileSystem(auto_mkdir=True)
 
 
 def _s3(properties: Properties) -> AbstractFileSystem:
@@ -129,7 +130,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         config_kwargs["proxies"] = {"http": proxy_uri, "https": proxy_uri}
 
     if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
-        config_kwargs["connect_timeout"] = connect_timeout
+        config_kwargs["connect_timeout"] = float(connect_timeout)
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
@@ -172,6 +173,7 @@ def _adlfs(properties: Properties) -> AbstractFileSystem:
 
 
 SCHEME_TO_FS = {
+    "": _file,
     "file": _file,
     "s3": _s3,
     "s3a": _s3,

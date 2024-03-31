@@ -29,7 +29,6 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromByteStream
-from pyiceberg.table import SortOrder
 from pyiceberg.table.metadata import (
     TableMetadataUtil,
     TableMetadataV1,
@@ -37,7 +36,7 @@ from pyiceberg.table.metadata import (
     new_table_metadata,
 )
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
-from pyiceberg.table.sorting import NullOrder, SortDirection, SortField
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
@@ -120,7 +119,6 @@ def test_v1_metadata_parsing_directly(example_table_metadata_v1: Dict[str, Any])
             NestedField(field_id=1, name="x", field_type=LongType(), required=True),
             NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
             NestedField(field_id=3, name="z", field_type=LongType(), required=True),
-            schema_id=0,
             identifier_field_ids=[],
         )
     ]
@@ -197,6 +195,76 @@ def test_migrate_v1_partition_specs(example_table_metadata_v1: Dict[str, Any]) -
     assert table_metadata.partition_specs == [
         PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x")),
     ]
+
+
+def test_new_table_metadata_with_explicit_v1_format() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=33, name="baz", field_type=BooleanType(), required=False),
+        schema_id=10,
+        identifier_field_ids=[22],
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=22, field_id=1022, transform=IdentityTransform(), name="bar"), spec_id=10
+    )
+
+    sort_order = SortOrder(
+        SortField(source_id=10, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=10,
+    )
+
+    actual = new_table_metadata(
+        schema=schema,
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+        location="s3://some_v1_location/",
+        properties={'format-version': "1"},
+    )
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[2],
+    )
+
+    expected_spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bar"))
+
+    expected_sort_order = SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
+    )
+
+    expected = TableMetadataV1(
+        location="s3://some_v1_location/",
+        table_uuid=actual.table_uuid,
+        last_updated_ms=actual.last_updated_ms,
+        last_column_id=3,
+        schemas=[expected_schema],
+        schema_=expected_schema,
+        current_schema_id=0,
+        partition_spec=[field.model_dump() for field in expected_spec.fields],
+        partition_specs=[expected_spec],
+        default_spec_id=0,
+        last_partition_id=1000,
+        properties={},
+        current_snapshot_id=None,
+        snapshots=[],
+        snapshot_log=[],
+        metadata_log=[],
+        sort_orders=[expected_sort_order],
+        default_sort_order_id=1,
+        refs={},
+        format_version=1,
+    )
+
+    assert actual.model_dump() == expected.model_dump()
+    assert actual.schemas == [expected_schema]
+    assert actual.partition_specs == [expected_spec]
+    assert actual.sort_orders == [expected_sort_order]
 
 
 def test_invalid_format_version(example_table_metadata_v1: Dict[str, Any]) -> None:

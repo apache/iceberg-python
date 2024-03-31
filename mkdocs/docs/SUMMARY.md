@@ -17,15 +17,19 @@
 
 <!-- prettier-ignore-start -->
 
-- [Home](index.md)
+<!-- markdown-link-check-disable -->
+
+- [Getting started](index.md)
 - [Configuration](configuration.md)
 - [CLI](cli.md)
 - [API](api.md)
 - [Contributing](contributing.md)
-- [Feature support](feature-support.md)
+- [Community](community.md)
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
 - [Code Reference](reference/)
+
+<!-- markdown-link-check-enable-->
 
 <!-- prettier-ignore-end -->

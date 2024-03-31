@@ -146,6 +146,25 @@ catalog.create_table(
 )
 ```
 
+To create a table using a pyarrow schema:
+
+```python
+import pyarrow as pa
+
+schema = pa.schema(
+    [
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ]
+)
+
+catalog.create_table(
+    identifier="docs_example.bids",
+    schema=schema,
+)
+```
+
 ## Load a table
 
 ### Catalog table
@@ -175,6 +194,195 @@ static_table = StaticTable.from_metadata(
 
 The static-table is considered read-only.
 
+## Check if a table exists
+
+To check whether the `bids` table exists:
+
+```python
+catalog.table_exists("docs_example.bids")
+```
+
+Returns `True` if the table already exists.
+
+## Write support
+
+With PyIceberg 0.6.0 write support is added through Arrow. Let's consider an Arrow Table:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+```
+
+Next, create a table based on the schema:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+Now write the data to the table:
+
+<!-- prettier-ignore-start -->
+
+!!! note inline end "Fast append"
+    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) to minimize the amount of data written. This enables quick writes, reducing the possibility of conflicts. The downside of the fast append is that it creates more metadata than a normal commit. [Compaction is planned](https://github.com/apache/iceberg-python/issues/270) and will automatically rewrite all the metadata when a threshold is hit, to maintain performant reads.
+
+<!-- prettier-ignore-end -->
+
+```python
+tbl.append(df)
+
+# or
+
+tbl.overwrite(df)
+```
+
+The data is written to the table, and when the table is read using `tbl.scan().to_arrow()`:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten","Paris"]]
+lat: [[52.371807,37.773972,53.11254,48.864716]]
+long: [[4.896029,-122.431297,6.0989,2.349014]]
+```
+
+You both can use `append(df)` or `overwrite(df)` since there is no data yet. If we want to add more data, we can use `.append()` again:
+
+```python
+df = pa.Table.from_pylist(
+    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}],
+)
+
+tbl.append(df)
+```
+
+When reading the table `tbl.scan().to_arrow()` you can see that `Groningen` is now also part of the table:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten","Paris"],["Groningen"]]
+lat: [[52.371807,37.773972,53.11254,48.864716],[53.21917]]
+long: [[4.896029,-122.431297,6.0989,2.349014],[6.56667]]
+```
+
+The nested lists indicate the different Arrow buffers, where the first write results into a buffer, and the second append in a separate buffer. This is expected since it will read two parquet files.
+
+To avoid any type errors during writing, you can enforce the PyArrow table types using the Iceberg table schema:
+
+```python
+from pyiceberg.catalog import load_catalog
+import pyarrow as pa
+
+catalog = load_catalog("default")
+table = catalog.load_table("default.cities")
+schema = table.schema().as_arrow()
+
+df = pa.Table.from_pylist(
+    [{"city": "Groningen", "lat": 53.21917, "long": 6.56667}], schema=schema
+)
+
+table.append(df)
+```
+
+<!-- prettier-ignore-start -->
+
+!!! example "Under development"
+    Writing using PyIceberg is still under development. Support for [partial overwrites](https://github.com/apache/iceberg-python/issues/268) and writing to [partitioned tables](https://github.com/apache/iceberg-python/issues/208) is planned and being worked on.
+
+<!-- prettier-ignore-end -->
+
+## Inspecting tables
+
+To explore the table metadata, tables can be inspected.
+
+### Snapshots
+
+Inspect the snapshots of the table:
+
+```python
+table.inspect.snapshots()
+```
+
+```
+pyarrow.Table
+committed_at: timestamp[ms] not null
+snapshot_id: int64 not null
+parent_id: int64
+operation: string
+manifest_list: string not null
+summary: map<string, string>
+  child 0, entries: struct<key: string not null, value: string> not null
+      child 0, key: string not null
+      child 1, value: string
+----
+committed_at: [[2024-03-15 15:01:25.682,2024-03-15 15:01:25.730,2024-03-15 15:01:25.772]]
+snapshot_id: [[805611270568163028,3679426539959220963,5588071473139865870]]
+parent_id: [[null,805611270568163028,3679426539959220963]]
+operation: [["append","overwrite","append"]]
+manifest_list: [["s3://warehouse/default/table_metadata_snapshots/metadata/snap-805611270568163028-0-43637daf-ea4b-4ceb-b096-a60c25481eb5.avro","s3://warehouse/default/table_metadata_snapshots/metadata/snap-3679426539959220963-0-8be81019-adf1-4bb6-a127-e15217bd50b3.avro","s3://warehouse/default/table_metadata_snapshots/metadata/snap-5588071473139865870-0-1382dd7e-5fbc-4c51-9776-a832d7d0984e.avro"]]
+summary: [[keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","1","0","3","5459","0","0"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-records",...,"total-equality-deletes","total-files-size","deleted-data-files","deleted-records","removed-files-size"]values:["5459","1","3","1","3",...,"0","5459","1","3","5459"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","2","0","6","10918","0","0"]]]
+```
+
+### Add Files
+
+Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
+
+```
+# Given that these parquet files have schema consistent with the Iceberg table
+
+file_paths = [
+    "s3a://warehouse/default/existing-1.parquet",
+    "s3a://warehouse/default/existing-2.parquet",
+]
+
+# They can be added to the table without rewriting them
+
+tbl.add_files(file_paths=file_paths)
+
+# A new snapshot is committed to the table with manifests pointing to the existing parquet files
+```
+
+<!-- prettier-ignore-start -->
+
+!!! note "Name Mapping"
+    Because `add_files` uses existing files without writing new parquet files that are aware of the Iceberg's schema, it requires the Iceberg's table to have a [Name Mapping](https://iceberg.apache.org/spec/?h=name+mapping#name-mapping-serialization) (The Name mapping maps the field names within the parquet files to the Iceberg field IDs). Hence, `add_files` requires that there are no field IDs in the parquet file's metadata, and creates a new Name Mapping based on the table's current schema if the table doesn't already have one.
+
+!!! note "Partitions"
+    `add_files` only requires the client to read the existing parquet files' metadata footer to infer the partition value of each file. This implementation also supports adding files to Iceberg tables with partition transforms like `MonthTransform`, and `TruncateTransform` which preserve the order of the values after the transformation (Any Transform that has the `preserves_order` property set to True is supported). Please note that if the column statistics of the `PartitionField`'s source column are not present in the parquet metadata, the partition value is inferred as `None`.
+
+!!! warning "Maintenance Operations"
+    Because `add_files` commits the existing parquet files to the Iceberg Table as any other data file, destructive maintenance operations like expiring snapshots will remove them.
+
+<!-- prettier-ignore-end -->
+
 ## Schema evolution
 
 PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).
@@ -193,6 +401,47 @@ with table.transaction() as transaction:
     with transaction.update_schema() as update_schema:
         update.add_column("some_other_field", IntegerType(), "doc")
     # ... Update properties etc
+```
+
+### Union by Name
+
+Using `.union_by_name()` you can merge another schema into an existing schema without having to worry about field-IDs:
+
+```python
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType, LongType
+
+catalog = load_catalog()
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+table = catalog.create_table("default.locations", schema)
+
+new_schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+    NestedField(10, "population", LongType(), required=False),
+)
+
+with table.update_schema() as update:
+    update.union_by_name(new_schema)
+```
+
+Now the table has the union of the two schemas `print(table.schema())`:
+
+```
+table {
+  1: city: optional string
+  2: lat: optional double
+  3: long: optional double
+  4: population: optional long
+}
 ```
 
 ### Add column
@@ -260,6 +509,63 @@ with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
 ```
 
+## Partition evolution
+
+PyIceberg supports partition evolution. See the [partition evolution](https://iceberg.apache.org/spec/#partition-evolution)
+for more details.
+
+The API to use when evolving partitions is the `update_spec` API on the table.
+
+```python
+with table.update_spec() as update:
+    update.add_field("id", BucketTransform(16), "bucketed_id")
+    update.add_field("event_ts", DayTransform(), "day_ts")
+```
+
+Updating the partition spec can also be done as part of a transaction with other operations.
+
+```python
+with table.transaction() as transaction:
+    with transaction.update_spec() as update_spec:
+        update_spec.add_field("id", BucketTransform(16), "bucketed_id")
+        update_spec.add_field("event_ts", DayTransform(), "day_ts")
+    # ... Update properties etc
+```
+
+### Add fields
+
+New partition fields can be added via the `add_field` API which takes in the field name to partition on,
+the partition transform, and an optional partition name. If the partition name is not specified,
+one will be created.
+
+```python
+with table.update_spec() as update:
+    update.add_field("id", BucketTransform(16), "bucketed_id")
+    update.add_field("event_ts", DayTransform(), "day_ts")
+    # identity is a shortcut API for adding an IdentityTransform
+    update.identity("some_field")
+```
+
+### Remove fields
+
+Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
+
+```python
+with table.update_spec() as update:some_partition_name
+    # Remove the partition field with the name
+    update.remove_field("some_partition_name")
+```
+
+### Rename fields
+
+Partition fields can also be renamed via the `rename_field` API.
+
+```python
+with table.update_spec() as update:
+    # Rename the partition field with the name bucketed_id to sharded_id
+    update.rename_field("bucketed_id", "sharded_id")
+```
+
 ## Table properties
 
 Set and remove properties through the `Transaction` API:
@@ -286,6 +592,20 @@ assert table.properties == {"abc": "def"}
 table = table.transaction().remove_properties("abc").commit_transaction()
 
 assert table.properties == {}
+```
+
+## Snapshot properties
+
+Optionally, Snapshot properties can be set while writing to a table using `append` or `overwrite` API:
+
+```python
+tbl.append(df, snapshot_properties={"abc": "def"})
+
+# or
+
+tbl.overwrite(df, snapshot_properties={"abc": "def"})
+
+assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
 ## Query the data
@@ -477,4 +797,57 @@ print(ray_dataset.take(2))
         "tpep_dropoff_datetime": datetime.datetime(2009, 1, 1, 16, 10, 18),
     },
 ]
+```
+
+### Daft
+
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/latest/user_guide/integrations/iceberg.html)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [Daft to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+A table can be read easily into a Daft Dataframe:
+
+```python
+df = table.to_daft()  # equivalent to `daft.read_iceberg(table)`
+df = df.where(df["trip_distance"] >= 10.0)
+df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
+```
+
+This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(No data to display: Dataframe not materialized)
+```
+
+We can execute the Dataframe to preview the first few rows of the query with `df.show()`.
+
+This is correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
+
+```python
+df.show(2)
+```
+
+```
+╭──────────┬───────────────────────────────┬───────────────────────────────╮
+│ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
+│ ---      ┆ ---                           ┆ ---                           │
+│ Int64    ┆ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+╞══════════╪═══════════════════════════════╪═══════════════════════════════╡
+│ 2        ┆ 2008-12-31T23:23:50.000000    ┆ 2009-01-01T00:34:31.000000    │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2        ┆ 2008-12-31T23:05:03.000000    ┆ 2009-01-01T16:10:18.000000    │
+╰──────────┴───────────────────────────────┴───────────────────────────────╯
+
+(Showing first 2 rows)
 ```

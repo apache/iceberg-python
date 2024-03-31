@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=W0621
 """Avro reader for reading Avro files."""
+
 from __future__ import annotations
 
 import io
@@ -34,7 +35,8 @@ from typing import (
     TypeVar,
 )
 
-from pyiceberg.avro.codecs import KNOWN_CODECS, Codec
+from pyiceberg.avro.codecs import KNOWN_CODECS
+from pyiceberg.avro.codecs.codec import Codec
 from pyiceberg.avro.decoder import BinaryDecoder, new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.reader import Reader
@@ -193,8 +195,7 @@ class AvroFile(Generic[D]):
                 raise ValueError(f"Expected sync bytes {self.header.sync!r}, but got {sync_marker!r}")
         block_records = self.decoder.read_int()
 
-        block_bytes_len = self.decoder.read_int()
-        block_bytes = self.decoder.read(block_bytes_len)
+        block_bytes = self.decoder.read_bytes()
         if codec := self.header.compression_codec():
             block_bytes = codec.decompress(block_bytes)
 
