@@ -1056,8 +1056,9 @@ class Table:
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if schema_to_pyarrow(self.schema()) != df.schema:
-            df = df.cast(schema_to_pyarrow(self.schema()))
+        table_arrow_schema = schema_to_pyarrow(self.schema())
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         merge = _MergingSnapshotProducer(operation=Operation.APPEND, table=self)
 
@@ -1096,8 +1097,9 @@ class Table:
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if schema_to_pyarrow(self.schema()) != df.schema:
-            df = df.cast(schema_to_pyarrow(self.schema()))
+        table_arrow_schema = schema_to_pyarrow(self.schema())
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         merge = _MergingSnapshotProducer(
             operation=Operation.OVERWRITE if self.current_snapshot() is not None else Operation.APPEND,
