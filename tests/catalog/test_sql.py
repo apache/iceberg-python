@@ -197,7 +197,7 @@ def test_create_table_with_pyarrow_schema(
     'catalog',
     [
         lazy_fixture('catalog_memory'),
-        # lazy_fixture('catalog_sqlite'),
+        lazy_fixture('catalog_sqlite'),
     ],
 )
 def test_write_pyarrow_schema(catalog: SqlCatalog, random_identifier: Identifier) -> None:
