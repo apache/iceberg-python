@@ -37,7 +37,7 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, version_number
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -704,7 +704,7 @@ class ManifestWriter(ABC):
 
     @property
     @abstractmethod
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> version_number:
         ...
 
     def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
@@ -794,7 +794,7 @@ class ManifestWriterV1(ManifestWriter):
         return ManifestContent.DATA
 
     @property
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> version_number:
         return 1
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
@@ -821,7 +821,7 @@ class ManifestWriterV2(ManifestWriter):
         return ManifestContent.DATA
 
     @property
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> version_number:
         return 2
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
