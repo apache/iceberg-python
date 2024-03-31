@@ -302,7 +302,7 @@ def _(partition_field_type: PrimitiveType) -> PrimitiveType:
     return partition_field_type
 
 
-def data_file_with_partition(partition_type: StructType, format_version: Literal[1, 2]) -> StructType:
+def data_file_with_partition(partition_type: StructType, format_version: version_number) -> StructType:
     data_file_partition_type = StructType(*[
         NestedField(
             field_id=field.field_id,
@@ -372,7 +372,7 @@ class DataFile(Record):
             value = FileFormat[value]
         super().__setattr__(name, value)
 
-    def __init__(self, format_version: Literal[1, 2] = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
+    def __init__(self, format_version: version_number = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
         super().__init__(
             *data,
             **{"struct": DATA_FILE_TYPE[format_version], **named_data},
@@ -408,7 +408,7 @@ MANIFEST_ENTRY_SCHEMAS = {
 MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_version, schema in MANIFEST_ENTRY_SCHEMAS.items()}
 
 
-def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_file: StructType) -> Schema:
+def manifest_entry_schema_with_data_file(format_version: version_number, data_file: StructType) -> Schema:
     return Schema(*[
         NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
         for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
@@ -719,9 +719,9 @@ class ManifestWriter(ABC):
 
     @property
     @abstractmethod
-    def version(self) -> version_number:
-        ...
-    def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
+    def version(self) -> version_number: ...
+
+    def _with_partition(self, format_version: version_number) -> Schema:
         data_file_type = data_file_with_partition(
             format_version=format_version, partition_type=self._spec.partition_type(self._schema)
         )
@@ -847,7 +847,7 @@ class ManifestWriterV2(ManifestWriter):
 
 
 def write_manifest(
-    format_version: Literal[1, 2], spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
+    format_version: version_number, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
 ) -> ManifestWriter:
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id)
@@ -858,14 +858,14 @@ def write_manifest(
 
 
 class ManifestListWriter(ABC):
-    _format_version: Literal[1, 2]
+    _format_version: version_number
     _output_file: OutputFile
     _meta: Dict[str, str]
     _manifest_files: List[ManifestFile]
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, format_version: Literal[1, 2], output_file: OutputFile, meta: Dict[str, Any]):
+    def __init__(self, format_version: version_number, output_file: OutputFile, meta: Dict[str, Any]):
         self._format_version = format_version
         self._output_file = output_file
         self._meta = meta
@@ -957,7 +957,7 @@ class ManifestListWriterV2(ManifestListWriter):
 
 
 def write_manifest_list(
-    format_version: Literal[1, 2],
+    format_version: version_number,
     output_file: OutputFile,
     snapshot_id: int,
     parent_snapshot_id: Optional[int],
