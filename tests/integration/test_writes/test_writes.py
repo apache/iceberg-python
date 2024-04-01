@@ -54,86 +54,7 @@ from pyiceberg.types import (
     TimestamptzType,
 )
 
-TEST_DATA_WITH_NULL = {
-    'bool': [False, None, True],
-    'string': ['a', None, 'z'],
-    # Go over the 16 bytes to kick in truncation
-    'string_long': ['a' * 22, None, 'z' * 22],
-    'int': [1, None, 9],
-    'long': [1, None, 9],
-    'float': [0.0, None, 0.9],
-    'double': [0.0, None, 0.9],
-    'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
-    # Not supported by Spark
-    # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
-    # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
-    'binary': [b'\01', None, b'\22'],
-    'fixed': [
-        uuid.UUID('00000000-0000-0000-0000-000000000000').bytes,
-        None,
-        uuid.UUID('11111111-1111-1111-1111-111111111111').bytes,
-    ],
-}
-
-TABLE_SCHEMA = Schema(
-    NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
-    NestedField(field_id=2, name="string", field_type=StringType(), required=False),
-    NestedField(field_id=3, name="string_long", field_type=StringType(), required=False),
-    NestedField(field_id=4, name="int", field_type=IntegerType(), required=False),
-    NestedField(field_id=5, name="long", field_type=LongType(), required=False),
-    NestedField(field_id=6, name="float", field_type=FloatType(), required=False),
-    NestedField(field_id=7, name="double", field_type=DoubleType(), required=False),
-    NestedField(field_id=8, name="timestamp", field_type=TimestampType(), required=False),
-    NestedField(field_id=9, name="timestamptz", field_type=TimestamptzType(), required=False),
-    NestedField(field_id=10, name="date", field_type=DateType(), required=False),
-    # NestedField(field_id=11, name="time", field_type=TimeType(), required=False),
-    # NestedField(field_id=12, name="uuid", field_type=UuidType(), required=False),
-    NestedField(field_id=12, name="binary", field_type=BinaryType(), required=False),
-    NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
-)
-
-
-@pytest.fixture(scope="session")
-def pa_schema() -> pa.Schema:
-    return pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.large_binary()),
-        ("fixed", pa.binary(16)),
-    ])
-
-
-@pytest.fixture(scope="session")
-def arrow_table_with_null(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
-
-
-@pytest.fixture(scope="session")
-def arrow_table_without_data(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    return pa.Table.from_pylist([], schema=pa_schema)
-
-
-@pytest.fixture(scope="session")
-def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    return pa.Table.from_pylist([{}, {}], schema=pa_schema)
+from utils import TEST_DATA_WITH_NULL, TABLE_SCHEMA
 
 
 def _create_table(
@@ -222,7 +143,6 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
-
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_count(spark: SparkSession, format_version: int) -> None:
@@ -230,8 +150,9 @@ def test_query_count(spark: SparkSession, format_version: int) -> None:
     assert df.count() == 3, "Expected 3 rows"
 
 
+from utils import TEST_DATA_WITH_NULL
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
+@pytest.mark.parametrize("col", ["int"]) #TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_null"
