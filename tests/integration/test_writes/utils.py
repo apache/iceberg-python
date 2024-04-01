@@ -1,5 +1,3 @@
-import uuid
-from datetime import date, datetime, timezone
 from typing import List, Optional
 
 import pyarrow as pa
@@ -24,36 +22,6 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
-
-TEST_DATA_WITH_NULL = {
-    'bool': [False, None, True],
-    'string': ['a', None, 'z'],
-    # Go over the 16 bytes to kick in truncation
-    'string_long': ['a' * 22, None, 'z' * 22],
-    'int': [1, None, 9],
-    'long': [1, None, 9],
-    'float': [0.0, None, 0.9],
-    'double': [0.0, None, 0.9],
-    'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    # 'timestamptz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [
-        datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-        None,
-        datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-    ],
-    'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
-    # Not supported by Spark
-    # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
-    # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
-    'binary': [b'\01', None, b'\22'],
-    'fixed': [
-        uuid.UUID('00000000-0000-0000-0000-000000000000').bytes,
-        None,
-        uuid.UUID('11111111-1111-1111-1111-111111111111').bytes,
-    ],
-}
-
 
 TABLE_SCHEMA = Schema(
     NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),

@@ -32,7 +32,8 @@ from pyiceberg.transforms import (
     TruncateTransform,
     YearTransform,
 )
-from utils import TABLE_SCHEMA, TEST_DATA_WITH_NULL, _create_table
+from tests.conftest import TEST_DATA_WITH_NULL
+from utils import TABLE_SCHEMA, _create_table
 
 
 @pytest.mark.integration
@@ -171,7 +172,7 @@ def test_query_filter_appended_null_partitioned(
     assert len(rows) == 6
 
 
-@pytest.mark.integration
+@pytest.mark.newyork
 @pytest.mark.parametrize(
     "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
@@ -201,12 +202,12 @@ def test_query_filter_v1_v2_append_null(
     # When
     with tbl.transaction() as tx:
         tx.upgrade_table_version(format_version=2)
+
     tbl.append(arrow_table_with_null)
 
     # Then
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-    df = spark.table(identifier)
-    for col in TEST_DATA_WITH_NULL.keys():
+    for col in TEST_DATA_WITH_NULL.keys():  # type: ignore
         df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 non-null rows for {col}"
         assert df.where(f"{col} is null").count() == 2, f"Expected 2 null rows for {col}"
