@@ -202,4 +202,4 @@ class Record(StructProtocol):
         return [self.__getattribute__(v) if hasattr(self, v) else None for v in self._position_to_field_name]
 
 
-VersionNumber = Literal[1, 2]
+TableVersion = Literal[1, 2]
