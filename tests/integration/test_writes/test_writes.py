@@ -18,10 +18,9 @@
 import math
 import os
 import time
-import uuid
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -36,42 +35,8 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.schema import Schema
-from pyiceberg.table import Table, TableProperties, _dataframe_to_data_files
-from pyiceberg.typedef import Properties
-from pyiceberg.types import (
-    BinaryType,
-    BooleanType,
-    DateType,
-    DoubleType,
-    FixedType,
-    FloatType,
-    IntegerType,
-    LongType,
-    NestedField,
-    StringType,
-    TimestampType,
-    TimestamptzType,
-)
-
-from utils import TEST_DATA_WITH_NULL, TABLE_SCHEMA
-
-
-def _create_table(
-    session_catalog: Catalog, identifier: str, properties: Properties, data: Optional[List[pa.Table]] = None
-) -> Table:
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties=properties)
-
-    if data:
-        for d in data:
-            tbl.append(d)
-
-    return tbl
+from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from utils import TEST_DATA_WITH_NULL, _create_table
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -143,6 +108,7 @@ def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_nu
 
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_count(spark: SparkSession, format_version: int) -> None:
@@ -150,9 +116,8 @@ def test_query_count(spark: SparkSession, format_version: int) -> None:
     assert df.count() == 3, "Expected 3 rows"
 
 
-from utils import TEST_DATA_WITH_NULL
 @pytest.mark.integration
-@pytest.mark.parametrize("col", ["int"]) #TEST_DATA_WITH_NULL.keys())
+@pytest.mark.parametrize("col", ["int"])  # TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_null"

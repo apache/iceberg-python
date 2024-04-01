@@ -15,18 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-import uuid
-from datetime import date, datetime
 
 import pyarrow as pa
 import pytest
-import pytz
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
-from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -36,374 +32,35 @@ from pyiceberg.transforms import (
     TruncateTransform,
     YearTransform,
 )
-from pyiceberg.types import (
-    BinaryType,
-    BooleanType,
-    DateType,
-    DoubleType,
-    FixedType,
-    FloatType,
-    IntegerType,
-    LongType,
-    NestedField,
-    StringType,
-    TimestampType,
-    TimestamptzType,
-)
-
-from utils import TEST_DATA_WITH_NULL, TABLE_SCHEMA
-
-
-
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_with_null_partitioned(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v1_with_null_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '1'},
-        )
-        tbl.append(arrow_table_with_null)
-
-        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_without_data_partitioned(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v1_without_data_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '1'},
-        )
-        tbl.append(arrow_table_without_data)
-        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_with_only_nulls_partitioned(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v1_with_only_nulls_partitioned_on_col_{partition_col}"
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '1'},
-        )
-        tbl.append(arrow_table_with_only_nulls)
-        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_appended_with_null_partitioned(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v1_appended_with_null_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),  # name has to be the same for identity transform
-            properties={'format-version': '1'},
-        )
-
-        tbl.append(arrow_table_with_null)
-        tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
-        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v2_with_null_partitioned(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v2_with_null_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '2'},
-        )
-        tbl.append(arrow_table_with_null)
-
-        assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v2_without_data_partitioned(session_catalog: Catalog, arrow_table_without_data: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v2_without_data_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '2'},
-        )
-        tbl.append(arrow_table_without_data)
-        assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v2_with_only_nulls_partitioned(session_catalog: Catalog, arrow_table_with_only_nulls: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v2_with_only_nulls_partitioned_on_col_{partition_col}"
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '2'},
-        )
-        tbl.append(arrow_table_with_only_nulls)
-        assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v2_appended_with_null_partitioned(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v2_appended_with_null_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '2'},
-        )
-
-        tbl.append(arrow_table_with_null)
-        tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
-
-        assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def table_v1_v2_appended_with_null(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    partition_cols = [
-        'int',
-        'bool',
-        'string',
-        "string_long",
-        "long",
-        "float",
-        "double",
-        "date",
-        "timestamptz",
-        "timestamp",
-        "binary",
-    ]
-    for partition_col in partition_cols:
-        identifier = f"default.arrow_table_v1_v2_appended_with_null_partitioned_on_col_{partition_col}"
-
-        try:
-            session_catalog.drop_table(identifier=identifier)
-        except NoSuchTableError:
-            pass
-
-        nested_field = TABLE_SCHEMA.find_field(partition_col)
-        source_id = nested_field.field_id
-        tbl = session_catalog.create_table(
-            identifier=identifier,
-            schema=TABLE_SCHEMA,
-            partition_spec=PartitionSpec(
-                PartitionField(source_id=source_id, field_id=1001, transform=IdentityTransform(), name=partition_col)
-            ),
-            properties={'format-version': '1'},
-        )
-        tbl.append(arrow_table_with_null)
-
-        assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-
-        with tbl.transaction() as tx:
-            tx.upgrade_table_version(format_version=2)
-
-        tbl.append(arrow_table_with_null)
-
-        assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+from utils import TABLE_SCHEMA, TEST_DATA_WITH_NULL, _create_table
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz']
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz', 'binary']
 )
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_null_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
+def test_query_filter_null_partitioned(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+) -> None:
+    # Given
     identifier = f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_with_null],
+        partition_spec=partition_spec,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in TEST_DATA_WITH_NULL.keys():
@@ -413,11 +70,30 @@ def test_query_filter_null_partitioned(spark: SparkSession, part_col: str, forma
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz']
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz', 'binary']
 )
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_without_data_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
+def test_query_filter_without_data_partitioned(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_without_data: pa.Table, part_col: str, format_version: int
+) -> None:
+    # Given
     identifier = f"default.arrow_table_v{format_version}_without_data_partitioned_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_without_data],
+        partition_spec=partition_spec,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in TEST_DATA_WITH_NULL.keys():
         assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
@@ -426,11 +102,30 @@ def test_query_filter_without_data_partitioned(spark: SparkSession, part_col: st
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz']
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz', 'binary']
 )
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_only_nulls_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
+def test_query_filter_only_nulls_partitioned(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_only_nulls: pa.Table, part_col: str, format_version: int
+) -> None:
+    # Given
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls_partitioned_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_with_only_nulls],
+        partition_spec=partition_spec,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in TEST_DATA_WITH_NULL.keys():
         assert df.where(f"{col} is null").count() == 2, f"Expected 2 row for {col}"
@@ -439,16 +134,39 @@ def test_query_filter_only_nulls_partitioned(spark: SparkSession, part_col: str,
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int',]# 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_appended_null_partitioned(spark: SparkSession, part_col: str, format_version: int) -> None:
+def test_query_filter_appended_null_partitioned(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+) -> None:
+    # Given
     identifier = f"default.arrow_table_v{format_version}_appended_with_null_partitioned_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[],
+        partition_spec=partition_spec,
+    )
+    # Append with arrow_table_1 with lines [A,B,C] and then arrow_table_2 with lines[A,B,C,A,B,C]
+    tbl.append(arrow_table_with_null)
+    tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in TEST_DATA_WITH_NULL.keys():
         df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 6, f"Expected 6 non-null rows for {col}"
         assert df.where(f"{col} is null").count() == 3, f"Expected 3 null rows for {col}"
+    # expecting 6 files: first append with [A], [B], [C],  second append with [A, A], [B, B], [C, C]
     rows = spark.sql(f"select partition from {identifier}.files").collect()
     assert len(rows) == 6
 
@@ -457,8 +175,36 @@ def test_query_filter_appended_null_partitioned(spark: SparkSession, part_col: s
 @pytest.mark.parametrize(
     "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
-def test_query_filter_v1_v2_append_null(spark: SparkSession, part_col: str) -> None:
+def test_query_filter_v1_v2_append_null(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str
+) -> None:
+    # Given
     identifier = f"default.arrow_table_v1_v2_appended_with_null_partitioned_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": "1"},
+        data=[],
+        partition_spec=partition_spec,
+    )
+    tbl.append(arrow_table_with_null)
+
+    # Then
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+
+    # When
+    with tbl.transaction() as tx:
+        tx.upgrade_table_version(format_version=2)
+    tbl.append(arrow_table_with_null)
+
+    # Then
+    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in TEST_DATA_WITH_NULL.keys():
         df = spark.table(identifier)

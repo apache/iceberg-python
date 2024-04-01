@@ -1,10 +1,15 @@
-from datetime import datetime, date, timezone
-import uuid 
-import pytz
-import pytest 
+import uuid
+from datetime import date, datetime, timezone
+from typing import List, Optional
+
 import pyarrow as pa
 
+from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
+from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -19,6 +24,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
+
 TEST_DATA_WITH_NULL = {
     'bool': [False, None, True],
     'string': ['a', None, 'z'],
@@ -67,3 +73,27 @@ TABLE_SCHEMA = Schema(
 )
 
 
+def _create_table(
+    session_catalog: Catalog,
+    identifier: str,
+    properties: Properties,
+    data: Optional[List[pa.Table]] = None,
+    partition_spec: Optional[PartitionSpec] = None,
+) -> Table:
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    if partition_spec:
+        tbl = session_catalog.create_table(
+            identifier=identifier, schema=TABLE_SCHEMA, properties=properties, partition_spec=partition_spec
+        )
+    else:
+        tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties=properties)
+
+    if data:
+        for d in data:
+            tbl.append(d)
+
+    return tbl

@@ -1,6 +1,8 @@
 import pyarrow as pa
-from utils import TEST_DATA_WITH_NULL
 import pytest
+
+from utils import TEST_DATA_WITH_NULL
+
 
 @pytest.fixture(scope="session")
 def pa_schema() -> pa.Schema:
@@ -26,17 +28,17 @@ def pa_schema() -> pa.Schema:
 
 @pytest.fixture(scope="session")
 def arrow_table_with_null(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
+    """PyArrow table with all kinds of columns."""
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
 
 
 @pytest.fixture(scope="session")
 def arrow_table_without_data(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
+    """PyArrow table with all kinds of columns."""
     return pa.Table.from_pylist([], schema=pa_schema)
 
 
 @pytest.fixture(scope="session")
 def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
+    """PyArrow table with all kinds of columns."""
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
