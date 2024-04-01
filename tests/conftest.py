@@ -46,7 +46,6 @@ from typing import (
 import boto3
 import pytest
 from moto import mock_aws
-from pyspark.sql import SparkSession
 
 from pyiceberg import schema
 from pyiceberg.catalog import Catalog, load_catalog
@@ -86,6 +85,7 @@ from pyiceberg.utils.datetime import datetime_to_millis
 if TYPE_CHECKING:
     import pyarrow as pa
     from moto.server import ThreadedMotoServer  # type: ignore
+    from pyspark.sql import SparkSession
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -1954,9 +1954,10 @@ def session_catalog() -> Catalog:
 
 
 @pytest.fixture(scope="session")
-def spark() -> SparkSession:
+def spark() -> "SparkSession":
     import importlib.metadata
-    import os
+
+    from pyspark.sql import SparkSession
 
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
