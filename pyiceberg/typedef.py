@@ -38,6 +38,7 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
+from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from pyiceberg.types import StructType
@@ -202,4 +203,4 @@ class Record(StructProtocol):
         return [self.__getattribute__(v) if hasattr(self, v) else None for v in self._position_to_field_name]
 
 
-TableVersion = Literal[1, 2]
+TableVersion: TypeAlias = Literal[1, 2]
