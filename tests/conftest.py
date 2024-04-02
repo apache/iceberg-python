@@ -1999,6 +1999,7 @@ TEST_DATA_WITH_NULL = {
     'long': [1, None, 9],
     'float': [0.0, None, 0.9],
     'double': [0.0, None, 0.9],
+    # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
     'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
     'timestamptz': [
         datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -2031,6 +2032,8 @@ def pa_schema() -> "pa.Schema":
         ("long", pa.int64()),
         ("float", pa.float32()),
         ("double", pa.float64()),
+        # Not supported by Spark
+        # ("time", pa.time64('us')),
         ("timestamp", pa.timestamp(unit="us")),
         ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
         ("date", pa.date32()),

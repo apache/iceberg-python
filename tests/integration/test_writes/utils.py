@@ -48,6 +48,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=5, name="long", field_type=LongType(), required=False),
     NestedField(field_id=6, name="float", field_type=FloatType(), required=False),
     NestedField(field_id=7, name="double", field_type=DoubleType(), required=False),
+    # NestedField(field_id=8, name="time", field_type=TimeType(), required=False), # Spark does not support time fields
     NestedField(field_id=8, name="timestamp", field_type=TimestampType(), required=False),
     NestedField(field_id=9, name="timestamptz", field_type=TimestamptzType(), required=False),
     NestedField(field_id=10, name="date", field_type=DateType(), required=False),
