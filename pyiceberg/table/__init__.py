@@ -50,10 +50,12 @@ import pyiceberg.expressions.parser as parser
 import pyiceberg.expressions.visitors as visitors
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
+    AlwaysFalse,
     AlwaysTrue,
     And,
     BooleanExpression,
     EqualTo,
+    Or,
     Reference,
 )
 from pyiceberg.io import FileIO, load_file_io
@@ -2710,6 +2712,114 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
 
 
+class DeleteFiles(_MergingSnapshotProducer):
+    _predicate: BooleanExpression
+
+    def __init__(
+        self,
+        operation: Operation,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ):
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        self._predicate = AlwaysFalse()
+
+    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
+        schema = self._transaction.table_metadata.schema()
+        spec = self._transaction.table_metadata.specs()[spec_id]
+        project = visitors.inclusive_projection(schema, spec)
+        return project(self._predicate)
+
+    @cached_property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return KeyDefaultDict(self._build_partition_projection)
+
+    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
+        schema = self._transaction.table_metadata.schema()
+        spec = self._transaction.table_metadata.specs()[spec_id]
+        return visitors.manifest_evaluator(spec, schema, self.partition_filters[spec_id], case_sensitive=True)
+
+    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
+        schema = self._transaction.table_metadata.schema()
+        spec = self._transaction.table_metadata.specs()[spec_id]
+        partition_type = spec.partition_type(schema)
+        partition_schema = Schema(*partition_type.fields)
+        partition_expr = self.partition_filters[spec_id]
+
+        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, case_sensitive=True)(
+            data_file.partition
+        )
+
+    def delete(self, predicate: BooleanExpression) -> None:
+        self._predicate = Or(self._predicate, predicate)
+
+    @cached_property
+    def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry]]:
+        schema = self._transaction.table_metadata.schema()
+
+        def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
+            return ManifestEntry(
+                status=status,
+                snapshot_id=entry.snapshot_id,
+                data_sequence_number=entry.data_sequence_number,
+                file_sequence_number=entry.file_sequence_number,
+                data_file=entry.data_file,
+            )
+
+        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        strict_metrics_evaluator = visitors._StrictMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+        inclusive_metrics_evaluator = visitors._InclusiveMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+
+        existing_manifests = []
+        total_deleted_entries = []
+        if snapshot := self._transaction.table_metadata.current_snapshot():
+            for num, manifest_file in enumerate(snapshot.manifests(io=self._io)):
+                if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                    # If the manifest isn't relevant, we can just keep it in the manifest-list
+                    existing_manifests.append(manifest_file)
+                else:
+                    # It is relevant, let's check out the content
+                    deleted_entries = []
+                    existing_entries = []
+                    for entry in manifest_file.fetch_manifest_entry(io=self._io):
+                        if strict_metrics_evaluator(entry.data_file) == visitors.ROWS_MUST_MATCH:
+                            deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
+                        elif inclusive_metrics_evaluator(entry.data_file) == visitors.ROWS_CANNOT_MATCH:
+                            existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                        else:
+                            raise ValueError("Deletes do not support rewrites of data files")
+
+                    if len(deleted_entries) > 0:
+                        total_deleted_entries += deleted_entries
+
+                        # Rewrite the manifest
+                        if len(existing_entries) > 0:
+                            output_file_location = _new_manifest_path(
+                                location=self._transaction.table_metadata.location, num=num, commit_uuid=self.commit_uuid
+                            )
+                            with write_manifest(
+                                format_version=self._transaction.table_metadata.format_version,
+                                spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                schema=self._transaction.table_metadata.schema(),
+                                output_file=self._io.new_output(output_file_location),
+                                snapshot_id=self._snapshot_id,
+                            ) as writer:
+                                for existing_entry in existing_entries:
+                                    writer.add_entry(existing_entry)
+                    else:
+                        existing_manifests.append(manifest_file)
+
+        return existing_manifests, total_deleted_entries
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        return self._compute_deletes[0]
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        return self._compute_deletes[1]
+
+
 class FastAppendFiles(_MergingSnapshotProducer):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
@@ -2787,7 +2897,7 @@ class UpdateSnapshot:
     _io: FileIO
     _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str]) -> None:
+    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
@@ -2802,6 +2912,14 @@ class UpdateSnapshot:
             operation=Operation.OVERWRITE
             if self._transaction.table_metadata.current_snapshot() is not None
             else Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            snapshot_properties=self._snapshot_properties,
+        )
+
+    def delete(self) -> DeleteFiles:
+        return DeleteFiles(
+            operation=Operation.DELETE,
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
