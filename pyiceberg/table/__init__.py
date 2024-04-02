@@ -2543,15 +2543,11 @@ def _dataframe_to_data_files(
 
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
-    target_file_size = PropertyUtil.property_as_int(
+    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
         properties=table_metadata.properties,
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
-    if target_file_size is None:
-        raise ValueError(
-            "Fail to get neither TableProperties.WRITE_TARGET_FILE_SIZE_BYTES nor WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT for writing target data file."
-        )
 
     if len(table_metadata.spec().fields) > 0:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
