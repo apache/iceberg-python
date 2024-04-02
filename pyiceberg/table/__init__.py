@@ -47,7 +47,6 @@ from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
 import pyiceberg.expressions.parser as parser
-import pyiceberg.expressions.visitors as visitors
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -57,6 +56,12 @@ from pyiceberg.expressions import (
     EqualTo,
     Or,
     Reference,
+)
+from pyiceberg.expressions.visitors import (
+    _InclusiveMetricsEvaluator,
+    expression_evaluator,
+    inclusive_projection,
+    manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
@@ -216,6 +221,9 @@ class TableProperties:
     PARQUET_BLOOM_FILTER_MAX_BYTES_DEFAULT = 1024 * 1024
 
     PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
+
+    WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
+    WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
 
     DEFAULT_WRITE_METRICS_MODE = "write.metadata.metrics.default"
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
@@ -1130,8 +1138,9 @@ class Table:
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if self.schema().as_arrow() != df.schema:
-            df = df.cast(self.schema().as_arrow())
+        table_arrow_schema = self.schema().as_arrow()
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
@@ -1171,8 +1180,9 @@ class Table:
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
-        if self.schema().as_arrow() != df.schema:
-            df = df.cast(self.schema().as_arrow())
+        table_arrow_schema = self.schema().as_arrow()
+        if table_arrow_schema != df.schema:
+            df = df.cast(table_arrow_schema)
 
         with self.transaction() as txn:
             with txn.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
@@ -1442,9 +1452,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
     relevant_entries = positional_delete_entries[positional_delete_entries.bisect_right(data_entry) :]
 
     if len(relevant_entries) > 0:
-        evaluator = visitors._InclusiveMetricsEvaluator(
-            POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path)
-        )
+        evaluator = _InclusiveMetricsEvaluator(POSITIONAL_DELETE_SCHEMA, EqualTo("file_path", data_entry.data_file.file_path))
         return {
             positional_delete_entry.data_file
             for positional_delete_entry in relevant_entries
@@ -1468,7 +1476,7 @@ class DataScan(TableScan):
         super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = visitors.inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1477,7 +1485,7 @@ class DataScan(TableScan):
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table.specs()[spec_id]
@@ -1488,9 +1496,7 @@ class DataScan(TableScan):
         # The lambda created here is run in multiple threads.
         # So we avoid creating _EvaluatorExpression methods bound to a single
         # shared instance across multiple threads.
-        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(
-            data_file.partition
-        )
+        return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
     def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
@@ -1535,7 +1541,7 @@ class DataScan(TableScan):
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-        metrics_evaluator = visitors._InclusiveMetricsEvaluator(
+        metrics_evaluator = _InclusiveMetricsEvaluator(
             self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
@@ -2488,7 +2494,7 @@ def _add_and_move_fields(
 class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
-    df: pa.Table
+    record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
 
     # Later to be extended with partition information
@@ -2523,7 +2529,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.io.pyarrow import write_file
+    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
 
     if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
         raise ValueError("Cannot write to partitioned tables")
@@ -2531,9 +2537,19 @@ def _dataframe_to_data_files(
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
 
+    target_file_size = PropertyUtil.property_as_int(
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+
     # This is an iter, so we don't have to materialize everything every time
     # This will be more relevant when we start doing partitioned writes
-    yield from write_file(io=io, table_metadata=table_metadata, tasks=iter([WriteTask(write_uuid, next(counter), df)]))
+    yield from write_file(
+        io=io,
+        table_metadata=table_metadata,
+        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, target_file_size)]),  # type: ignore
+    )
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
