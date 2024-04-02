@@ -58,7 +58,10 @@ from pyiceberg.expressions import (
     Reference,
 )
 from pyiceberg.expressions.visitors import (
+    ROWS_CANNOT_MATCH,
+    ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
+    _StrictMetricsEvaluator,
     expression_evaluator,
     inclusive_projection,
     manifest_evaluator,
@@ -2745,7 +2748,7 @@ class DeleteFiles(_MergingSnapshotProducer):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         schema = self._transaction.table_metadata.schema()
         spec = self._transaction.table_metadata.specs()[spec_id]
-        project = visitors.inclusive_projection(schema, spec)
+        project = inclusive_projection(schema, spec)
         return project(self._predicate)
 
     @cached_property
@@ -2755,7 +2758,7 @@ class DeleteFiles(_MergingSnapshotProducer):
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         schema = self._transaction.table_metadata.schema()
         spec = self._transaction.table_metadata.specs()[spec_id]
-        return visitors.manifest_evaluator(spec, schema, self.partition_filters[spec_id], case_sensitive=True)
+        return manifest_evaluator(spec, schema, self.partition_filters[spec_id], case_sensitive=True)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         schema = self._transaction.table_metadata.schema()
@@ -2764,9 +2767,7 @@ class DeleteFiles(_MergingSnapshotProducer):
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
 
-        return lambda data_file: visitors.expression_evaluator(partition_schema, partition_expr, case_sensitive=True)(
-            data_file.partition
-        )
+        return lambda data_file: expression_evaluator(partition_schema, partition_expr, case_sensitive=True)(data_file.partition)
 
     def delete(self, predicate: BooleanExpression) -> None:
         self._predicate = Or(self._predicate, predicate)
@@ -2785,8 +2786,8 @@ class DeleteFiles(_MergingSnapshotProducer):
             )
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        strict_metrics_evaluator = visitors._StrictMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
-        inclusive_metrics_evaluator = visitors._InclusiveMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+        inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
 
         existing_manifests = []
         total_deleted_entries = []
@@ -2800,9 +2801,9 @@ class DeleteFiles(_MergingSnapshotProducer):
                     deleted_entries = []
                     existing_entries = []
                     for entry in manifest_file.fetch_manifest_entry(io=self._io):
-                        if strict_metrics_evaluator(entry.data_file) == visitors.ROWS_MUST_MATCH:
+                        if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
                             deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
-                        elif inclusive_metrics_evaluator(entry.data_file) == visitors.ROWS_CANNOT_MATCH:
+                        elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
                             existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
                         else:
                             raise ValueError("Deletes do not support rewrites of data files")
