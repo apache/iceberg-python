@@ -1133,10 +1133,10 @@ class Table:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        supported = {IdentityTransform}
-        if not all(type(field.transform) in supported for field in self.metadata.spec().fields):
+        supported_transforms = {IdentityTransform}
+        if not all(type(field.transform) in supported_transforms for field in self.metadata.spec().fields):
             raise ValueError(
-                f"All transforms are not supported, expected: {supported}, but get: {[str(field) for field in self.metadata.spec().fields if field.transform not in supported]}."
+                f"All transforms are not supported, expected: {supported_transforms}, but get: {[str(field) for field in self.metadata.spec().fields if field.transform not in supported_transforms]}."
             )
 
         _check_schema_compatible(self.schema(), other_schema=df.schema)
@@ -2502,11 +2502,6 @@ class WriteTask:
     sort_order_id: Optional[int] = None
     partition_key: Optional[PartitionKey] = None
 
-    def generate_data_file_partition_path(self) -> str:
-        if self.partition_key is None:
-            raise ValueError("Cannot generate partition path based on non-partitioned WriteTask")
-        return self.partition_key.to_path()
-
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
@@ -2514,7 +2509,7 @@ class WriteTask:
 
     def generate_data_file_path(self, extension: str) -> str:
         if self.partition_key:
-            file_path = f"{self.generate_data_file_partition_path()}/{self.generate_data_file_filename(extension)}"
+            file_path = f"{self.partition_key.to_path()}/{self.generate_data_file_filename(extension)}"
             return file_path
         else:
             return self.generate_data_file_filename(extension)
@@ -2559,7 +2554,7 @@ def _dataframe_to_data_files(
         )
 
     if len(table_metadata.spec().fields) > 0:
-        partitions = partition(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -3212,7 +3207,7 @@ def _get_table_partitions(
     return table_partitions
 
 
-def partition(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> Iterable[TablePartition]:
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
     """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
 
     Example:
