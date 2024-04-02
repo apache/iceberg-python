@@ -172,7 +172,7 @@ def test_query_filter_appended_null_partitioned(
     assert len(rows) == 6
 
 
-@pytest.mark.newyork
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
