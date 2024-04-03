@@ -200,6 +200,36 @@ def test_create_table_with_pyarrow_schema(
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_write_pyarrow_schema(catalog: SqlCatalog, random_identifier: Identifier) -> None:
+    import pyarrow as pa
+
+    pyarrow_table = pa.Table.from_arrays(
+        [
+            pa.array([None, "A", "B", "C"]),  # 'foo' column
+            pa.array([1, 2, 3, 4]),  # 'bar' column
+            pa.array([True, None, False, True]),  # 'baz' column
+            pa.array([None, "A", "B", "C"]),  # 'large' column
+        ],
+        schema=pa.schema([
+            pa.field('foo', pa.string(), nullable=True),
+            pa.field('bar', pa.int32(), nullable=False),
+            pa.field('baz', pa.bool_(), nullable=True),
+            pa.field('large', pa.large_string(), nullable=True),
+        ]),
+    )
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    table = catalog.create_table(random_identifier, pyarrow_table.schema)
+    table.overwrite(pyarrow_table)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)

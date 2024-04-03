@@ -36,7 +36,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table, _dataframe_to_data_files
+from pyiceberg.table import Table, TableProperties, _dataframe_to_data_files
 from pyiceberg.typedef import Properties
 from pyiceberg.types import (
     BinaryType,
@@ -355,6 +355,47 @@ def test_python_writes_with_spark_snapshot_reads(
 
 
 @pytest.mark.integration
+def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.write_bin_pack_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    def get_data_files_count(identifier: str) -> int:
+        return spark.sql(
+            f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+        ).count()
+
+    # writes 1 data file since the table is smaller than default target file size
+    assert arrow_table_with_null.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    tbl.overwrite(arrow_table_with_null)
+    assert get_data_files_count(identifier) == 1
+
+    # writes 1 data file as long as table is smaller than default target file size
+    bigger_arrow_tbl = pa.concat_tables([arrow_table_with_null] * 10)
+    assert bigger_arrow_tbl.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
+    tbl.overwrite(bigger_arrow_tbl)
+    assert get_data_files_count(identifier) == 1
+
+    # writes multiple data files once target file size is overridden
+    target_file_size = arrow_table_with_null.nbytes
+    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size}).commit_transaction()
+    assert str(target_file_size) == tbl.properties.get(TableProperties.WRITE_TARGET_FILE_SIZE_BYTES)
+    assert target_file_size < bigger_arrow_tbl.nbytes
+    tbl.overwrite(bigger_arrow_tbl)
+    assert get_data_files_count(identifier) == 10
+
+    # writes half the number of data files when target file size doubles
+    target_file_size = arrow_table_with_null.nbytes * 2
+    tbl = tbl.transaction().set_properties({TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: target_file_size}).commit_transaction()
+    assert str(target_file_size) == tbl.properties.get(TableProperties.WRITE_TARGET_FILE_SIZE_BYTES)
+    assert target_file_size < bigger_arrow_tbl.nbytes
+    tbl.overwrite(bigger_arrow_tbl)
+    assert get_data_files_count(identifier) == 5
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize(
     "properties, expected_compression_name",
@@ -410,7 +451,6 @@ def test_write_parquet_other_properties(
     properties: Dict[str, Any],
     expected_kwargs: Dict[str, Any],
 ) -> None:
-    print(type(mocker))
     identifier = "default.test_write_parquet_other_properties"
 
     # The properties we test cannot be checked on the resulting Parquet file, so we spy on the ParquetWriter call instead

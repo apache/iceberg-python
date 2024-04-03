@@ -27,6 +27,7 @@ from typing import (
     Dict,
     Generic,
     List,
+    Literal,
     Optional,
     Protocol,
     Set,
@@ -38,6 +39,7 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
+from typing_extensions import TypeAlias
 
 from pyiceberg.utils.lazydict import LazyDict
 
@@ -219,3 +221,5 @@ class Record(StructProtocol):
     def __dict__(self) -> Dict[str, Any]:  # type: ignore
         """Returns a non-lazy dictionary of the Record class."""
         return {v: _unwrap(self.__getattribute__(v)) if hasattr(self, v) else None for v in self._position_to_field_name}
+
+TableVersion: TypeAlias = Literal[1, 2]

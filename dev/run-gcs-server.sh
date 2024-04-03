@@ -23,8 +23,8 @@ set -ex
 if [ $(docker ps -q --filter "name=gcs-server" --filter "status=running" ) ]; then
     echo "Fake GCS Server running"
 else
-    docker-compose -f dev/docker-compose-gcs-server.yml kill
-    docker-compose -f dev/docker-compose-gcs-server.yml up -d
+    docker compose -f dev/docker-compose-gcs-server.yml kill
+    docker compose -f dev/docker-compose-gcs-server.yml up -d
     while [ -z $(docker ps -q --filter "name=gcs-server" --filter "status=running" ) ]
     do
       echo "Waiting for Fake GCS Server"
