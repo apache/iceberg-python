@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict, Literal
+from typing import Dict
 
 import fastavro
 import pytest
@@ -39,7 +39,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
 
 
@@ -308,7 +308,7 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: Literal[1, 2]
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
 ) -> None:
     io = load_file_io()
     snapshot = Snapshot(
@@ -478,7 +478,7 @@ def test_write_manifest(
 
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest_list(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: Literal[1, 2]
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
 ) -> None:
     io = load_file_io()
 
