@@ -123,6 +123,7 @@ from pyiceberg.typedef import (
     KeyDefaultDict,
     Properties,
     Record,
+    TableVersion,
 )
 from pyiceberg.types import (
     IcebergType,
@@ -295,7 +296,7 @@ class Transaction:
 
         return self
 
-    def upgrade_table_version(self, format_version: Literal[1, 2]) -> Transaction:
+    def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
         """Set the table to a certain version.
 
         Args:
@@ -1025,7 +1026,7 @@ class Table:
         )
 
     @property
-    def format_version(self) -> Literal[1, 2]:
+    def format_version(self) -> TableVersion:
         return self.metadata.format_version
 
     def schema(self) -> Schema:

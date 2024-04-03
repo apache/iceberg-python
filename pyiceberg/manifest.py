@@ -36,7 +36,7 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import EMPTY_DICT, Record
+from pyiceberg.typedef import EMPTY_DICT, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -347,7 +347,7 @@ class DataFile(Record):
             value = FileFormat[value]
         super().__setattr__(name, value)
 
-    def __init__(self, format_version: Literal[1, 2] = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
+    def __init__(self, format_version: TableVersion = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
         super().__init__(
             *data,
             **{"struct": DATA_FILE_TYPE[format_version], **named_data},
@@ -383,7 +383,7 @@ MANIFEST_ENTRY_SCHEMAS = {
 MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_version, schema in MANIFEST_ENTRY_SCHEMAS.items()}
 
 
-def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_file: StructType) -> Schema:
+def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file: StructType) -> Schema:
     return Schema(*[
         NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
         for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
@@ -694,9 +694,9 @@ class ManifestWriter(ABC):
 
     @property
     @abstractmethod
-    def version(self) -> Literal[1, 2]: ...
+    def version(self) -> TableVersion: ...
 
-    def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
+    def _with_partition(self, format_version: TableVersion) -> Schema:
         data_file_type = data_file_with_partition(
             format_version=format_version, partition_type=self._spec.partition_type(self._schema)
         )
@@ -782,7 +782,7 @@ class ManifestWriterV1(ManifestWriter):
         return ManifestContent.DATA
 
     @property
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> TableVersion:
         return 1
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
@@ -809,7 +809,7 @@ class ManifestWriterV2(ManifestWriter):
         return ManifestContent.DATA
 
     @property
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> TableVersion:
         return 2
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
@@ -822,7 +822,7 @@ class ManifestWriterV2(ManifestWriter):
 
 
 def write_manifest(
-    format_version: Literal[1, 2], spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
+    format_version: TableVersion, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
 ) -> ManifestWriter:
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id)
@@ -833,14 +833,14 @@ def write_manifest(
 
 
 class ManifestListWriter(ABC):
-    _format_version: Literal[1, 2]
+    _format_version: TableVersion
     _output_file: OutputFile
     _meta: Dict[str, str]
     _manifest_files: List[ManifestFile]
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, format_version: Literal[1, 2], output_file: OutputFile, meta: Dict[str, Any]):
+    def __init__(self, format_version: TableVersion, output_file: OutputFile, meta: Dict[str, Any]):
         self._format_version = format_version
         self._output_file = output_file
         self._meta = meta
@@ -932,7 +932,7 @@ class ManifestListWriterV2(ManifestListWriter):
 
 
 def write_manifest_list(
-    format_version: Literal[1, 2],
+    format_version: TableVersion,
     output_file: OutputFile,
     snapshot_id: int,
     parent_snapshot_id: Optional[int],
