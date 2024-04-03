@@ -222,4 +222,5 @@ class Record(StructProtocol):
         """Returns a non-lazy dictionary of the Record class."""
         return {v: _unwrap(self.__getattribute__(v)) if hasattr(self, v) else None for v in self._position_to_field_name}
 
+
 TableVersion: TypeAlias = Literal[1, 2]
