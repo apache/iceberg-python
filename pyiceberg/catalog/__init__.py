@@ -39,16 +39,25 @@ from typing import (
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInstalledError, TableAlreadyExistsError
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
+from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
+    AddPartitionSpecUpdate,
+    AddSchemaUpdate,
+    AddSortOrderUpdate,
+    AssertTableUUID,
     CommitTableRequest,
     CommitTableResponse,
+    SetCurrentSchemaUpdate,
+    SetDefaultSortOrderUpdate,
+    SetDefaultSpecUpdate,
     Table,
+    TableRequirement,
+    TableUpdate,
 )
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.metadata import TableMetadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
     Identifier,
@@ -646,6 +655,47 @@ class Catalog(ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
+    def create_or_replace_table(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        """Create a new table or replace an existing one. Replacing the table reatains the table metadata history.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            Table: the new table instance.
+        """
+        try:
+            return self._replace_table(
+                identifier=identifier,
+                new_schema=schema,
+                new_location=location,
+                new_partition_spec=partition_spec,
+                new_sort_order=sort_order,
+                new_properties=properties,
+            )
+        except NoSuchTableError:
+            return self.create_table(
+                identifier=identifier,
+                schema=schema,
+                location=location,
+                partition_spec=partition_spec,
+                sort_order=sort_order,
+                properties=properties,
+            )
+
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         try:
             self.load_table(identifier)
@@ -716,6 +766,45 @@ class Catalog(ABC):
         )
 
         return properties_update_summary, updated_properties
+
+    def _replace_table(
+        self,
+        identifier: Union[str, Identifier],
+        new_schema: Union[Schema, "pa.Schema"],
+        new_partition_spec: PartitionSpec,
+        new_sort_order: SortOrder,
+        new_properties: Properties,
+        new_location: Optional[str] = None,
+    ) -> Table:
+        table = self.load_table(identifier)
+        with table.transaction() as tx:
+            base_schema = table.schema()
+            new_schema = assign_fresh_schema_ids(schema_or_type=new_schema, base_schema=base_schema)
+            new_sort_order = assign_fresh_sort_order_ids(
+                sort_order=new_sort_order,
+                old_schema=base_schema,
+                fresh_schema=new_schema,
+                sort_order_id=table.sort_order().order_id + 1,
+            )
+            new_partition_spec = assign_fresh_partition_spec_ids(
+                spec=new_partition_spec, old_schema=base_schema, fresh_schema=new_schema, spec_id=table.spec().spec_id + 1
+            )
+
+            requirements: Tuple[TableRequirement, ...] = (AssertTableUUID(uuid=table.metadata.table_uuid),)
+            updates: Tuple[TableUpdate, ...] = (
+                AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
+                SetCurrentSchemaUpdate(schema_id=-1),
+                AddSortOrderUpdate(sort_order=new_sort_order),
+                SetDefaultSortOrderUpdate(sort_order_id=-1),
+                AddPartitionSpecUpdate(spec=new_partition_spec),
+                SetDefaultSpecUpdate(spec_id=-1),
+            )
+            tx._apply(updates, requirements)
+
+            tx.set_properties(**new_properties)
+            if new_location is not None:
+                tx.update_location(new_location)
+        return table
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""

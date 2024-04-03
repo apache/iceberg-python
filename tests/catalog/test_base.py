@@ -54,13 +54,15 @@ from pyiceberg.table import (
     SetCurrentSchemaUpdate,
     Table,
     TableIdentifier,
+    UpdateSchema,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
-from pyiceberg.types import IntegerType, LongType, NestedField
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortField, SortOrder
+from pyiceberg.transforms import IdentityTransform, TruncateTransform
+from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType, StructType
+
 
 DEFAULT_WAREHOUSE_LOCATION = "file:///tmp/warehouse"
 
@@ -710,6 +712,48 @@ def test_add_column_with_statement(catalog: InMemoryCatalog) -> None:
 def test_catalog_repr(catalog: InMemoryCatalog) -> None:
     s = repr(catalog)
     assert s == "test.in_memory.catalog (<class 'test_base.InMemoryCatalog'>)"
+
+
+def test_catalog_create_or_replace_table(catalog: InMemoryCatalog, table_schema_nested: Schema) -> None:
+    # Given
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=table_schema_nested,
+        partition_spec=PartitionSpec(PartitionField(name="foo", transform=IdentityTransform(), source_id=1, field_id=1000)),
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    highest_field_id = table_schema_nested.highest_field_id
+    new_schema = (
+        UpdateSchema(transaction=None, schema=table_schema_nested)  # type: ignore
+        .update_column("bar", LongType())
+        .add_column(
+            "another_person",
+            field_type=StructType(
+                NestedField(field_id=highest_field_id + 2, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=highest_field_id + 3, name="age", field_type=LongType(), required=True),
+            ),
+        )
+        ._apply()
+    )
+    new_sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+    new_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+    )
+    new_properties = TEST_TABLE_PROPERTIES
+    new_properties["key3"] = "value3"
+    # When
+    new_table = catalog.create_or_replace_table(
+        identifier=table.identifier,
+        schema=new_schema,
+        partition_spec=new_spec,
+        sort_order=new_sort_order,
+        properties=new_properties,
+    )
+    # Then
+    assert new_table.schema() == new_schema
+    assert new_table.spec() == new_spec
+    assert new_table.sort_order() == new_sort_order
+    assert new_table.properties == new_properties
 
 
 def test_table_properties_int_value(catalog: InMemoryCatalog) -> None:
