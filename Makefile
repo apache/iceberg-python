@@ -37,17 +37,17 @@ test-s3:
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
 test-integration:
-	docker-compose -f dev/docker-compose-integration.yml kill
-	docker-compose -f dev/docker-compose-integration.yml rm -f
-	docker-compose -f dev/docker-compose-integration.yml up -d
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml up -d
 	sleep 10
-	docker-compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
-	docker-compose -f dev/docker-compose-integration.yml kill
-	docker-compose -f dev/docker-compose-integration.yml rm -f
-	docker-compose -f dev/docker-compose-integration.yml build --no-cache
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
 test-adlfs:
 	sh ./dev/run-azurite.sh
@@ -58,12 +58,12 @@ test-gcs:
 	poetry run  pytest tests/ -m gcs ${PYTEST_ARGS}
 
 test-coverage:
-	docker-compose -f dev/docker-compose-integration.yml kill
-	docker-compose -f dev/docker-compose-integration.yml rm -f
-	docker-compose -f dev/docker-compose-integration.yml up -d
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml up -d
 	sh ./dev/run-azurite.sh
 	sh ./dev/run-gcs-server.sh
-	docker-compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run coverage run --source=pyiceberg/ -m pytest tests/ ${PYTEST_ARGS}
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
