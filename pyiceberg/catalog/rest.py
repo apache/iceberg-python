@@ -61,6 +61,8 @@ from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CreateTableTransaction,
+    StagedTable,
     Table,
     TableIdentifier,
 )
@@ -135,7 +137,7 @@ _RETRY_ARGS = {
 
 
 class TableResponse(IcebergBaseModel):
-    metadata_location: str = Field(alias="metadata-location")
+    metadata_location: Optional[str] = Field(alias="metadata-location")
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
 
@@ -460,7 +462,18 @@ class RestCatalog(Catalog):
     def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
             identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
-            metadata_location=table_response.metadata_location,
+            metadata_location=table_response.metadata_location,  # type: ignore
+            metadata=table_response.metadata,
+            io=self._load_file_io(
+                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+            ),
+            catalog=self,
+        )
+
+    def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
+        return StagedTable(
+            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
                 {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
@@ -480,18 +493,17 @@ class RestCatalog(Catalog):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
 
     def _config_headers(self, session: Session) -> None:
+        header_properties = self._extract_headers_from_properties()
+        session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
-        header_properties = self._extract_headers_from_properties()
-        session.headers.update(header_properties)
 
     def _extract_headers_from_properties(self) -> Dict[str, str]:
         return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
-    @retry(**_RETRY_ARGS)
-    def create_table(
+    def _create_table(
         self,
         identifier: Union[str, Identifier],
         schema: Union[Schema, "pa.Schema"],
@@ -499,7 +511,8 @@ class RestCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
-    ) -> Table:
+        stage_create: bool = False,
+    ) -> TableResponse:
         iceberg_schema = self._convert_schema_if_needed(schema)
         fresh_schema = assign_fresh_schema_ids(iceberg_schema)
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
@@ -512,6 +525,7 @@ class RestCatalog(Catalog):
             table_schema=fresh_schema,
             partition_spec=fresh_partition_spec,
             write_order=fresh_sort_order,
+            stage_create=stage_create,
             properties=properties,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
@@ -524,8 +538,50 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
 
-        table_response = TableResponse(**response.json())
+        return TableResponse(**response.json())
+
+    @retry(**_RETRY_ARGS)
+    def create_table(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        table_response = self._create_table(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+            stage_create=False,
+        )
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+
+    @retry(**_RETRY_ARGS)
+    def create_table_transaction(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> CreateTableTransaction:
+        table_response = self._create_table(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+            stage_create=True,
+        )
+        staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
+        return CreateTableTransaction(staged_table)
 
     @retry(**_RETRY_ARGS)
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
@@ -720,6 +776,14 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a table exists.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            bool: True if the table exists, False otherwise.
+        """
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))

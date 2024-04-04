@@ -24,7 +24,7 @@ import pyarrow as pa
 import pytest
 from botocore.exceptions import ClientError
 
-from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import Catalog, MetastoreCatalog
 from pyiceberg.catalog.glue import GlueCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
@@ -35,6 +35,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
+from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.types import IntegerType
 from tests.conftest import clean_up, get_bucket_name, get_s3_path
 
@@ -120,7 +121,7 @@ def test_create_table(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
     table.append(
         pa.Table.from_pylist(
@@ -184,7 +185,7 @@ def test_create_table_with_default_location(
     assert table.identifier == (CATALOG_NAME,) + identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_create_table_with_invalid_database(test_catalog: Catalog, table_schema_nested: Schema, table_name: str) -> None:
@@ -217,7 +218,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     assert table.identifier == loaded_table.identifier
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
 
 def test_list_tables(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_list: List[str]) -> None:
@@ -239,7 +240,7 @@ def test_rename_table(
     new_table_name = f"rename-{table_name}"
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
     assert table.identifier == (CATALOG_NAME,) + identifier
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
@@ -385,7 +386,7 @@ def test_commit_table_update_schema(
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_table_metadata = table.metadata
 
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
     assert original_table_metadata.current_schema_id == 0
 
     assert athena.get_query_results(f'SELECT * FROM "{database_name}"."{table_name}"') == [
@@ -410,7 +411,7 @@ def test_commit_table_update_schema(
 
     updated_table_metadata = table.metadata
 
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.current_schema_id == 1
     assert len(updated_table_metadata.schemas) == 2
     new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
@@ -466,7 +467,7 @@ def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Sch
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
 
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
     transaction = table.transaction()
     transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
@@ -474,5 +475,78 @@ def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Sch
     transaction.commit_transaction()
 
     updated_table_metadata = table.metadata
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_create_table_transaction(
+    test_catalog: Catalog,
+    s3: boto3.client,
+    table_schema_nested: Schema,
+    table_name: str,
+    database_name: str,
+    athena: AthenaQueryHelper,
+    format_version: int,
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+
+    with test_catalog.create_table_transaction(
+        identifier,
+        table_schema_nested,
+        get_s3_path(get_bucket_name(), database_name, table_name),
+        properties={"format-version": format_version},
+    ) as txn:
+        df = pa.Table.from_pylist(
+            [
+                {
+                    "foo": "foo_val",
+                    "bar": 1,
+                    "baz": False,
+                    "qux": ["x", "y"],
+                    "quux": {"key": {"subkey": 2}},
+                    "location": [{"latitude": 1.1}],
+                    "person": {"name": "some_name", "age": 23},
+                }
+            ],
+            schema=schema_to_pyarrow(txn.table_metadata.schema()),
+        )
+
+        with txn.update_snapshot().fast_append() as update_snapshot:
+            data_files = _dataframe_to_data_files(
+                table_metadata=txn.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=txn._table.io
+            )
+            for data_file in data_files:
+                update_snapshot.append_data_file(data_file)
+
+    table = test_catalog.load_table(identifier)
+    assert table.identifier == (CATALOG_NAME,) + identifier
+    metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
+    s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
+    assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
+
+    assert athena.get_query_results(f'SELECT * FROM "{database_name}"."{table_name}"') == [
+        {
+            "Data": [
+                {"VarCharValue": "foo"},
+                {"VarCharValue": "bar"},
+                {"VarCharValue": "baz"},
+                {"VarCharValue": "qux"},
+                {"VarCharValue": "quux"},
+                {"VarCharValue": "location"},
+                {"VarCharValue": "person"},
+            ]
+        },
+        {
+            "Data": [
+                {"VarCharValue": "foo_val"},
+                {"VarCharValue": "1"},
+                {"VarCharValue": "false"},
+                {"VarCharValue": "[x, y]"},
+                {"VarCharValue": "{key={subkey=2}}"},
+                {"VarCharValue": "[{latitude=1.1, longitude=null}]"},
+                {"VarCharValue": "{name=some_name, age=23}"},
+            ]
+        },
+    ]
