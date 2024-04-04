@@ -832,3 +832,31 @@ def test_inspect_snapshots(
                 continue
 
             assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+@pytest.mark.integration
+def test_write_within_transaction(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.write_in_open_transaction"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    def get_metadata_entries_count(identifier: str) -> int:
+        return spark.sql(
+            f"""
+            SELECT *
+            FROM {identifier}.metadata_log_entries
+        """
+        ).count()
+
+    # one metadata entry from table creation
+    assert get_metadata_entries_count(identifier) == 1
+
+    # one more metadata entry from transaction
+    with tbl.transaction() as tx:
+        tx.set_properties({"test": "1"})
+        tx.append(arrow_table_with_null)
+    assert get_metadata_entries_count(identifier) == 2
+
+    # two more metadata entries added from two separate transactions
+    tbl.transaction().set_properties({"test": "2"}).commit_transaction()
+    tbl.append(arrow_table_with_null)
+    assert get_metadata_entries_count(identifier) == 4
