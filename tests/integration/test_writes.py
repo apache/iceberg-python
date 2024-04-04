@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import math
 import os
 import time
 import uuid
@@ -652,6 +653,60 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [2])
+def test_create_table_transaction(session_catalog: Catalog, format_version: int) -> None:
+    if format_version == 1:
+        pytest.skip(
+            "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
+        )
+
+    identifier = f"default.arrow_create_table_transaction{format_version}"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    pa_table = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+        },
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+    )
+
+    pa_table_with_column = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+            'bar': [19, None, 25],
+        },
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
+    )
+
+    with session_catalog.create_table_transaction(
+        identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)}
+    ) as txn:
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table, io=txn._table.io):
+                snapshot_update.append_data_file(data_file)
+
+        with txn.update_schema() as schema_txn:
+            schema_txn.union_by_name(pa_table_with_column.schema)
+
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(
+                table_metadata=txn.table_metadata, df=pa_table_with_column, io=txn._table.io
+            ):
+                snapshot_update.append_data_file(data_file)
+
+    tbl = session_catalog.load_table(identifier=identifier)
+    assert tbl.format_version == format_version
+    assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_properties_int_value(
     session_catalog: Catalog,
@@ -683,3 +738,97 @@ def test_table_properties_raise_for_none_value(
             session_catalog, identifier, {"format-version": format_version, **property_with_none}, [arrow_table_with_null]
         )
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_snapshots(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_metadata_snapshots"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    tbl.overwrite(arrow_table_with_null)
+    # should produce a DELETE entry
+    tbl.overwrite(arrow_table_with_null)
+    # Since we don't rewrite, this should produce a new manifest with an ADDED entry
+    tbl.append(arrow_table_with_null)
+
+    df = tbl.inspect.snapshots()
+
+    assert df.column_names == [
+        'committed_at',
+        'snapshot_id',
+        'parent_id',
+        'operation',
+        'manifest_list',
+        'summary',
+    ]
+
+    for committed_at in df['committed_at']:
+        assert isinstance(committed_at.as_py(), datetime)
+
+    for snapshot_id in df['snapshot_id']:
+        assert isinstance(snapshot_id.as_py(), int)
+
+    assert df['parent_id'][0].as_py() is None
+    assert df['parent_id'][1:] == df['snapshot_id'][:2]
+
+    assert [operation.as_py() for operation in df['operation']] == ['append', 'overwrite', 'append']
+
+    for manifest_list in df['manifest_list']:
+        assert manifest_list.as_py().startswith("s3://")
+
+    assert df['summary'][0].as_py() == [
+        ('added-files-size', '5459'),
+        ('added-data-files', '1'),
+        ('added-records', '3'),
+        ('total-data-files', '1'),
+        ('total-delete-files', '0'),
+        ('total-records', '3'),
+        ('total-files-size', '5459'),
+        ('total-position-deletes', '0'),
+        ('total-equality-deletes', '0'),
+    ]
+
+    lhs = spark.table(f"{identifier}.snapshots").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if column == 'summary':
+                # Arrow returns a list of tuples, instead of a dict
+                right = dict(right)
+
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
+
+            assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+@pytest.mark.integration
+def test_write_within_transaction(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.write_in_open_transaction"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    def get_metadata_entries_count(identifier: str) -> int:
+        return spark.sql(
+            f"""
+            SELECT *
+            FROM {identifier}.metadata_log_entries
+        """
+        ).count()
+
+    # one metadata entry from table creation
+    assert get_metadata_entries_count(identifier) == 1
+
+    # one more metadata entry from transaction
+    with tbl.transaction() as tx:
+        tx.set_properties({"test": "1"})
+        tx.append(arrow_table_with_null)
+    assert get_metadata_entries_count(identifier) == 2
+
+    # two more metadata entries added from two separate transactions
+    tbl.transaction().set_properties({"test": "2"}).commit_transaction()
+    tbl.append(arrow_table_with_null)
+    assert get_metadata_entries_count(identifier) == 4

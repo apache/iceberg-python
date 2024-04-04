@@ -165,6 +165,25 @@ catalog.create_table(
 )
 ```
 
+To create a table with some subsequent changes atomically in a transaction:
+
+```python
+with catalog.create_table_transaction(
+    identifier="docs_example.bids",
+    schema=schema,
+    location="s3://pyiceberg",
+    partition_spec=partition_spec,
+    sort_order=sort_order,
+) as txn:
+    with txn.update_schema() as update_schema:
+        update_schema.add_column(path="new_column", field_type=StringType())
+
+    with txn.update_spec() as update_spec:
+        update_spec.add_identity("symbol")
+
+    txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+```
+
 ## Load a table
 
 ### Catalog table
