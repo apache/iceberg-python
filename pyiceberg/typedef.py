@@ -26,6 +26,7 @@ from typing import (
     Dict,
     Generic,
     List,
+    Literal,
     Optional,
     Protocol,
     Set,
@@ -37,6 +38,7 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
+from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from pyiceberg.types import StructType
@@ -199,3 +201,6 @@ class Record(StructProtocol):
     def record_fields(self) -> List[str]:
         """Return values of all the fields of the Record class except those specified in skip_fields."""
         return [self.__getattribute__(v) if hasattr(self, v) else None for v in self._position_to_field_name]
+
+
+TableVersion: TypeAlias = Literal[1, 2]
