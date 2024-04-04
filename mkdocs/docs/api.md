@@ -165,7 +165,7 @@ catalog.create_table(
 )
 ```
 
-To create a table with some subsequent changes in a transaction:
+To create a table with some subsequent changes atomically in a transaction:
 
 ```python
 with catalog.create_table_transaction(
