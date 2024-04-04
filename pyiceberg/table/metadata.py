@@ -412,7 +412,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """The table’s current schema. (Deprecated: use schemas and
     current-schema-id instead)."""
 
-    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec")
+    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec", default_factory=list)
     """The table’s current partition spec, stored as only fields.
     Note that this is used by writers to partition data, but is
     not used when reading because reads use the specs stored in

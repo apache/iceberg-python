@@ -681,6 +681,60 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [2])
+def test_create_table_transaction(session_catalog: Catalog, format_version: int) -> None:
+    if format_version == 1:
+        pytest.skip(
+            "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
+        )
+
+    identifier = f"default.arrow_create_table_transaction{format_version}"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    pa_table = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+        },
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+    )
+
+    pa_table_with_column = pa.Table.from_pydict(
+        {
+            'foo': ['a', None, 'z'],
+            'bar': [19, None, 25],
+        },
+        schema=pa.schema([
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+        ]),
+    )
+
+    with session_catalog.create_table_transaction(
+        identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)}
+    ) as txn:
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table, io=txn._table.io):
+                snapshot_update.append_data_file(data_file)
+
+        with txn.update_schema() as schema_txn:
+            schema_txn.union_by_name(pa_table_with_column.schema)
+
+        with txn.update_snapshot().fast_append() as snapshot_update:
+            for data_file in _dataframe_to_data_files(
+                table_metadata=txn.table_metadata, df=pa_table_with_column, io=txn._table.io
+            ):
+                snapshot_update.append_data_file(data_file)
+
+    tbl = session_catalog.load_table(identifier=identifier)
+    assert tbl.format_version == format_version
+    assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_properties_int_value(
     session_catalog: Catalog,
