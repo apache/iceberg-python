@@ -277,7 +277,7 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 }
 
 
-def data_file_with_partition(partition_type: StructType, format_version: Literal[1, 2]) -> StructType:
+def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
     data_file_partition_type = StructType(*[
         NestedField(
             field_id=field.field_id,
