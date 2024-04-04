@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from decimal import Decimal
-from enum import Enum
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -40,8 +39,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
 from typing_extensions import TypeAlias
-
-from pyiceberg.utils.lazydict import LazyDict
 
 if TYPE_CHECKING:
     from pyiceberg.types import StructType
@@ -164,18 +161,6 @@ def _get_struct_fields(struct_type: StructType) -> Tuple[str, ...]:
     return tuple([field.name for field in struct_type.fields])
 
 
-def _unwrap(r: Any) -> Any:
-    if isinstance(r, Record):
-        return r.__dict__
-    elif isinstance(r, Enum):
-        return r.value
-    elif isinstance(r, LazyDict):
-        # Arrow does not work well with the LazyDict
-        return dict(r)
-    else:
-        return r
-
-
 class Record(StructProtocol):
     __slots__ = ("_position_to_field_name",)
     _position_to_field_name: Tuple[str, ...]
@@ -216,11 +201,6 @@ class Record(StructProtocol):
     def record_fields(self) -> List[str]:
         """Return values of all the fields of the Record class except those specified in skip_fields."""
         return [self.__getattribute__(v) if hasattr(self, v) else None for v in self._position_to_field_name]
-
-    @property
-    def __dict__(self) -> Dict[str, Any]:  # type: ignore
-        """Returns a non-lazy dictionary of the Record class."""
-        return {v: _unwrap(self.__getattribute__(v)) if hasattr(self, v) else None for v in self._position_to_field_name}
 
 
 TableVersion: TypeAlias = Literal[1, 2]
