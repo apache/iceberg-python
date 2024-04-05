@@ -18,7 +18,7 @@
 import re
 import uuid
 from copy import copy
-from typing import Any, Dict, Set, Union
+from typing import Any, Dict, Set, Union, List
 
 import pyarrow as pa
 import pytest
@@ -1349,51 +1349,51 @@ def test__bind_and_validate_static_overwrite_filter_predicate_fails_to_bind_due_
 
 
 @pytest.mark.parametrize(
-    "pred, raises, is_null_preds, eq_to_preds",
+    "expr, raises, is_null_preds, eq_to_preds",
     [
-        (EqualTo(Reference("foo"), "hello"), False, {}, {EqualTo(Reference("foo"), "hello")}),
-        (IsNull(Reference("foo")), False, {IsNull(Reference("foo"))}, {}),
+        (EqualTo(Reference("foo"), "hello"), False, [], [EqualTo(Reference("foo"), "hello")]),
+        (IsNull(Reference("foo")), False, [IsNull(Reference("foo"))], []),
         (
             And(IsNull(Reference("foo")), EqualTo(Reference("boo"), "hello")),
             False,
-            {IsNull(Reference("foo"))},
-            {EqualTo(Reference("boo"), "hello")},
+            [IsNull(Reference("foo"))],
+            [EqualTo(Reference("boo"), "hello")],
         ),
-        (NotNull, True, {}, {}),
-        (NotEqualTo, True, {}, {}),
-        (LessThan(Reference("foo"), 5), True, {}, {}),
-        (Or(IsNull(Reference("foo")), EqualTo(Reference("foo"), "hello")), True, {}, {}),
+        (NotNull, True, [], []),
+        (NotEqualTo, True, [], []),
+        (LessThan(Reference("foo"), 5), True, [], []),
+        (Or(IsNull(Reference("foo")), EqualTo(Reference("foo"), "hello")), True, [], []),
         (
             And(EqualTo(Reference("foo"), "hello"), And(IsNull(Reference("baz")), EqualTo(Reference("boo"), "hello"))),
             False,
-            {IsNull(Reference("baz"))},
-            {EqualTo(Reference("foo"), "hello"), EqualTo(Reference("boo"), "hello")},
+            [IsNull(Reference("baz"))],
+            [EqualTo(Reference("foo"), "hello"), EqualTo(Reference("boo"), "hello")],
         ),
         # Below are crowd-crush tests: a same field can only be with same literal/null, not different literals or both literal and null
         # A false crush: when there are duplicated isnull/equalto, the collector should deduplicate them.
         (
             And(EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "hello")),
             False,
-            {},
-            {EqualTo(Reference("foo"), "hello")},
+            [],
+            [EqualTo(Reference("foo"), "hello")],
         ),
         # When crush happens
         (
             And(EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "bye")),
             True,
-            {},
-            {EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "bye")},
+            [],
+            [EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "bye")],
         ),
-        (And(EqualTo(Reference("foo"), "hello"), IsNull(Reference("foo"))), True, {IsNull(Reference("foo"))}, {}),
+        (And(EqualTo(Reference("foo"), "hello"), IsNull(Reference("foo"))), True, [IsNull(Reference("foo"))], []),
     ],
 )
 def test__validate_static_overwrite_filter_expr_type(
-    pred: Union[IsNull, EqualTo[Any]], raises: bool, is_null_preds: Set[IsNull], eq_to_preds: Set[EqualTo[L]]
+    expr: Union[IsNull, EqualTo[Any]], raises: bool, is_null_preds: List[IsNull], eq_to_preds: List[EqualTo[L]]
 ) -> None:
     if raises:
         with pytest.raises(ValueError):
-            res = _validate_static_overwrite_filter_expr_type(pred)
+            res = _validate_static_overwrite_filter_expr_type(expr)
     else:
-        res = _validate_static_overwrite_filter_expr_type(pred)
+        res = _validate_static_overwrite_filter_expr_type(expr)
         assert {str(e) for e in res[0]} == {str(e) for e in is_null_preds}
         assert {str(e) for e in res[1]} == {str(e) for e in eq_to_preds}

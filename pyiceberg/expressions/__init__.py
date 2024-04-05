@@ -351,6 +351,11 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
     @abstractmethod
     def as_unbound(self) -> Type[UnboundPredicate[Any]]: ...
 
+    
+    def __hash__(self) -> int:
+        """Return hash value of the BoundPredicate class."""
+        return hash(str(self))
+
 
 class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression, ABC):
     term: UnboundTerm[Any]
@@ -369,6 +374,10 @@ class UnboundPredicate(Generic[L], Unbound[BooleanExpression], BooleanExpression
     @abstractmethod
     def as_bound(self) -> Type[BoundPredicate[L]]: ...
 
+    def __hash__(self) -> int:
+        """Return hash value of the UnaryPredicate class."""
+        return hash(str(self))
+
 
 class UnaryPredicate(UnboundPredicate[Any], ABC):
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundUnaryPredicate[Any]:
@@ -383,9 +392,7 @@ class UnaryPredicate(UnboundPredicate[Any], ABC):
     @abstractmethod
     def as_bound(self) -> Type[BoundUnaryPredicate[Any]]: ...
 
-    def __hash__(self) -> int:
-        """Return hash value of the UnaryPredicate class."""
-        return hash(str(self))
+
 
 
 class BoundUnaryPredicate(BoundPredicate[L], ABC):
@@ -415,10 +422,6 @@ class BoundIsNull(BoundUnaryPredicate[L]):
     @property
     def as_unbound(self) -> Type[IsNull]:
         return IsNull
-
-    def __hash__(self) -> int:
-        """Return hash value of the BoundIsNull class."""
-        return hash(str(self))
 
 
 class BoundNotNull(BoundUnaryPredicate[L]):
@@ -733,6 +736,10 @@ class BoundLiteralPredicate(BoundPredicate[L], ABC):
     @abstractmethod
     def as_unbound(self) -> Type[LiteralPredicate[L]]: ...
 
+    def __hash__(self) -> int:
+        """Return hash value of the BoundLiteralPredicate class."""
+        return hash(str(self))
+
 
 class BoundEqualTo(BoundLiteralPredicate[L]):
     def __invert__(self) -> BoundNotEqualTo[L]:
@@ -743,9 +750,6 @@ class BoundEqualTo(BoundLiteralPredicate[L]):
     def as_unbound(self) -> Type[EqualTo[L]]:
         return EqualTo
 
-    def __hash__(self) -> int:
-        """Return hash value of the BoundEqualTo class."""
-        return hash(str(self))
 
 
 class BoundNotEqualTo(BoundLiteralPredicate[L]):
