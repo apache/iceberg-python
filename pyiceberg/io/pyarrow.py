@@ -1772,7 +1772,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
-        file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
@@ -1787,7 +1787,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
-            partition=Record(),
+            partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
             # After this has been fixed:
             # https://github.com/apache/iceberg-python/issues/271

@@ -16,13 +16,13 @@
 # under the License.
 from __future__ import annotations
 
-import datetime
 import itertools
 import uuid
 import warnings
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from functools import cached_property, singledispatch
 from itertools import chain
@@ -79,6 +79,8 @@ from pyiceberg.partitioning import (
     PARTITION_FIELD_ID_START,
     UNPARTITIONED_PARTITION_SPEC,
     PartitionField,
+    PartitionFieldValue,
+    PartitionKey,
     PartitionSpec,
     _PartitionNameGenerator,
     _visit_partition_field,
@@ -373,8 +375,11 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if len(self._table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
+        supported_transforms = {IdentityTransform}
+        if not all(type(field.transform) in supported_transforms for field in self.table_metadata.spec().fields):
+            raise ValueError(
+                f"All transforms are not supported, expected: {supported_transforms}, but get: {[str(field) for field in self.table_metadata.spec().fields if field.transform not in supported_transforms]}."
+            )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
@@ -897,7 +902,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if update.ref_name == MAIN_BRANCH:
         metadata_updates["current_snapshot_id"] = snapshot_ref.snapshot_id
         if "last_updated_ms" not in metadata_updates:
-            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.now().astimezone())
 
         metadata_updates["snapshot_log"] = base_metadata.snapshot_log + [
             SnapshotLogEntry(
@@ -2646,15 +2651,22 @@ def _add_and_move_fields(
 class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
+    schema: Schema
     record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
-
-    # Later to be extended with partition information
+    partition_key: Optional[PartitionKey] = None
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+
+    def generate_data_file_path(self, extension: str) -> str:
+        if self.partition_key:
+            file_path = f"{self.partition_key.to_path()}/{self.generate_data_file_filename(extension)}"
+            return file_path
+        else:
+            return self.generate_data_file_filename(extension)
 
 
 @dataclass(frozen=True)
@@ -2683,25 +2695,40 @@ def _dataframe_to_data_files(
     """
     from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
 
-    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
-        raise ValueError("Cannot write to partitioned tables")
-
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
-
-    target_file_size = PropertyUtil.property_as_int(
+    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
         properties=table_metadata.properties,
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
 
-    # This is an iter, so we don't have to materialize everything every time
-    # This will be more relevant when we start doing partitioned writes
-    yield from write_file(
-        io=io,
-        table_metadata=table_metadata,
-        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, target_file_size)]),  # type: ignore
-    )
+    if len(table_metadata.spec().fields) > 0:
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=table_metadata.schema(),
+                )
+                for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+            ]),
+        )
+    else:
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                for batches in bin_pack_arrow_table(df, target_file_size)
+            ]),
+        )
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
@@ -3253,7 +3280,7 @@ class InspectTable:
                 additional_properties = None
 
             snapshots.append({
-                'committed_at': datetime.datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'committed_at': datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
                 'snapshot_id': snapshot.snapshot_id,
                 'parent_id': snapshot.parent_snapshot_id,
                 'operation': str(operation),
@@ -3388,3 +3415,112 @@ class InspectTable:
             entries,
             schema=entries_schema,
         )
+
+
+@dataclass(frozen=True)
+class TablePartition:
+    partition_key: PartitionKey
+    arrow_table_partition: pa.Table
+
+
+def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
+    order = 'ascending' if not reverse else 'descending'
+    null_placement = 'at_start' if reverse else 'at_end'
+    return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
+
+
+def group_by_partition_scheme(arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
+    """Given a table, sort it by current partition scheme."""
+    # only works for identity for now
+    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
+    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
+    return sorted_arrow_table
+
+
+def get_partition_columns(
+    spec: PartitionSpec,
+    schema: Schema,
+) -> list[str]:
+    partition_cols = []
+    for partition_field in spec.fields:
+        column_name = schema.find_column_name(partition_field.source_id)
+        if not column_name:
+            raise ValueError(f"{partition_field=} could not be found in {schema}.")
+        partition_cols.append(column_name)
+    return partition_cols
+
+
+def _get_table_partitions(
+    arrow_table: pa.Table,
+    partition_spec: PartitionSpec,
+    schema: Schema,
+    slice_instructions: list[dict[str, Any]],
+) -> list[TablePartition]:
+    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x['offset'])
+
+    partition_fields = partition_spec.fields
+
+    offsets = [inst["offset"] for inst in sorted_slice_instructions]
+    projected_and_filtered = {
+        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
+        .take(offsets)
+        .to_pylist()
+        for partition_field in partition_fields
+    }
+
+    table_partitions = []
+    for idx, inst in enumerate(sorted_slice_instructions):
+        partition_slice = arrow_table.slice(**inst)
+        fieldvalues = [
+            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
+            for partition_field in partition_fields
+        ]
+        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
+        table_partitions.append(TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
+    return table_partitions
+
+
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
+    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+
+    Example:
+    Input:
+    An arrow table with partition key of ['n_legs', 'year'] and with data of
+    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
+     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
+    The algrithm:
+    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement of "at_end".
+    This gives the same table as raw input.
+    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement : "at_start".
+    This gives:
+    [8, 7, 4, 5, 6, 3, 1, 2, 0]
+    Based on this we get partition groups of indices:
+    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
+    We then retrieve the partition keys by offsets.
+    And slice the arrow table by offsets and lengths of each partition.
+    """
+    import pyarrow as pa
+
+    partition_columns = get_partition_columns(spec=spec, schema=schema)
+    arrow_table = group_by_partition_scheme(arrow_table, partition_columns)
+
+    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
+    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
+
+    slice_instructions: list[dict[str, Any]] = []
+    last = len(reversed_indices)
+    reversed_indices_size = len(reversed_indices)
+    ptr = 0
+    while ptr < reversed_indices_size:
+        group_size = last - reversed_indices[ptr]
+        offset = reversed_indices[ptr]
+        slice_instructions.append({"offset": offset, "length": group_size})
+        last = reversed_indices[ptr]
+        ptr = ptr + group_size
+
+    table_partitions: list[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+
+    return table_partitions
