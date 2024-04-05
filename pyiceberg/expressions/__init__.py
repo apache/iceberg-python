@@ -351,7 +351,6 @@ class BoundPredicate(Generic[L], Bound, BooleanExpression, ABC):
     @abstractmethod
     def as_unbound(self) -> Type[UnboundPredicate[Any]]: ...
 
-    
     def __hash__(self) -> int:
         """Return hash value of the BoundPredicate class."""
         return hash(str(self))
@@ -391,8 +390,6 @@ class UnaryPredicate(UnboundPredicate[Any], ABC):
     @property
     @abstractmethod
     def as_bound(self) -> Type[BoundUnaryPredicate[Any]]: ...
-
-
 
 
 class BoundUnaryPredicate(BoundPredicate[L], ABC):
@@ -749,7 +746,6 @@ class BoundEqualTo(BoundLiteralPredicate[L]):
     @property
     def as_unbound(self) -> Type[EqualTo[L]]:
         return EqualTo
-
 
 
 class BoundNotEqualTo(BoundLiteralPredicate[L]):

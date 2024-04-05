@@ -1776,7 +1776,6 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-                writer.write(pa.Table.from_batches(task.record_batches), row_group_size=row_group_size)
                 arrow_table = pa.Table.from_batches(task.record_batches)
                 # align the columns accordingly in case input arrow table has columns in order different from iceberg table
                 df_to_write = arrow_table.select(arrow_file_schema.names)

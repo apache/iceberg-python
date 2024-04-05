@@ -18,7 +18,7 @@
 import re
 import uuid
 from copy import copy
-from typing import Any, Dict, Set, Union, List
+from typing import Any, Dict, List, Union
 
 import pyarrow as pa
 import pytest
