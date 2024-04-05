@@ -1467,7 +1467,8 @@ S = TypeVar("S", bound="TableScan", covariant=True)
 
 
 class TableScan(ABC):
-    table: Table
+    table_metadata: TableMetadata
+    io: FileIO
     row_filter: BooleanExpression
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
@@ -1477,7 +1478,8 @@ class TableScan(ABC):
 
     def __init__(
         self,
-        table: Table,
+        table_metadata: TableMetadata,
+        io: FileIO,
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
@@ -1485,7 +1487,8 @@ class TableScan(ABC):
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
-        self.table = table
+        self.table_metadata = table_metadata
+        self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.selected_fields = selected_fields
         self.case_sensitive = case_sensitive
@@ -1495,16 +1498,16 @@ class TableScan(ABC):
 
     def snapshot(self) -> Optional[Snapshot]:
         if self.snapshot_id:
-            return self.table.snapshot_by_id(self.snapshot_id)
-        return self.table.current_snapshot()
+            return self.table_metadata.snapshot_by_id(self.snapshot_id)
+        return self.table_metadata.current_snapshot()
 
     def projection(self) -> Schema:
-        current_schema = self.table.schema()
+        current_schema = self.table_metadata.schema()
         if self.snapshot_id is not None:
-            snapshot = self.table.snapshot_by_id(self.snapshot_id)
+            snapshot = self.table_metadata.snapshot_by_id(self.snapshot_id)
             if snapshot is not None:
                 if snapshot.schema_id is not None:
-                    snapshot_schema = self.table.schemas().get(snapshot.schema_id)
+                    snapshot_schema = self.table_metadata.schemas().get(snapshot.schema_id)
                     if snapshot_schema is not None:
                         current_schema = snapshot_schema
                     else:
@@ -1625,17 +1628,6 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 
 class DataScan(TableScan):
-    def __init__(
-        self,
-        table: Table,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
-    ):
-        super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
@@ -2912,7 +2904,9 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
 
 
-class DeleteFiles(_MergingSnapshotProducer):
+class MetadataDeleteFiles(_MergingSnapshotProducer):
+    """Will delete manifest entries from the current snapshot based on the predicate"""
+
     _predicate: BooleanExpression
 
     def __init__(
@@ -2954,7 +2948,7 @@ class DeleteFiles(_MergingSnapshotProducer):
         self._predicate = Or(self._predicate, predicate)
 
     @cached_property
-    def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry]]:
+    def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry], bool]:
         schema = self._transaction.table_metadata.schema()
 
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
@@ -2972,6 +2966,7 @@ class DeleteFiles(_MergingSnapshotProducer):
 
         existing_manifests = []
         total_deleted_entries = []
+        partial_rewrites_needed = False
         if snapshot := self._transaction.table_metadata.current_snapshot():
             for num, manifest_file in enumerate(snapshot.manifests(io=self._io)):
                 if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
@@ -2987,7 +2982,8 @@ class DeleteFiles(_MergingSnapshotProducer):
                         elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
                             existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
                         else:
-                            raise ValueError("Deletes do not support rewrites of data files")
+                            # Based on the metadata, it is unsure to say if the file can be deleted
+                            partial_rewrites_needed = True
 
                     if len(deleted_entries) > 0:
                         total_deleted_entries += deleted_entries
@@ -3006,16 +3002,21 @@ class DeleteFiles(_MergingSnapshotProducer):
                             ) as writer:
                                 for existing_entry in existing_entries:
                                     writer.add_entry(existing_entry)
+                            existing_manifests.append(writer.to_manifest_file())
                     else:
                         existing_manifests.append(manifest_file)
 
-        return existing_manifests, total_deleted_entries
+        return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
     def _existing_manifests(self) -> List[ManifestFile]:
         return self._compute_deletes[0]
 
     def _deleted_entries(self) -> List[ManifestEntry]:
         return self._compute_deletes[1]
+
+    def rewrites_needed(self) -> bool:
+        """Indicates if data files need to be rewritten"""
+        return self._compute_deletes[2]
 
 
 class FastAppendFiles(_MergingSnapshotProducer):
@@ -3115,8 +3116,8 @@ class UpdateSnapshot:
             snapshot_properties=self._snapshot_properties,
         )
 
-    def delete(self) -> DeleteFiles:
-        return DeleteFiles(
+    def delete(self) -> MetadataDeleteFiles:
+        return MetadataDeleteFiles(
             operation=Operation.DELETE,
             transaction=self._transaction,
             io=self._io,
