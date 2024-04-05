@@ -15,9 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import re
 import uuid
 from copy import copy
-from typing import Any, Dict
+from typing import Any, Dict, Set, Union
 
 import pyarrow as pa
 import pytest
@@ -31,6 +32,12 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNull,
+    LessThan,
+    NotEqualTo,
+    NotNull,
+    Or,
+    Reference,
 )
 from pyiceberg.io import PY_IO_IMPL, load_file_io
 from pyiceberg.manifest import (
@@ -63,10 +70,12 @@ from pyiceberg.table import (
     TableIdentifier,
     UpdateSchema,
     _apply_table_update,
+    _bind_and_validate_static_overwrite_filter_predicate,
     _check_schema_compatible,
     _determine_partitions,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
+    _validate_static_overwrite_filter_expr_type,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
@@ -86,8 +95,9 @@ from pyiceberg.table.sorting import (
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
+    TruncateTransform,
 )
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import L, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1226,3 +1236,164 @@ def test_identity_partition_on_multi_columns() -> None:
             ('n_legs', 'ascending'),
             ('animal', 'ascending'),
         ]) == arrow_table.sort_by([('born_year', 'ascending'), ('n_legs', 'ascending'), ('animal', 'ascending')])
+
+
+def test__bind_and_validate_static_overwrite_filter_predicate_fails_on_non_schema_fields_in_filter(
+    iceberg_schema_simple: Schema,
+) -> None:
+    pred = EqualTo(Reference("not a field"), "hello")
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="test_part_col")
+    )
+    with pytest.raises(ValueError, match="Could not find field with name not a field, case_sensitive=True"):
+        _bind_and_validate_static_overwrite_filter_predicate(
+            unbound_expr=pred, table_schema=iceberg_schema_simple, spec=partition_spec
+        )
+
+
+def test__bind_and_validate_static_overwrite_filter_predicate_fails_on_non_part_fields_in_filter(
+    iceberg_schema_simple: Schema,
+) -> None:
+    pred = EqualTo(Reference("foo"), "hello")
+    partition_spec = PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="bar"))
+    import re
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Detected that the field of (1: foo: optional string) in static overwrite filter is not a partition field."
+        ),
+    ):
+        _bind_and_validate_static_overwrite_filter_predicate(
+            unbound_expr=pred, table_schema=iceberg_schema_simple, spec=partition_spec
+        )
+
+
+def test__bind_and_validate_static_overwrite_filter_predicate_fails_on_non_identity_transorm_filter(
+    iceberg_schema_simple: Schema,
+) -> None:
+    # when
+    pred = EqualTo(Reference("foo"), "hello")
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="bar"),
+        PartitionField(source_id=1, field_id=1002, transform=TruncateTransform(2), name="foo_trunc"),
+    )
+
+    # then
+    with pytest.raises(
+        ValueError,
+        match="Expecting static overwrite filter only to on fields with identity transform, but get transform:.*",
+    ):
+        _bind_and_validate_static_overwrite_filter_predicate(
+            unbound_expr=pred, table_schema=iceberg_schema_simple, spec=partition_spec
+        )
+
+    # when
+    pred_2 = EqualTo(Reference("bar"), 1)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="bar"),
+        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="bar_2"),
+    )
+    # then
+    _bind_and_validate_static_overwrite_filter_predicate(
+        unbound_expr=pred_2, table_schema=iceberg_schema_simple, spec=partition_spec
+    )
+
+
+def test__bind_and_validate_static_overwrite_filter_predicate_succeeds_on_an_identity_transform_field_although_table_has_other_hidden_partition_fields(
+    iceberg_schema_simple: Schema,
+) -> None:
+    pred = EqualTo(Reference("bar"), 3)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="bar"),
+        PartitionField(source_id=1, field_id=1002, transform=TruncateTransform(2), name="foo_trunc"),
+    )
+
+    _bind_and_validate_static_overwrite_filter_predicate(
+        unbound_expr=pred, table_schema=iceberg_schema_simple, spec=partition_spec
+    )
+
+
+def test__bind_and_validate_static_overwrite_filter_predicate_fails_to_bind_due_to_incompatible_predicate_value(
+    iceberg_schema_simple: Schema,
+) -> None:
+    pred = EqualTo(Reference("bar"), "an incompatible type")
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="bar"),
+        PartitionField(source_id=1, field_id=1002, transform=TruncateTransform(2), name="foo_trunc"),
+    )
+    with pytest.raises(ValueError, match="Could not convert an incompatible type into a int"):
+        _bind_and_validate_static_overwrite_filter_predicate(
+            unbound_expr=pred, table_schema=iceberg_schema_simple, spec=partition_spec
+        )
+
+
+def test__bind_and_validate_static_overwrite_filter_predicate_fails_to_bind_due_to_non_nullable(
+    iceberg_schema_simple: Schema,
+) -> None:
+    pred = IsNull(Reference("bar"))
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name="baz"),
+        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="bar"),
+    )
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Static overwrite on a non-nullable partition field with null values: IsNull(term=Reference(name='bar'))."
+        ),
+    ):
+        _bind_and_validate_static_overwrite_filter_predicate(
+            unbound_expr=pred, table_schema=iceberg_schema_simple, spec=partition_spec
+        )
+
+
+@pytest.mark.parametrize(
+    "pred, raises, is_null_preds, eq_to_preds",
+    [
+        (EqualTo(Reference("foo"), "hello"), False, {}, {EqualTo(Reference("foo"), "hello")}),
+        (IsNull(Reference("foo")), False, {IsNull(Reference("foo"))}, {}),
+        (
+            And(IsNull(Reference("foo")), EqualTo(Reference("boo"), "hello")),
+            False,
+            {IsNull(Reference("foo"))},
+            {EqualTo(Reference("boo"), "hello")},
+        ),
+        (NotNull, True, {}, {}),
+        (NotEqualTo, True, {}, {}),
+        (LessThan(Reference("foo"), 5), True, {}, {}),
+        (Or(IsNull(Reference("foo")), EqualTo(Reference("foo"), "hello")), True, {}, {}),
+        (
+            And(EqualTo(Reference("foo"), "hello"), And(IsNull(Reference("baz")), EqualTo(Reference("boo"), "hello"))),
+            False,
+            {IsNull(Reference("baz"))},
+            {EqualTo(Reference("foo"), "hello"), EqualTo(Reference("boo"), "hello")},
+        ),
+        # Below are crowd-crush tests: a same field can only be with same literal/null, not different literals or both literal and null
+        # A false crush: when there are duplicated isnull/equalto, the collector should deduplicate them.
+        (
+            And(EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "hello")),
+            False,
+            {},
+            {EqualTo(Reference("foo"), "hello")},
+        ),
+        # When crush happens
+        (
+            And(EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "bye")),
+            True,
+            {},
+            {EqualTo(Reference("foo"), "hello"), EqualTo(Reference("foo"), "bye")},
+        ),
+        (And(EqualTo(Reference("foo"), "hello"), IsNull(Reference("foo"))), True, {IsNull(Reference("foo"))}, {}),
+    ],
+)
+def test__validate_static_overwrite_filter_expr_type(
+    pred: Union[IsNull, EqualTo[Any]], raises: bool, is_null_preds: Set[IsNull], eq_to_preds: Set[EqualTo[L]]
+) -> None:
+    if raises:
+        with pytest.raises(ValueError):
+            res = _validate_static_overwrite_filter_expr_type(pred)
+    else:
+        res = _validate_static_overwrite_filter_expr_type(pred)
+        assert {str(e) for e in res[0]} == {str(e) for e in is_null_preds}
+        assert {str(e) for e in res[1]} == {str(e) for e in eq_to_preds}
