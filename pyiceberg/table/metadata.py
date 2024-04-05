@@ -278,6 +278,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
         return snapshot_id
 
+    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+        """Return the snapshot referenced by the given name or null if no such reference exists."""
+        if ref := self.refs.get(name):
+            return self.snapshot_by_id(ref.snapshot_id)
+        return None
+
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.current_snapshot_id is not None:
