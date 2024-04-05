@@ -383,6 +383,10 @@ class UnaryPredicate(UnboundPredicate[Any], ABC):
     @abstractmethod
     def as_bound(self) -> Type[BoundUnaryPredicate[Any]]: ...
 
+    def __hash__(self) -> int:
+        """Return hash value of the UnaryPredicate class."""
+        return hash(str(self))
+
 
 class BoundUnaryPredicate(BoundPredicate[L], ABC):
     def __repr__(self) -> str:
@@ -411,6 +415,10 @@ class BoundIsNull(BoundUnaryPredicate[L]):
     @property
     def as_unbound(self) -> Type[IsNull]:
         return IsNull
+
+    def __hash__(self) -> int:
+        """Return hash value of the BoundIsNull class."""
+        return hash(str(self))
 
 
 class BoundNotNull(BoundUnaryPredicate[L]):
@@ -698,6 +706,10 @@ class LiteralPredicate(UnboundPredicate[L], ABC):
     @abstractmethod
     def as_bound(self) -> Type[BoundLiteralPredicate[L]]: ...
 
+    def __hash__(self) -> int:
+        """Return hash value of the LiteralPredicate class."""
+        return hash(str(self))
+
 
 class BoundLiteralPredicate(BoundPredicate[L], ABC):
     literal: Literal[L]
@@ -730,6 +742,10 @@ class BoundEqualTo(BoundLiteralPredicate[L]):
     @property
     def as_unbound(self) -> Type[EqualTo[L]]:
         return EqualTo
+
+    def __hash__(self) -> int:
+        """Return hash value of the BoundEqualTo class."""
+        return hash(str(self))
 
 
 class BoundNotEqualTo(BoundLiteralPredicate[L]):
