@@ -58,7 +58,7 @@ from pyiceberg.catalog import (
     LOCATION,
     METADATA_LOCATION,
     TABLE_TYPE,
-    Catalog,
+    MetastoreCatalog,
     PropertiesUpdateSummary,
 )
 from pyiceberg.exceptions import (
@@ -230,7 +230,7 @@ class SchemaToHiveConverter(SchemaVisitor[str]):
             return HIVE_PRIMITIVE_TYPES[type(primitive)]
 
 
-class HiveCatalog(Catalog):
+class HiveCatalog(MetastoreCatalog):
     _client: _HiveClient
 
     def __init__(self, name: str, **properties: str):

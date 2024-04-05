@@ -56,7 +56,17 @@ export GIT_TAG_HASH=${GIT_TAG_REF:0:40}
 export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 ```
 
-The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57
+The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57.
+If you have not published your GPG key in [KEYS](https://dist.apache.org/repos/dist/dev/iceberg/KEYS) yet, you must publish it before sending the vote email by doing:
+
+```bash
+svn co https://dist.apache.org/repos/dist/dev/iceberg icebergsvn
+cd icebergsvn
+echo "" >> KEYS # append a newline
+gpg --list-sigs <YOUR KEY ID HERE> >> KEYS # append signatures
+gpg --armor --export <YOUR KEY ID HERE> >> KEYS # append public key block
+svn commit -m "add key for <YOUR NAME HERE>"
+```
 
 ### Upload to Apache SVN
 
@@ -96,7 +106,7 @@ Go to Github Actions and run the `Python release` action. Set the version of the
 Next step is to upload them to pypi. Please keep in mind that this **won't** bump the version for everyone that hasn't pinned their version, since it is set to an RC [pre-release and those are ignored](https://packaging.python.org/en/latest/guides/distributing-packages-using-setuptools/#pre-release-versioning).
 
 ```bash
-twine upload -s release-0.1.0rc1/*
+twine upload release-0.1.0rc1/*
 ```
 
 Final step is to generate the email to the dev mail list:
@@ -176,7 +186,7 @@ svn ci -m "PyIceberg <VERSION>" /tmp/iceberg-dist-release/
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
 
 ```bash
-twine upload -s /tmp/iceberg-dist-release/pyiceberg-<VERSION>/*
+twine upload /tmp/iceberg-dist-release/pyiceberg-<VERSION>/*
 ```
 
 Send out an announcement on the dev mail list:
