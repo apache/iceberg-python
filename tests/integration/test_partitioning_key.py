@@ -749,7 +749,7 @@ def test_partition_key(
     # key.to_path() generates the hive partitioning part of the to-write parquet file path
     assert key.to_path() == expected_hive_partition_path_slice
 
-    # Justify expected values are not made up but conform to spark behaviors
+    # Justify expected values are not made up but conforming to spark behaviors
     if spark_create_table_sql_for_justification is not None and spark_data_insert_sql_for_justification is not None:
         try:
             spark.sql(f"drop table {identifier}")

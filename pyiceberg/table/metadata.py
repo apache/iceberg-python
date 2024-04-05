@@ -49,7 +49,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
-from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -245,6 +245,31 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
+    def specs_struct(self) -> StructType:
+        """Produce a struct of all the combined PartitionSpecs.
+
+        The partition fields should be optional: Partition fields may be added later,
+        in which case not all files would have the result field, and it may be null.
+
+        :return: A StructType that represents all the combined PartitionSpecs of the table
+        """
+        specs = self.specs()
+
+        # Collect all the fields
+        struct_fields = {field.field_id: field for spec in specs.values() for field in spec.fields}
+
+        schema = self.schema()
+
+        nested_fields = []
+        # Sort them by field_id in order to get a deterministic output
+        for field_id in sorted(struct_fields):
+            field = struct_fields[field_id]
+            source_type = schema.find_type(field.source_id)
+            result_type = field.transform.result_type(source_type)
+            nested_fields.append(NestedField(field_id=field.field_id, name=field.name, type=result_type, required=False))
+
+        return StructType(*nested_fields)
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
@@ -412,7 +437,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """The table’s current schema. (Deprecated: use schemas and
     current-schema-id instead)."""
 
-    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec")
+    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec", default_factory=list)
     """The table’s current partition spec, stored as only fields.
     Note that this is used by writers to partition data, but is
     not used when reading because reads use the specs stored in

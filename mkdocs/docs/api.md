@@ -165,6 +165,25 @@ catalog.create_table(
 )
 ```
 
+To create a table with some subsequent changes atomically in a transaction:
+
+```python
+with catalog.create_table_transaction(
+    identifier="docs_example.bids",
+    schema=schema,
+    location="s3://pyiceberg",
+    partition_spec=partition_spec,
+    sort_order=sort_order,
+) as txn:
+    with txn.update_schema() as update_schema:
+        update_schema.add_column(path="new_column", field_type=StringType())
+
+    with txn.update_spec() as update_spec:
+        update_spec.add_identity("symbol")
+
+    txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+```
+
 ## Load a table
 
 ### Catalog table
@@ -351,7 +370,165 @@ manifest_list: [["s3://warehouse/default/table_metadata_snapshots/metadata/snap-
 summary: [[keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","1","0","3","5459","0","0"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-records",...,"total-equality-deletes","total-files-size","deleted-data-files","deleted-records","removed-files-size"]values:["5459","1","3","1","3",...,"0","5459","1","3","5459"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","2","0","6","10918","0","0"]]]
 ```
 
-### Add Files
+### Entries
+
+To show all the table's current manifest entries for both data and delete files.
+
+```python
+table.inspect.entries()
+```
+
+```
+pyarrow.Table
+status: int8 not null
+snapshot_id: int64 not null
+sequence_number: int64 not null
+file_sequence_number: int64 not null
+data_file: struct<content: int8 not null, file_path: string not null, file_format: string not null, partition: struct<> not null, record_count: int64 not null, file_size_in_bytes: int64 not null, column_sizes: map<int32, int64>, value_counts: map<int32, int64>, null_value_counts: map<int32, int64>, nan_value_counts: map<int32, int64>, lower_bounds: map<int32, binary>, upper_bounds: map<int32, binary>, key_metadata: binary, split_offsets: list<item: int64>, equality_ids: list<item: int32>, sort_order_id: int32> not null
+  child 0, content: int8 not null
+  child 1, file_path: string not null
+  child 2, file_format: string not null
+  child 3, partition: struct<> not null
+  child 4, record_count: int64 not null
+  child 5, file_size_in_bytes: int64 not null
+  child 6, column_sizes: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 7, value_counts: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 8, null_value_counts: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 9, nan_value_counts: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 10, lower_bounds: map<int32, binary>
+      child 0, entries: struct<key: int32 not null, value: binary> not null
+          child 0, key: int32 not null
+          child 1, value: binary
+  child 11, upper_bounds: map<int32, binary>
+      child 0, entries: struct<key: int32 not null, value: binary> not null
+          child 0, key: int32 not null
+          child 1, value: binary
+  child 12, key_metadata: binary
+  child 13, split_offsets: list<item: int64>
+      child 0, item: int64
+  child 14, equality_ids: list<item: int32>
+      child 0, item: int32
+  child 15, sort_order_id: int32
+readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
+  child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: string
+      child 5, upper_bound: string
+  child 1, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: double
+      child 5, upper_bound: double
+  child 2, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: double
+      child 5, upper_bound: double
+----
+status: [[1]]
+snapshot_id: [[6245626162224016531]]
+sequence_number: [[1]]
+file_sequence_number: [[1]]
+data_file: [
+  -- is_valid: all not null
+  -- child 0 type: int8
+[0]
+  -- child 1 type: string
+["s3://warehouse/default/cities/data/00000-0-80766b66-e558-4150-a5cf-85e4c609b9fe.parquet"]
+  -- child 2 type: string
+["PARQUET"]
+  -- child 3 type: struct<>
+    -- is_valid: all not null
+  -- child 4 type: int64
+[4]
+  -- child 5 type: int64
+[1656]
+  -- child 6 type: map<int32, int64>
+[keys:[1,2,3]values:[140,135,135]]
+  -- child 7 type: map<int32, int64>
+[keys:[1,2,3]values:[4,4,4]]
+  -- child 8 type: map<int32, int64>
+[keys:[1,2,3]values:[0,0,0]]
+  -- child 9 type: map<int32, int64>
+[keys:[]values:[]]
+  -- child 10 type: map<int32, binary>
+[keys:[1,2,3]values:[416D7374657264616D,8602B68311E34240,3A77BB5E9A9B5EC0]]
+  -- child 11 type: map<int32, binary>
+[keys:[1,2,3]values:[53616E204672616E636973636F,F5BEF1B5678E4A40,304CA60A46651840]]
+  -- child 12 type: binary
+[null]
+  -- child 13 type: list<item: int64>
+[[4]]
+  -- child 14 type: list<item: int32>
+[null]
+  -- child 15 type: int32
+[null]]
+readable_metrics: [
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[140]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: string
+["Amsterdam"]
+    -- child 5 type: string
+["San Francisco"]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[135]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: double
+[37.773972]
+    -- child 5 type: double
+[53.11254]
+  -- child 2 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[135]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: double
+[-122.431297]
+    -- child 5 type: double
+[6.0989]]
+```
+
+## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
 

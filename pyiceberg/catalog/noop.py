@@ -28,6 +28,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CreateTableTransaction,
     Table,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -49,7 +50,21 @@ class NoopCatalog(Catalog):
     ) -> Table:
         raise NotImplementedError
 
+    def create_table_transaction(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> CreateTableTransaction:
+        raise NotImplementedError
+
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
+        raise NotImplementedError
+
+    def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
@@ -68,6 +83,9 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
+    def purge_table(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
