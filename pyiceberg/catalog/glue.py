@@ -162,7 +162,7 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
         if isinstance(primitive, DecimalType):
             return f"decimal({primitive.precision},{primitive.scale})"
         if (primitive_type := type(primitive)) not in GLUE_PRIMITIVE_TYPES:
-            return str(primitive_type.root)
+            return str(primitive)
         return GLUE_PRIMITIVE_TYPES[primitive_type]
 
 

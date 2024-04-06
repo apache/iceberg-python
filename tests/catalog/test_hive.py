@@ -61,11 +61,24 @@ from pyiceberg.table.sorting import (
 from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
     IntegerType,
+    ListType,
     LongType,
+    MapType,
     NestedField,
     StringType,
+    StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
 )
 
 HIVE_CATALOG_NAME = "hive"
@@ -182,14 +195,14 @@ def test_check_number_of_namespaces(table_schema_simple: Schema) -> None:
 
 
 @patch("time.time", MagicMock(return_value=12345))
-def test_create_table(table_schema_simple: Schema, hive_database: HiveDatabase, hive_table: HiveTable) -> None:
+def test_create_table(table_schema_with_all_types: Schema, hive_database: HiveDatabase, hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
     catalog._client.__enter__().get_table.return_value = hive_table
     catalog._client.__enter__().get_database.return_value = hive_database
-    catalog.create_table(("default", "table"), schema=table_schema_simple, properties={"owner": "javaberg"})
+    catalog.create_table(("default", "table"), schema=table_schema_with_all_types, properties={"owner": "javaberg"})
 
     called_hive_table: HiveTable = catalog._client.__enter__().create_table.call_args[0][0]
     # This one is generated within the function itself, so we need to extract
@@ -207,9 +220,23 @@ def test_create_table(table_schema_simple: Schema, hive_database: HiveDatabase, 
             retention=None,
             sd=StorageDescriptor(
                 cols=[
-                    FieldSchema(name="foo", type="string", comment=None),
-                    FieldSchema(name="bar", type="int", comment=None),
-                    FieldSchema(name="baz", type="boolean", comment=None),
+                    FieldSchema(name='boolean', type='boolean', comment=None),
+                    FieldSchema(name='integer', type='int', comment=None),
+                    FieldSchema(name='long', type='bigint', comment=None),
+                    FieldSchema(name='float', type='float', comment=None),
+                    FieldSchema(name='double', type='double', comment=None),
+                    FieldSchema(name='decimal', type='decimal(32,3)', comment=None),
+                    FieldSchema(name='date', type='date', comment=None),
+                    FieldSchema(name='time', type='string', comment=None),
+                    FieldSchema(name='timestamp', type='timestamp', comment=None),
+                    FieldSchema(name='timestamptz', type='timestamp', comment=None),
+                    FieldSchema(name='string', type='string', comment=None),
+                    FieldSchema(name='uuid', type='string', comment=None),
+                    FieldSchema(name='fixed', type='binary', comment=None),
+                    FieldSchema(name='binary', type='binary', comment=None),
+                    FieldSchema(name='list', type='array<string>', comment=None),
+                    FieldSchema(name='map', type='map<string,int>', comment=None),
+                    FieldSchema(name='struct', type='struct<inner_string:string,inner_int:int>', comment=None),
                 ],
                 location=f"{hive_database.locationUri}/table",
                 inputFormat="org.apache.hadoop.mapred.FileInputFormat",
@@ -266,12 +293,46 @@ def test_create_table(table_schema_simple: Schema, hive_database: HiveDatabase, 
         location=metadata.location,
         table_uuid=metadata.table_uuid,
         last_updated_ms=metadata.last_updated_ms,
-        last_column_id=3,
+        last_column_id=22,
         schemas=[
             Schema(
-                NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
-                NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+                NestedField(field_id=1, name='boolean', field_type=BooleanType(), required=True),
+                NestedField(field_id=2, name='integer', field_type=IntegerType(), required=True),
+                NestedField(field_id=3, name='long', field_type=LongType(), required=True),
+                NestedField(field_id=4, name='float', field_type=FloatType(), required=True),
+                NestedField(field_id=5, name='double', field_type=DoubleType(), required=True),
+                NestedField(field_id=6, name='decimal', field_type=DecimalType(precision=32, scale=3), required=True),
+                NestedField(field_id=7, name='date', field_type=DateType(), required=True),
+                NestedField(field_id=8, name='time', field_type=TimeType(), required=True),
+                NestedField(field_id=9, name='timestamp', field_type=TimestampType(), required=True),
+                NestedField(field_id=10, name='timestamptz', field_type=TimestamptzType(), required=True),
+                NestedField(field_id=11, name='string', field_type=StringType(), required=True),
+                NestedField(field_id=12, name='uuid', field_type=UUIDType(), required=True),
+                NestedField(field_id=13, name='fixed', field_type=FixedType(length=12), required=True),
+                NestedField(field_id=14, name='binary', field_type=BinaryType(), required=True),
+                NestedField(
+                    field_id=15,
+                    name='list',
+                    field_type=ListType(type='list', element_id=18, element_type=StringType(), element_required=True),
+                    required=True,
+                ),
+                NestedField(
+                    field_id=16,
+                    name='map',
+                    field_type=MapType(
+                        type='map', key_id=19, key_type=StringType(), value_id=20, value_type=IntegerType(), value_required=True
+                    ),
+                    required=True,
+                ),
+                NestedField(
+                    field_id=17,
+                    name='struct',
+                    field_type=StructType(
+                        NestedField(field_id=21, name='inner_string', field_type=StringType(), required=False),
+                        NestedField(field_id=22, name='inner_int', field_type=IntegerType(), required=True),
+                    ),
+                    required=True,
+                ),
                 schema_id=0,
                 identifier_field_ids=[2],
             )

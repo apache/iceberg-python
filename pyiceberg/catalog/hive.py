@@ -95,6 +95,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
     TimeType,
     UUIDType,
 )
@@ -102,22 +103,6 @@ from pyiceberg.types import (
 if TYPE_CHECKING:
     import pyarrow as pa
 
-
-# Replace by visitor
-hive_types = {
-    BooleanType: "boolean",
-    IntegerType: "int",
-    LongType: "bigint",
-    FloatType: "float",
-    DoubleType: "double",
-    DateType: "date",
-    TimeType: "string",
-    TimestampType: "timestamp",
-    StringType: "string",
-    UUIDType: "string",
-    BinaryType: "binary",
-    FixedType: "binary",
-}
 
 COMMENT = "comment"
 OWNER = "owner"
@@ -199,6 +184,7 @@ HIVE_PRIMITIVE_TYPES = {
     DateType: "date",
     TimeType: "string",
     TimestampType: "timestamp",
+    TimestamptzType: "timestamp",
     StringType: "string",
     UUIDType: "string",
     BinaryType: "binary",
