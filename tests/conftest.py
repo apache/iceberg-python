@@ -72,7 +72,9 @@ from pyiceberg.types import (
     BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
+    FixedType,
     FloatType,
     IntegerType,
     ListType,
@@ -81,6 +83,10 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -264,6 +270,54 @@ def table_schema_nested_with_struct_key_map() -> Schema:
         NestedField(field_id=29, name="double", field_type=DoubleType(), required=True),
         schema_id=1,
         identifier_field_ids=[1],
+    )
+
+
+@pytest.fixture(scope="session")
+def table_schema_with_all_types() -> Schema:
+    return schema.Schema(
+        NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
+        NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="long", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="float", field_type=FloatType(), required=True),
+        NestedField(field_id=5, name="double", field_type=DoubleType(), required=True),
+        NestedField(field_id=6, name="decimal", field_type=DecimalType(32, 3), required=True),
+        NestedField(field_id=7, name="date", field_type=DateType(), required=True),
+        NestedField(field_id=8, name="time", field_type=TimeType(), required=True),
+        NestedField(field_id=9, name="timestamp", field_type=TimestampType(), required=True),
+        NestedField(field_id=10, name="timestamptz", field_type=TimestamptzType(), required=True),
+        NestedField(field_id=11, name="string", field_type=StringType(), required=True),
+        NestedField(field_id=12, name="uuid", field_type=UUIDType(), required=True),
+        NestedField(field_id=14, name="fixed", field_type=FixedType(12), required=True),
+        NestedField(field_id=13, name="binary", field_type=BinaryType(), required=True),
+        NestedField(
+            field_id=15,
+            name="list",
+            field_type=ListType(element_id=16, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=17,
+            name="map",
+            field_type=MapType(
+                key_id=18,
+                key_type=StringType(),
+                value_id=19,
+                value_type=IntegerType(),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=20,
+            name="struct",
+            field_type=StructType(
+                NestedField(field_id=21, name="inner_string", field_type=StringType(), required=False),
+                NestedField(field_id=22, name="inner_int", field_type=IntegerType(), required=True),
+            ),
+        ),
+        schema_id=1,
+        identifier_field_ids=[2],
     )
 
 
