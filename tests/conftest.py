@@ -2007,6 +2007,20 @@ def session_catalog() -> Catalog:
 
 
 @pytest.fixture(scope="session")
+def session_catalog_hive() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "hive",
+            "uri": "http://localhost:9083",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password"
+        },
+    )
+
+
+@pytest.fixture(scope="session")
 def spark() -> "SparkSession":
     import importlib.metadata
 
@@ -2018,7 +2032,8 @@ def spark() -> "SparkSession":
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
+        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version},"
+        f" pyspark-shell"
     )
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
@@ -2037,6 +2052,13 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
         .config("spark.sql.defaultCatalog", "integration")
+        .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.hive.type", "hive")
+        .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
+        .config("spark.sql.catalog.hive.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
+        .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.hive.s3.path-style-access", "true")
         .getOrCreate()
     )
 
