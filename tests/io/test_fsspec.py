@@ -16,6 +16,7 @@
 # under the License.
 
 import os
+import pickle
 import tempfile
 import uuid
 
@@ -229,6 +230,11 @@ def test_writing_avro_file(generated_manifest_entry_file: str, fsspec_fileio: Fs
     fsspec_fileio.delete(f"s3://warehouse/{filename}")
 
 
+@pytest.mark.s3
+def test_fsspec_pickle_round_trip_s3(fsspec_fileio: FsspecFileIO) -> None:
+    _test_fsspec_pickle_round_trip(fsspec_fileio, "s3://warehouse/foo.txt")
+
+
 @pytest.mark.adlfs
 def test_fsspec_new_input_file_adlfs(adlfs_fsspec_fileio: FsspecFileIO) -> None:
     """Test creating a new input file from an fsspec file-io"""
@@ -410,6 +416,11 @@ def test_writing_avro_file_adlfs(generated_manifest_entry_file: str, adlfs_fsspe
     adlfs_fsspec_fileio.delete(f"abfss://tests/{filename}")
 
 
+@pytest.mark.adlfs
+def test_fsspec_pickle_round_trip_aldfs(adlfs_fsspec_fileio: FsspecFileIO) -> None:
+    _test_fsspec_pickle_round_trip(adlfs_fsspec_fileio, "abfss://tests/foo.txt")
+
+
 @pytest.mark.gcs
 def test_fsspec_new_input_file_gcs(fsspec_fileio_gcs: FsspecFileIO) -> None:
     """Test creating a new input file from a fsspec file-io"""
@@ -584,6 +595,26 @@ def test_writing_avro_file_gcs(generated_manifest_entry_file: str, fsspec_fileio
             assert b1 == b2  # Check that bytes of read from local avro file match bytes written to s3
 
     fsspec_fileio_gcs.delete(f"gs://warehouse/{filename}")
+
+
+@pytest.mark.gcs
+def test_fsspec_pickle_roundtrip_gcs(fsspec_fileio_gcs: FsspecFileIO) -> None:
+    _test_fsspec_pickle_round_trip(fsspec_fileio_gcs, "gs://warehouse/foo.txt")
+
+
+def _test_fsspec_pickle_round_trip(fsspec_fileio: FsspecFileIO, location: str) -> None:
+    serialized_file_io = pickle.dumps(fsspec_fileio)
+    deserialized_file_io = pickle.loads(serialized_file_io)
+    output_file = deserialized_file_io.new_output(location)
+    with output_file.create() as f:
+        f.write(b"foo")
+
+    input_file = deserialized_file_io.new_input(location)
+    with input_file.open() as f:
+        data = f.read()
+        assert data == b"foo"
+        assert len(input_file) == 3
+    deserialized_file_io.delete(location)
 
 
 TEST_URI = "https://iceberg-test-signer"
