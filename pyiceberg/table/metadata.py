@@ -35,6 +35,7 @@ from typing_extensions import Annotated
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import MetadataLogEntry, Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import (
@@ -236,6 +237,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def schema(self) -> Schema:
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
+
+    def name_mapping(self) -> Optional[NameMapping]:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get("schema.name-mapping.default"):
+            return parse_mapping_from_json(name_mapping_json)
+        else:
+            return None
 
     def spec(self) -> PartitionSpec:
         """Return the partition spec of this table."""
