@@ -108,7 +108,6 @@ from pyiceberg.table.metadata import (
 )
 from pyiceberg.table.name_mapping import (
     NameMapping,
-    parse_mapping_from_json,
     update_mapping,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
@@ -1220,7 +1219,8 @@ class Table:
         limit: Optional[int] = None,
     ) -> DataScan:
         return DataScan(
-            table=self,
+            table_metadata=self.metadata,
+            io=self.io,
             row_filter=row_filter,
             selected_fields=selected_fields,
             case_sensitive=case_sensitive,
@@ -1317,10 +1317,7 @@ class Table:
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
-        if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
-            return parse_mapping_from_json(name_mapping_json)
-        else:
-            return None
+        return self.metadata.name_mapping()
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -1513,10 +1510,11 @@ class TableScan(ABC):
             snapshot = self.table_metadata.snapshot_by_id(self.snapshot_id)
             if snapshot is not None:
                 if snapshot.schema_id is not None:
-                    snapshot_schema = self.table_metadata.schemas().get(snapshot.schema_id)
-                    if snapshot_schema is not None:
-                        current_schema = snapshot_schema
-                    else:
+                    try:
+                        current_schema = next(
+                            schema for schema in self.table_metadata.schemas if schema.schema_id == snapshot.schema_id
+                        )
+                    except StopIteration:
                         warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
@@ -1542,7 +1540,7 @@ class TableScan(ABC):
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
-        if snapshot := self.table.snapshot_by_name(name):
+        if snapshot := self.table_metadata.snapshot_by_name(name):
             return self.update(snapshot_id=snapshot.snapshot_id)
 
         raise ValueError(f"Cannot scan unknown ref={name}")
@@ -1636,7 +1634,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 class DataScan(TableScan):
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1644,12 +1642,12 @@ class DataScan(TableScan):
         return KeyDefaultDict(self._build_partition_projection)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        spec = self.table.specs()[spec_id]
-        return manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        spec = self.table_metadata.specs()[spec_id]
+        return manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
-        spec = self.table.specs()[spec_id]
-        partition_type = spec.partition_type(self.table.schema())
+        spec = self.table_metadata.specs()[spec_id]
+        partition_type = spec.partition_type(self.table_metadata.schema())
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
 
@@ -1684,8 +1682,6 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
-        io = self.table.io
-
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
@@ -1693,7 +1689,7 @@ class DataScan(TableScan):
 
         manifests = [
             manifest_file
-            for manifest_file in snapshot.manifests(io)
+            for manifest_file in snapshot.manifests(self.io)
             if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
 
@@ -1702,7 +1698,7 @@ class DataScan(TableScan):
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
         metrics_evaluator = _InclusiveMetricsEvaluator(
-            self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
+            self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
         min_data_sequence_number = _min_data_file_sequence_number(manifests)
@@ -1716,7 +1712,7 @@ class DataScan(TableScan):
                 lambda args: _open_manifest(*args),
                 [
                     (
-                        io,
+                        self.io,
                         manifest,
                         partition_evaluators[manifest.partition_spec_id],
                         metrics_evaluator,
@@ -1752,7 +1748,8 @@ class DataScan(TableScan):
 
         return project_table(
             self.plan_files(),
-            self.table,
+            self.table_metadata,
+            self.io,
             self.row_filter,
             self.projection(),
             case_sensitive=self.case_sensitive,

@@ -35,6 +35,7 @@ from typing_extensions import Annotated
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import MetadataLogEntry, Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import (
@@ -237,6 +238,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
 
+    def name_mapping(self) -> Optional[NameMapping]:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get("schema.name-mapping.default"):
+            return parse_mapping_from_json(name_mapping_json)
+        else:
+            return None
+
     def spec(self) -> PartitionSpec:
         """Return the partition spec of this table."""
         return next(spec for spec in self.partition_specs if spec.spec_id == self.default_spec_id)
@@ -277,6 +285,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
             snapshot_id = _generate_snapshot_id()
 
         return snapshot_id
+
+    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+        """Return the snapshot referenced by the given name or null if no such reference exists."""
+        if ref := self.refs.get(name):
+            return self.snapshot_by_id(ref.snapshot_id)
+        return None
 
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
