@@ -62,7 +62,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata, PropertyUtil
 from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -313,7 +313,7 @@ class GlueCatalog(Catalog):
             self.glue.update_table(
                 DatabaseName=database_name,
                 TableInput=table_input,
-                SkipArchive=self.properties.get(GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
+                SkipArchive=PropertyUtil.property_as_bool(self.properties, GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
                 VersionId=version_id,
             )
         except self.glue.exceptions.EntityNotFoundException as e:

@@ -32,6 +32,8 @@ from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog
+from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchTableError
 from pyiceberg.schema import Schema
@@ -664,3 +666,21 @@ def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> 
             b'\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11',
         ),
     ]
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_hive_catalog_storage_descriptor(
+    session_catalog_hive: HiveCatalog,
+    pa_schema: pa.Schema,
+    arrow_table_with_null: pa.Table,
+    spark: SparkSession,
+    format_version: int,
+) -> None:
+    tbl = _create_table(
+        session_catalog_hive, "default.test_storage_descriptor", {"format-version": format_version}, [arrow_table_with_null]
+    )
+
+    # check if pyiceberg can read the table
+    assert len(tbl.scan().to_arrow()) == 3
+    # check if spark can read the table
+    assert spark.sql("SELECT * FROM hive.default.test_storage_descriptor").count() == 3
