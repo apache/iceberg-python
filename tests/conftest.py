@@ -2015,7 +2015,7 @@ def session_catalog_hive() -> Catalog:
             "uri": "http://localhost:9083",
             "s3.endpoint": "http://localhost:9000",
             "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password"
+            "s3.secret-access-key": "password",
         },
     )
 

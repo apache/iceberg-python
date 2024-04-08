@@ -37,7 +37,6 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.io.pyarrow import pyarrow_to_schema
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, TableProperties, _dataframe_to_data_files
 from pyiceberg.typedef import Properties
@@ -55,7 +54,6 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
-from pyiceberg.utils.datetime import timestamptz_to_micros
 
 TEST_DATA_WITH_NULL = {
     'bool': [False, None, True],
@@ -838,26 +836,19 @@ def test_write_within_transaction(spark: SparkSession, session_catalog: Catalog,
 
 
 @pytest.mark.integration
-def test_hive_storage_descriptor(session_catalog_hive: HiveCatalog, table_schema_with_all_types: Schema, spark: SparkSession) -> None:
-    try:
-        session_catalog_hive.drop_table(("default", "test_storage_descriptor"))
-    except NoSuchTableError:
-        pass  # Just to make sure that the table doesn't exist
-    pa_table = pa.table({
-        'timestamp_with_timezone': pa.array(
-            [timestamptz_to_micros('2023-01-01T12:00:00+00:00'), timestamptz_to_micros('2023-01-02T12:00:00+00:00')], type=pa.timestamp('us', tz='UTC')
-        )
-    })
-    pa_table_2 = pa.table(
-        {
-            'bool': pa.array([True, False], type=pa.bool_()),
-        }
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_hive_catalog_storage_descriptor(
+    session_catalog_hive: HiveCatalog,
+    pa_schema: pa.Schema,
+    arrow_table_with_null: pa.Table,
+    spark: SparkSession,
+    format_version: int,
+) -> None:
+    tbl = _create_table(
+        session_catalog_hive, "default.test_storage_descriptor", {"format-version": format_version}, [arrow_table_with_null]
     )
-    iceberg_schema = Schema(NestedField(field_id=1, name="timestamp_with_timezone", field_type=TimestamptzType(), required=False))
-    iceberg_schema_2 = Schema(NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False))
-    table = session_catalog_hive.create_table(identifier=("default", "test_storage_descriptor"), schema=iceberg_schema_2)
-    table.append(pa_table_2)
 
-    print(session_catalog_hive.load_table(("default", "test_storage_descriptor")).scan().to_pandas())
-
-    spark.sql("SELECT * FROM hive.default.test_storage_descriptor").show()
+    # check if pyiceberg can read the table
+    assert len(tbl.scan().to_arrow()) == 3
+    # check if spark can read the table
+    assert spark.sql("SELECT * FROM hive.default.test_storage_descriptor").count() == 3

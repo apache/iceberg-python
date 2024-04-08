@@ -184,7 +184,7 @@ HIVE_PRIMITIVE_TYPES = {
     DateType: "date",
     TimeType: "string",
     TimestampType: "timestamp",
-    TimestamptzType: "timestamp with my bad timezone",
+    TimestamptzType: "timestamp with local time zone",
     StringType: "string",
     UUIDType: "string",
     BinaryType: "binary",
