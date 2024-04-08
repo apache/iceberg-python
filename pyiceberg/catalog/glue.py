@@ -65,6 +65,7 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    PropertyUtil,
     Table,
     update_table_metadata,
 )
@@ -344,7 +345,7 @@ class GlueCatalog(MetastoreCatalog):
             self.glue.update_table(
                 DatabaseName=database_name,
                 TableInput=table_input,
-                SkipArchive=self.properties.get(GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
+                SkipArchive=PropertyUtil.property_as_bool(self.properties, GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
                 VersionId=version_id,
             )
         except self.glue.exceptions.EntityNotFoundException as e:

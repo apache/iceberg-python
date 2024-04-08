@@ -2007,6 +2007,20 @@ def session_catalog() -> Catalog:
 
 
 @pytest.fixture(scope="session")
+def session_catalog_hive() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "hive",
+            "uri": "http://localhost:9083",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+@pytest.fixture(scope="session")
 def spark() -> "SparkSession":
     import importlib.metadata
 
@@ -2037,6 +2051,13 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
         .config("spark.sql.defaultCatalog", "integration")
+        .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.hive.type", "hive")
+        .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
+        .config("spark.sql.catalog.hive.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
+        .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.hive.s3.path-style-access", "true")
         .getOrCreate()
     )
 
