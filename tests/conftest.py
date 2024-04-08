@@ -2032,8 +2032,7 @@ def spark() -> "SparkSession":
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
-        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version},"
-        f" pyspark-shell"
+        f"org.apache.iceberg:iceberg-aws-bundle:{iceberg_version} pyspark-shell"
     )
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
