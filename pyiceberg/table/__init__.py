@@ -103,7 +103,6 @@ from pyiceberg.table.metadata import (
 )
 from pyiceberg.table.name_mapping import (
     NameMapping,
-    parse_mapping_from_json,
     update_mapping,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
@@ -1307,10 +1306,7 @@ class Table:
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
-        if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
-            return parse_mapping_from_json(name_mapping_json)
-        else:
-            return None
+        return self.metadata.name_mapping()
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
