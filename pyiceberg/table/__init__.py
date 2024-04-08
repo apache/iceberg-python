@@ -307,6 +307,19 @@ class Transaction:
 
         return self
 
+
+    def _scan(
+            self,
+            row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE
+    ) -> DataScan:
+        """Minimal data scan the table with the current state of the transaction"""
+        return DataScan(
+            table_metadata=self.table_metadata,
+            io=self._table.io,
+            row_filter=row_filter,
+        )
+
+
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
         """Set the table to a certain version.
 
@@ -446,6 +459,19 @@ class Transaction:
                 )
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
+
+    def delete(self, delete_filter: BooleanExpression, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        with self.update_snapshot(snapshot_properties=snapshot_properties) as snapshot:
+            with snapshot.delete() as delete:
+                delete.delete(delete_filter)
+
+            # Check if there are any files that require an actual rewrite of a data file
+            if delete.rewrites_needed:
+                files = self._scan().plan_files()
+
+                for file in files:
+
+
 
     def add_files(self, file_paths: List[str]) -> None:
         """
@@ -1344,6 +1370,19 @@ class Table:
         """
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+
+    def delete(self, delete_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """
+        Shorthand for deleting rows from the table
+
+        Args:
+            delete_filter: The predicate that used to remove rows
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
+        with self.transaction() as tx:
+            tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
+
+
 
     def add_files(self, file_paths: List[str]) -> None:
         """
