@@ -232,17 +232,13 @@ catalog:
     s3.secret-access-key: password
 ```
 
-In case of Hive 2.x:
+When using Hive 2.x, make sure to set the compatibility flag:
 
 ```yaml
 catalog:
   default:
-    uri: thrift://localhost:9083
+...
     hive.hive2-compatible: true
-    s3.endpoint: http://localhost:9000
-    s3.access-key-id: admin
-    s3.secret-access-key: password
-```
 
 ## Glue Catalog
 
