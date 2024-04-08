@@ -30,7 +30,7 @@ import re
 import socket
 import string
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from random import choice
 from tempfile import TemporaryDirectory
@@ -2073,8 +2073,13 @@ TEST_DATA_WITH_NULL = {
     'long': [1, None, 9],
     'float': [0.0, None, 0.9],
     'double': [0.0, None, 0.9],
+    # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
     'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    'timestamptz': [
+        datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+        None,
+        datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+    ],
     'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
@@ -2101,6 +2106,8 @@ def pa_schema() -> "pa.Schema":
         ("long", pa.int64()),
         ("float", pa.float32()),
         ("double", pa.float64()),
+        # Not supported by Spark
+        # ("time", pa.time64('us')),
         ("timestamp", pa.timestamp(unit="us")),
         ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
         ("date", pa.date32()),
@@ -2115,7 +2122,23 @@ def pa_schema() -> "pa.Schema":
 
 @pytest.fixture(scope="session")
 def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
+    """Pyarrow table with all kinds of columns."""
     import pyarrow as pa
 
-    """Pyarrow table with all kinds of columns."""
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_without_data(pa_schema: "pa.Schema") -> "pa.Table":
+    """Pyarrow table without data."""
+    import pyarrow as pa
+
+    return pa.Table.from_pylist([], schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_with_only_nulls(pa_schema: "pa.Schema") -> "pa.Table":
+    """Pyarrow table with only null values."""
+    import pyarrow as pa
+
+    return pa.Table.from_pylist([{}, {}], schema=pa_schema)

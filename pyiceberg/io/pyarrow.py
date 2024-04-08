@@ -33,6 +33,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
+from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
@@ -455,6 +456,17 @@ class PyArrowFileIO(FileIO):
             elif e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot delete file, access denied: {location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
+
+    def __getstate__(self) -> Dict[str, Any]:
+        """Create a dictionary of the PyArrowFileIO fields used when pickling."""
+        fileio_copy = copy(self.__dict__)
+        fileio_copy["fs_by_scheme"] = None
+        return fileio_copy
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Deserialize the state into a PyArrowFileIO instance."""
+        self.__dict__ = state
+        self.fs_by_scheme = lru_cache(self._initialize_fs)
 
 
 def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
@@ -1772,7 +1784,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
-        file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
@@ -1787,7 +1799,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
-            partition=Record(),
+            partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
             # After this has been fixed:
             # https://github.com/apache/iceberg-python/issues/271
