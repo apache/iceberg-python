@@ -215,6 +215,15 @@ catalog:
     s3.secret-access-key: password
 ```
 
+When using Hive 2.x, make sure to set the compatibility flag:
+
+```yaml
+catalog:
+  default:
+...
+    hive.hive2-compatible: true
+```
+
 ## Glue Catalog
 
 Your AWS credentials can be passed directly through the Python API.
