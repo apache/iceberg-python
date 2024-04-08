@@ -194,9 +194,14 @@ def test_check_number_of_namespaces(table_schema_simple: Schema) -> None:
         catalog.create_table("table", schema=table_schema_simple)
 
 
+@pytest.mark.parametrize("hive2_compatible", [True, False])
 @patch("time.time", MagicMock(return_value=12345))
-def test_create_table(table_schema_with_all_types: Schema, hive_database: HiveDatabase, hive_table: HiveTable) -> None:
+def test_create_table(
+    table_schema_with_all_types: Schema, hive_database: HiveDatabase, hive_table: HiveTable, hive2_compatible: bool
+) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+    if hive2_compatible:
+        catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL, **{"hive.hive2-compatible": "true"})
 
     catalog._client = MagicMock()
     catalog._client.__enter__().create_table.return_value = None
@@ -229,7 +234,11 @@ def test_create_table(table_schema_with_all_types: Schema, hive_database: HiveDa
                     FieldSchema(name='date', type='date', comment=None),
                     FieldSchema(name='time', type='string', comment=None),
                     FieldSchema(name='timestamp', type='timestamp', comment=None),
-                    FieldSchema(name='timestamptz', type='timestamp', comment=None),
+                    FieldSchema(
+                        name='timestamptz',
+                        type='timestamp' if hive2_compatible else 'timestamp with local time zone',
+                        comment=None,
+                    ),
                     FieldSchema(name='string', type='string', comment=None),
                     FieldSchema(name='uuid', type='string', comment=None),
                     FieldSchema(name='fixed', type='binary', comment=None),
