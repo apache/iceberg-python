@@ -251,6 +251,12 @@ class PropertyUtil:
         else:
             return default
 
+    @staticmethod
+    def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
+        if value := properties.get(property_name):
+            return value.lower() == "true"
+        return default
+
 
 class Transaction:
     _table: Table

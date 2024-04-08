@@ -74,7 +74,7 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, TableProperties, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, PropertyUtil, Table, TableProperties, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -95,6 +95,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
     TimeType,
     UUIDType,
 )
@@ -103,24 +104,12 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 
-# Replace by visitor
-hive_types = {
-    BooleanType: "boolean",
-    IntegerType: "int",
-    LongType: "bigint",
-    FloatType: "float",
-    DoubleType: "double",
-    DateType: "date",
-    TimeType: "string",
-    TimestampType: "timestamp",
-    StringType: "string",
-    UUIDType: "string",
-    BinaryType: "binary",
-    FixedType: "binary",
-}
-
 COMMENT = "comment"
 OWNER = "owner"
+
+# If set to true, HiveCatalog will operate in Hive2 compatibility mode
+HIVE2_COMPATIBLE = "hive.hive2-compatible"
+HIVE2_COMPATIBLE_DEFAULT = False
 
 
 class _HiveClient:
@@ -151,10 +140,15 @@ class _HiveClient:
         self._transport.close()
 
 
-def _construct_hive_storage_descriptor(schema: Schema, location: Optional[str]) -> StorageDescriptor:
+def _construct_hive_storage_descriptor(
+    schema: Schema, location: Optional[str], hive2_compatible: bool = False
+) -> StorageDescriptor:
     ser_de_info = SerDeInfo(serializationLib="org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe")
     return StorageDescriptor(
-        [FieldSchema(field.name, visit(field.field_type, SchemaToHiveConverter()), field.doc) for field in schema.fields],
+        [
+            FieldSchema(field.name, visit(field.field_type, SchemaToHiveConverter(hive2_compatible)), field.doc)
+            for field in schema.fields
+        ],
         location,
         "org.apache.hadoop.mapred.FileInputFormat",
         "org.apache.hadoop.mapred.FileOutputFormat",
@@ -199,6 +193,7 @@ HIVE_PRIMITIVE_TYPES = {
     DateType: "date",
     TimeType: "string",
     TimestampType: "timestamp",
+    TimestamptzType: "timestamp with local time zone",
     StringType: "string",
     UUIDType: "string",
     BinaryType: "binary",
@@ -207,6 +202,11 @@ HIVE_PRIMITIVE_TYPES = {
 
 
 class SchemaToHiveConverter(SchemaVisitor[str]):
+    hive2_compatible: bool
+
+    def __init__(self, hive2_compatible: bool):
+        self.hive2_compatible = hive2_compatible
+
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
@@ -226,6 +226,9 @@ class SchemaToHiveConverter(SchemaVisitor[str]):
     def primitive(self, primitive: PrimitiveType) -> str:
         if isinstance(primitive, DecimalType):
             return f"decimal({primitive.precision},{primitive.scale})"
+        elif self.hive2_compatible and isinstance(primitive, TimestamptzType):
+            # Hive2 doesn't support timestamp with local time zone
+            return "timestamp"
         else:
             return HIVE_PRIMITIVE_TYPES[type(primitive)]
 
@@ -314,7 +317,9 @@ class HiveCatalog(MetastoreCatalog):
             owner=properties[OWNER] if properties and OWNER in properties else getpass.getuser(),
             createTime=current_time_millis // 1000,
             lastAccessTime=current_time_millis // 1000,
-            sd=_construct_hive_storage_descriptor(schema, location),
+            sd=_construct_hive_storage_descriptor(
+                schema, location, PropertyUtil.property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT)
+            ),
             tableType=EXTERNAL_TABLE,
             parameters=_construct_parameters(metadata_location),
         )
