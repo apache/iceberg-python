@@ -269,9 +269,9 @@ TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
 TEST_TABLE_NAMESPACE = ("com", "organization", "department")
 TEST_TABLE_NAME = "my_table"
 TEST_TABLE_SCHEMA = Schema(
-    NestedField(1, "x", LongType()),
-    NestedField(2, "y", LongType(), doc="comment"),
-    NestedField(3, "z", LongType()),
+    NestedField(1, "x", LongType(), required=True),
+    NestedField(2, "y", LongType(), doc="comment", required=True),
+    NestedField(3, "z", LongType(), required=True),
 )
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"key1": "value1", "key2": "value2"}

@@ -78,9 +78,9 @@ TEST_TABLE_NAMESPACE = "default"
 TEST_NAMESPACE_PROPERTIES = {"location": "s3://warehouse/database/location"}
 TEST_TABLE_NAME = "my_table"
 TEST_TABLE_SCHEMA = Schema(
-    NestedField(1, "x", LongType()),
-    NestedField(2, "y", LongType(), doc="comment"),
-    NestedField(3, "z", LongType()),
+    NestedField(1, "x", LongType(), required=True),
+    NestedField(2, "y", LongType(), doc="comment", required=True),
+    NestedField(3, "z", LongType(), required=True),
 )
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"read.split.target.size": "134217728"}
