@@ -239,6 +239,7 @@ catalog:
   default:
 ...
     hive.hive2-compatible: true
+```
 
 ## Glue Catalog
 
