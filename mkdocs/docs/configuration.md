@@ -232,6 +232,18 @@ catalog:
     s3.secret-access-key: password
 ```
 
+In case of Hive 2.x:
+
+```yaml
+catalog:
+  default:
+    uri: thrift://localhost:9083
+    hive.hive2-compatible: true
+    s3.endpoint: http://localhost:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
+```
+
 ## Glue Catalog
 
 Your AWS credentials can be passed directly through the Python API.
