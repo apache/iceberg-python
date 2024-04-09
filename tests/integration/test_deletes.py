@@ -56,10 +56,7 @@ def test_partition_deletes(test_deletes_table: DataFrame, session_catalog: RestC
     identifier = 'default.table_partitioned_delete'
 
     tbl = session_catalog.load_table(identifier)
-
-    with tbl.transaction() as txn:
-        with txn.update_snapshot().delete() as delete:
-            delete.delete(EqualTo("number_partitioned", 10))
+    tbl.delete(EqualTo("number_partitioned", 10))
 
     assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 30]}
 
@@ -68,9 +65,6 @@ def test_deletes(test_deletes_table: DataFrame, session_catalog: RestCatalog) ->
     identifier = 'default.table_partitioned_delete'
 
     tbl = session_catalog.load_table(identifier)
+    tbl.delete(EqualTo("number", 30))
 
-    with tbl.transaction() as txn:
-        with txn.update_snapshot().delete() as delete:
-            delete.delete(EqualTo("number", 30))
-
-    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 30]}
+    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 20]}

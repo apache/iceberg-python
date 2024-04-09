@@ -36,7 +36,8 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.io.pyarrow import _dataframe_to_data_files
+from pyiceberg.table import TableProperties
 from tests.conftest import TEST_DATA_WITH_NULL
 from utils import _create_table
 
