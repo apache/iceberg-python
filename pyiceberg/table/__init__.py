@@ -55,6 +55,7 @@ from pyiceberg.expressions import (
     And,
     BooleanExpression,
     EqualTo,
+    Not,
     Or,
     Reference,
 )
@@ -239,6 +240,8 @@ class TableProperties:
 
     WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
+
+    DELETE_MODE = "write.delete.mode"
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
@@ -457,11 +460,18 @@ class Transaction:
                     update_snapshot.append_data_file(data_file)
 
     def delete(self, delete_filter: BooleanExpression, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        if (mode := self.table_metadata.properties.get(TableProperties.DELETE_MODE)) and mode != 'copy-on-write':
+            warnings.warn("PyIceberg only supports copy on write")
+
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
             delete_snapshot.delete_by_predicate(delete_filter)  # type: ignore
 
         # Check if there are any files that require an actual rewrite of a data file
-        if delete_snapshot.rewrites_needed:  # type: ignore
+        if delete_snapshot.rewrites_needed is True:  # type: ignore
+            # When we want to filter out certain rows, we want to invert the expression
+            # delete id = 22 means that we want to look for that value, and then remove
+            # if from the Parquet file
+            delete_row_filter = Not(delete_filter)
             with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as overwrite_snapshot:
                 # Potential optimization is where we check if the files actually contain relevant data.
                 files = self._scan(row_filter=delete_filter).plan_files()
@@ -480,7 +490,7 @@ class Transaction:
                         tasks=[original_file],
                         table_metadata=self._table.metadata,
                         io=self._table.io,
-                        row_filter=delete_filter,
+                        row_filter=delete_row_filter,
                         projected_schema=self.table_metadata.schema(),
                     )
                     for data_file in _dataframe_to_data_files(
@@ -3100,11 +3110,12 @@ class OverwriteFiles(_MergingSnapshotProducer):
         if snapshot := self._transaction.table_metadata.current_snapshot():
             for manifest_file in snapshot.manifests(io=self._io):
                 entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
-                found_deletes = [_ for entry in entries if entry in self._deleted_data_files]
+                found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
 
-                if len(found_deletes) == 0:
+                if len(found_deleted_data_files) == 0:
                     existing_files.append(manifest_file)
                 else:
+                    # We have to rewrite the
                     output_file_location = _new_manifest_path(
                         location=self._transaction.table_metadata.location,
                         num=next(self._manifest_counter),
@@ -3128,7 +3139,7 @@ class OverwriteFiles(_MergingSnapshotProducer):
                                 )
                             )
                             for entry in entries
-                            if entry not in found_deletes
+                            if entry.data_file not in found_deleted_data_files
                         ]
                     existing_files.append(writer.to_manifest_file())
         return existing_files

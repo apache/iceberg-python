@@ -15,56 +15,159 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from typing import List
+
 import pytest
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import SparkSession
 
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.expressions import EqualTo
 
 
-@pytest.fixture
-def test_deletes_table(spark: SparkSession) -> DataFrame:
+def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
+    for sql in sqls:
+        spark.sql(sql)
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_partitioned_table_delete_full_file(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
     identifier = 'default.table_partitioned_delete'
 
-    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
-
-    spark.sql(
-        f"""
-        CREATE TABLE {identifier} (
-            number_partitioned  int,
-            number              int
-        )
-        USING iceberg
-        PARTITIONED BY (number_partitioned)
-    """
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES('format-version' = {format_version})
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (10, 20), (10, 30)
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (11, 20), (11, 30)
+        """,
+        ],
     )
-    spark.sql(
-        f"""
-        INSERT INTO {identifier} VALUES (10, 20), (10, 30)
-    """
-    )
-    spark.sql(
-        f"""
-        INSERT INTO {identifier} VALUES (11, 20), (11, 30)
-    """
-    )
-
-    return spark.table(identifier)
-
-
-def test_partition_deletes(test_deletes_table: DataFrame, session_catalog: RestCatalog) -> None:
-    identifier = 'default.table_partitioned_delete'
 
     tbl = session_catalog.load_table(identifier)
     tbl.delete(EqualTo("number_partitioned", 10))
 
+    # No overwrite operation
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'append', 'delete']
     assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 30]}
 
 
-def test_deletes(test_deletes_table: DataFrame, session_catalog: RestCatalog) -> None:
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
     identifier = 'default.table_partitioned_delete'
 
-    tbl = session_catalog.load_table(identifier)
-    tbl.delete(EqualTo("number", 30))
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES('format-version' = {format_version})
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (10, 20), (10, 30)
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (11, 20), (11, 30)
+        """,
+        ],
+    )
 
-    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 20]}
+    tbl = session_catalog.load_table(identifier)
+    tbl.delete(EqualTo("number", 20))
+
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'append', 'delete', 'overwrite']
+    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 30]}
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_partitioned_table_no_match(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+    identifier = 'default.table_partitioned_delete'
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES('format-version' = {format_version})
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (10, 20), (10, 30)
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+    tbl.delete(EqualTo("number_partitioned", 22))  # Does not affect any data
+
+    # Open for discussion, do we want to create a new snapshot?
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'delete']
+    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [10, 10], 'number': [20, 30]}
+
+
+def test_partitioned_table_positional_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
+    identifier = 'default.table_partitioned_delete'
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES(
+                'format-version' = 2,
+                'write.delete.mode'='merge-on-read',
+                'write.update.mode'='merge-on-read',
+                'write.merge.mode'='merge-on-read'
+            )
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (10, 20), (10, 30), (10, 40)
+        """,
+            # Generate a positional delete
+            f"""
+            DELETE FROM {identifier} WHERE number = 30
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+
+    # Assert that there is just a single Parquet file
+    assert len(list(tbl.scan().plan_files())) == 1
+
+    # Will rewrite a data file with a positional delete
+    tbl.delete(EqualTo("number", 40))
+
+    # Yet another wrong status by Spark
+    # One positional delete has been added, but an OVERWRITE status is set
+    # Related issue https://github.com/apache/iceberg/issues/9995
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'overwrite', 'delete']
+    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [10], 'number': [20]}
