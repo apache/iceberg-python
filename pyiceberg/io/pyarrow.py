@@ -969,9 +969,11 @@ def _task_to_table(
         schema_raw = None
         if metadata := physical_schema.metadata:
             schema_raw = metadata.get(ICEBERG_SCHEMA)
-        file_schema = (
-            Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
-        )
+        # file_schema = (
+        #     Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
+        # )
+
+        file_schema = pyarrow_to_schema(physical_schema, name_mapping)
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
@@ -979,7 +981,7 @@ def _task_to_table(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
