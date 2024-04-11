@@ -1010,7 +1010,6 @@ def _task_to_table(
 
         if len(arrow_table) < 1:
             return None
-
         return to_requested_schema(projected_schema, file_project_schema, arrow_table)
 
 
@@ -1772,8 +1771,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
-        df = pa.Table.from_batches(task.record_batches)
-        df = df.rename_columns(schema.column_names)
+        arrow_table = pa.Table.from_batches(task.record_batches)
+        df = to_requested_schema(schema, table_metadata.schema(), arrow_table)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
