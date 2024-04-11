@@ -279,14 +279,27 @@ def test_python_writes_special_character_column_with_spark_reads(
     column_name_with_special_character = "letter/abc"
     TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN = {
         column_name_with_special_character: ['a', None, 'z'],
+        'id': [1, 2, 3],
+        'name': ['AB', 'CD', 'EF'],
+        'address': [
+            {'street': '123', 'city': 'SFO', 'zip': 12345},
+            {'street': '456', 'city': 'SW', 'zip': 67890},
+            {'street': '789', 'city': 'Random', 'zip': 10112},
+        ],
     }
     pa_schema = pa.schema([
-        (column_name_with_special_character, pa.string()),
+        pa.field(column_name_with_special_character, pa.string()),
+        pa.field('id', pa.int32()),
+        pa.field('name', pa.string()),
+        pa.field(
+            'address', pa.struct([pa.field('street', pa.string()), pa.field('city', pa.string()), pa.field('zip', pa.int32())])
+        ),
     ])
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
     tbl.overwrite(arrow_table_with_special_character_column)
+    spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
