@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pyarrow as pa
 
@@ -65,6 +65,7 @@ def _create_table(
     properties: Properties,
     data: Optional[List[pa.Table]] = None,
     partition_spec: Optional[PartitionSpec] = None,
+    schema: Union[Schema, "pa.Schema"] = TABLE_SCHEMA,
 ) -> Table:
     try:
         session_catalog.drop_table(identifier=identifier)
@@ -73,10 +74,10 @@ def _create_table(
 
     if partition_spec:
         tbl = session_catalog.create_table(
-            identifier=identifier, schema=TABLE_SCHEMA, properties=properties, partition_spec=partition_spec
+            identifier=identifier, schema=schema, properties=properties, partition_spec=partition_spec
         )
     else:
-        tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties=properties)
+        tbl = session_catalog.create_table(identifier=identifier, schema=schema, properties=properties)
 
     if data:
         for d in data:
