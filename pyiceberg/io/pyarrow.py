@@ -122,7 +122,6 @@ from pyiceberg.schema import (
     pre_order_visit,
     promote,
     prune_columns,
-    sanitize_column_names,
     visit,
     visit_with_partner,
 )
@@ -966,13 +965,6 @@ def _task_to_table(
     with fs.open_input_file(path) as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
-        schema_raw = None
-        if metadata := physical_schema.metadata:
-            schema_raw = metadata.get(ICEBERG_SCHEMA)
-        # file_schema = (
-        #     Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
-        # )
-
         file_schema = pyarrow_to_schema(physical_schema, name_mapping)
 
         pyarrow_filter = None
