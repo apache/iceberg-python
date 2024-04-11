@@ -282,9 +282,9 @@ def test_python_writes_special_character_column_with_spark_reads(
         'id': [1, 2, 3],
         'name': ['AB', 'CD', 'EF'],
         'address': [
-            {'street': '123', 'city': 'SFO', 'zip': 12345},
-            {'street': '456', 'city': 'SW', 'zip': 67890},
-            {'street': '789', 'city': 'Random', 'zip': 10112},
+            {'street': '123', 'city': 'SFO', 'zip': 12345, column_name_with_special_character: 'a'},
+            {'street': '456', 'city': 'SW', 'zip': 67890, column_name_with_special_character: 'b'},
+            {'street': '789', 'city': 'Random', 'zip': 10112, column_name_with_special_character: 'c'},
         ],
     }
     pa_schema = pa.schema([
@@ -292,7 +292,13 @@ def test_python_writes_special_character_column_with_spark_reads(
         pa.field('id', pa.int32()),
         pa.field('name', pa.string()),
         pa.field(
-            'address', pa.struct([pa.field('street', pa.string()), pa.field('city', pa.string()), pa.field('zip', pa.int32())])
+            'address',
+            pa.struct([
+                pa.field('street', pa.string()),
+                pa.field('city', pa.string()),
+                pa.field('zip', pa.int32()),
+                pa.field(column_name_with_special_character, pa.string()),
+            ]),
         ),
     ])
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
