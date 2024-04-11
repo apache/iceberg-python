@@ -93,7 +93,7 @@ def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCat
     tbl.delete(EqualTo("number", 20))
 
     assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'append', 'delete', 'overwrite']
-    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 11], 'number': [20, 30]}
+    assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [11, 10], 'number': [30, 30]}
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -169,5 +169,5 @@ def test_partitioned_table_positional_deletes(spark: SparkSession, session_catal
     # Yet another wrong status by Spark
     # One positional delete has been added, but an OVERWRITE status is set
     # Related issue https://github.com/apache/iceberg/issues/9995
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'overwrite', 'delete']
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append', 'overwrite', 'delete', 'overwrite']
     assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [10], 'number': [20]}

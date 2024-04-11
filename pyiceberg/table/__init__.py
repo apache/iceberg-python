@@ -3063,6 +3063,7 @@ class DeleteFiles(_MergingSnapshotProducer):
     def _deleted_entries(self) -> List[ManifestEntry]:
         return self._compute_deletes[1]
 
+    @property
     def rewrites_needed(self) -> bool:
         """Indicate if data files need to be rewritten."""
         return self._compute_deletes[2]
