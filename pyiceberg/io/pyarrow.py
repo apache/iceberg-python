@@ -1761,7 +1761,7 @@ def data_file_statistics_from_parquet_metadata(
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     iceberg_table_schema = table_metadata.schema()
-    parquet_schema = sanitize_column_names(table_metadata.schema())
+    parquet_schema = sanitize_column_names(iceberg_table_schema)
     arrow_file_schema = parquet_schema.as_arrow()
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
