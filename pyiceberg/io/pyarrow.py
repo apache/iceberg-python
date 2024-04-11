@@ -1010,13 +1010,7 @@ def _task_to_table(
 
         if len(arrow_table) < 1:
             return None
-        # to_requested_schema(projected_schema, file_project_schema, arrow_table)
-        # - (SOURCE) arrow_table is sanitized `TEST_x3AA1B2_x2ERAW_x2EABC_x2DGG_x2D1_x2DA`
-        # - (TO) projected_schema is iceberg table schema (not sanitized) `TEST:A1B2.RAW.ABC-GG-1-A`
-        # - (FROM) file_project_schema is parquet schema (sanitized) `TEST_x3AA1B2_x2ERAW_x2EABC_x2DGG_x2D1_x2DA`
-        from_schema = file_project_schema
-        to_schema = projected_schema
-        return to_requested_schema(table=arrow_table, from_schema=from_schema, to_schema=to_schema)
+        return to_requested_schema(table=arrow_table, from_schema=file_project_schema, to_schema=projected_schema)
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1766,8 +1760,9 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    schema = sanitize_column_names(table_metadata.schema())
-    arrow_file_schema = schema.as_arrow()
+    iceberg_table_schema = table_metadata.schema()
+    parquet_schema = sanitize_column_names(table_metadata.schema())
+    arrow_file_schema = parquet_schema.as_arrow()
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
     row_group_size = PropertyUtil.property_as_int(
@@ -1778,9 +1773,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     def write_parquet(task: WriteTask) -> DataFile:
         arrow_table = pa.Table.from_batches(task.record_batches)
-        to_schema = schema
-        from_schema = table_metadata.schema()
-        df = to_requested_schema(table=arrow_table, from_schema=from_schema, to_schema=to_schema)
+        df = to_requested_schema(table=arrow_table, from_schema=iceberg_table_schema, to_schema=parquet_schema)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
@@ -1788,8 +1781,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 writer.write(df, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+            stats_columns=compute_statistics_plan(parquet_schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(parquet_schema),
         )
         data_file = DataFile(
             content=DataFileContent.DATA,
