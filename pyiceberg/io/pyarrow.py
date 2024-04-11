@@ -1772,12 +1772,13 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
+        df = pa.Table.from_batches(task.record_batches)
+        df = df.rename_columns(schema.column_names)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-                writer.write(pa.Table.from_batches(task.record_batches), row_group_size=row_group_size)
-
+                writer.write(df, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
             stats_columns=compute_statistics_plan(schema, table_metadata.properties),

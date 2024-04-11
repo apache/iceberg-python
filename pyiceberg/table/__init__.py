@@ -92,7 +92,6 @@ from pyiceberg.schema import (
     SchemaWithPartnerVisitor,
     assign_fresh_schema_ids,
     promote,
-    sanitize_column_names,
     visit,
     visit_with_partner,
 )
@@ -2703,8 +2702,6 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
-    sanitized_arrow_schema = sanitize_column_names(table_metadata.schema()).as_arrow()
-    df = df.rename_columns(sanitized_arrow_schema.names)
 
     if len(table_metadata.spec().fields) > 0:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
