@@ -92,7 +92,7 @@ if TYPE_CHECKING:
     from moto.server import ThreadedMotoServer  # type: ignore
     from pyspark.sql import SparkSession
 
-    from pyiceberg.io.pyarrow import PyArrowFileIO, schema_to_pyarrow
+    from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
 def pytest_collection_modifyitems(items: List[pytest.Item]) -> None:
@@ -1930,6 +1930,7 @@ def clean_up(test_catalog: Catalog) -> None:
 def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
     import pyarrow as pa
     from pyarrow import parquet as pq
+
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
     table = pa.table(
