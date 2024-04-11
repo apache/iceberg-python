@@ -271,7 +271,10 @@ def test_python_writes_with_spark_snapshot_reads(
 
 
 @pytest.mark.integration
-def test_python_writes_special_character_column_with_spark_reads(spark: SparkSession, session_catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_special_character_column_with_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
     identifier = "default.python_writes_special_character_column_with_spark_reads"
     column_name_with_special_character = "letter/abc"
     TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN = {
@@ -281,7 +284,7 @@ def test_python_writes_special_character_column_with_spark_reads(spark: SparkSes
         (column_name_with_special_character, pa.string()),
     ])
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
-    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
     tbl.overwrite(arrow_table_with_special_character_column)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
