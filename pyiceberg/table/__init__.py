@@ -3253,6 +3253,15 @@ class InspectTable:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
+    def _snapshot(self, snapshot_id: Optional[int] = None) -> Optional[Snapshot]:
+        if snapshot_id:
+            if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
+                return snapshot
+            else:
+                raise ValueError(f"Cannot find snapshot with ID {snapshot_id}")
+
+        return self.tbl.metadata.current_snapshot()
+
     def snapshots(self) -> "pa.Table":
         import pyarrow as pa
 
@@ -3287,7 +3296,7 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def entries(self) -> "pa.Table":
+    def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -3346,7 +3355,7 @@ class InspectTable:
         ])
 
         entries = []
-        if snapshot := self.tbl.metadata.current_snapshot():
+        if snapshot := self._snapshot(snapshot_id):
             for manifest in snapshot.manifests(self.tbl.io):
                 for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
                     column_sizes = entry.data_file.column_sizes or {}
