@@ -528,6 +528,31 @@ readable_metrics: [
 [6.0989]]
 ```
 
+### References
+
+To show a table's known snapshot references:
+
+```python
+table.inspect.refs()
+```
+
+```
+pyarrow.Table
+name: string not null
+type: string not null
+snapshot_id: int64 not null
+max_reference_age_in_ms: int64
+min_snapshots_to_keep: int32
+max_snapshot_age_in_ms: int64
+----
+name: [["main","testTag"]]
+type: [["BRANCH","TAG"]]
+snapshot_id: [[2278002651076891950,2278002651076891950]]
+max_reference_age_in_ms: [[null,604800000]]
+min_snapshots_to_keep: [[null,10]]
+max_snapshot_age_in_ms: [[null,604800000]]
+```
+
 ## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
