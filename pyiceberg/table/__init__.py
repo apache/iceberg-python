@@ -3254,7 +3254,7 @@ class InspectTable:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
     def _snapshot(self, snapshot_id: Optional[int] = None) -> Optional[Snapshot]:
-        if snapshot_id:
+        if snapshot_id is not None:
             if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
                 return snapshot
             else:
