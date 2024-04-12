@@ -137,6 +137,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
     import daft
@@ -3408,6 +3409,59 @@ class InspectTable:
         return pa.Table.from_pylist(
             entries,
             schema=entries_schema,
+        )
+
+
+    def partitions(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        partition_record = self.tbl.metadata.specs_struct()
+        pa_record_struct = schema_to_pyarrow(partition_record)
+        
+        partitions_schema = pa.schema([
+            pa.field('partition', pa_record_struct, nullable=False),
+            pa.field('spec_id', pa.int32(), nullable=False),
+            pa.field('record_count', pa.int64(), nullable=False),
+            pa.field('file_count', pa.int32(), nullable=False),
+            pa.field('total_data_file_size_in_bytes', pa.int64(), nullable=False),
+            pa.field('position_delete_record_count', pa.int64(), nullable=False),
+            pa.field('position_delete_file_count', pa.int32(), nullable=False),
+            pa.field('equality_delete_record_count', pa.int64(), nullable=False),
+            pa.field('equality_delete_file_count', pa.int32(), nullable=False),
+            pa.field('last_updated_at', pa.timestamp(unit='ms'), nullable=False),
+            pa.field('last_updated_snapshot_id', pa.int64(), nullable=False),
+        ])
+
+        def update_partitions_map(partitions_map: Tuple[str, Any], file: DataFile, partition_record_dict: Dict[str, Any]) -> None:
+            partition_record_key = _convert_to_hashable_type(partition_record_dict)
+            if partition_row := partitions_map.get(partition_record_key):
+                if file.content == DataFileContent.DATA:
+                    print()
+                elif file.content == DataFileContent.POSITION_DELETES:
+                    print()
+                elif file.content == DataFileContent.EQUALITY_DELETES:
+                    print()
+                else:
+                    raise ValueError(f"Unknown DataFileContent ({file.content})")
+                    
+
+
+        partitions_map = dict()
+        if snapshot := self.tbl.metadata.current_snapshot():
+            for manifest in snapshot.manifests(self.tbl.io):
+                for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+                    partition = entry.data_file.partition
+                    partition_record_dict = {
+                        field.name: partition[pos]
+                        for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                    }
+                    update_partitions_map(partitions_map, entry.data_file, partition_record_dict)
+
+        return pa.Table.from_pylist(
+            partitions_map.values(),
+            schema=partitions_schema,
         )
 
 
