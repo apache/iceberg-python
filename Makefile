@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+CPUS = $(shell sysctl -n hw.logicalcpu)
 
 install-poetry:
 	pip install poetry==1.7.1
@@ -42,7 +43,7 @@ test-integration:
 	docker compose -f dev/docker-compose-integration.yml up -d
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
-	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
+	poetry run pytest tests/ -v -m integration -n $(CPUS) ${PYTEST_ARGS}
 
 test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml kill
