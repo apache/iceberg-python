@@ -267,6 +267,7 @@ def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catal
     assert df.to_pydict()['data_file'][0]['partition'] == {'dt_day': date(2021, 2, 1), 'dt_month': None}
     assert df.to_pydict()['data_file'][1]['partition'] == {'dt_day': None, 'dt_month': 612}
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_inspect_refs(
@@ -279,15 +280,22 @@ def test_inspect_refs(
     tbl.overwrite(arrow_table_with_null)
 
     # create a test branch
-    spark.sql(f"""
+    spark.sql(
+        f"""
     ALTER TABLE {identifier} CREATE BRANCH IF NOT EXISTS testBranch RETAIN 7 DAYS WITH SNAPSHOT RETENTION 2 SNAPSHOTS
-        """)
+        """
+    )
 
     # create a test tag against current snapshot
-    current_snapshot_id = tbl.current_snapshot().snapshot_id
-    spark.sql(f"""
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    current_snapshot_id = current_snapshot.snapshot_id
+
+    spark.sql(
+        f"""
     ALTER TABLE {identifier} CREATE TAG testTag AS OF VERSION {current_snapshot_id} RETAIN 180 DAYS
-        """)
+        """
+    )
 
     df = tbl.refresh().inspect.refs()
 
