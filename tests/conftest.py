@@ -1931,9 +1931,11 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
     import pyarrow as pa
     from pyarrow import parquet as pq
 
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
     table = pa.table(
         {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
-        metadata={"iceberg.schema": table_schema_simple.model_dump_json()},
+        schema=schema_to_pyarrow(table_schema_simple),
     )
 
     file_path = f"{tmp_path}/0000-data.parquet"

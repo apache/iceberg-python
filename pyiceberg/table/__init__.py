@@ -3254,6 +3254,18 @@ class InspectTable:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
+    def _get_snapshot(self, snapshot_id: Optional[int] = None) -> Snapshot:
+        if snapshot_id is not None:
+            if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
+                return snapshot
+            else:
+                raise ValueError(f"Cannot find snapshot with ID {snapshot_id}")
+
+        if snapshot := self.tbl.metadata.current_snapshot():
+            return snapshot
+        else:
+            raise ValueError("Cannot get a snapshot as the table does not have any.")
+
     def snapshots(self) -> "pa.Table":
         import pyarrow as pa
 
@@ -3288,7 +3300,7 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def entries(self) -> "pa.Table":
+    def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -3347,64 +3359,64 @@ class InspectTable:
         ])
 
         entries = []
-        if snapshot := self.tbl.metadata.current_snapshot():
-            for manifest in snapshot.manifests(self.tbl.io):
-                for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
-                    column_sizes = entry.data_file.column_sizes or {}
-                    value_counts = entry.data_file.value_counts or {}
-                    null_value_counts = entry.data_file.null_value_counts or {}
-                    nan_value_counts = entry.data_file.nan_value_counts or {}
-                    lower_bounds = entry.data_file.lower_bounds or {}
-                    upper_bounds = entry.data_file.upper_bounds or {}
-                    readable_metrics = {
-                        schema.find_column_name(field.field_id): {
-                            "column_size": column_sizes.get(field.field_id),
-                            "value_count": value_counts.get(field.field_id),
-                            "null_value_count": null_value_counts.get(field.field_id),
-                            "nan_value_count": nan_value_counts.get(field.field_id),
-                            # Makes them readable
-                            "lower_bound": from_bytes(field.field_type, lower_bound)
-                            if (lower_bound := lower_bounds.get(field.field_id))
-                            else None,
-                            "upper_bound": from_bytes(field.field_type, upper_bound)
-                            if (upper_bound := upper_bounds.get(field.field_id))
-                            else None,
-                        }
-                        for field in self.tbl.metadata.schema().fields
+        snapshot = self._get_snapshot(snapshot_id)
+        for manifest in snapshot.manifests(self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+                column_sizes = entry.data_file.column_sizes or {}
+                value_counts = entry.data_file.value_counts or {}
+                null_value_counts = entry.data_file.null_value_counts or {}
+                nan_value_counts = entry.data_file.nan_value_counts or {}
+                lower_bounds = entry.data_file.lower_bounds or {}
+                upper_bounds = entry.data_file.upper_bounds or {}
+                readable_metrics = {
+                    schema.find_column_name(field.field_id): {
+                        "column_size": column_sizes.get(field.field_id),
+                        "value_count": value_counts.get(field.field_id),
+                        "null_value_count": null_value_counts.get(field.field_id),
+                        "nan_value_count": nan_value_counts.get(field.field_id),
+                        # Makes them readable
+                        "lower_bound": from_bytes(field.field_type, lower_bound)
+                        if (lower_bound := lower_bounds.get(field.field_id))
+                        else None,
+                        "upper_bound": from_bytes(field.field_type, upper_bound)
+                        if (upper_bound := upper_bounds.get(field.field_id))
+                        else None,
                     }
+                    for field in self.tbl.metadata.schema().fields
+                }
 
-                    partition = entry.data_file.partition
-                    partition_record_dict = {
-                        field.name: partition[pos]
-                        for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
-                    }
+                partition = entry.data_file.partition
+                partition_record_dict = {
+                    field.name: partition[pos]
+                    for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                }
 
-                    entries.append({
-                        'status': entry.status.value,
-                        'snapshot_id': entry.snapshot_id,
-                        'sequence_number': entry.data_sequence_number,
-                        'file_sequence_number': entry.file_sequence_number,
-                        'data_file': {
-                            "content": entry.data_file.content,
-                            "file_path": entry.data_file.file_path,
-                            "file_format": entry.data_file.file_format,
-                            "partition": partition_record_dict,
-                            "record_count": entry.data_file.record_count,
-                            "file_size_in_bytes": entry.data_file.file_size_in_bytes,
-                            "column_sizes": dict(entry.data_file.column_sizes),
-                            "value_counts": dict(entry.data_file.value_counts),
-                            "null_value_counts": dict(entry.data_file.null_value_counts),
-                            "nan_value_counts": entry.data_file.nan_value_counts,
-                            "lower_bounds": entry.data_file.lower_bounds,
-                            "upper_bounds": entry.data_file.upper_bounds,
-                            "key_metadata": entry.data_file.key_metadata,
-                            "split_offsets": entry.data_file.split_offsets,
-                            "equality_ids": entry.data_file.equality_ids,
-                            "sort_order_id": entry.data_file.sort_order_id,
-                            "spec_id": entry.data_file.spec_id,
-                        },
-                        'readable_metrics': readable_metrics,
-                    })
+                entries.append({
+                    'status': entry.status.value,
+                    'snapshot_id': entry.snapshot_id,
+                    'sequence_number': entry.data_sequence_number,
+                    'file_sequence_number': entry.file_sequence_number,
+                    'data_file': {
+                        "content": entry.data_file.content,
+                        "file_path": entry.data_file.file_path,
+                        "file_format": entry.data_file.file_format,
+                        "partition": partition_record_dict,
+                        "record_count": entry.data_file.record_count,
+                        "file_size_in_bytes": entry.data_file.file_size_in_bytes,
+                        "column_sizes": dict(entry.data_file.column_sizes),
+                        "value_counts": dict(entry.data_file.value_counts),
+                        "null_value_counts": dict(entry.data_file.null_value_counts),
+                        "nan_value_counts": entry.data_file.nan_value_counts,
+                        "lower_bounds": entry.data_file.lower_bounds,
+                        "upper_bounds": entry.data_file.upper_bounds,
+                        "key_metadata": entry.data_file.key_metadata,
+                        "split_offsets": entry.data_file.split_offsets,
+                        "equality_ids": entry.data_file.equality_ids,
+                        "sort_order_id": entry.data_file.sort_order_id,
+                        "spec_id": entry.data_file.spec_id,
+                    },
+                    'readable_metrics': readable_metrics,
+                })
 
         return pa.Table.from_pylist(
             entries,
