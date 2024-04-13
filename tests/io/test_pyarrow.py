@@ -28,7 +28,6 @@ import pyarrow.parquet as pq
 import pytest
 from pyarrow.fs import FileType, LocalFileSystem
 
-from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -72,7 +71,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, Table, TableProperties
+from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
@@ -876,7 +875,7 @@ def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
     return project_table(
-        [
+        tasks=[
             FileScanTask(
                 DataFile(
                     content=DataFileContent.DATA,
@@ -889,21 +888,16 @@ def project(
             )
             for file in files
         ],
-        Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location="file://a/b/",
-                last_column_id=1,
-                format_version=2,
-                schemas=[table_schema or schema],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location="file://a/b/c.json",
-            io=PyArrowFileIO(),
-            catalog=NoopCatalog("NoopCatalog"),
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[table_schema or schema],
+            partition_specs=[PartitionSpec()],
         ),
-        expr or AlwaysTrue(),
-        schema,
+        io=PyArrowFileIO(),
+        row_filter=expr or AlwaysTrue(),
+        projected_schema=schema,
         case_sensitive=True,
     )
 
@@ -1362,20 +1356,15 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
 
     with_deletes = project_table(
         tasks=[example_task_with_delete],
-        table=Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location=metadata_location,
-                last_column_id=1,
-                format_version=2,
-                current_schema_id=1,
-                schemas=[table_schema_simple],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location=metadata_location,
-            io=load_file_io(),
-            catalog=NoopCatalog("noop"),
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
         ),
+        io=load_file_io(),
         row_filter=AlwaysTrue(),
         projected_schema=table_schema_simple,
     )
@@ -1384,7 +1373,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1405,20 +1394,15 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
 
     with_deletes = project_table(
         tasks=[example_task_with_delete],
-        table=Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location=metadata_location,
-                last_column_id=1,
-                format_version=2,
-                current_schema_id=1,
-                schemas=[table_schema_simple],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location=metadata_location,
-            io=load_file_io(),
-            catalog=NoopCatalog("noop"),
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
         ),
+        io=load_file_io(),
         row_filter=AlwaysTrue(),
         projected_schema=table_schema_simple,
     )
@@ -1427,7 +1411,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1439,21 +1423,16 @@ baz: [[true,null]]"""
 def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Schema) -> None:
     metadata_location = "file://a/b/c.json"
     projection = project_table(
-        [example_task],
-        Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location=metadata_location,
-                last_column_id=1,
-                format_version=2,
-                current_schema_id=1,
-                schemas=[table_schema_simple],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location=metadata_location,
-            io=load_file_io(properties={"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}, location=metadata_location),
-            catalog=NoopCatalog("NoopCatalog"),
+        tasks=[example_task],
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
         ),
+        io=load_file_io(properties={"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}, location=metadata_location),
         case_sensitive=True,
         projected_schema=table_schema_simple,
         row_filter=AlwaysTrue(),
@@ -1463,7 +1442,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         str(projection)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","b","c"]]

@@ -158,6 +158,9 @@ def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: 
     for col in df.columns:
         assert df.filter(df[col].isNotNull()).count() == 5, "Expected all 5 rows to be non-null"
 
+    # check that the table can be read by pyiceberg
+    assert len(tbl.scan().to_arrow()) == 5, "Expected 5 rows"
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -255,6 +258,9 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(
         value_count = 1 if col == "quux" else 6
         assert df.filter(df[col].isNotNull()).count() == value_count, f"Expected {value_count} rows to be non-null"
 
+    # check that the table can be read by pyiceberg
+    assert len(tbl.scan().to_arrow()) == 6, "Expected 6 rows"
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -323,6 +329,9 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
     assert [row.record_count for row in partition_rows] == [5]
     assert [row.file_count for row in partition_rows] == [5]
     assert [(row.partition.baz, row.partition.qux_month) for row in partition_rows] == [(123, 650)]
+
+    # check that the table can be read by pyiceberg
+    assert len(tbl.scan().to_arrow()) == 5, "Expected 5 rows"
 
 
 @pytest.mark.integration

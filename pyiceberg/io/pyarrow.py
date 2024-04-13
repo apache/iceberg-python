@@ -33,6 +33,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
+from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
@@ -158,7 +159,7 @@ from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
 if TYPE_CHECKING:
-    from pyiceberg.table import FileScanTask, Table
+    from pyiceberg.table import FileScanTask
 
 logger = logging.getLogger(__name__)
 
@@ -455,6 +456,17 @@ class PyArrowFileIO(FileIO):
             elif e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot delete file, access denied: {location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
+
+    def __getstate__(self) -> Dict[str, Any]:
+        """Create a dictionary of the PyArrowFileIO fields used when pickling."""
+        fileio_copy = copy(self.__dict__)
+        fileio_copy["fs_by_scheme"] = None
+        return fileio_copy
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Deserialize the state into a PyArrowFileIO instance."""
+        self.__dict__ = state
+        self.fs_by_scheme = lru_cache(self._initialize_fs)
 
 
 def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
@@ -954,12 +966,7 @@ def _task_to_table(
     with fs.open_input_file(path) as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
-        schema_raw = None
-        if metadata := physical_schema.metadata:
-            schema_raw = metadata.get(ICEBERG_SCHEMA)
-        file_schema = (
-            Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
-        )
+        file_schema = pyarrow_to_schema(physical_schema, name_mapping)
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
@@ -967,7 +974,7 @@ def _task_to_table(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
@@ -1033,7 +1040,8 @@ def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dic
 
 def project_table(
     tasks: Iterable[FileScanTask],
-    table: Table,
+    table_metadata: TableMetadata,
+    io: FileIO,
     row_filter: BooleanExpression,
     projected_schema: Schema,
     case_sensitive: bool = True,
@@ -1043,7 +1051,8 @@ def project_table(
 
     Args:
         tasks (Iterable[FileScanTask]): A URI or a path to a local file.
-        table (Table): The table that's being queried.
+        table_metadata (TableMetadata): The table metadata of the table that's being queried
+        io (FileIO): A FileIO to open streams to the object store
         row_filter (BooleanExpression): The expression for filtering rows.
         projected_schema (Schema): The output schema.
         case_sensitive (bool): Case sensitivity when looking up column names.
@@ -1052,24 +1061,24 @@ def project_table(
     Raises:
         ResolveError: When an incompatible query is done.
     """
-    scheme, netloc, _ = PyArrowFileIO.parse_location(table.location())
-    if isinstance(table.io, PyArrowFileIO):
-        fs = table.io.fs_by_scheme(scheme, netloc)
+    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
+    if isinstance(io, PyArrowFileIO):
+        fs = io.fs_by_scheme(scheme, netloc)
     else:
         try:
             from pyiceberg.io.fsspec import FsspecFileIO
 
-            if isinstance(table.io, FsspecFileIO):
+            if isinstance(io, FsspecFileIO):
                 from pyarrow.fs import PyFileSystem
 
-                fs = PyFileSystem(FSSpecHandler(table.io.get_fs(scheme)))
+                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
             else:
-                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {table.io}")
+                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
         except ModuleNotFoundError as e:
             # When FsSpec is not installed
-            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {table.io}") from e
+            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
-    bound_row_filter = bind(table.schema(), row_filter, case_sensitive=case_sensitive)
+    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
 
     projected_field_ids = {
         id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
@@ -1088,7 +1097,7 @@ def project_table(
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
             limit,
-            table.name_mapping(),
+            table_metadata.name_mapping(),
         )
         for task in tasks
     ]
