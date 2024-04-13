@@ -376,15 +376,17 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
     """
     )
 
-    df = session_catalog.load_table(identifier).inspect.partitions()
+    def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
+        lhs = df.to_pandas().sort_values('spec_id')
+        rhs = spark_df.toPandas().sort_values('spec_id')
+        for column in df.column_names:
+            for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+                if column == "partition":
+                    right = right.asDict()
+                assert left == right, f"Difference in column {column}: {left} != {right}"
 
-    lhs = df.to_pandas()
-    rhs = spark.table(f"{identifier}.partitions").toPandas()
-
-    lhs.sort_values('spec_id', inplace=True)
-    rhs.sort_values('spec_id', inplace=True)
-    for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-            if column == "partition":
-                right = right.asDict()
-            assert left == right, f"Difference in column {column}: {left} != {right}"
+    tbl = session_catalog.load_table(identifier)
+    for snapshot in tbl.metadata.snapshots:
+        df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id)
+        spark_df = spark.sql(f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id}")
+        check_pyiceberg_df_equals_spark_df(df, spark_df)

@@ -3423,7 +3423,7 @@ class InspectTable:
             schema=entries_schema,
         )
 
-    def partitions(self) -> "pa.Table":
+    def partitions(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -3495,16 +3495,16 @@ class InspectTable:
                 raise ValueError(f"Unknown DataFileContent ({file.content})")
 
         partitions_map: Dict[Tuple[str, Any], Any] = {}
-        if snapshot := self.tbl.metadata.current_snapshot():
-            for manifest in snapshot.manifests(self.tbl.io):
-                for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
-                    partition = entry.data_file.partition
-                    partition_record_dict = {
-                        field.name: partition[pos]
-                        for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
-                    }
-                    entry_snapshot = self.tbl.snapshot_by_id(entry.snapshot_id) if entry.snapshot_id is not None else None
-                    update_partitions_map(partitions_map, entry.data_file, partition_record_dict, entry_snapshot)
+        snapshot = self._get_snapshot(snapshot_id)
+        for manifest in snapshot.manifests(self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+                partition = entry.data_file.partition
+                partition_record_dict = {
+                    field.name: partition[pos]
+                    for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                }
+                entry_snapshot = self.tbl.snapshot_by_id(entry.snapshot_id) if entry.snapshot_id is not None else None
+                update_partitions_map(partitions_map, entry.data_file, partition_record_dict, entry_snapshot)
 
         return pa.Table.from_pylist(
             partitions_map.values(),
