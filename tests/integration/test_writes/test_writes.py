@@ -306,8 +306,6 @@ def test_python_writes_special_character_column_with_spark_reads(
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
     tbl.overwrite(arrow_table_with_special_character_column)
-    # PySpark toPandas() turns nested field into tuple by default, but returns the proper schema when Arrow is enabled
-    spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
