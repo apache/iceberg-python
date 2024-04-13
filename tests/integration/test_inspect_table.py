@@ -172,7 +172,6 @@ def test_inspect_entries(
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
             if column == 'data_file':
-                right = right.asDict(recursive=True)
                 for df_column in left.keys():
                     if df_column == 'partition':
                         # Spark leaves out the partition if the table is unpartitioned
@@ -186,8 +185,6 @@ def test_inspect_entries(
 
                     assert df_lhs == df_rhs, f"Difference in data_file column {df_column}: {df_lhs} != {df_rhs}"
             elif column == 'readable_metrics':
-                right = right.asDict(recursive=True)
-
                 assert list(left.keys()) == [
                     'bool',
                     'string',
