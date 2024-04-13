@@ -1017,7 +1017,7 @@ def _task_to_table(
 
         if len(arrow_table) < 1:
             return None
-        return to_requested_schema(table=arrow_table, from_schema=file_project_schema, to_schema=projected_schema)
+        return to_requested_schema(file_schema=file_project_schema, requested_schema=projected_schema, table=arrow_table)
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1130,12 +1130,12 @@ def project_table(
     return result
 
 
-def to_requested_schema(table: pa.Table, from_schema: Schema, to_schema: Schema) -> pa.Table:
-    struct_array = visit_with_partner(to_schema, table, ArrowProjectionVisitor(from_schema), ArrowAccessor(from_schema))
+def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:
+    struct_array = visit_with_partner(requested_schema, table, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
 
     arrays = []
     fields = []
-    for pos, field in enumerate(to_schema.fields):
+    for pos, field in enumerate(requested_schema.fields):
         array = struct_array.field(pos)
         arrays.append(array)
         fields.append(pa.field(field.name, array.type, field.optional))
@@ -1782,7 +1782,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     def write_parquet(task: WriteTask) -> DataFile:
         arrow_table = pa.Table.from_batches(task.record_batches)
-        df = to_requested_schema(table=arrow_table, from_schema=iceberg_table_schema, to_schema=parquet_schema)
+        df = to_requested_schema(file_schema=iceberg_table_schema, requested_schema=parquet_schema, table=arrow_table)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
