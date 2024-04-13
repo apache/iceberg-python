@@ -342,6 +342,18 @@ table.append(df)
 
 To explore the table metadata, tables can be inspected.
 
+<!-- prettier-ignore-start -->
+
+!!! tip "Time Travel"
+    To inspect a tables's metadata with the time travel feature, call the inspect table method with the `snapshot_id` argument.
+    Time travel is supported on all metadata tables except `snapshots` and `refs`.
+
+    ```python
+    table.inspect.entries(snapshot_id=805611270568163028)
+    ```
+
+<!-- prettier-ignore-end -->
+
 ### Snapshots
 
 Inspect the snapshots of the table:

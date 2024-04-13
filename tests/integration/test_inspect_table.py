@@ -224,7 +224,7 @@ def test_inspect_entries(
                     assert left == right, f"Difference in column {column}: {left} != {right}"
 
     for snapshot in tbl.metadata.snapshots:
-        df = tbl.inspect.entries(snapshot.snapshot_id)
+        df = tbl.inspect.entries(snapshot_id=snapshot.snapshot_id)
         spark_df = spark.sql(f"SELECT * FROM {identifier}.entries VERSION AS OF {snapshot.snapshot_id}")
         check_pyiceberg_df_equals_spark_df(df, spark_df)
 
