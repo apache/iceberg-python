@@ -257,6 +257,12 @@ def delete_data_files(io: FileIO, manifests_to_delete: List[ManifestFile]) -> No
                 deleted_files[path] = True
 
 
+def _property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
+    if value := properties.get(property_name):
+        return value.lower() == "true"
+    return default
+
+
 @dataclass
 class PropertiesUpdateSummary:
     removed: List[str]

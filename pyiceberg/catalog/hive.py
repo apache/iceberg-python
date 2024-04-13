@@ -60,6 +60,7 @@ from pyiceberg.catalog import (
     TABLE_TYPE,
     Catalog,
     PropertiesUpdateSummary,
+    _property_as_bool,
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
@@ -74,7 +75,7 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, PropertyUtil, Table, TableProperties, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, TableProperties, update_table_metadata
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -314,7 +315,7 @@ class HiveCatalog(Catalog):
             createTime=current_time_millis // 1000,
             lastAccessTime=current_time_millis // 1000,
             sd=_construct_hive_storage_descriptor(
-                schema, location, PropertyUtil.property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT)
+                schema, location, _property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT)
             ),
             tableType=EXTERNAL_TABLE,
             parameters=_construct_parameters(metadata_location),
