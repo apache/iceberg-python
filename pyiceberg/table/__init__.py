@@ -3416,12 +3416,7 @@ class InspectTable:
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-        partition_record = self.tbl.metadata.specs_struct()
-        pa_record_struct = schema_to_pyarrow(partition_record)
-
-        partitions_schema = pa.schema([
-            pa.field('partition', pa_record_struct, nullable=False),
-            pa.field('spec_id', pa.int32(), nullable=False),
+        table_schema = pa.schema([
             pa.field('record_count', pa.int64(), nullable=False),
             pa.field('file_count', pa.int32(), nullable=False),
             pa.field('total_data_file_size_in_bytes', pa.int64(), nullable=False),
@@ -3432,6 +3427,18 @@ class InspectTable:
             pa.field('last_updated_at', pa.timestamp(unit='ms'), nullable=True),
             pa.field('last_updated_snapshot_id', pa.int64(), nullable=True),
         ])
+
+        partition_record = self.tbl.metadata.specs_struct()
+        has_partitions = len(partition_record.fields) > 0
+
+        if has_partitions:
+            pa_record_struct = schema_to_pyarrow(partition_record)
+            partitions_schema = pa.schema([
+                pa.field('partition', pa_record_struct, nullable=False),
+                pa.field('spec_id', pa.int32(), nullable=False),
+            ])
+
+            table_schema = pa.unify_schemas([partitions_schema, table_schema])
 
         def update_partitions_map(
             partitions_map: Dict[Tuple[str, Any], Any],
@@ -3489,7 +3496,7 @@ class InspectTable:
 
         return pa.Table.from_pylist(
             partitions_map.values(),
-            schema=partitions_schema,
+            schema=table_schema,
         )
 
 
