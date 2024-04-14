@@ -1770,10 +1770,9 @@ def data_file_statistics_from_parquet_metadata(
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     iceberg_table_schema = table_metadata.schema()
-    parquet_schema = sanitize_column_names(iceberg_table_schema)
-    arrow_file_schema = parquet_schema.as_arrow()
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
+    file_schema = sanitize_column_names(iceberg_table_schema)
 
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
@@ -1782,16 +1781,16 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     def write_parquet(task: WriteTask) -> DataFile:
         arrow_table = pa.Table.from_batches(task.record_batches)
-        df = to_requested_schema(requested_schema=parquet_schema, file_schema=iceberg_table_schema, table=arrow_table)
+        df = to_requested_schema(requested_schema=file_schema, file_schema=iceberg_table_schema, table=arrow_table)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(fos, schema=file_schema.as_arrow(), **parquet_writer_kwargs) as writer:
                 writer.write(df, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(parquet_schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(parquet_schema),
+            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
         data_file = DataFile(
             content=DataFileContent.DATA,
