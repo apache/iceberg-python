@@ -1769,9 +1769,6 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    iceberg_table_schema = table_metadata.schema()
-    file_schema = sanitize_column_names(iceberg_table_schema)
-
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
@@ -1780,6 +1777,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
+        iceberg_table_schema = task.schema
+        file_schema = sanitize_column_names(iceberg_table_schema)
+
         arrow_table = pa.Table.from_batches(task.record_batches)
         df = to_requested_schema(requested_schema=file_schema, file_schema=iceberg_table_schema, table=arrow_table)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
