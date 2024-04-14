@@ -1777,16 +1777,21 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
-        iceberg_table_schema = task.schema
-        file_schema = sanitize_column_names(iceberg_table_schema)
-
+        table_schema = task.schema
         arrow_table = pa.Table.from_batches(task.record_batches)
-        df = to_requested_schema(requested_schema=file_schema, file_schema=iceberg_table_schema, table=arrow_table)
+        # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
+        # otherwise use the original schema
+        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+            file_schema = sanitized_schema
+            arrow_table = to_requested_schema(requested_schema=file_schema, file_schema=table_schema, table=arrow_table)
+        else:
+            file_schema = table_schema
+
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=file_schema.as_arrow(), **parquet_writer_kwargs) as writer:
-                writer.write(df, row_group_size=row_group_size)
+                writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
