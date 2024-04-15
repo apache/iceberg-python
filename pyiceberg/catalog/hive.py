@@ -372,22 +372,7 @@ class HiveCatalog(MetastoreCatalog):
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
-        current_table = self.load_table(identifier_tuple)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
-        base_metadata = current_table.metadata
-        for requirement in table_request.requirements:
-            requirement.validate(base_metadata)
-
-        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
-        if updated_metadata == base_metadata:
-            # no changes, do nothing
-            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
-
-        # write new metadata
-        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
-        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
-        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
-
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
         with self._client as open_client:
@@ -396,6 +381,21 @@ class HiveCatalog(MetastoreCatalog):
             try:
                 if lock.state != LockState.ACQUIRED:
                     raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+
+                current_table = self.load_table(identifier_tuple)
+                base_metadata = current_table.metadata
+                for requirement in table_request.requirements:
+                    requirement.validate(base_metadata)
+
+                updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+                if updated_metadata == base_metadata:
+                    # no changes, do nothing
+                    return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
+
+                # write new metadata
+                new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
+                new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
+                self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
 
                 tbl = open_client.get_table(dbname=database_name, tbl_name=table_name)
                 tbl.parameters = _construct_parameters(
