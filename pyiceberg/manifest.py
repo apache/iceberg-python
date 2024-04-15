@@ -22,6 +22,7 @@ from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterator,
     List,
@@ -761,6 +762,20 @@ class ManifestWriter(ABC):
 
         self._writer.write_block([self.prepare_entry(entry)])
         return self
+
+
+class RollingManifestWriter:
+    _current_writer: ManifestWriter
+    _supplier: Callable[[], ManifestWriter]
+
+    def __init__(self, supplier: Callable[[], ManifestWriter], target_file_size_in_bytes, target_number_of_rows) -> None:
+        pass
+
+    def _should_roll_to_new_file(self) -> bool: ...
+
+    def to_manifest_files(self) -> list[ManifestFile]: ...
+
+    def add_entry(self, entry: ManifestEntry) -> RollingManifestWriter: ...
 
 
 class ManifestWriterV1(ManifestWriter):
