@@ -308,8 +308,15 @@ def test_inspect_refs(
         'max_snapshot_age_in_ms',
     ]
 
+    assert [name.as_py() for name in df['name']] == ['testBranch', 'main', 'testTag']
+    assert [ref_type.as_py() for ref_type in df['type']] == ['BRANCH', 'BRANCH', 'TAG']
+
     for snapshot_id in df['snapshot_id']:
         assert isinstance(snapshot_id.as_py(), int)
+
+    for int_column in ['max_reference_age_in_ms', 'min_snapshots_to_keep', 'max_snapshot_age_in_ms']:
+        for value in df[int_column]:
+            assert isinstance(value.as_py(), int) or not value.as_py()
 
     lhs = spark.table(f"{identifier}.refs").toPandas()
     rhs = df.to_pandas()
