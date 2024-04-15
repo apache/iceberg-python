@@ -3415,7 +3415,7 @@ class InspectTable:
 
         ref_schema = pa.schema([
             pa.field('name', pa.string(), nullable=False),
-            pa.field('type', pa.string(), nullable=False),
+            pa.field('type', pa.dictionary(pa.int32(), pa.string()), nullable=False),
             pa.field('snapshot_id', pa.int64(), nullable=False),
             pa.field('max_reference_age_in_ms', pa.int64(), nullable=True),
             pa.field('min_snapshots_to_keep', pa.int32(), nullable=True),
