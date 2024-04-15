@@ -382,7 +382,10 @@ class HiveCatalog(MetastoreCatalog):
                 if lock.state != LockState.ACQUIRED:
                     raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
 
-                current_table = self.load_table(identifier_tuple)
+                hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+                io = load_file_io({**self.properties, **hive_table.parameters}, hive_table.sd.location)
+                current_table = self._convert_hive_into_iceberg(hive_table, io)
+
                 base_metadata = current_table.metadata
                 for requirement in table_request.requirements:
                     requirement.validate(base_metadata)
@@ -397,11 +400,10 @@ class HiveCatalog(MetastoreCatalog):
                 new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
                 self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
 
-                tbl = open_client.get_table(dbname=database_name, tbl_name=table_name)
-                tbl.parameters = _construct_parameters(
+                hive_table.parameters = _construct_parameters(
                     metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
                 )
-                open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=tbl)
+                open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
             except NoSuchObjectException as e:
                 raise NoSuchTableError(f"Table does not exist: {table_name}") from e
             finally:
