@@ -38,7 +38,6 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.table import TableProperties
-from tests.conftest import TEST_DATA_WITH_NULL
 from utils import _create_table
 
 
@@ -120,52 +119,55 @@ def test_query_count(spark: SparkSession, format_version: int) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_null(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_without_data(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_without_data(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_without_data"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_only_nulls(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_only_nulls(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_appended_null(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_appended_null(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
+def test_query_filter_v1_v2_append_null(
+    spark: SparkSession,
+    arrow_table_with_null: pa.Table,
+) -> None:
     identifier = "default.arrow_table_v1_v2_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
