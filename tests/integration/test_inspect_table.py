@@ -270,3 +270,123 @@ def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catal
 
     assert df.to_pydict()['data_file'][0]['partition'] == {'dt_day': date(2021, 2, 1), 'dt_month': None}
     assert df.to_pydict()['data_file'][1]['partition'] == {'dt_day': None, 'dt_month': 612}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_partitions_unpartitioned(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_metadata_partitions_unpartitioned"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # Write some data through multiple commits
+    tbl.append(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+
+    df = tbl.inspect.partitions()
+    assert df.column_names == [
+        'record_count',
+        'file_count',
+        'total_data_file_size_in_bytes',
+        'position_delete_record_count',
+        'position_delete_file_count',
+        'equality_delete_record_count',
+        'equality_delete_file_count',
+        'last_updated_at',
+        'last_updated_snapshot_id',
+    ]
+    for last_updated_at in df['last_updated_at']:
+        assert isinstance(last_updated_at.as_py(), datetime)
+
+    int_cols = [
+        'record_count',
+        'file_count',
+        'total_data_file_size_in_bytes',
+        'position_delete_record_count',
+        'position_delete_file_count',
+        'equality_delete_record_count',
+        'equality_delete_file_count',
+        'last_updated_snapshot_id',
+    ]
+    for column in int_cols:
+        for value in df[column]:
+            assert isinstance(value.as_py(), int)
+    lhs = df.to_pandas()
+    rhs = spark.table(f"{identifier}.partitions").toPandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_metadata_partitions_partitioned"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            name string,
+            dt date
+        )
+        PARTITIONED BY (months(dt))
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('John', CAST('2021-01-01' AS date))
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('Doe', CAST('2021-01-05' AS date))
+    """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {identifier}
+        REPLACE PARTITION FIELD dt_month WITH days(dt)
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('Jenny', CAST('2021-02-01' AS date))
+    """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {identifier}
+        DROP PARTITION FIELD dt_day
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES ('James', CAST('2021-02-01' AS date))
+    """
+    )
+
+    def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
+        lhs = df.to_pandas().sort_values('spec_id')
+        rhs = spark_df.toPandas().sort_values('spec_id')
+        for column in df.column_names:
+            for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+                if column == "partition":
+                    right = right.asDict()
+                assert left == right, f"Difference in column {column}: {left} != {right}"
+
+    tbl = session_catalog.load_table(identifier)
+    for snapshot in tbl.metadata.snapshots:
+        df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id)
+        spark_df = spark.sql(f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id}")
+        check_pyiceberg_df_equals_spark_df(df, spark_df)
