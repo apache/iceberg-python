@@ -2144,3 +2144,31 @@ def arrow_table_with_only_nulls(pa_schema: "pa.Schema") -> "pa.Table":
     import pyarrow as pa
 
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
+
+
+@pytest.fixture()
+def catalog_rest() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+@pytest.fixture()
+def catalog_hive() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "hive",
+            "uri": "http://localhost:9083",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )

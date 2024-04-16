@@ -18,7 +18,7 @@
 
 import pytest
 
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -39,34 +39,6 @@ from pyiceberg.types import (
     StringType,
     TimestampType,
 )
-
-
-@pytest.fixture()
-def catalog_rest() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-
-@pytest.fixture()
-def catalog_hive() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "hive",
-            "uri": "http://localhost:9083",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
 
 
 def _simple_table(catalog: Catalog, table_schema_simple: Schema) -> Table:

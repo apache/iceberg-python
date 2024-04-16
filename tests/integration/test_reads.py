@@ -26,7 +26,7 @@ from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRe
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 
-from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog, _HiveClient
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import (
@@ -50,34 +50,6 @@ from pyiceberg.types import (
 )
 
 DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
-
-
-@pytest.fixture()
-def catalog_rest() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-
-@pytest.fixture()
-def catalog_hive() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "hive",
-            "uri": "http://localhost:9083",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
 
 
 TABLE_NAME = ("default", "t1")
