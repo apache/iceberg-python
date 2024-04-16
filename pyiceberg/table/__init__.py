@@ -2967,6 +2967,13 @@ class DeleteFiles(_MergingSnapshotProducer):
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
         self._predicate = AlwaysFalse()
 
+    def _commit(self) -> UpdatesAndRequirements:
+        # Only produce a commit when there is something to delete
+        if self.files_affected:
+            return super()._commit()
+        else:
+            return (), ()
+
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         schema = self._transaction.table_metadata.schema()
         spec = self._transaction.table_metadata.specs()[spec_id]
@@ -2996,6 +3003,13 @@ class DeleteFiles(_MergingSnapshotProducer):
 
     @cached_property
     def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry], bool]:
+        """Computes all the delete operation and cache it when nothing changes.
+
+        Returns:
+            - List of existing manifests that are not affected by the delete operation.
+            - The manifest-entries that are deleted based on the metadata.
+            - Flag indicating that rewrites of data-files are needed.
+        """
         schema = self._transaction.table_metadata.schema()
 
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
@@ -3016,44 +3030,47 @@ class DeleteFiles(_MergingSnapshotProducer):
         partial_rewrites_needed = False
         if snapshot := self._transaction.table_metadata.current_snapshot():
             for manifest_file in snapshot.manifests(io=self._io):
-                if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
-                    # If the manifest isn't relevant, we can just keep it in the manifest-list
-                    existing_manifests.append(manifest_file)
-                else:
-                    # It is relevant, let's check out the content
-                    deleted_entries = []
-                    existing_entries = []
-                    for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                        if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
-                            deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
-                        elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
-                            existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
-                        else:
-                            # Based on the metadata, it is unsure to say if the file can be deleted
-                            partial_rewrites_needed = True
-
-                    if len(deleted_entries) > 0:
-                        total_deleted_entries += deleted_entries
-
-                        # Rewrite the manifest
-                        if len(existing_entries) > 0:
-                            output_file_location = _new_manifest_path(
-                                location=self._transaction.table_metadata.location,
-                                num=next(self._manifest_counter),
-                                commit_uuid=self.commit_uuid,
-                            )
-                            with write_manifest(
-                                format_version=self._transaction.table_metadata.format_version,
-                                spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                schema=self._transaction.table_metadata.schema(),
-                                output_file=self._io.new_output(output_file_location),
-                                snapshot_id=self._snapshot_id,
-                            ) as writer:
-                                for existing_entry in existing_entries:
-                                    writer.add_entry(existing_entry)
-                            existing_manifests.append(writer.to_manifest_file())
-                    else:
+                if manifest_file.content == ManifestContent.DATA:
+                    if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                        # If the manifest isn't relevant, we can just keep it in the manifest-list
                         existing_manifests.append(manifest_file)
+                    else:
+                        # It is relevant, let's check out the content
+                        deleted_entries = []
+                        existing_entries = []
+                        for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                            if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
+                            elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
+                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                            else:
+                                # Based on the metadata, it is unsure to say if the file can be deleted
+                                partial_rewrites_needed = True
+
+                        if len(deleted_entries) > 0:
+                            total_deleted_entries += deleted_entries
+
+                            # Rewrite the manifest
+                            if len(existing_entries) > 0:
+                                output_file_location = _new_manifest_path(
+                                    location=self._transaction.table_metadata.location,
+                                    num=next(self._manifest_counter),
+                                    commit_uuid=self.commit_uuid,
+                                )
+                                with write_manifest(
+                                    format_version=self._transaction.table_metadata.format_version,
+                                    spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                    schema=self._transaction.table_metadata.schema(),
+                                    output_file=self._io.new_output(output_file_location),
+                                    snapshot_id=self._snapshot_id,
+                                ) as writer:
+                                    for existing_entry in existing_entries:
+                                        writer.add_entry(existing_entry)
+                                existing_manifests.append(writer.to_manifest_file())
+                        else:
+                            existing_manifests.append(manifest_file)
+                else:
+                    existing_manifests.append(manifest_file)
 
         return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
@@ -3067,6 +3084,11 @@ class DeleteFiles(_MergingSnapshotProducer):
     def rewrites_needed(self) -> bool:
         """Indicate if data files need to be rewritten."""
         return self._compute_deletes[2]
+
+    @property
+    def files_affected(self) -> bool:
+        """Indicate if any manifest-entries can be dropped."""
+        return len(self._deleted_entries()) > 0
 
 
 class FastAppendFiles(_MergingSnapshotProducer):
