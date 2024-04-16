@@ -342,6 +342,18 @@ table.append(df)
 
 To explore the table metadata, tables can be inspected.
 
+<!-- prettier-ignore-start -->
+
+!!! tip "Time Travel"
+    To inspect a tables's metadata with the time travel feature, call the inspect table method with the `snapshot_id` argument.
+    Time travel is supported on all metadata tables except `snapshots` and `refs`.
+
+    ```python
+    table.inspect.entries(snapshot_id=805611270568163028)
+    ```
+
+<!-- prettier-ignore-end -->
+
 ### Snapshots
 
 Inspect the snapshots of the table:
@@ -368,6 +380,47 @@ parent_id: [[null,805611270568163028,3679426539959220963]]
 operation: [["append","overwrite","append"]]
 manifest_list: [["s3://warehouse/default/table_metadata_snapshots/metadata/snap-805611270568163028-0-43637daf-ea4b-4ceb-b096-a60c25481eb5.avro","s3://warehouse/default/table_metadata_snapshots/metadata/snap-3679426539959220963-0-8be81019-adf1-4bb6-a127-e15217bd50b3.avro","s3://warehouse/default/table_metadata_snapshots/metadata/snap-5588071473139865870-0-1382dd7e-5fbc-4c51-9776-a832d7d0984e.avro"]]
 summary: [[keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","1","0","3","5459","0","0"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-records",...,"total-equality-deletes","total-files-size","deleted-data-files","deleted-records","removed-files-size"]values:["5459","1","3","1","3",...,"0","5459","1","3","5459"],keys:["added-files-size","added-data-files","added-records","total-data-files","total-delete-files","total-records","total-files-size","total-position-deletes","total-equality-deletes"]values:["5459","1","3","2","0","6","10918","0","0"]]]
+```
+
+### Partitions
+
+Inspect the partitions of the table:
+
+```python
+table.inspect.partitions()
+```
+
+```
+pyarrow.Table
+partition: struct<dt_month: int32, dt_day: date32[day]> not null
+  child 0, dt_month: int32
+  child 1, dt_day: date32[day]
+spec_id: int32 not null
+record_count: int64 not null
+file_count: int32 not null
+total_data_file_size_in_bytes: int64 not null
+position_delete_record_count: int64 not null
+position_delete_file_count: int32 not null
+equality_delete_record_count: int64 not null
+equality_delete_file_count: int32 not null
+last_updated_at: timestamp[ms]
+last_updated_snapshot_id: int64
+----
+partition: [
+  -- is_valid: all not null
+  -- child 0 type: int32
+[null,null,612]
+  -- child 1 type: date32[day]
+[null,2021-02-01,null]]
+spec_id: [[2,1,0]]
+record_count: [[1,1,2]]
+file_count: [[1,1,2]]
+total_data_file_size_in_bytes: [[641,641,1260]]
+position_delete_record_count: [[0,0,0]]
+position_delete_file_count: [[0,0,0]]
+equality_delete_record_count: [[0,0,0]]
+equality_delete_file_count: [[0,0,0]]
+last_updated_at: [[2024-04-13 18:59:35.981,2024-04-13 18:59:35.465,2024-04-13 18:59:35.003]]
 ```
 
 ### Entries
