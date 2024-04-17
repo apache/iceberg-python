@@ -340,7 +340,7 @@ def test_create_table(
                         NestedField(field_id=21, name='inner_string', field_type=StringType(), required=False),
                         NestedField(field_id=22, name='inner_int', field_type=IntegerType(), required=True),
                     ),
-                    required=True,
+                    required=False,
                 ),
                 schema_id=0,
                 identifier_field_ids=[2],

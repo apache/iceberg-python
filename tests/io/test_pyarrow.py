@@ -716,7 +716,9 @@ def schema_map_of_structs() -> Schema:
                 key_id=51,
                 value_id=52,
                 key_type=StringType(),
-                value_type=StructType(NestedField(511, "lat", DoubleType()), NestedField(512, "long", DoubleType())),
+                value_type=StructType(
+                    NestedField(511, "lat", DoubleType(), required=True), NestedField(512, "long", DoubleType(), required=True)
+                ),
                 element_required=False,
             ),
             required=False,
@@ -1242,9 +1244,9 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
                 value_id=52,
                 key_type=StringType(),
                 value_type=StructType(
-                    NestedField(511, "latitude", DoubleType()),
-                    NestedField(512, "longitude", DoubleType()),
-                    NestedField(513, "altitude", DoubleType(), required=False),
+                    NestedField(511, "latitude", DoubleType(), required=True),
+                    NestedField(512, "longitude", DoubleType(), required=True),
+                    NestedField(513, "altitude", DoubleType()),
                 ),
                 element_required=False,
             ),
