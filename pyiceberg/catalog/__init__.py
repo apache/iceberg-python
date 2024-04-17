@@ -719,7 +719,7 @@ class MetastoreCatalog(Catalog, ABC):
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
-        io = load_file_io(properties=self.properties, location=metadata_location)
+        io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(
             identifier=(self.name, database_name, table_name),
             metadata=metadata,
