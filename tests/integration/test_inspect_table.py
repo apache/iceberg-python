@@ -438,8 +438,6 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
         rhs = spark_df.toPandas().sort_values('spec_id')
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-                if column == "partition":
-                    right = right.asDict()
                 assert left == right, f"Difference in column {column}: {left} != {right}"
 
     tbl = session_catalog.load_table(identifier)
