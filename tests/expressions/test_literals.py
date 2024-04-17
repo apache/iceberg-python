@@ -278,7 +278,7 @@ def test_timestamp_to_date() -> None:
     epoch_lit = TimestampLiteral(int(datetime.datetime.fromisoformat("1970-01-01T01:23:45.678").timestamp() * 1_000_000))
     date_lit = epoch_lit.to(DateType())
 
-    assert abs(date_lit.value) == 0
+    assert date_lit.value == 0
 
 
 def test_string_literal() -> None:
