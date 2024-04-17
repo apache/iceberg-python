@@ -332,6 +332,8 @@ def test_inspect_refs(
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_inspect_partitions_unpartitioned(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
