@@ -617,7 +617,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
             "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
         )
 
-    identifier = f"default.arrow_create_table_transaction{format_version}"
+    identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
     try:
         catalog.drop_table(identifier=identifier)

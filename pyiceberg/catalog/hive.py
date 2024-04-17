@@ -293,6 +293,12 @@ class HiveCatalog(MetastoreCatalog):
             parameters=_construct_parameters(table.metadata_location),
         )
 
+    def _create_hive_table(self, open_client: Client, hive_table: HiveTable) -> None:
+        try:
+            open_client.create_table(hive_table)
+        except AlreadyExistsException as e:
+            raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
+
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -332,12 +338,10 @@ class HiveCatalog(MetastoreCatalog):
 
         self._write_metadata(staged_table.metadata, staged_table.io, staged_table.metadata_location)
         tbl = self._convert_iceberg_into_hive(staged_table)
-        try:
-            with self._client as open_client:
-                open_client.create_table(tbl)
-                hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
-        except AlreadyExistsException as e:
-            raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+
+        with self._client as open_client:
+            self._create_hive_table(open_client, tbl)
+            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
 
         return self._convert_hive_into_iceberg(hive_table, staged_table.io)
 
@@ -420,11 +424,7 @@ class HiveCatalog(MetastoreCatalog):
                 new_metadata_version = 0
                 new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
                 io = self._load_file_io(updated_metadata.properties, new_metadata_location)
-                self._write_metadata(
-                    updated_metadata,
-                    io,
-                    new_metadata_location,
-                )
+                self._write_metadata(updated_metadata, io, new_metadata_location)
 
                 tbl = self._convert_iceberg_into_hive(
                     StagedTable(
@@ -435,10 +435,7 @@ class HiveCatalog(MetastoreCatalog):
                         catalog=self,
                     )
                 )
-                try:
-                    open_client.create_table(tbl)
-                except AlreadyExistsException as e:
-                    raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+                self._create_hive_table(open_client, tbl)
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
