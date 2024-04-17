@@ -275,6 +275,46 @@ def test_python_writes_with_spark_snapshot_reads(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_special_character_column_with_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_special_character_column_with_spark_reads"
+    column_name_with_special_character = "letter/abc"
+    TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN = {
+        column_name_with_special_character: ['a', None, 'z'],
+        'id': [1, 2, 3],
+        'name': ['AB', 'CD', 'EF'],
+        'address': [
+            {'street': '123', 'city': 'SFO', 'zip': 12345, column_name_with_special_character: 'a'},
+            {'street': '456', 'city': 'SW', 'zip': 67890, column_name_with_special_character: 'b'},
+            {'street': '789', 'city': 'Random', 'zip': 10112, column_name_with_special_character: 'c'},
+        ],
+    }
+    pa_schema = pa.schema([
+        pa.field(column_name_with_special_character, pa.string()),
+        pa.field('id', pa.int32()),
+        pa.field('name', pa.string()),
+        pa.field(
+            'address',
+            pa.struct([
+                pa.field('street', pa.string()),
+                pa.field('city', pa.string()),
+                pa.field('zip', pa.int32()),
+                pa.field(column_name_with_special_character, pa.string()),
+            ]),
+        ),
+    ])
+    arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table_with_special_character_column)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+
+
+@pytest.mark.integration
 def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.write_bin_pack_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])

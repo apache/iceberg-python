@@ -1373,7 +1373,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1411,7 +1411,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1442,7 +1442,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         str(projection)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","b","c"]]

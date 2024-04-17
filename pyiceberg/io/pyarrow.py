@@ -966,12 +966,7 @@ def _task_to_table(
     with fs.open_input_file(path) as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
-        schema_raw = None
-        if metadata := physical_schema.metadata:
-            schema_raw = metadata.get(ICEBERG_SCHEMA)
-        file_schema = (
-            Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
-        )
+        file_schema = pyarrow_to_schema(physical_schema, name_mapping)
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
@@ -979,7 +974,7 @@ def _task_to_table(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
@@ -1022,7 +1017,6 @@ def _task_to_table(
 
         if len(arrow_table) < 1:
             return None
-
         return to_requested_schema(projected_schema, file_project_schema, arrow_table)
 
 
@@ -1783,8 +1777,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterable["Write
 
     schema = table_metadata.schema()
     arrow_file_schema = schema.as_arrow()
-    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
 
+    parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
@@ -1792,16 +1786,25 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterable["Write
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
+        table_schema = task.schema
+        arrow_table = pa.Table.from_batches(task.record_batches)
+        # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
+        # otherwise use the original schema
+        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+            file_schema = sanitized_schema
+            arrow_table = to_requested_schema(requested_schema=file_schema, file_schema=table_schema, table=arrow_table)
+        else:
+            file_schema = table_schema
+
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-                writer.write(pa.Table.from_batches(task.record_batches), row_group_size=row_group_size)
-
+            with pq.ParquetWriter(fos, schema=file_schema.as_arrow(), **parquet_writer_kwargs) as writer:
+                writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
-            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
         data_file = DataFile(
             content=DataFileContent.DATA,
