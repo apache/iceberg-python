@@ -331,6 +331,7 @@ def test_inspect_refs(
                 continue
             assert left == right, f"Difference in column {column}: {left} != {right}"
 
+
 def test_inspect_partitions_unpartitioned(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
