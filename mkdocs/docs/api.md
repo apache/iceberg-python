@@ -108,19 +108,17 @@ from pyiceberg.types import (
 schema = Schema(
     NestedField(field_id=1, name="datetime", field_type=TimestampType(), required=True),
     NestedField(field_id=2, name="symbol", field_type=StringType(), required=True),
-    NestedField(field_id=3, name="bid", field_type=FloatType(), required=False),
-    NestedField(field_id=4, name="ask", field_type=DoubleType(), required=False),
+    NestedField(field_id=3, name="bid", field_type=FloatType()),
+    NestedField(field_id=4, name="ask", field_type=DoubleType()),
     NestedField(
         field_id=5,
         name="details",
         field_type=StructType(
             NestedField(
-                field_id=4, name="created_by", field_type=StringType(), required=False
+                field_id=4, name="created_by", field_type=StringType()
             ),
         ),
-        required=False,
-    ),
-)
+    )
 
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
