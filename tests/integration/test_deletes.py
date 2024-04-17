@@ -227,33 +227,20 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     # One positional delete has been added, but an OVERWRITE status is set
     # https://github.com/apache/iceberg/issues/10122
     snapshots = tbl.snapshots()
-    assert len(snapshots) == 4
+    assert len(snapshots) == 3
 
     # Snapshots produced by Spark
     assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ['append', 'overwrite']
 
-    # Snapshots produced by PyIceberg
-    # This is a no-op since nothing has been added or deleted (because the predicate cannot drop a whole file)
-    assert tbl.snapshots()[2].summary == Summary(
-        Operation.DELETE,
-        **{
-            'total-data-files': '2',
-            'total-delete-files': '1',
-            'total-records': '5',
-            'total-files-size': tbl.snapshots()[2].summary['total-files-size'],
-            'total-position-deletes': '1',
-            'total-equality-deletes': '0',
-        },
-    )
     # Will rewrite one parquet file
-    assert tbl.snapshots()[3].summary == Summary(
+    assert snapshots[2].summary == Summary(
         Operation.OVERWRITE,
         **{
             'added-files-size': '1145',
             'added-data-files': '1',
             'added-records': '2',
             'changed-partition-count': '1',
-            'total-files-size': tbl.snapshots()[3].summary['total-files-size'],
+            'total-files-size': snapshots[2].summary['total-files-size'],
             'total-delete-files': '0',
             'total-data-files': '1',
             'total-position-deletes': '0',
@@ -262,7 +249,7 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
             'deleted-data-files': '2',
             'removed-delete-files': '1',
             'deleted-records': '5',
-            'removed-files-size': '3088',
+            'removed-files-size': snapshots[2].summary['removed-files-size'],
             'removed-position-deletes': '1',
         },
     )

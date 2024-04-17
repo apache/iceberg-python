@@ -439,9 +439,6 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if overwrite_filter != AlwaysTrue():
-            raise NotImplementedError("Cannot overwrite a subset of a table")
-
         if len(self._table.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
@@ -450,6 +447,9 @@ class Transaction:
         table_arrow_schema = self._table.schema().as_arrow()
         if table_arrow_schema != df.schema:
             df = df.cast(table_arrow_schema)
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
+            delete_snapshot.delete_by_predicate(overwrite_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
