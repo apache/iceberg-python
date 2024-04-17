@@ -91,7 +91,7 @@ def test_schema_str(table_schema_simple: Schema) -> None:
 def test_schema_repr_single_field() -> None:
     """Test schema representation"""
     actual = repr(schema.Schema(NestedField(field_id=1, name="foo", field_type=StringType()), schema_id=1))
-    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=True), schema_id=1, identifier_field_ids=[])"
+    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), schema_id=1, identifier_field_ids=[])"
     assert expected == actual
 
 
@@ -104,7 +104,7 @@ def test_schema_repr_two_fields() -> None:
             schema_id=1,
         )
     )
-    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=True), NestedField(field_id=2, name='bar', field_type=IntegerType(), required=False), schema_id=1, identifier_field_ids=[])"
+    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), NestedField(field_id=2, name='bar', field_type=IntegerType(), required=False), schema_id=1, identifier_field_ids=[])"
     assert expected == actual
 
 

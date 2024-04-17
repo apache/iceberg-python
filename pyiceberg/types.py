@@ -24,10 +24,10 @@ Example:
     ...     NestedField(1, "required_field", StringType(), True),
     ...     NestedField(2, "optional_field", IntegerType())
     ... ))
-    'struct<1: required_field: optional string, 2: optional_field: optional int>'
+    'struct<1: required_field: required string, 2: optional_field: optional int>'
 
 Notes:
-  - https://iceberg.apache.org/#spec/#primitive-types
+  - https://iceberg.apache.org/spec/#primitive-types
 """
 
 from __future__ import annotations
@@ -289,7 +289,7 @@ class NestedField(IcebergType):
     field_id: int = Field(alias="id")
     name: str = Field()
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
-    required: bool = Field(default=True)
+    required: bool = Field(default=False)
     doc: Optional[str] = Field(default=None, repr=False)
     initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
     write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
@@ -299,7 +299,7 @@ class NestedField(IcebergType):
         field_id: Optional[int] = None,
         name: Optional[str] = None,
         field_type: Optional[IcebergType] = None,
-        required: bool = True,
+        required: bool = False,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
         write_default: Optional[L] = None,
