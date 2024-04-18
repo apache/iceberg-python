@@ -2888,6 +2888,15 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                 schema=self._transaction.table_metadata.schema(),
             )
 
+        if len(self._deleted_data_files) > 0:
+            specs = self._transaction.table_metadata.specs()
+            for data_file in self._deleted_data_files:
+                ssc.remove_file(
+                    data_file=data_file,
+                    partition_spec=specs.get(data_file.spec_id),
+                    schema=self._transaction.table_metadata.schema(),
+                )
+
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if self._parent_snapshot_id is not None
@@ -3028,6 +3037,7 @@ class DeleteFiles(_MergingSnapshotProducer):
         existing_manifests = []
         total_deleted_entries = []
         partial_rewrites_needed = False
+        self._deleted_data_files = set()
         if snapshot := self._transaction.table_metadata.current_snapshot():
             for manifest_file in snapshot.manifests(io=self._io):
                 if manifest_file.content == ManifestContent.DATA:
@@ -3041,6 +3051,7 @@ class DeleteFiles(_MergingSnapshotProducer):
                         for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
                             if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
                                 deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
+                                self._deleted_data_files.add(entry.data_file)
                             elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
                                 existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
                             else:

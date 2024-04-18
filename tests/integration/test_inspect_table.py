@@ -103,13 +103,14 @@ def test_inspect_snapshots(
         assert isinstance(snapshot_id.as_py(), int)
 
     assert df['parent_id'][0].as_py() is None
-    assert df['parent_id'][1:] == df['snapshot_id'][:2]
+    assert df['parent_id'][1:].to_pylist() == df['snapshot_id'][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df['operation']] == ['append', 'overwrite', 'append']
+    assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'overwrite', 'append']
 
     for manifest_list in df['manifest_list']:
         assert manifest_list.as_py().startswith("s3://")
 
+    # Append
     assert df['summary'][0].as_py() == [
         ('added-files-size', '5459'),
         ('added-data-files', '1'),
@@ -118,6 +119,19 @@ def test_inspect_snapshots(
         ('total-delete-files', '0'),
         ('total-records', '3'),
         ('total-files-size', '5459'),
+        ('total-position-deletes', '0'),
+        ('total-equality-deletes', '0'),
+    ]
+
+    # Delete
+    assert df['summary'][1].as_py() == [
+        ('removed-files-size', '5459'),
+        ('deleted-data-files', '1'),
+        ('deleted-records', '3'),
+        ('total-data-files', '0'),
+        ('total-delete-files', '0'),
+        ('total-records', '0'),
+        ('total-files-size', '0'),
         ('total-position-deletes', '0'),
         ('total-equality-deletes', '0'),
     ]
