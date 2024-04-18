@@ -275,7 +275,7 @@ def test_decimal_to_decimal_conversion() -> None:
 
 
 def test_timestamp_to_date() -> None:
-    epoch_lit = TimestampLiteral(int(datetime.datetime.fromisoformat("1970-01-01T01:23:45.678").timestamp() * 1_000_000))
+    epoch_lit = TimestampLiteral(int(datetime.datetime.fromisoformat("1970-01-01T00:00:00.000000+00:00").timestamp() * 1_000_000))
     date_lit = epoch_lit.to(DateType())
 
     assert date_lit.value == 0
