@@ -108,7 +108,7 @@ To run the full integration tests:
 make test-integration
 ```
 
-This will include a Minio S3 container being spun up.
+This will spin up Docker containers to faciliate integration tests.
 
 # Cast the vote
 
