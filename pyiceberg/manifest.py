@@ -338,7 +338,7 @@ class DataFile(Record):
     split_offsets: Optional[List[int]]
     equality_ids: Optional[List[int]]
     sort_order_id: Optional[int]
-    spec_id: Optional[int]
+    spec_id: int
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""

@@ -465,10 +465,10 @@ class Transaction:
             warnings.warn("PyIceberg only supports copy on write")
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            delete_snapshot.delete_by_predicate(delete_filter)  # type: ignore
+            delete_snapshot.delete_by_predicate(delete_filter)
 
         # Check if there are any files that require an actual rewrite of a data file
-        if delete_snapshot.rewrites_needed is True:  # type: ignore
+        if delete_snapshot.rewrites_needed is True:
             # When we want to filter out certain rows, we want to invert the expression
             # delete id = 22 means that we want to look for that value, and then remove
             # if from the Parquet file
@@ -2767,7 +2767,7 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
-class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
+class _MergingSnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     commit_uuid: uuid.UUID
     _operation: Operation
     _snapshot_id: int
@@ -2798,11 +2798,11 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         self.snapshot_properties = snapshot_properties
         self._manifest_counter = itertools.count(0)
 
-    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
+    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer[U]:
         self._added_data_files.append(data_file)
         return self
 
-    def delete_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
+    def delete_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer[U]:
         self._deleted_data_files.add(data_file)
         return self
 
@@ -2893,7 +2893,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,
-                    partition_spec=specs.get(data_file.spec_id),
+                    partition_spec=specs[data_file.spec_id],
                     schema=self._transaction.table_metadata.schema(),
                 )
 
@@ -2953,7 +2953,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         )
 
 
-class DeleteFiles(_MergingSnapshotProducer):
+class DeleteFiles(_MergingSnapshotProducer["DeleteFiles"]):
     """Will delete manifest entries from the current snapshot based on the predicate.
 
     This will produce a DELETE snapshot:
@@ -3102,7 +3102,7 @@ class DeleteFiles(_MergingSnapshotProducer):
         return len(self._deleted_entries()) > 0
 
 
-class FastAppendFiles(_MergingSnapshotProducer):
+class FastAppendFiles(_MergingSnapshotProducer["FastAppendFiles"]):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
 
@@ -3131,7 +3131,7 @@ class FastAppendFiles(_MergingSnapshotProducer):
         return []
 
 
-class OverwriteFiles(_MergingSnapshotProducer):
+class OverwriteFiles(_MergingSnapshotProducer["OverwriteFiles"]):
     """Overwrites data from the table. This will produce an OVERWRITE snapshot.
 
     Data and delete files were added and removed in a logical overwrite operation.

@@ -1772,11 +1772,8 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
-def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterable["WriteTask"]) -> Iterator[DataFile]:
+def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     from pyiceberg.table import PropertyUtil, TableProperties
-
-    schema = table_metadata.schema()
-    arrow_file_schema = schema.as_arrow()
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
