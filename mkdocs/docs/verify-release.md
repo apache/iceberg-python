@@ -108,7 +108,7 @@ To run the full integration tests:
 make test-integration
 ```
 
-This will spin up Docker containers to faciliate integration tests.
+This will spin up Docker containers to faciliate running integration tests.
 
 # Cast the vote
 
