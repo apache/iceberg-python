@@ -445,3 +445,63 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
         df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id)
         spark_df = spark.sql(f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id}")
         check_pyiceberg_df_equals_spark_df(df, spark_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_metadata_files"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # write some data
+    tbl.append(arrow_table_with_null)
+
+    df = tbl.refresh().inspect.files()
+
+    assert df.column_names == [
+        'content',
+        'file_path',
+        'file_format',
+        'record_count',
+        'file_size_in_bytes',
+        'column_sizes',
+        'value_counts',
+        'null_value_counts',
+        'nan_value_counts',
+        'lower_bounds',
+        'upper_bounds',
+        'key_metadata',
+        'split_offsets',
+        'equality_ids',
+    ]
+
+    for file_size_in_bytes in df['file_size_in_bytes']:
+        assert isinstance(file_size_in_bytes.as_py(), int)
+
+    for split_offsets in df['split_offsets']:
+        assert isinstance(split_offsets.as_py(), list)
+
+    for file_format in df['file_format']:
+        assert file_format.as_py() == "PARQUET"
+
+    for file_path in df['file_path']:
+        assert file_path.as_py().startswith("s3://")
+
+    lhs = spark.table(f"{identifier}.files").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if column in [
+                'column_sizes',
+                'value_counts',
+                'null_value_counts',
+                'nan_value_counts',
+                'lower_bounds',
+                'upper_bounds',
+            ]:
+                # Arrow returns a list of tuples, instead of a dict
+                right = dict(right)
+
+            assert left == right, f"Difference in column {column}: {left} != {right}"

@@ -2060,7 +2060,7 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
         .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.hive.s3.path-style-access", "true")
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "false")
         .getOrCreate()
     )
 

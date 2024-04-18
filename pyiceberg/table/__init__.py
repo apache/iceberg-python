@@ -3537,6 +3537,58 @@ class InspectTable:
             schema=table_schema,
         )
 
+    def files(self) -> "pa.Table":
+        import pyarrow as pa
+
+        files_schema = pa.schema([
+            pa.field('content', pa.int8(), nullable=False),
+            pa.field('file_path', pa.string(), nullable=False),
+            pa.field('file_format', pa.string(), nullable=False),
+            pa.field('record_count', pa.int64(), nullable=False),
+            pa.field('file_size_in_bytes', pa.int64(), nullable=False),
+            pa.field('column_sizes', pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field('value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field('null_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field('nan_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field('lower_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
+            pa.field('upper_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
+            pa.field('key_metadata', pa.binary(), nullable=True),
+            pa.field('split_offsets', pa.list_(pa.int64()), nullable=True),
+            pa.field('equality_ids', pa.list_(pa.int32()), nullable=True),
+        ])
+
+        files = []
+
+        snapshot = self.tbl.current_snapshot()
+        if not snapshot:
+            return pa.pylist([])
+
+        io = self.tbl.io
+        for manifest_list in snapshot.manifests(io):
+            for manifest_entry in manifest_list.fetch_manifest_entry(io):
+                data_file = manifest_entry.data_file
+                files.append({
+                    'content': data_file.content,
+                    'file_path': data_file.file_path,
+                    'file_format': data_file.file_format,
+                    'record_count': data_file.record_count,
+                    'file_size_in_bytes': data_file.file_size_in_bytes,
+                    'column_sizes': dict(data_file.column_sizes),
+                    'value_counts': dict(data_file.value_counts),
+                    'null_value_counts': dict(data_file.null_value_counts),
+                    'nan_value_counts': dict(data_file.nan_value_counts),
+                    'lower_bounds': dict(data_file.lower_bounds),
+                    'upper_bounds': dict(data_file.upper_bounds),
+                    'key_metadata': data_file.key_metadata,
+                    'split_offsets': data_file.split_offsets,
+                    'equality_ids': data_file.equality_ids,
+                })
+
+        return pa.Table.from_pylist(
+            files,
+            schema=files_schema,
+        )
+
 
 @dataclass(frozen=True)
 class TablePartition:
