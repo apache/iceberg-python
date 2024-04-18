@@ -455,7 +455,9 @@ def test_inspect_files(
     identifier = "default.table_metadata_files"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
-    # write some data
+    tbl.overwrite(arrow_table_with_null)
+
+    # append more data
     tbl.append(arrow_table_with_null)
 
     df = tbl.refresh().inspect.files()

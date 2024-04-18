@@ -606,6 +606,68 @@ min_snapshots_to_keep: [[null,10]]
 max_snapshot_age_in_ms: [[null,604800000]]
 ```
 
+### Files
+
+Inspect the data files in the current snapshot of the table:
+
+```python
+table.inspect.files()
+```
+
+```
+pyarrow.Table
+content: int8 not null
+file_path: string not null
+file_format: string not null
+record_count: int64 not null
+file_size_in_bytes: int64 not null
+column_sizes: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+value_counts: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+null_value_counts: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+nan_value_counts: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+lower_bounds: map<int32, binary>
+  child 0, entries: struct<key: int32 not null, value: binary> not null
+      child 0, key: int32 not null
+      child 1, value: binary
+upper_bounds: map<int32, binary>
+  child 0, entries: struct<key: int32 not null, value: binary> not null
+      child 0, key: int32 not null
+      child 1, value: binary
+key_metadata: binary
+split_offsets: list<item: int64>
+  child 0, item: int64
+equality_ids: list<item: int32>
+  child 0, item: int32
+----
+content: [[0,0]]
+file_path: [["s3://warehouse/default/table_metadata_files/data/00000-0-9ea7d222-6457-467f-bad5-6fb125c9aa5f.parquet","s3://warehouse/default/table_metadata_files/data/00000-0-afa8893c-de71-4710-97c9-6b01590d0c44.parquet"]]
+file_format: [["PARQUET","PARQUET"]]
+record_count: [[3,3]]
+file_size_in_bytes: [[5459,5459]]
+column_sizes: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[49,78,128,94,118,...,118,118,94,78,109],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[49,78,128,94,118,...,118,118,94,78,109]]]
+value_counts: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[3,3,3,3,3,...,3,3,3,3,3],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[3,3,3,3,3,...,3,3,3,3,3]]]
+null_value_counts: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[1,1,1,1,1,...,1,1,1,1,1],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[1,1,1,1,1,...,1,1,1,1,1]]]
+nan_value_counts: [[keys:[]values:[],keys:[]values:[]]]
+lower_bounds: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000]]]
+upper_bounds:[[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000]]]
+key_metadata: [[0100,0100]]
+split_offsets:[[[],[]]]
+equality_ids:[[[],[]]]
+
+```
+
 ## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
