@@ -105,7 +105,7 @@ make test
 To run the full integration tests:
 
 ```sh
-make test-s3
+make test-integration
 ```
 
 This will include a Minio S3 container being spun up.
