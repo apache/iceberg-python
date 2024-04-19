@@ -102,13 +102,13 @@ And then run the tests:
 make test
 ```
 
-To run the full integration tests:
+To run the full test coverage:
 
 ```sh
-make test-integration
+make test-coverage
 ```
 
-This will spin up Docker containers to faciliate running integration tests.
+This will spin up Docker containers to faciliate running test coverage.
 
 # Cast the vote
 
