@@ -63,6 +63,7 @@ test-coverage:
 	docker compose -f dev/docker-compose-integration.yml up -d
 	sh ./dev/run-azurite.sh
 	sh ./dev/run-gcs-server.sh
+	sleep 10
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run coverage run --source=pyiceberg/ -m pytest tests/ ${PYTEST_ARGS}
 	poetry run coverage report -m --fail-under=90
