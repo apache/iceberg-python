@@ -44,12 +44,19 @@ curl https://dist.apache.org/repos/dist/dev/iceberg/KEYS -o KEYS
 gpg --import KEYS
 ```
 
-Next, verify the `.asc` file.
-
+Set an environment variable to the version to verify and path to use
 ```sh
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-0.5.0rc1/ /tmp/pyiceberg/
+export PYICEBERG_VERSION=<version> # e.g. 0.6.1rc3
+export PYICEBERG_VERIFICATION_DIR=/tmp/pyiceberg/${PYICEBERG_VERSION}
+```
 
-for name in $(ls /tmp/pyiceberg/pyiceberg-*.whl /tmp/pyiceberg/pyiceberg-*.tar.gz)
+Next, verify the `.asc` file.
+```sh
+svn checkout https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${PYICEBERG_VERSION}/ ${PYICEBERG_VERIFICATION_DIR}
+
+cd ${PYICEBERG_VERIFICATION_DIR}
+
+for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
 do
     gpg --verify ${name}.asc ${name}
 done
@@ -58,8 +65,8 @@ done
 ## Verifying checksums
 
 ```sh
-cd  /tmp/pyiceberg/
-for name in $(ls /tmp/pyiceberg/pyiceberg-*.whl.sha512 /tmp/pyiceberg/pyiceberg-*.tar.gz.sha512)
+cd ${PYICEBERG_VERIFICATION_DIR}
+for name in $(ls pyiceberg-*.whl.sha512 pyiceberg-*.tar.gz.sha512)
 do
     shasum -a 512 --check ${name}
 done
