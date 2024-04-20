@@ -71,7 +71,7 @@ pip3 install -e ".[s3fs,hive]"
 Install it directly for GitHub (not recommended), but sometimes handy:
 
 ```
-pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[s3fs]"
+pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyarrow]"
 ```
 
 ## Linting
