@@ -45,12 +45,14 @@ gpg --import KEYS
 ```
 
 Set an environment variable to the version to verify and path to use
+
 ```sh
 export PYICEBERG_VERSION=<version> # e.g. 0.6.1rc3
 export PYICEBERG_VERIFICATION_DIR=/tmp/pyiceberg/${PYICEBERG_VERSION}
 ```
 
 Next, verify the `.asc` file.
+
 ```sh
 svn checkout https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${PYICEBERG_VERSION}/ ${PYICEBERG_VERIFICATION_DIR}
 
