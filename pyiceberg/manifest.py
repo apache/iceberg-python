@@ -927,6 +927,7 @@ class RollingManifestWriter:
             return self._current_writer
         if self._should_roll_to_new_file():
             self._close_current_writer()
+            return self._get_current_writer()
         return self._current_writer
 
     def _should_roll_to_new_file(self) -> bool:
@@ -954,6 +955,7 @@ class RollingManifestWriter:
         if self._closed:
             raise RuntimeError("Cannot add entry to closed manifest writer")
         self._get_current_writer().add_entry(entry)
+        self._current_file_rows += entry.data_file.record_count
         return self
 
 
