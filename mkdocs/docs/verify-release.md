@@ -48,7 +48,6 @@ Set an environment variable to the version to verify and path to use
 
 ```sh
 export PYICEBERG_VERSION=<version> # e.g. 0.6.1rc3
-export PYICEBERG_RELEASE_VERSION=${PYICEBERG_VERSION/rc?/}  # remove rcX qualifier
 export PYICEBERG_VERIFICATION_DIR=/tmp/pyiceberg/${PYICEBERG_VERSION}
 ```
 
@@ -78,6 +77,7 @@ done
 ## Verifying License Documentation
 
 ```sh
+export PYICEBERG_RELEASE_VERSION=${PYICEBERG_VERSION/rc?/}  # remove rcX qualifier
 tar xzf pyiceberg-${PYICEBERG_RELEASE_VERSION}.tar.gz
 cd pyiceberg-${PYICEBERG_RELEASE_VERSION}
 ```
