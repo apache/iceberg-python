@@ -39,6 +39,7 @@ from pyiceberg.expressions import (
     Or,
     StartsWith,
 )
+from pyiceberg.transforms import Reference
 
 
 def test_true() -> None:
@@ -199,3 +200,8 @@ def test_with_function() -> None:
         parser.parse("foo = 1 and lower(bar) = '2'")
 
     assert "Expected end of text, found 'and'" in str(exc_info)
+
+
+def test_cast() -> None:
+    cast = parser.parse("CAST(created_at as date)")
+    assert cast.term == Reference("created_at")
