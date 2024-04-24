@@ -58,7 +58,6 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
@@ -321,7 +320,7 @@ class GlueCatalog(MetastoreCatalog):
             )
         metadata_location = properties[METADATA_LOCATION]
 
-        io = load_file_io(properties=self.properties, location=metadata_location)
+        io = self._load_file_io(location=metadata_location)
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
