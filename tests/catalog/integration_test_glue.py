@@ -462,7 +462,9 @@ def test_commit_table_update_schema(
     ]
 
 
-def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
+def test_commit_table_properties(
+    test_catalog: Catalog, glue: boto3.client, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
@@ -470,13 +472,19 @@ def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Sch
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
     transaction = table.transaction()
-    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c", Description="test_description")
     transaction.remove_properties("test_b")
     transaction.commit_transaction()
 
     updated_table_metadata = table.metadata
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+    assert updated_table_metadata.properties == {'Description': 'test_description', "test_a": "test_aa", "test_c": "test_c"}
+
+    table_info = glue.get_table(
+        DatabaseName=database_name,
+        Name=table_name,
+    )
+    assert table_info["Table"]["Description"] == "test_description"
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
