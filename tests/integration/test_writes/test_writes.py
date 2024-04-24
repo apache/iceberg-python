@@ -34,6 +34,7 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.table import TableProperties, _dataframe_to_data_files
@@ -609,10 +610,10 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
-    if format_version == 1:
+    if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
             "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
         )
