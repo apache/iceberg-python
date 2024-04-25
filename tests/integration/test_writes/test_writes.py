@@ -36,7 +36,11 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.transforms import IdentityTransform
+from pyiceberg.types import IntegerType, NestedField
 from tests.conftest import TEST_DATA_WITH_NULL
 from utils import _create_table
 
@@ -789,3 +793,25 @@ def test_hive_catalog_storage_descriptor(
     assert len(tbl.scan().to_arrow()) == 3
     # check if spark can read the table
     assert spark.sql("SELECT * FROM hive.default.test_storage_descriptor").count() == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_sanitize_character_partitioned(catalog: Catalog) -> None:
+    table_name = "default.test_table_partitioned_sanitized_character"
+    try:
+        catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass
+
+    tbl = _create_table(
+        session_catalog=catalog,
+        identifier=table_name,
+        schema=Schema(NestedField(field_id=1, name="some.id", type=IntegerType(), required=True)),
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, name="some.id_identity", transform=IdentityTransform())
+        ),
+        data=[pa.Table.from_arrays([range(22)], schema=pa.schema([pa.field("some.id", pa.int32(), nullable=False)]))],
+    )
+
+    assert len(tbl.scan().to_arrow()) == 22

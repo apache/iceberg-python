@@ -41,7 +41,6 @@ from pyiceberg.expressions import (
 from pyiceberg.io.pyarrow import pyarrow_to_schema
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BooleanType,
     IntegerType,
@@ -472,31 +471,6 @@ def test_sanitize_character(catalog: Catalog) -> None:
     assert len(arrow_table.schema.names), 1
     assert len(table_test_table_sanitized_character.schema().fields), 1
     assert arrow_table.schema.names[0] == table_test_table_sanitized_character.schema().fields[0].name
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
-def test_sanitize_character_partitioned(catalog: Catalog) -> None:
-    table_name = "default.test_table_partitioned_sanitized_character"
-    try:
-        catalog.drop_table(table_name)
-    except NoSuchTableError:
-        pass
-
-    tbl = catalog.create_table(
-        identifier=table_name, schema=Schema(NestedField(field_id=1, name="some.id", type=IntegerType(), required=True))
-    )
-
-    import pyarrow as pa
-
-    with tbl.update_spec() as upd:
-        upd.add_field("some.id", IdentityTransform())
-
-    ids = pa.Table.from_arrays([range(22)], schema=pa.schema([pa.field("some.id", pa.int32(), nullable=False)]))
-
-    tbl.append(ids)
-
-    assert len(tbl.scan().to_arrow()) == 22
 
 
 @pytest.mark.integration
