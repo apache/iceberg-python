@@ -81,7 +81,6 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableProperties,
-    update_table_metadata,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -413,32 +412,21 @@ class HiveCatalog(MetastoreCatalog):
                     hive_table = None
                     current_table = None
 
-                for requirement in table_request.requirements:
-                    requirement.validate(current_table.metadata if current_table else None)
-
-                updated_metadata = update_table_metadata(
-                    base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
-                    updates=table_request.updates,
-                    enforce_validation=current_table is None,
-                )
-
-                if current_table and updated_metadata == current_table.metadata:
+                updated_staged_table = self._update_and_stage_table(current_table, table_request)
+                if current_table and updated_staged_table.metadata == current_table.metadata:
                     # no changes, do nothing
                     return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
-
-                new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-                new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
-                io = self._load_file_io(updated_metadata.properties, new_metadata_location)
                 self._write_metadata(
-                    metadata=updated_metadata,
-                    io=io,
-                    metadata_path=new_metadata_location,
+                    metadata=updated_staged_table.metadata,
+                    io=updated_staged_table.io,
+                    metadata_path=updated_staged_table.metadata_location,
                 )
 
                 if hive_table and current_table:
                     # Table exists, update it.
                     hive_table.parameters = _construct_parameters(
-                        metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
+                        metadata_location=updated_staged_table.metadata_location,
+                        previous_metadata_location=current_table.metadata_location,
                     )
                     open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
                 else:
@@ -446,9 +434,9 @@ class HiveCatalog(MetastoreCatalog):
                     hive_table = self._convert_iceberg_into_hive(
                         StagedTable(
                             identifier=(self.name, database_name, table_name),
-                            metadata=updated_metadata,
-                            metadata_location=new_metadata_location,
-                            io=io,
+                            metadata=updated_staged_table.metadata,
+                            metadata_location=updated_staged_table.metadata_location,
+                            io=updated_staged_table.io,
                             catalog=self,
                         )
                     )
@@ -456,7 +444,9 @@ class HiveCatalog(MetastoreCatalog):
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
-        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and return the table instance.

@@ -451,11 +451,9 @@ class GlueCatalog(MetastoreCatalog):
             current_table = None
 
         updated_staged_table = self._update_and_stage_table(current_table, table_request)
-
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
-
         self._write_metadata(
             metadata=updated_staged_table.metadata,
             io=updated_staged_table.io,

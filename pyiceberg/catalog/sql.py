@@ -59,7 +59,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -384,25 +384,14 @@ class SqlCatalog(MetastoreCatalog):
         except NoSuchTableError:
             current_table = None
 
-        for requirement in table_request.requirements:
-            requirement.validate(current_table.metadata if current_table else None)
-
-        updated_metadata = update_table_metadata(
-            base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
-            updates=table_request.updates,
-            enforce_validation=current_table is None,
-        )
-        if current_table and updated_metadata == current_table.metadata:
+        updated_staged_table = self._update_and_stage_table(current_table, table_request)
+        if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
-
-        # write new metadata
-        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
         self._write_metadata(
-            metadata=updated_metadata,
-            io=self._load_file_io(updated_metadata.properties, new_metadata_location),
-            metadata_path=new_metadata_location,
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
         )
 
         with Session(self.engine) as session:
@@ -418,7 +407,8 @@ class SqlCatalog(MetastoreCatalog):
                             IcebergTables.metadata_location == current_table.metadata_location,
                         )
                         .values(
-                            metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
+                            metadata_location=updated_staged_table.metadata_location,
+                            previous_metadata_location=current_table.metadata_location,
                         )
                     )
                     result = session.execute(stmt)
@@ -437,7 +427,7 @@ class SqlCatalog(MetastoreCatalog):
                             )
                             .one()
                         )
-                        tbl.metadata_location = new_metadata_location
+                        tbl.metadata_location = updated_staged_table.metadata_location
                         tbl.previous_metadata_location = current_table.metadata_location
                     except NoResultFound as e:
                         raise CommitFailedException(
@@ -452,7 +442,7 @@ class SqlCatalog(MetastoreCatalog):
                             catalog_name=self.name,
                             table_namespace=database_name,
                             table_name=table_name,
-                            metadata_location=new_metadata_location,
+                            metadata_location=updated_staged_table.metadata_location,
                             previous_metadata_location=None,
                         )
                     )
@@ -460,7 +450,9 @@ class SqlCatalog(MetastoreCatalog):
                 except IntegrityError as e:
                     raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
 
-        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace = self.identifier_to_database(identifier)
