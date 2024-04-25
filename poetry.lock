@@ -4064,12 +4064,12 @@ doc = ["reno", "sphinx", "tornado (>=4.5)"]
 
 [[package]]
 name = "thrift"
-version = "0.16.0"
+version = "0.20.0"
 description = "Python bindings for the Apache Thrift RPC system"
 optional = true
 python-versions = "*"
 files = [
-    {file = "thrift-0.16.0.tar.gz", hash = "sha256:2b5b6488fcded21f9d312aa23c9ff6a0195d0f6ae26ddbd5ad9e3e25dfc14408"},
+    {file = "thrift-0.20.0.tar.gz", hash = "sha256:4dd662eadf6b8aebe8a41729527bd69adf6ceaa2a8681cbef64d1273b3e8feba"},
 ]
 
 [package.dependencies]
