@@ -436,11 +436,13 @@ class HiveCatalog(MetastoreCatalog):
                 )
 
                 if hive_table and current_table:
+                    # Table exists, update it.
                     hive_table.parameters = _construct_parameters(
                         metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
                     )
                     open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
                 else:
+                    # Table does not exist, create it.
                     hive_table = self._convert_iceberg_into_hive(
                         StagedTable(
                             identifier=(self.name, database_name, table_name),
@@ -450,7 +452,7 @@ class HiveCatalog(MetastoreCatalog):
                             catalog=self,
                         )
                     )
-                self._create_hive_table(open_client, hive_table)
+                    self._create_hive_table(open_client, hive_table)
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
