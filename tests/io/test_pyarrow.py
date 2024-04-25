@@ -716,7 +716,9 @@ def schema_map_of_structs() -> Schema:
                 key_id=51,
                 value_id=52,
                 key_type=StringType(),
-                value_type=StructType(NestedField(511, "lat", DoubleType()), NestedField(512, "long", DoubleType())),
+                value_type=StructType(
+                    NestedField(511, "lat", DoubleType(), required=True), NestedField(512, "long", DoubleType(), required=True)
+                ),
                 element_required=False,
             ),
             required=False,
@@ -1038,7 +1040,7 @@ def test_projection_add_column_struct_required(file_int: str) -> None:
 def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
     schema = Schema(
         # Reuses the id 1
-        NestedField(1, "other_name", IntegerType())
+        NestedField(1, "other_name", IntegerType(), required=True)
     )
     result_table = project(schema, [file_int])
     assert len(result_table.columns[0]) == 3
@@ -1071,7 +1073,7 @@ def test_projection_filter(schema_int: Schema, file_int: str) -> None:
 def test_projection_filter_renamed_column(file_int: str) -> None:
     schema = Schema(
         # Reuses the id 1
-        NestedField(1, "other_id", IntegerType())
+        NestedField(1, "other_id", IntegerType(), required=True)
     )
     result_table = project(schema, [file_int], GreaterThan("other_id", 1))
     assert len(result_table.columns[0]) == 1
@@ -1089,7 +1091,7 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
 
 
 def test_projection_filter_add_column_promote(file_int: str) -> None:
-    schema_long = Schema(NestedField(1, "id", LongType()))
+    schema_long = Schema(NestedField(1, "id", LongType(), required=True))
     result_table = project(schema_long, [file_int])
 
     for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
@@ -1111,9 +1113,10 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
             4,
             "location",
             StructType(
-                NestedField(41, "lat", DoubleType()),
+                NestedField(41, "lat", DoubleType(), required=True),
                 # long is missing!
             ),
+            required=True,
         )
     )
 
@@ -1138,6 +1141,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
             StructType(
                 NestedField(43, "null", DoubleType(), required=False),  # Whoa, this column doesn't exist in the file
             ),
+            required=True,
         )
     )
 
@@ -1163,6 +1167,7 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
                 NestedField(43, "null", DoubleType(), required=False),
                 NestedField(42, "long", DoubleType(), required=False),
             ),
+            required=True,
         )
     )
 
@@ -1194,8 +1199,8 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
             ListType(
                 51,
                 StructType(
-                    NestedField(511, "latitude", DoubleType()),
-                    NestedField(512, "longitude", DoubleType()),
+                    NestedField(511, "latitude", DoubleType(), required=True),
+                    NestedField(512, "longitude", DoubleType(), required=True),
                     NestedField(513, "altitude", DoubleType(), required=False),
                 ),
                 element_required=False,
@@ -1239,9 +1244,9 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
                 value_id=52,
                 key_type=StringType(),
                 value_type=StructType(
-                    NestedField(511, "latitude", DoubleType()),
-                    NestedField(512, "longitude", DoubleType()),
-                    NestedField(513, "altitude", DoubleType(), required=False),
+                    NestedField(511, "latitude", DoubleType(), required=True),
+                    NestedField(512, "longitude", DoubleType(), required=True),
+                    NestedField(513, "altitude", DoubleType()),
                 ),
                 element_required=False,
             ),
@@ -1308,7 +1313,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
 
 
 def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int_str: str) -> None:
-    schema = Schema(NestedField(1, "id", IntegerType()))
+    schema = Schema(NestedField(1, "id", IntegerType(), required=True))
 
     result_table = project(schema, [file_int_str], GreaterThan("data", "1"), schema_int_str)
 

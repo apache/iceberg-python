@@ -143,6 +143,10 @@ https://pypi.org/project/pyiceberg/$VERSION/
 
 And can be installed using: pip3 install pyiceberg==$VERSION
 
+Instructions for verifying a release can be found here:
+
+* https://py.iceberg.apache.org/verify-release/
+
 Please download, verify, and test.
 
 Please vote in the next 72 hours.

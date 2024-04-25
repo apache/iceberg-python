@@ -978,7 +978,7 @@ def test_add_nested_map_of_structs(catalog: Catalog) -> None:
     tbl = _create_table_with_schema(
         catalog,
         Schema(
-            NestedField(field_id=1, name="foo", field_type=StringType()),
+            NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
         ),
     )
 
@@ -1031,7 +1031,7 @@ def test_add_nested_list_of_structs(catalog: Catalog) -> None:
     tbl = _create_table_with_schema(
         catalog,
         Schema(
-            NestedField(field_id=1, name="foo", field_type=StringType()),
+            NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
         ),
     )
 

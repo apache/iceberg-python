@@ -3423,6 +3423,32 @@ class InspectTable:
             schema=entries_schema,
         )
 
+    def refs(self) -> "pa.Table":
+        import pyarrow as pa
+
+        ref_schema = pa.schema([
+            pa.field('name', pa.string(), nullable=False),
+            pa.field('type', pa.dictionary(pa.int32(), pa.string()), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('max_reference_age_in_ms', pa.int64(), nullable=True),
+            pa.field('min_snapshots_to_keep', pa.int32(), nullable=True),
+            pa.field('max_snapshot_age_in_ms', pa.int64(), nullable=True),
+        ])
+
+        ref_results = []
+        for ref in self.tbl.metadata.refs:
+            if snapshot_ref := self.tbl.metadata.refs.get(ref):
+                ref_results.append({
+                    'name': ref,
+                    'type': snapshot_ref.snapshot_ref_type.upper(),
+                    'snapshot_id': snapshot_ref.snapshot_id,
+                    'max_reference_age_in_ms': snapshot_ref.max_ref_age_ms,
+                    'min_snapshots_to_keep': snapshot_ref.min_snapshots_to_keep,
+                    'max_snapshot_age_in_ms': snapshot_ref.max_snapshot_age_ms,
+                })
+
+        return pa.Table.from_pylist(ref_results, schema=ref_schema)
+
     def partitions(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 

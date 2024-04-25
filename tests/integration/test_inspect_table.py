@@ -171,7 +171,6 @@ def test_inspect_entries(
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
                 if column == 'data_file':
-                    right = right.asDict(recursive=True)
                     for df_column in left.keys():
                         if df_column == 'partition':
                             # Spark leaves out the partition if the table is unpartitioned
@@ -185,8 +184,6 @@ def test_inspect_entries(
 
                         assert df_lhs == df_rhs, f"Difference in data_file column {df_column}: {df_lhs} != {df_rhs}"
                 elif column == 'readable_metrics':
-                    right = right.asDict(recursive=True)
-
                     assert list(left.keys()) == [
                         'bool',
                         'string',
@@ -270,6 +267,66 @@ def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catal
 
     assert df.to_pydict()['data_file'][0]['partition'] == {'dt_day': date(2021, 2, 1), 'dt_month': None}
     assert df.to_pydict()['data_file'][1]['partition'] == {'dt_day': None, 'dt_month': 612}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_refs(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_metadata_refs"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # write data to create snapshot
+    tbl.overwrite(arrow_table_with_null)
+
+    # create a test branch
+    spark.sql(
+        f"""
+    ALTER TABLE {identifier} CREATE BRANCH IF NOT EXISTS testBranch RETAIN 7 DAYS WITH SNAPSHOT RETENTION 2 SNAPSHOTS
+        """
+    )
+
+    # create a test tag against current snapshot
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    current_snapshot_id = current_snapshot.snapshot_id
+
+    spark.sql(
+        f"""
+    ALTER TABLE {identifier} CREATE TAG testTag AS OF VERSION {current_snapshot_id} RETAIN 180 DAYS
+        """
+    )
+
+    df = tbl.refresh().inspect.refs()
+
+    assert df.column_names == [
+        'name',
+        'type',
+        'snapshot_id',
+        'max_reference_age_in_ms',
+        'min_snapshots_to_keep',
+        'max_snapshot_age_in_ms',
+    ]
+
+    assert [name.as_py() for name in df['name']] == ['testBranch', 'main', 'testTag']
+    assert [ref_type.as_py() for ref_type in df['type']] == ['BRANCH', 'BRANCH', 'TAG']
+
+    for snapshot_id in df['snapshot_id']:
+        assert isinstance(snapshot_id.as_py(), int)
+
+    for int_column in ['max_reference_age_in_ms', 'min_snapshots_to_keep', 'max_snapshot_age_in_ms']:
+        for value in df[int_column]:
+            assert isinstance(value.as_py(), int) or not value.as_py()
+
+    lhs = spark.table(f"{identifier}.refs").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
+            assert left == right, f"Difference in column {column}: {left} != {right}"
 
 
 @pytest.mark.integration
@@ -381,8 +438,6 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
         rhs = spark_df.toPandas().sort_values('spec_id')
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-                if column == "partition":
-                    right = right.asDict()
                 assert left == right, f"Difference in column {column}: {left} != {right}"
 
     tbl = session_catalog.load_table(identifier)
