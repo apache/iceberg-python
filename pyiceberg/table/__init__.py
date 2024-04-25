@@ -243,6 +243,8 @@ class TableProperties:
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
 
     DELETE_MODE = "write.delete.mode"
+    DELETE_MODE_COPY_ON_WRITE = "merge-on-read"
+    DELETE_MODE_MERGE_ON_READ = "copy-on-write"
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
@@ -301,7 +303,13 @@ class Transaction:
             requirement.validate(self.table_metadata)
 
         self._updates += updates
-        self._requirements += requirements
+
+        # For the requirements, it does not make sense to add a requirement more than once
+        # For example, you cannot assert that the current schema has two different IDs
+        existing_requirements = {type(requirement) for requirement in self._requirements}
+        for new_requirement in requirements:
+            if type(new_requirement) not in existing_requirements:
+                self._requirements = self._requirements + requirements
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
@@ -461,8 +469,8 @@ class Transaction:
                     update_snapshot.append_data_file(data_file)
 
     def delete(self, delete_filter: BooleanExpression, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
-        if (mode := self.table_metadata.properties.get(TableProperties.DELETE_MODE)) and mode != 'copy-on-write':
-            warnings.warn("PyIceberg only supports copy on write")
+        if self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_COPY_ON_WRITE) == TableProperties.DELETE_MODE_MERGE_ON_READ:
+            raise NotImplementedError("Merge on read is not yet supported")
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
             delete_snapshot.delete_by_predicate(delete_filter)
@@ -2948,7 +2956,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             ),
             (
                 AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-                # AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
+                AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),
             ),
         )
 
