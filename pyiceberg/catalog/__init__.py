@@ -48,6 +48,7 @@ from pyiceberg.table import (
     CreateTableTransaction,
     StagedTable,
     Table,
+    update_table_metadata,
 )
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -725,6 +726,27 @@ class MetastoreCatalog(Catalog, ABC):
             metadata=metadata,
             metadata_location=metadata_location,
             io=io,
+            catalog=self,
+        )
+
+    def _update_and_stage_table(self, current_table: Optional[Table], table_request: CommitTableRequest) -> StagedTable:
+        for requirement in table_request.requirements:
+            requirement.validate(current_table.metadata if current_table else None)
+
+        updated_metadata = update_table_metadata(
+            base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
+            updates=table_request.updates,
+            enforce_validation=current_table is None,
+        )
+
+        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
+        new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
+
+        return StagedTable(
+            identifier=tuple(table_request.identifier.namespace.root + [table_request.identifier.name]),
+            metadata=updated_metadata,
+            metadata_location=new_metadata_location,
+            io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
             catalog=self,
         )
 

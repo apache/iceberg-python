@@ -677,7 +677,12 @@ def test_commit_table_update_schema(
 
 @mock_aws
 def test_commit_table_properties(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
@@ -688,13 +693,19 @@ def test_commit_table_properties(
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
     transaction = table.transaction()
-    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c", Description="test_description")
     transaction.remove_properties("test_b")
     transaction.commit_transaction()
 
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+    assert updated_table_metadata.properties == {'Description': 'test_description', "test_a": "test_aa", "test_c": "test_c"}
+
+    table_info = _glue.get_table(
+        DatabaseName=database_name,
+        Name=table_name,
+    )
+    assert table_info["Table"]["Description"] == "test_description"
 
 
 @mock_aws

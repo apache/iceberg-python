@@ -58,7 +58,6 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
@@ -67,7 +66,6 @@ from pyiceberg.table import (
     CommitTableResponse,
     PropertyUtil,
     Table,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -321,7 +319,7 @@ class GlueCatalog(MetastoreCatalog):
             )
         metadata_location = properties[METADATA_LOCATION]
 
-        io = load_file_io(properties=self.properties, location=metadata_location)
+        io = self._load_file_io(location=metadata_location)
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
@@ -439,71 +437,64 @@ class GlueCatalog(MetastoreCatalog):
         )
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple)
 
+        current_glue_table: Optional[TableTypeDef]
+        glue_table_version_id: Optional[str]
+        current_table: Optional[Table]
         try:
             current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
-            # Update the table
             glue_table_version_id = current_glue_table.get("VersionId")
+            current_table = self._convert_glue_to_iceberg(glue_table=current_glue_table)
+        except NoSuchTableError:
+            current_glue_table = None
+            glue_table_version_id = None
+            current_table = None
+
+        updated_staged_table = self._update_and_stage_table(current_table, table_request)
+        if current_table and updated_staged_table.metadata == current_table.metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+        self._write_metadata(
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
+        )
+
+        if current_table:
+            # table exists, update the table
             if not glue_table_version_id:
                 raise CommitFailedException(
                     f"Cannot commit {database_name}.{table_name} because Glue table version id is missing"
                 )
-            current_table = self._convert_glue_to_iceberg(glue_table=current_glue_table)
-            base_metadata = current_table.metadata
-
-            # Validate the update requirements
-            for requirement in table_request.requirements:
-                requirement.validate(base_metadata)
-
-            updated_metadata = update_table_metadata(base_metadata=base_metadata, updates=table_request.updates)
-            if updated_metadata == base_metadata:
-                # no changes, do nothing
-                return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
-
-            # write new metadata
-            new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
-            new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
-            self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
-
-            update_table_input = _construct_table_input(
-                table_name=table_name,
-                metadata_location=new_metadata_location,
-                properties=current_table.properties,
-                metadata=updated_metadata,
-                glue_table=current_glue_table,
-                prev_metadata_location=current_table.metadata_location,
-            )
 
             # Pass `version_id` to implement optimistic locking: it ensures updates are rejected if concurrent
             # modifications occur. See more details at https://iceberg.apache.org/docs/latest/aws/#optimistic-locking
+            update_table_input = _construct_table_input(
+                table_name=table_name,
+                metadata_location=updated_staged_table.metadata_location,
+                properties=updated_staged_table.properties,
+                metadata=updated_staged_table.metadata,
+                glue_table=current_glue_table,
+                prev_metadata_location=current_table.metadata_location,
+            )
             self._update_glue_table(
                 database_name=database_name,
                 table_name=table_name,
                 table_input=update_table_input,
                 version_id=glue_table_version_id,
             )
-
-            return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
-        except NoSuchTableError:
-            # Create the table
-            updated_metadata = update_table_metadata(
-                base_metadata=self._empty_table_metadata(), updates=table_request.updates, enforce_validation=True
-            )
-            new_metadata_version = 0
-            new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
-            self._write_metadata(
-                updated_metadata, self._load_file_io(updated_metadata.properties, new_metadata_location), new_metadata_location
-            )
-
+        else:
+            # table does not exist, create the table
             create_table_input = _construct_table_input(
                 table_name=table_name,
-                metadata_location=new_metadata_location,
-                properties=updated_metadata.properties,
-                metadata=updated_metadata,
+                metadata_location=updated_staged_table.metadata_location,
+                properties=updated_staged_table.properties,
+                metadata=updated_staged_table.metadata,
             )
-
             self._create_glue_table(database_name=database_name, table_name=table_name, table_input=create_table_input)
 
-            return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and returns the table instance.
