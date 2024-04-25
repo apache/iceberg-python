@@ -469,7 +469,10 @@ class Transaction:
                     update_snapshot.append_data_file(data_file)
 
     def delete(self, delete_filter: BooleanExpression, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
-        if self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_COPY_ON_WRITE) == TableProperties.DELETE_MODE_MERGE_ON_READ:
+        if (
+            self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_COPY_ON_WRITE)
+            == TableProperties.DELETE_MODE_MERGE_ON_READ
+        ):
             raise NotImplementedError("Merge on read is not yet supported")
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:

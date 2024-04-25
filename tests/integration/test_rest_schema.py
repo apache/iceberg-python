@@ -2525,6 +2525,7 @@ def test_two_add_schemas_in_a_single_transaction(catalog: Catalog) -> None:
         NestedField(field_id=3, name="baz", field_type=StringType()),
     )
 
+
 @pytest.mark.integration
 def test_create_table_integrity_after_fresh_assignment(catalog: Catalog) -> None:
     schema = Schema(
