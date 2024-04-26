@@ -84,7 +84,7 @@ requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.11.0"
 pytest-mock = "3.14.0"
-pyspark = "3.5.0"
+pyspark = "3.5.1"
 cython = "3.0.8"
 deptry = ">=0.14,<0.17"
 docutils = "!=0.21"
