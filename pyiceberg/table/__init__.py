@@ -3560,7 +3560,9 @@ class InspectTable:
                 "latest_sequence_number": latest_snapshot.sequence_number if latest_snapshot else None,
             }
 
-        metadata_log_entries = self.tbl.metadata.metadata_log + [MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)]
+        metadata_log_entries = self.tbl.metadata.metadata_log + [
+            MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)
+        ]
 
         return pa.Table.from_pylist(
             [metadata_log_entry_to_row(entry) for entry in metadata_log_entries],
