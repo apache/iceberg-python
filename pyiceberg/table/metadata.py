@@ -527,7 +527,6 @@ def new_table_metadata(
     if table_uuid is None:
         table_uuid = uuid.uuid4()
 
-    # need to update metadata_log here
     # Remove format-version so it does not get persisted
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
     if format_version == 1:
