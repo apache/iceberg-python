@@ -445,3 +445,23 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
         df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id)
         spark_df = spark.sql(f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id}")
         check_pyiceberg_df_equals_spark_df(df, spark_df)
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_metadata_log_entries(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_metadata_log_entries"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # Write some data
+    tbl.append(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+
+    df = tbl.inspect.metadata_log_entries()
+    spark_df = spark.sql(f"SELECT * FROM {identifier}.metadata_log_entries")
+    lhs = df.to_pandas()
+    rhs = spark_df.toPandas()
+    breakpoint()
+    assert lhs.equals(rhs), lhs.compare(rhs)

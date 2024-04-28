@@ -3537,6 +3537,36 @@ class InspectTable:
             schema=table_schema,
         )
 
+    def metadata_log_entries(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.table.snapshots import MetadataLogEntry
+
+        table_schema = pa.schema([
+            ("timestamp", pa.timestamp(unit='ms'), True),
+            ("file", pa.string(), True),
+            ("latest_snapshot_id", pa.int64(), False),
+            ("latest_schema_id", pa.int32(), False),
+            ("latest_sequence_number", pa.int64(), False),
+        ])
+
+        def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
+            latest_snapshot = self.tbl.metadata._snapshot_as_of_timestamp_ms(metadata_entry.timestamp_ms)
+            return {
+                "timestamp": metadata_entry.timestamp_ms,
+                "file": metadata_entry.metadata_file,
+                "latest_snapshot_id": latest_snapshot.snapshot_id if latest_snapshot else None,
+                "latest_schema_id": latest_snapshot.schema_id if latest_snapshot else None,
+                "latest_sequence_number": latest_snapshot.sequence_number if latest_snapshot else None,
+            }
+
+        metadata_log_entries = self.tbl.metadata.metadata_log + [MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)]
+
+        return pa.Table.from_pylist(
+            [metadata_log_entry_to_row(entry) for entry in metadata_log_entries],
+            schema=table_schema,
+        )
+
 
 @dataclass(frozen=True)
 class TablePartition:

@@ -292,6 +292,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
+    def _snapshot_as_of_timestamp_ms(self, timestamp_ms: int) -> Optional[Snapshot]:
+        """ Return the snapshot that was current at the given timestamp or null if no such snapshot exists."""
+        for entry in reversed(self.snapshot_log):
+            if entry.timestamp_ms <= timestamp_ms:
+                return self.snapshot_by_id(entry.snapshot_id)
+        return None
+
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.current_snapshot_id is not None:
@@ -520,6 +527,7 @@ def new_table_metadata(
     if table_uuid is None:
         table_uuid = uuid.uuid4()
 
+    # need to update metadata_log here
     # Remove format-version so it does not get persisted
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
     if format_version == 1:
