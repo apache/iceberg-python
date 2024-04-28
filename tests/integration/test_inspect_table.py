@@ -451,6 +451,8 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
 def test_inspect_metadata_log_entries(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
+    from pandas.testing import assert_frame_equal
+
     identifier = "default.table_metadata_log_entries"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
@@ -463,5 +465,15 @@ def test_inspect_metadata_log_entries(
     spark_df = spark.sql(f"SELECT * FROM {identifier}.metadata_log_entries")
     lhs = df.to_pandas()
     rhs = spark_df.toPandas()
-    breakpoint()
-    assert lhs.equals(rhs), lhs.compare(rhs)
+
+    # Timestamp in the last row of `metadata_log_entries` table is the based on when the table was read
+    # Therefore, the timestamp for pyiceberg dataframe and spark dataframe will be different
+    left_before_last, left_last = lhs[:-1], lhs[-1:]
+    right_before_last, right_last = rhs[:-1], rhs[-1:]
+
+    assert_frame_equal(left_before_last, right_before_last, check_dtype=False)
+    for column in df.column_names:
+        for left, right in zip(left_last[column], right_last[column]):
+            if column == 'timestamp':
+                continue
+            assert left == right, f"Difference in column {column}: {left} != {right}"

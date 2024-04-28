@@ -226,7 +226,8 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
-    sequence_number: Optional[int] = Field(alias="sequence-number", default=None)
+    # cannot import `INITIAL_SEQUENCE_NUMBER` due to circular import
+    sequence_number: Optional[int] = Field(alias="sequence-number", default=0)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: Optional[str] = Field(
         alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
