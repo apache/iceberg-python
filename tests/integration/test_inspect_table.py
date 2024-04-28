@@ -467,12 +467,13 @@ def test_inspect_metadata_log_entries(
     lhs = df.to_pandas()
     rhs = spark_df.toPandas()
 
-    # Timestamp in the last row of `metadata_log_entries` table is the based on when the table was read
-    # Therefore, the timestamp for pyiceberg dataframe and spark dataframe will be different
+    # Timestamp in the last row of `metadata_log_entries` table is based on when the table was read
+    # Therefore, the timestamp of the last row for pyiceberg dataframe and spark dataframe will be different
     left_before_last, left_last = lhs[:-1], lhs[-1:]
     right_before_last, right_last = rhs[:-1], rhs[-1:]
 
     assert_frame_equal(left_before_last, right_before_last, check_dtype=False)
+    # compare the last row, except for the timestamp
     for column in df.column_names:
         for left, right in zip(left_last[column], right_last[column]):
             if column == 'timestamp':
