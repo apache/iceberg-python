@@ -606,6 +606,29 @@ min_snapshots_to_keep: [[null,10]]
 max_snapshot_age_in_ms: [[null,604800000]]
 ```
 
+### Metadata Log Entries
+
+To show table metadata log entries:
+
+```python
+table.inspect.metadata_log_entries()
+```
+
+```
+pyarrow.Table
+timestamp: timestamp[ms]
+file: string
+latest_snapshot_id: int64 not null
+latest_schema_id: int32 not null
+latest_sequence_number: int64 not null
+----
+timestamp: [[2024-04-28 17:03:00.214,2024-04-28 17:03:00.352,2024-04-28 17:03:00.445,2024-04-28 17:03:00.498]]
+file: [["s3://warehouse/default/table_metadata_log_entries/metadata/00000-0b3b643b-0f3a-4787-83ad-601ba57b7319.metadata.json","s3://warehouse/default/table_metadata_log_entries/metadata/00001-f74e4b2c-0f89-4f55-822d-23d099fd7d54.metadata.json","s3://warehouse/default/table_metadata_log_entries/metadata/00002-97e31507-e4d9-4438-aff1-3c0c5304d271.metadata.json","s3://warehouse/default/table_metadata_log_entries/metadata/00003-6c8b7033-6ad8-4fe4-b64d-d70381aeaddc.metadata.json"]]
+latest_snapshot_id: [[null,3958871664825505738,1289234307021405706,7640277914614648349]]
+latest_schema_id: [[null,0,0,0]]
+latest_sequence_number: [[null,0,0,0]]
+```
+
 ## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
