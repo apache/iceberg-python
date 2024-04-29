@@ -1348,35 +1348,34 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.16"
+version = "0.2.21"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.7"
 files = [
-    {file = "getdaft-0.2.16-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:0a355301e79e00ab639150b84d380465f5f69ef9e6f36f1b5cf376e3d24229f6"},
-    {file = "getdaft-0.2.16-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:317a8dff8169638cea40efbc01193d51f31c4ab441fc39f01f163f197fc264a2"},
-    {file = "getdaft-0.2.16-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1cb1e5a62fcbb4a909532bb64dc7af56e7ac3fef1b8220448fcae1a8af0c6bc4"},
-    {file = "getdaft-0.2.16-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b932510fd24b4f1f021abd67016bbcdacda3315d0e3ee2a8e339d82719adbd51"},
-    {file = "getdaft-0.2.16-cp37-abi3-win_amd64.whl", hash = "sha256:c3e74f56b211f88e5c335276fe4670a0dfac8dc8b5c684b22fc570b1350cc40d"},
-    {file = "getdaft-0.2.16.tar.gz", hash = "sha256:3fc7b2c3373bc374a90ecc566c6f0d830b9ce751d6c930c96b70b2c4c2afa0c4"},
+    {file = "getdaft-0.2.21-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:86ca6c4b57de1c66926bfc7346b46eff87eea3417acfccd6487f39c40930cf29"},
+    {file = "getdaft-0.2.21-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:a1b928c9dfb499e784fcc3563403b4d586cd5075c81aa39d73872fb99a8f88a1"},
+    {file = "getdaft-0.2.21-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:31954f6ec98e888280c6d966c2c0a427ddfb25d6dc528612f593cc634ca19806"},
+    {file = "getdaft-0.2.21-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:38bbed6996e366862601b1e2e3651ec572ccc5e23fce1bc4a1d647daef59e14d"},
+    {file = "getdaft-0.2.21-cp37-abi3-win_amd64.whl", hash = "sha256:6e27f8f2e49ccbc9e24a43737965bc5388272fe27d9c947ee925ec928108fa88"},
+    {file = "getdaft-0.2.21.tar.gz", hash = "sha256:9b35394619817557eddcfb5402d93478b3a1ef4bf245bb2735106d4d304de98b"},
 ]
 
 [package.dependencies]
 fsspec = {version = "*", extras = ["http"]}
-psutil = "*"
 pyarrow = ">=6.0.1"
 tqdm = "*"
 typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.10\""}
 
 [package.extras]
-all = ["getdaft[aws,azure,gcp,iceberg,numpy,pandas,ray]"]
-aws = ["s3fs"]
-azure = ["adlfs"]
-gcp = ["gcsfs"]
+all = ["getdaft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,sql]"]
+aws = ["boto3"]
+deltalake = ["deltalake"]
 iceberg = ["packaging", "pyiceberg (>=0.4.0)"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = ["packaging", "ray[client,data] (>=2.0.0)"]
+sql = ["connectorx", "sqlalchemy"]
 
 [[package]]
 name = "google-api-core"
@@ -2834,34 +2833,6 @@ files = [
     {file = "protobuf-4.25.3-py3-none-any.whl", hash = "sha256:f0700d54bcf45424477e46a9f0944155b46fb0639d69728739c0e47bab83f2b9"},
     {file = "protobuf-4.25.3.tar.gz", hash = "sha256:25b5d0b42fd000320bd7830b349e3b696435f3b329810427a6bcce6a5492cc5c"},
 ]
-
-[[package]]
-name = "psutil"
-version = "5.9.8"
-description = "Cross-platform lib for process and system monitoring in Python."
-optional = true
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*"
-files = [
-    {file = "psutil-5.9.8-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:26bd09967ae00920df88e0352a91cff1a78f8d69b3ecabbfe733610c0af486c8"},
-    {file = "psutil-5.9.8-cp27-cp27m-manylinux2010_i686.whl", hash = "sha256:05806de88103b25903dff19bb6692bd2e714ccf9e668d050d144012055cbca73"},
-    {file = "psutil-5.9.8-cp27-cp27m-manylinux2010_x86_64.whl", hash = "sha256:611052c4bc70432ec770d5d54f64206aa7203a101ec273a0cd82418c86503bb7"},
-    {file = "psutil-5.9.8-cp27-cp27mu-manylinux2010_i686.whl", hash = "sha256:50187900d73c1381ba1454cf40308c2bf6f34268518b3f36a9b663ca87e65e36"},
-    {file = "psutil-5.9.8-cp27-cp27mu-manylinux2010_x86_64.whl", hash = "sha256:02615ed8c5ea222323408ceba16c60e99c3f91639b07da6373fb7e6539abc56d"},
-    {file = "psutil-5.9.8-cp27-none-win32.whl", hash = "sha256:36f435891adb138ed3c9e58c6af3e2e6ca9ac2f365efe1f9cfef2794e6c93b4e"},
-    {file = "psutil-5.9.8-cp27-none-win_amd64.whl", hash = "sha256:bd1184ceb3f87651a67b2708d4c3338e9b10c5df903f2e3776b62303b26cb631"},
-    {file = "psutil-5.9.8-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:aee678c8720623dc456fa20659af736241f575d79429a0e5e9cf88ae0605cc81"},
-    {file = "psutil-5.9.8-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:8cb6403ce6d8e047495a701dc7c5bd788add903f8986d523e3e20b98b733e421"},
-    {file = "psutil-5.9.8-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d06016f7f8625a1825ba3732081d77c94589dca78b7a3fc072194851e88461a4"},
-    {file = "psutil-5.9.8-cp36-cp36m-win32.whl", hash = "sha256:7d79560ad97af658a0f6adfef8b834b53f64746d45b403f225b85c5c2c140eee"},
-    {file = "psutil-5.9.8-cp36-cp36m-win_amd64.whl", hash = "sha256:27cc40c3493bb10de1be4b3f07cae4c010ce715290a5be22b98493509c6299e2"},
-    {file = "psutil-5.9.8-cp37-abi3-win32.whl", hash = "sha256:bc56c2a1b0d15aa3eaa5a60c9f3f8e3e565303b465dbf57a1b730e7a2b9844e0"},
-    {file = "psutil-5.9.8-cp37-abi3-win_amd64.whl", hash = "sha256:8db4c1b57507eef143a15a6884ca10f7c73876cdf5d51e713151c1236a0e68cf"},
-    {file = "psutil-5.9.8-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:d16bbddf0693323b8c6123dd804100241da461e41d6e332fb0ba6058f630f8c8"},
-    {file = "psutil-5.9.8.tar.gz", hash = "sha256:6be126e3225486dff286a8fb9a06246a5253f4c7c53b475ea5f5ac934e64194c"},
-]
-
-[package.extras]
-test = ["enum34", "ipaddress", "mock", "pywin32", "wmi"]
 
 [[package]]
 name = "psycopg2-binary"
