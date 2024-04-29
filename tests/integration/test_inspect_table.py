@@ -453,6 +453,7 @@ def test_inspect_files(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     identifier = "default.table_metadata_files"
+
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
     tbl.overwrite(arrow_table_with_null)
@@ -466,6 +467,7 @@ def test_inspect_files(
         'content',
         'file_path',
         'file_format',
+        'spec_id',
         'record_count',
         'file_size_in_bytes',
         'column_sizes',
@@ -477,10 +479,14 @@ def test_inspect_files(
         'key_metadata',
         'split_offsets',
         'equality_ids',
+        'sort_order_id',
+        'readable_metrics',
     ]
 
-    for file_size_in_bytes in df['file_size_in_bytes']:
-        assert isinstance(file_size_in_bytes.as_py(), int)
+    # make sure the non-nullable fields are filled
+    for int_column in ['content', 'spec_id', 'record_count', 'file_size_in_bytes']:
+        for value in df[int_column]:
+            assert isinstance(value.as_py(), int)
 
     for split_offsets in df['split_offsets']:
         assert isinstance(split_offsets.as_py(), list)
@@ -491,10 +497,13 @@ def test_inspect_files(
     for file_path in df['file_path']:
         assert file_path.as_py().startswith("s3://")
 
-    lhs = spark.table(f"{identifier}.files").toPandas()
-    rhs = df.to_pandas()
+    lhs = df.to_pandas()
+    rhs = spark.table(f"{identifier}.files").toPandas()
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
             if column in [
                 'column_sizes',
                 'value_counts',
@@ -504,6 +513,39 @@ def test_inspect_files(
                 'upper_bounds',
             ]:
                 # Arrow returns a list of tuples, instead of a dict
-                right = dict(right)
+                left = dict(left)
+            elif column == 'readable_metrics':
+                assert list(left.keys()) == [
+                    'bool',
+                    'string',
+                    'string_long',
+                    'int',
+                    'long',
+                    'float',
+                    'double',
+                    'timestamp',
+                    'timestamptz',
+                    'date',
+                    'binary',
+                    'fixed',
+                ]
+                assert left.keys() == right.asDict().keys()
 
-            assert left == right, f"Difference in column {column}: {left} != {right}"
+                for rm_column in left.keys():
+                    rm_lhs = left[rm_column]
+                    rm_rhs = right[rm_column].asDict()
+
+                    assert rm_lhs['column_size'] == rm_rhs['column_size']
+                    assert rm_lhs['value_count'] == rm_rhs['value_count']
+                    assert rm_lhs['null_value_count'] == rm_rhs['null_value_count']
+                    assert rm_lhs['nan_value_count'] == rm_rhs['nan_value_count']
+
+                    if rm_column == 'timestamptz':
+                        # PySpark does not correctly set the timstamptz
+                        rm_rhs['lower_bound'] = rm_rhs['lower_bound'].replace(tzinfo=pytz.utc)
+                        rm_rhs['upper_bound'] = rm_rhs['upper_bound'].replace(tzinfo=pytz.utc)
+
+                    assert rm_lhs['lower_bound'] == rm_rhs['lower_bound']
+                    assert rm_lhs['upper_bound'] == rm_rhs['upper_bound']
+            else:
+                assert left == right, f"Difference in column {column}: {left} != {right}"

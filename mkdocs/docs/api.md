@@ -619,6 +619,7 @@ pyarrow.Table
 content: int8 not null
 file_path: string not null
 file_format: string not null
+spec_id: int32 not null
 record_count: int64 not null
 file_size_in_bytes: int64 not null
 column_sizes: map<int32, int64>
@@ -650,10 +651,34 @@ split_offsets: list<item: int64>
   child 0, item: int64
 equality_ids: list<item: int32>
   child 0, item: int32
+sort_order_id: int32 not null
+readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
+  child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: string
+      child 5, upper_bound: string
+  child 1, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: double
+      child 5, upper_bound: double
+  child 2, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: double
+      child 5, upper_bound: double
 ----
 content: [[0,0]]
 file_path: [["s3://warehouse/default/table_metadata_files/data/00000-0-9ea7d222-6457-467f-bad5-6fb125c9aa5f.parquet","s3://warehouse/default/table_metadata_files/data/00000-0-afa8893c-de71-4710-97c9-6b01590d0c44.parquet"]]
 file_format: [["PARQUET","PARQUET"]]
+spec_id: [[0,0]]
 record_count: [[3,3]]
 file_size_in_bytes: [[5459,5459]]
 column_sizes: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[49,78,128,94,118,...,118,118,94,78,109],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[49,78,128,94,118,...,118,118,94,78,109]]]
@@ -665,7 +690,51 @@ upper_bounds:[[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,616161616161616161
 key_metadata: [[0100,0100]]
 split_offsets:[[[],[]]]
 equality_ids:[[[],[]]]
-
+sort_order_id:[[[],[]]]
+readable_metrics: [
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[140]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: string
+["Amsterdam"]
+    -- child 5 type: string
+["San Francisco"]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[135]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: double
+[37.773972]
+    -- child 5 type: double
+[53.11254]
+  -- child 2 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[135]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: double
+[-122.431297]
+    -- child 5 type: double
+[6.0989]]
 ```
 
 ## Add Files
