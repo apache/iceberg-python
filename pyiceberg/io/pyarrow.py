@@ -333,7 +333,7 @@ class PyArrowFileIO(FileIO):
         if not uri.scheme:
             return "file", uri.netloc, os.path.abspath(location)
         elif uri.scheme == "hdfs":
-            return uri.scheme, uri.netloc, location
+            return uri.scheme, uri.netloc, uri.path
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
