@@ -558,3 +558,9 @@ def test_create_table_transaction(
             ]
         },
     ]
+
+
+def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_table((database_name, table_name), table_schema_nested)
+    assert test_catalog.table_exists((database_name, table_name)) is True

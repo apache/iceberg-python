@@ -817,3 +817,18 @@ def test_create_table_transaction(
     assert table.spec().fields_by_source_id(2)[0].name == "bar"
     assert table.spec().fields_by_source_id(2)[0].field_id == 1001
     assert table.spec().fields_by_source_id(2)[0].transform == IdentityTransform()
+
+
+@mock_aws
+def test_table_exists(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
+    # Act and Assert for an existing table
+    assert test_catalog.table_exists(identifier) is True
+    # Act and Assert for a non-existing table
+    assert test_catalog.table_exists(('non', 'exist')) is False

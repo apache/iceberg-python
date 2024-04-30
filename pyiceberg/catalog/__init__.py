@@ -394,6 +394,11 @@ class Catalog(ABC):
         Returns:
             bool: True if the table exists, False otherwise.
         """
+        try:
+            self.load_table(identifier)
+            return True
+        except NoSuchTableError:
+            return False
 
     @abstractmethod
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
