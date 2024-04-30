@@ -529,11 +529,11 @@ def test_inspect_files(
                     'binary',
                     'fixed',
                 ]
-                assert left.keys() == right.asDict().keys()
+                assert left.keys() == right.keys()
 
                 for rm_column in left.keys():
                     rm_lhs = left[rm_column]
-                    rm_rhs = right[rm_column].asDict()
+                    rm_rhs = right[rm_column]
 
                     assert rm_lhs['column_size'] == rm_rhs['column_size']
                     assert rm_lhs['value_count'] == rm_rhs['value_count']
