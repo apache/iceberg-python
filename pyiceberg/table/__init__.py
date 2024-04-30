@@ -3543,11 +3543,11 @@ class InspectTable:
         from pyiceberg.table.snapshots import MetadataLogEntry
 
         table_schema = pa.schema([
-            ("timestamp", pa.timestamp(unit='ms'), True),
-            ("file", pa.string(), True),
-            ("latest_snapshot_id", pa.int64(), False),
-            ("latest_schema_id", pa.int32(), False),
-            ("latest_sequence_number", pa.int64(), False),
+            pa.field("timestamp", pa.timestamp(unit='ms'), nullable=False),
+            pa.field("file", pa.string(), nullable=False),
+            pa.field("latest_snapshot_id", pa.int64(), nullable=True),
+            pa.field("latest_schema_id", pa.int32(), nullable=True),
+            pa.field("latest_sequence_number", pa.int64(), nullable=True),
         ])
 
         def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
