@@ -553,10 +553,7 @@ class ManifestFile(Record):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the ManifestFile class."""
-        if not isinstance(other, ManifestFile):
-            return False
-        else:
-            return self.manifest_path == other.manifest_path
+        return self.manifest_path == other.manifest_path if isinstance(other, ManifestFile) else False
 
     def __hash__(self) -> int:
         """Return the hash of manifest_path."""
