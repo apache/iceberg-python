@@ -394,11 +394,6 @@ class Catalog(ABC):
         Returns:
             bool: True if the table exists, False otherwise.
         """
-        try:
-            self.load_table(identifier)
-            return True
-        except NoSuchTableError:
-            return False
 
     @abstractmethod
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
@@ -666,6 +661,14 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a table exists.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            bool: True if the table exists, False otherwise.
+        """
         try:
             self.load_table(identifier)
             return True
