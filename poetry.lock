@@ -1294,10 +1294,6 @@ files = [
     {file = "fsspec-2023.12.2.tar.gz", hash = "sha256:8548d39e8810b59c38014934f6b31e57f40c1b20f911f4cc2b85389c7e9bf0cb"},
 ]
 
-[package.dependencies]
-aiohttp = {version = "<4.0.0a0 || >4.0.0a0,<4.0.0a1 || >4.0.0a1", optional = true, markers = "extra == \"http\""}
-requests = {version = "*", optional = true, markers = "extra == \"http\""}
-
 [package.extras]
 abfs = ["adlfs"]
 adl = ["adlfs"]
@@ -1348,22 +1344,22 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.21"
+version = "0.2.23"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.7"
 files = [
-    {file = "getdaft-0.2.21-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:86ca6c4b57de1c66926bfc7346b46eff87eea3417acfccd6487f39c40930cf29"},
-    {file = "getdaft-0.2.21-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:a1b928c9dfb499e784fcc3563403b4d586cd5075c81aa39d73872fb99a8f88a1"},
-    {file = "getdaft-0.2.21-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:31954f6ec98e888280c6d966c2c0a427ddfb25d6dc528612f593cc634ca19806"},
-    {file = "getdaft-0.2.21-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:38bbed6996e366862601b1e2e3651ec572ccc5e23fce1bc4a1d647daef59e14d"},
-    {file = "getdaft-0.2.21-cp37-abi3-win_amd64.whl", hash = "sha256:6e27f8f2e49ccbc9e24a43737965bc5388272fe27d9c947ee925ec928108fa88"},
-    {file = "getdaft-0.2.21.tar.gz", hash = "sha256:9b35394619817557eddcfb5402d93478b3a1ef4bf245bb2735106d4d304de98b"},
+    {file = "getdaft-0.2.23-cp37-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a59f6084ca865528b26ed478d584f98c102500005314dbc7fc44b7c4b3e18d49"},
+    {file = "getdaft-0.2.23-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:dfaf492bb453675999d70626a8fdb6d4ecaecafbf4a0548e68105757a7a4025a"},
+    {file = "getdaft-0.2.23-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0d6f4dbb7f3b5d62f8df1006bf55cc657148c2a3962766e62fbd3c2df337fa32"},
+    {file = "getdaft-0.2.23-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9bfa567569a8b53e9b0a7ab3eb0044afe8d5499d995bfeb40bd867661bfa2aa7"},
+    {file = "getdaft-0.2.23-cp37-abi3-win_amd64.whl", hash = "sha256:533b78abefa738cac97a6823ef2b8f2df3300bf2d4bda4e8336371fc2780bbb9"},
+    {file = "getdaft-0.2.23.tar.gz", hash = "sha256:c2d66e6a4ce75aeb4cedbe2c04c18fa8f3f7dcfe2799f66211f36c7be2f835a5"},
 ]
 
 [package.dependencies]
-fsspec = {version = "*", extras = ["http"]}
-pyarrow = ">=6.0.1"
+fsspec = "*"
+pyarrow = ">=7.0.0"
 tqdm = "*"
 typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.10\""}
 
@@ -1371,11 +1367,13 @@ typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.10\""}
 all = ["getdaft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,sql]"]
 aws = ["boto3"]
 deltalake = ["deltalake"]
+hudi = ["pyarrow (>=8.0.0)"]
 iceberg = ["packaging", "pyiceberg (>=0.4.0)"]
+lance = ["lancedb"]
 numpy = ["numpy"]
 pandas = ["pandas"]
-ray = ["packaging", "ray[client,data] (>=2.0.0)"]
-sql = ["connectorx", "sqlalchemy"]
+ray = ["packaging", "ray[client,data] (>=2.0.0)", "ray[client,data] (>=2.10.0)"]
+sql = ["connectorx", "sqlalchemy", "sqlglot"]
 
 [[package]]
 name = "google-api-core"
