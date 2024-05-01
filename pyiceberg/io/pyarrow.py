@@ -206,7 +206,7 @@ class PyArrowFile(InputFile, OutputFile):
         >>> # output_file.create().write(b'foobytes')
     """
 
-    _fs: FileSystem
+    _filesystem: FileSystem
     _path: str
     _buffer_size: int
 
