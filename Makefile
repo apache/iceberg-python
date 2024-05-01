@@ -19,7 +19,7 @@ install-poetry:
 	pip install poetry==1.8.2
 
 install-dependencies:
-	poetry install -E pyarrow -E hive -E s3fs -E glue -E adlfs -E duckdb -E ray -E sql-postgres -E gcsfs -E sql-sqlite -E daft
+	poetry install -E pyarrow -E hive -E s3fs -E glue -E adlfs -E duckdb -E ray -E sql-postgres -E gcsfs -E sql-sqlite -E daft -E snowflake
 
 install: | install-poetry install-dependencies
 
