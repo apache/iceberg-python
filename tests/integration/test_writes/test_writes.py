@@ -316,7 +316,7 @@ def test_python_writes_special_character_column_with_spark_reads(
 def test_python_writes_dictionary_encoded_column_with_spark_reads(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
-    identifier = "default.ython_writes_dictionary_encoded_column_with_spark_reads"
+    identifier = "default.python_writes_dictionary_encoded_column_with_spark_reads"
     TEST_DATA = {
         'id': [1, 2, 3, 1, 1],
         'name': ['AB', 'CD', 'EF', 'CD', 'EF'],
