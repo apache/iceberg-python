@@ -312,6 +312,30 @@ def test_python_writes_special_character_column_with_spark_reads(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_dictionary_encoded_column_with_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.ython_writes_dictionary_encoded_column_with_spark_reads"
+    TEST_DATA = {
+        'id': [1, 2, 3, 1, 1],
+        'name': ['AB', 'CD', 'EF', 'CD', 'EF'],
+    }
+    pa_schema = pa.schema([
+        pa.field('id', pa.dictionary(pa.int32(), pa.int32(), False)),
+        pa.field('name', pa.dictionary(pa.int32(), pa.string(), False)),
+    ])
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+
+
+@pytest.mark.integration
 def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.write_bin_pack_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
