@@ -243,8 +243,8 @@ class TableProperties:
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
 
     DELETE_MODE = "write.delete.mode"
-    DELETE_MODE_COPY_ON_WRITE = "merge-on-read"
-    DELETE_MODE_MERGE_ON_READ = "copy-on-write"
+    DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
+    DELETE_MODE_MERGE_ON_READ = "merge-on-read"
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
@@ -310,6 +310,8 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + requirements
+            else:
+                warnings.warn(f"Dropped duplicate requirement: {new_requirement}")
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
