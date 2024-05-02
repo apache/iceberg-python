@@ -206,7 +206,7 @@ class PyArrowFile(InputFile, OutputFile):
         >>> # output_file.create().write(b'foobytes')
     """
 
-    _fs: FileSystem
+    _filesystem: FileSystem
     _path: str
     _buffer_size: int
 
@@ -333,7 +333,7 @@ class PyArrowFileIO(FileIO):
         if not uri.scheme:
             return "file", uri.netloc, os.path.abspath(location)
         elif uri.scheme == "hdfs":
-            return uri.scheme, uri.netloc, location
+            return uri.scheme, uri.netloc, uri.path
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 

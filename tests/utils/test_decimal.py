@@ -14,9 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from decimal import Decimal
+
 import pytest
 
-from pyiceberg.utils.decimal import decimal_required_bytes
+from pyiceberg.utils.decimal import decimal_required_bytes, decimal_to_bytes
 
 
 def test_decimal_required_bytes() -> None:
@@ -38,3 +40,10 @@ def test_decimal_required_bytes() -> None:
     with pytest.raises(ValueError) as exc_info:
         decimal_required_bytes(precision=-1)
     assert "(0, 40]" in str(exc_info.value)
+
+
+def test_decimal_to_bytes() -> None:
+    # Check the boundary between 2 and 3 bytes.
+    # 2 bytes has a minimum of -32,768 and a maximum value of 32,767 (inclusive).
+    assert decimal_to_bytes(Decimal('32767.')) == b'\x7f\xff'
+    assert decimal_to_bytes(Decimal('32768.')) == b'\x00\x80\x00'
