@@ -262,6 +262,8 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
 def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
     test_catalog.create_namespace(database_name)
     test_catalog.create_table((database_name, table_name), table_schema_nested)
