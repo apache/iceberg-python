@@ -982,3 +982,22 @@ def test_table_properties_raise_for_none_value(
     with pytest.raises(ValidationError) as exc_info:
         _ = catalog.create_table(random_identifier, table_schema_simple, properties=property_with_none)
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
+def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
+    database_name, _table_name = random_identifier
+    catalog.create_namespace(database_name)
+    catalog.create_table(random_identifier, table_schema_simple, properties={"format-version": "2"})
+    existing_table = random_identifier
+    # Act and Assert for an existing table
+    assert catalog.table_exists(existing_table) is True
+
+    # Act and Assert for a non-existing table
+    assert catalog.table_exists(('non', 'exist')) is False
