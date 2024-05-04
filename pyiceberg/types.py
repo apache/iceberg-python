@@ -393,7 +393,18 @@ class StructType(IcebergType):
 
     def __eq__(self, other: Any) -> bool:
         """Compare the object if it is equal to another object."""
-        return set(self.fields) == set(other.fields) if isinstance(other, StructType) else False
+        if not isinstance(other, StructType):
+            return False
+
+        if len(self.fields) != len(other.fields):
+            return False
+
+        def order_by_field_id(field: NestedField) -> int:
+            return field.field_id
+
+        left = sorted(self.fields, key=order_by_field_id)
+        right = sorted(other.fields, key=order_by_field_id)
+        return all(lhs == rhs for lhs, rhs in zip(left, right))
 
 
 class ListType(IcebergType):

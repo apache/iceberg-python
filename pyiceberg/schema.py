@@ -121,7 +121,13 @@ class Schema(IcebergBaseModel):
             return False
 
         identifier_field_ids_is_equal = self.identifier_field_ids == other.identifier_field_ids
-        schema_is_equal = set(self.columns) == set(other.columns)
+
+        def order_by_field_id(field: NestedField) -> int:
+            return field.field_id
+
+        left = sorted(self.columns, key=order_by_field_id)
+        right = sorted(other.columns, key=order_by_field_id)
+        schema_is_equal = all(lhs == rhs for lhs, rhs in zip(left, right))
 
         return identifier_field_ids_is_equal and schema_is_equal
 

@@ -372,7 +372,7 @@ def test_writer_ordering() -> None:
         ),
     )
 
-    expected = StructWriter(((1, DoubleWriter()), (0, StringWriter())))
+    expected = StructWriter(((0, DoubleWriter()), (1, StringWriter())))
 
     assert actual == expected
 
