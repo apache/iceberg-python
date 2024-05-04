@@ -779,7 +779,7 @@ class MetastoreCatalog(Catalog, ABC):
     def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
         if not location:
             return self._get_default_warehouse_location(database_name, table_name)
-        return location
+        return location.rstrip("/")
 
     def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
         database_properties = self.load_namespace_properties(database_name)
