@@ -126,7 +126,10 @@ def test_schema_raise_on_duplicate_names() -> None:
 def test_schema_field_order_irrelevant() -> None:
     foo = NestedField(field_id=1, name="foo", field_type=StringType())
     bar = NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False)
-    assert schema.Schema(foo, bar) == schema.Schema(bar, foo)
+    left = schema.Schema(foo, bar)
+    right = schema.Schema(bar, foo)
+    assert left == right
+    assert left.as_struct() == right.as_struct()
 
 
 def test_schema_index_by_id_visitor(table_schema_nested: Schema) -> None:

@@ -393,7 +393,7 @@ class StructType(IcebergType):
 
     def __eq__(self, other: Any) -> bool:
         """Compare the object if it is equal to another object."""
-        return self.fields == other.fields if isinstance(other, StructType) else False
+        return set(self.fields) == set(other.fields) if isinstance(other, StructType) else False
 
 
 class ListType(IcebergType):
