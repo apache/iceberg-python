@@ -16,6 +16,8 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+from datetime import date, datetime, timezone
+
 import pyarrow as pa
 import pytest
 from pyspark.sql import SparkSession
@@ -34,6 +36,54 @@ from pyiceberg.transforms import (
 )
 from tests.conftest import TEST_DATA_WITH_NULL
 from utils import TABLE_SCHEMA, _create_table
+
+
+@pytest.fixture(scope="session")
+def arrow_table_dates() -> pa.Table:
+    """Pyarrow table with only null values."""
+    TEST_DATES = [date(2023, 12, 31), date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1)]
+    return pa.Table.from_pydict(
+        {"dates": TEST_DATES},
+        schema=pa.schema([
+            ("dates", pa.date32()),
+        ]),
+    )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_timestamp() -> pa.Table:
+    """Pyarrow table with only null values."""
+    TEST_DATETIMES = [
+        datetime(2023, 12, 31, 0, 0, 0),
+        datetime(2024, 1, 1, 0, 0, 0),
+        datetime(2024, 1, 31, 0, 0, 0),
+        datetime(2024, 2, 1, 0, 0, 0),
+        datetime(2024, 2, 1, 6, 0, 0),
+    ]
+    return pa.Table.from_pydict(
+        {"dates": TEST_DATETIMES},
+        schema=pa.schema([
+            ("timestamp", pa.timestamp(unit="us")),
+        ]),
+    )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_timestamptz() -> pa.Table:
+    """Pyarrow table with only null values."""
+    TEST_DATETIMES_WITH_TZ = [
+        datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
+    ]
+    return pa.Table.from_pydict(
+        {"dates": TEST_DATETIMES_WITH_TZ},
+        schema=pa.schema([
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ]),
+    )
 
 
 @pytest.mark.integration
@@ -384,3 +434,42 @@ def test_unsupported_transform(
 
     with pytest.raises(ValueError, match="All transforms are not supported.*"):
         tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_time_transform_partitioned_table(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+) -> None:
+    # Given
+    identifier = f"default.arrow_table_v{format_version}_appended_with_null_partitioned_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[],
+        partition_spec=partition_spec,
+    )
+    # Append with arrow_table_1 with lines [A,B,C] and then arrow_table_2 with lines[A,B,C,A,B,C]
+    tbl.append(arrow_table_with_null)
+    tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    for col in TEST_DATA_WITH_NULL.keys():
+        df = spark.table(identifier)
+        assert df.where(f"{col} is not null").count() == 6, f"Expected 6 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 3, f"Expected 3 null rows for {col}"
+    # expecting 6 files: first append with [A], [B], [C],  second append with [A, A], [B, B], [C, C]
+    rows = spark.sql(f"select partition from {identifier}.files").collect()
+    assert len(rows) == 6

@@ -433,6 +433,31 @@ class MonthTransform(TimeTransform[S]):
         """Return the string representation of the MonthTransform class."""
         return "MonthTransform()"
 
+    def pyarrow_transform(self, source: IcebergType) -> Callable:
+        import pyarrow as pa
+        import pyarrow.compute as pc
+        
+        if isinstance(source, DateType):
+
+            def month_func(v: Any) -> int:
+                return pc.add(
+                    pc.multiply(pc.years_between(pa.scalar(date(1970, 1, 1)), v), pa.scalar(12)),
+                    pc.add(pc.month(v), pa.scalar(-1)),
+                )
+
+        elif isinstance(source, (TimestampType, TimestamptzType)):
+
+            def month_func(v: Any) -> int:
+                return pc.add(
+                    pc.multiply(pc.years_between(pa.scalar(datetime(1970, 1, 1)), pc.local_timestamp(v)), pa.scalar(12)),
+                    pc.add(pc.month(v), pa.scalar(-1)),
+                )
+
+        else:
+            raise ValueError(f"Cannot apply month transform for type: {source}")
+
+        return lambda v: month_func(v) if v is not None else None
+
 
 class DayTransform(TimeTransform[S]):
     """Transforms a datetime value into a day value.
