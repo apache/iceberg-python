@@ -290,7 +290,7 @@ class AvroOutputFile(Generic[D]):
         self.encoder.write(self.sync_bytes)
 
     def __len__(self) -> int:
-        """Returns the total number number of bytes written."""
+        """Return the total number number of bytes written."""
         if self.closed:
             return len(self.output_file)
-        return len(self.output_stream)
+        return self.output_stream.tell()
