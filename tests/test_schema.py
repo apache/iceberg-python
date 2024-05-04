@@ -123,6 +123,12 @@ def test_schema_raise_on_duplicate_names() -> None:
     assert "Invalid schema, multiple fields for name baz: 3 and 4" in str(exc_info.value)
 
 
+def test_schema_field_order_irrelevant() -> None:
+    foo = NestedField(field_id=1, name="foo", field_type=StringType())
+    bar = NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False)
+    assert schema.Schema(foo, bar) == schema.Schema(bar, foo)
+
+
 def test_schema_index_by_id_visitor(table_schema_nested: Schema) -> None:
     """Test index_by_id visitor function"""
     index = schema.index_by_id(table_schema_nested)
