@@ -501,8 +501,8 @@ def test_write_manifest(
     [
         (19514, 388873, 1),  # should not roll over
         (19513, 388873, 2),  # should roll over due to target_rows
-        (19514, 388872, 2),  # should roll over due target_bytes
-        (19513, 388872, 2),  # should roll over due to target_rows and target_bytes
+        (4000, 388872, 2),  # should roll over due target_bytes
+        (4000, 388872, 2),  # should roll over due to target_rows and target_bytes
     ],
 )
 def test_rolling_manifest_writer(
