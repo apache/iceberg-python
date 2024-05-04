@@ -399,11 +399,8 @@ class StructType(IcebergType):
         if len(self.fields) != len(other.fields):
             return False
 
-        def order_by_field_id(field: NestedField) -> int:
-            return field.field_id
-
-        left = sorted(self.fields, key=order_by_field_id)
-        right = sorted(other.fields, key=order_by_field_id)
+        left = sorted(self.fields, key=lambda field: field.field_id)
+        right = sorted(other.fields, key=lambda field: field.field_id)
         return all(lhs == rhs for lhs, rhs in zip(left, right))
 
 
