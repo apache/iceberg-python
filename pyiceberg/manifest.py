@@ -777,6 +777,11 @@ class ManifestWriter(ABC):
         self._writer.write_block([self.prepare_entry(entry)])
         return self
 
+    def __len__(self) -> int:
+        """Returns the total number number of bytes written."""
+        return len(self._writer)
+
+
 
 class RollingManifestWriter:
     closed: bool
@@ -829,7 +834,7 @@ class RollingManifestWriter:
             return False
         return (
             self._current_file_rows >= self._target_number_of_rows
-            or len(self._current_writer._output_file) >= self._target_file_size_in_bytes
+            or len(self._current_writer) >= self._target_file_size_in_bytes
         )
 
     def _close_current_writer(self) -> None:
