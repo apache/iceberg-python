@@ -1730,19 +1730,17 @@ def test_move_nested_field_after_first(catalog: Catalog) -> None:
     with tbl.update_schema() as schema_update:
         schema_update.move_before("struct.data", "struct.count")
 
-    assert str(tbl.schema()) == str(
-        Schema(
-            NestedField(field_id=1, name="id", field_type=LongType(), required=True),
-            NestedField(
-                field_id=2,
-                name="struct",
-                field_type=StructType(
-                    NestedField(field_id=4, name="data", field_type=StringType(), required=True),
-                    NestedField(field_id=3, name="count", field_type=LongType(), required=True),
-                ),
-                required=True,
+    assert tbl.schema() == Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(
+            field_id=2,
+            name="struct",
+            field_type=StructType(
+                NestedField(field_id=4, name="data", field_type=StringType(), required=True),
+                NestedField(field_id=3, name="count", field_type=LongType(), required=True),
             ),
-        )
+            required=True,
+        ),
     )
 
 
