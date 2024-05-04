@@ -532,6 +532,14 @@ def test_rolling_manifest_writer(
         PartitionField(source_id=2, field_id=2, transform=IdentityTransform(), name="tpep_pickup_datetime"),
         spec_id=demo_manifest_file.partition_spec_id,
     )
+
+    # The tests are using `PyArrowFileIO` where `OutputStream` is implemented as `pyarrow.lib.BufferedOutputStream`
+    # this is just to show the tests passing if `pyarrow.lib.BufferedOutputStream` would implement the
+    # new `OutputStream` protocol that includes a `__len__` method
+    from pyiceberg.avro.file import AvroOutputFile
+    AvroOutputFile.__len__ = lambda self: self.output_stream.tell()
+
+
     with TemporaryDirectory() as tmpdir:
 
         def supplier() -> Generator[ManifestWriter, None, None]:
