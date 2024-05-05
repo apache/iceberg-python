@@ -178,6 +178,10 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
             return self.root == other.root
         return False
 
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return False
+
 
 class BucketTransform(Transform[S, int]):
     """Base Transform class to transform a value into a bucket partition value.
@@ -350,6 +354,13 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
 
     @property
     def preserves_order(self) -> bool:
+        return True
+
+    @abstractmethod
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
         return True
 
 
@@ -651,6 +662,13 @@ class IdentityTransform(Transform[S, S]):
     def __repr__(self) -> str:
         """Return the string representation of the IdentityTransform class."""
         return "IdentityTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        return lambda v: v
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 class TruncateTransform(Transform[S, S]):

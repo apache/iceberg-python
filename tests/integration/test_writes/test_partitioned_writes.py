@@ -17,10 +17,11 @@
 # pylint:disable=redefined-outer-name
 
 
+from typing import Any
+
 import pyarrow as pa
 import pytest
 from pyspark.sql import SparkSession
-from typing import Any
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
@@ -390,13 +391,24 @@ def test_unsupported_transform(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('transform', [YearTransform(), MonthTransform(), DayTransform()])
 @pytest.mark.parametrize(
-    "part_col", ["date", "timestamp", "timestamptz"]
+    "transform,expected_rows",
+    [
+        pytest.param(YearTransform(), 2, id="year_transform"),
+        pytest.param(MonthTransform(), 3, id="month_transform"),
+        pytest.param(DayTransform(), 3, id="day_transform"),
+    ],
 )
+@pytest.mark.parametrize("part_col", ["date", "timestamp", "timestamptz"])
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_append_ymd_transform_partitioned(
-    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, transform: Transform[Any, Any], part_col: str, format_version: int
+    session_catalog: Catalog,
+    spark: SparkSession,
+    arrow_table_with_null: pa.Table,
+    transform: Transform[Any, Any],
+    expected_rows: int,
+    part_col: str,
+    format_version: int,
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_ymd_transform_partitioned_on_col_{part_col}"
@@ -421,3 +433,12 @@ def test_append_ymd_transform_partitioned(
     for col in TEST_DATA_WITH_NULL.keys():
         assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col}"
         assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    assert tbl.inspect.partitions().num_rows == expected_rows
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == expected_rows

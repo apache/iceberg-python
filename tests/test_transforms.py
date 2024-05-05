@@ -1847,7 +1847,7 @@ def arrow_table_date_timestamps() -> "pa.Table":
     )
 
 
-@pytest.mark.parametrize('transform', [YearTransform(), MonthTransform(), DayTransform()])
+@pytest.mark.parametrize('transform', [YearTransform(), MonthTransform(), DayTransform(), HourTransform()])
 @pytest.mark.parametrize(
     "source_col, source_type", [("date", DateType()), ("timestamp", TimestampType()), ("timestamptz", TimestamptzType())]
 )
@@ -1857,21 +1857,11 @@ def test_ymd_pyarrow_transforms(
     source_type: PrimitiveType,
     transform: Transform[Any, Any],
 ) -> None:
-    assert transform.pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col]).to_pylist() == [
-        transform.transform(source_type)(_to_partition_representation(source_type, v))
-        for v in arrow_table_date_timestamps[source_col].to_pylist()
-    ]
-
-
-@pytest.mark.parametrize("source_col, source_type", [("timestamp", TimestampType()), ("timestamptz", TimestamptzType())])
-def test_hour_pyarrow_transforms(arrow_table_date_timestamps: "pa.Table", source_col: str, source_type: PrimitiveType) -> None:
-    assert HourTransform().pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col]).to_pylist() == [
-        HourTransform().transform(source_type)(_to_partition_representation(source_type, v))
-        for v in arrow_table_date_timestamps[source_col].to_pylist()
-    ]
-
-
-def test_hour_pyarrow_transforms_throws_with_dates(arrow_table_date_timestamps: "pa.Table") -> None:
-    # HourTransform is not supported for DateType
-    with pytest.raises(ValueError):
-        HourTransform().pyarrow_transform(DateType())(arrow_table_date_timestamps["date"])
+    if transform.can_transform(source_type):
+        assert transform.pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col]).to_pylist() == [
+            transform.transform(source_type)(_to_partition_representation(source_type, v))
+            for v in arrow_table_date_timestamps[source_col].to_pylist()
+        ]
+    else:
+        with pytest.raises(ValueError):
+            transform.pyarrow_transform(DateType())(arrow_table_date_timestamps[source_col])

@@ -392,10 +392,11 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        supported_transforms = {IdentityTransform}
-        if not all(type(field.transform) in supported_transforms for field in self.table_metadata.spec().fields):
+        if unsupported_partitions := [
+            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
+        ]:
             raise ValueError(
-                f"All transforms are not supported, expected: {supported_transforms}, but get: {[str(field) for field in self.table_metadata.spec().fields if field.transform not in supported_transforms]}."
+                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
