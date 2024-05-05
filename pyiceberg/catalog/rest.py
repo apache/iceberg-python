@@ -521,7 +521,7 @@ class RestCatalog(Catalog):
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = CreateTableRequest(
             name=namespace_and_table["table"],
-            location=location,
+            location=location.rstrip("/"),
             table_schema=fresh_schema,
             partition_spec=fresh_partition_spec,
             write_order=fresh_sort_order,

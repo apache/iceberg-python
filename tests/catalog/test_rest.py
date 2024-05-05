@@ -732,6 +732,31 @@ def test_create_table_200(
     assert actual == expected
 
 
+def test_create_table_with_given_location_removes_trailing_slash_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    location = "s3://warehouse/database/table-custom-location"
+    catalog.create_table(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=f"{location}/",
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+        ),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    assert rest_mock.last_request
+    assert rest_mock.last_request.json()["location"] == location
+
+
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
