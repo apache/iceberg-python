@@ -36,7 +36,7 @@ from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from functools import lru_cache, singledispatch
+from functools import lru_cache, partial, singledispatch
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -1061,46 +1061,19 @@ def project_table(
     Raises:
         ResolveError: When an incompatible query is done.
     """
-    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
-    if isinstance(io, PyArrowFileIO):
-        fs = io.fs_by_scheme(scheme, netloc)
-    else:
-        try:
-            from pyiceberg.io.fsspec import FsspecFileIO
-
-            if isinstance(io, FsspecFileIO):
-                from pyarrow.fs import PyFileSystem
-
-                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
-            else:
-                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
-        except ModuleNotFoundError as e:
-            # When FsSpec is not installed
-            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
-
-    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
-
-    projected_field_ids = {
-        id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
-    }.union(extract_field_ids(bound_row_filter))
-
-    deletes_per_file = _read_all_delete_files(fs, tasks)
     executor = ExecutorFactory.get_or_create()
-    futures = [
-        executor.submit(
-            _task_to_table,
-            fs,
-            task,
-            bound_row_filter,
-            projected_schema,
-            projected_field_ids,
-            deletes_per_file.get(task.file.file_path),
-            case_sensitive,
-            limit,
-            table_metadata.name_mapping(),
-        )
-        for task in tasks
-    ]
+
+    scan_tasks = get_file_scan_tasks(
+        case_sensitive=case_sensitive,
+        io=io,
+        limit=limit,
+        projected_schema=projected_schema,
+        row_filter=row_filter,
+        table_metadata=table_metadata,
+        tasks=tasks,
+    )
+    futures = [executor.submit(task) for task in scan_tasks]
+
     total_row_count = 0
     # for consistent ordering, we need to maintain future order
     futures_index = {f: i for i, f in enumerate(futures)}
@@ -1128,6 +1101,61 @@ def project_table(
         return result.slice(0, limit)
 
     return result
+
+
+def _get_pyarrow_fs(io: FileIO, table_metadata: TableMetadata) -> FileSystem:
+    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
+    if isinstance(io, PyArrowFileIO):
+        fs = io.fs_by_scheme(scheme, netloc)
+    else:
+        try:
+            from pyiceberg.io.fsspec import FsspecFileIO
+
+            if isinstance(io, FsspecFileIO):
+                from pyarrow.fs import PyFileSystem
+
+                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
+            else:
+                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
+        except ModuleNotFoundError as e:
+            # When FsSpec is not installed
+            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
+    return fs
+
+
+def get_file_scan_tasks(
+    tasks: Iterable[FileScanTask],
+    table_metadata: TableMetadata,
+    io: FileIO,
+    row_filter: BooleanExpression,
+    projected_schema: Schema,
+    case_sensitive: bool = True,
+    limit: Optional[int] = None,
+) -> Iterator[Callable[[], Optional[pa.Table]]]:
+    fs = _get_pyarrow_fs(io, table_metadata)
+
+    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+    projected_field_ids = {
+        id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
+    }.union(extract_field_ids(bound_row_filter))
+
+    deletes_per_file = _read_all_delete_files(fs, tasks)
+
+    yield from (
+        partial(
+            _task_to_table,
+            fs,
+            task,
+            bound_row_filter,
+            projected_schema,
+            projected_field_ids,
+            deletes_per_file.get(task.file.file_path),
+            case_sensitive,
+            limit,
+            table_metadata.name_mapping(),
+        )
+        for task in tasks
+    )
 
 
 def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:

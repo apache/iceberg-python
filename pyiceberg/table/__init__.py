@@ -40,9 +40,12 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
 )
 
 from pydantic import Field, field_validator
+from ray.data.block import Block, BlockMetadata
+from ray.data.datasource.datasource import Datasource, ReadTask
 from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
@@ -107,6 +110,7 @@ from pyiceberg.table.name_mapping import (
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
+    TOTAL_FILE_SIZE,
     Operation,
     Snapshot,
     SnapshotLogEntry,
@@ -1767,6 +1771,78 @@ class DataScan(TableScan):
 
         return ray.data.from_arrow(self.to_arrow())
 
+    def to_ray_datasource(self) -> Datasource:
+        from pyiceberg.io.pyarrow import get_file_scan_tasks
+
+        file_scan_tasks = list(
+            get_file_scan_tasks(
+                self.plan_files(),
+                self.table_metadata,
+                self.io,
+                self.row_filter,
+                self.projection(),
+                case_sensitive=self.case_sensitive,
+                limit=self.limit,
+            )
+        )
+
+        return IcebergDatasource(self.plan_files(), self.table_metadata, file_scan_tasks, self.projection(), self.snapshot_id)
+
+
+class IcebergDatasource(Datasource):
+    def __init__(
+        self,
+        plan_files: Iterable[FileScanTask],
+        table_metadata: TableMetadata,
+        file_scan_tasks: Iterable[Callable[[], Optional[pa.Table]]],
+        projection: Schema,
+        snapshot_id: Optional[int] = None,
+    ):
+        self.plan_files = plan_files
+        self.table_metadata = table_metadata
+        self.file_scan_tasks = file_scan_tasks
+        self.snapshot_id = snapshot_id
+        self.projection = projection
+
+    def estimate_inmemory_data_size(self) -> Optional[int]:
+        snapshot = (
+            self.table_metadata.snapshot_by_id(self.snapshot_id) if self.snapshot_id else self.table_metadata.current_snapshot()
+        )
+        if snapshot and snapshot.summary:
+            return int(cast(str, snapshot.summary[TOTAL_FILE_SIZE]))
+
+        return None
+
+    @staticmethod
+    def _read_table(_table_generator: Callable[[], Optional[pa.Table]]) -> Callable[[], Iterable[Block]]:
+        def _reader() -> List[pa.Table]:
+            table = _table_generator()
+            return [table] if table else []
+
+        return _reader
+
+    def get_read_tasks(self, parallelism: int) -> List[ReadTask]:
+        read_tasks = []
+
+        file_scan_task: FileScanTask
+        table_generator: Callable[[], Optional[pa.Table]]
+
+        for file_scan_task, table_generator in zip(self.plan_files, self.file_scan_tasks):
+            read_tasks.append(
+                ReadTask(
+                    metadata=BlockMetadata(
+                        num_rows=file_scan_task.file.record_count,
+                        size_bytes=file_scan_task.length,
+                        schema=self.projection.as_arrow(),
+                        input_files=[file_scan_task.file.file_path],
+                        exec_stats=None,
+                    ),
+                    read_fn=self._read_table(table_generator),
+                )
+            )
+
+        return read_tasks
+
 
 class MoveOperation(Enum):
     First = 1
@@ -1881,7 +1957,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
+            # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
