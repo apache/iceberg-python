@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import math
+import time
 import uuid
 from urllib.parse import urlparse
 
@@ -48,6 +49,7 @@ from pyiceberg.types import (
     StringType,
     TimestampType,
 )
+from pyiceberg.utils.concurrent import ExecutorFactory
 
 DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
 
@@ -506,3 +508,40 @@ def test_hive_locking(session_catalog_hive: HiveCatalog) -> None:
                 table.transaction().set_properties(lock="fail").commit_transaction()
         finally:
             open_client.unlock(UnlockRequest(lock.lockid))
+
+
+@pytest.mark.integration
+def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
+    table = create_table(session_catalog_hive)
+    database_name: str
+    table_name: str
+    _, database_name, table_name = table.identifier
+
+    hive_client: _HiveClient = _HiveClient(session_catalog_hive.properties["uri"])
+
+    executor = ExecutorFactory.get_or_create()
+
+    with hive_client as open_client:
+
+        def another_task() -> None:
+            lock1: LockResponse = open_client.lock(session_catalog_hive._create_lock_request(database_name, table_name))
+            time.sleep(5)
+            open_client.unlock(UnlockRequest(lock1.lockid))
+
+        # test the lock_with_retry with concurrent locking
+        executor.submit(another_task)
+        time.sleep(1)
+        try:
+            lock2: LockResponse = open_client.lock(session_catalog_hive._create_lock_request(database_name, table_name))
+            assert lock2.state == LockState.WAITING
+            lock2 = session_catalog_hive._wait_for_lock(database_name, table_name, lock2.lockid, open_client)
+            assert lock2.state == LockState.ACQUIRED
+        finally:
+            open_client.unlock(UnlockRequest(lock2.lockid))
+
+        # test transaction commit with concurrent locking
+        executor.submit(another_task)
+        time.sleep(1)
+
+        table.transaction().set_properties(lock="xxx").commit_transaction()
+        assert table.properties.get("lock") == "xxx"

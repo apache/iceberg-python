@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import getpass
+import logging
 import socket
 import time
 from types import TracebackType
@@ -33,6 +34,7 @@ from urllib.parse import urlparse
 from hive_metastore.ThriftHiveMetastore import Client
 from hive_metastore.ttypes import (
     AlreadyExistsException,
+    CheckLockRequest,
     FieldSchema,
     InvalidOperationException,
     LockComponent,
@@ -49,6 +51,7 @@ from hive_metastore.ttypes import (
 )
 from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TSocket, TTransport
 
@@ -69,12 +72,20 @@ from pyiceberg.exceptions import (
     NoSuchNamespaceError,
     NoSuchTableError,
     TableAlreadyExistsError,
+    WaitingForLockException,
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, PropertyUtil, Table, TableProperties, update_table_metadata
+from pyiceberg.table import (
+    CommitTableRequest,
+    CommitTableResponse,
+    PropertyUtil,
+    Table,
+    TableProperties,
+    update_table_metadata,
+)
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -110,6 +121,13 @@ OWNER = "owner"
 # If set to true, HiveCatalog will operate in Hive2 compatibility mode
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
+
+DEFAULT_LOCK_CHECK_MIN_WAIT_TIME = 2
+DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 30
+DEFAULT_LOCK_CHECK_RETRIES = 5
+DEFAULT_LOCK_CHECK_MULTIPLIER = 2
+
+logger = logging.getLogger(__name__)
 
 
 class _HiveClient:
@@ -239,6 +257,10 @@ class HiveCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
         self._client = _HiveClient(properties["uri"], properties.get("ugi"))
+        self._lock_check_min_wait_time = int(properties.get("lock_check_min_wait_time", DEFAULT_LOCK_CHECK_MIN_WAIT_TIME))
+        self._lock_check_max_wait_time = int(properties.get("lock_check_max_wait_time", DEFAULT_LOCK_CHECK_MAX_WAIT_TIME))
+        self._lock_check_retries = int(properties.get("lock_check_retries", DEFAULT_LOCK_CHECK_RETRIES))
+        self._lock_check_multiplier = float(properties.get("lock_check_multiplier", DEFAULT_LOCK_CHECK_MULTIPLIER))
 
     def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -356,6 +378,28 @@ class HiveCatalog(MetastoreCatalog):
 
         return lock_request
 
+    def _wait_for_lock(self, database_name: str, table_name: str, lockid: int, open_client: Client) -> LockResponse:
+        @retry(
+            retry=retry_if_exception_type(WaitingForLockException),
+            wait=wait_exponential(
+                multiplier=self._lock_check_multiplier, min=self._lock_check_min_wait_time, max=self._lock_check_max_wait_time
+            ),
+            stop=stop_after_attempt(self._lock_check_retries),
+            reraise=True,
+        )
+        def _do_wait_for_lock() -> LockResponse:
+            response: LockResponse = open_client.check_lock(CheckLockRequest(lockid=lockid))
+            if response.state == LockState.ACQUIRED:
+                return response
+            elif response.state == LockState.WAITING:
+                msg = f"Wait on lock for {database_name}:{table_name}"
+                logger.warning(msg)
+                raise WaitingForLockException(msg)
+            else:
+                raise CommitFailedException(f"Failed to lock for {database_name}:{table_name}, state: {response.state}")
+
+        return _do_wait_for_lock()
+
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
 
@@ -380,7 +424,10 @@ class HiveCatalog(MetastoreCatalog):
 
             try:
                 if lock.state != LockState.ACQUIRED:
-                    raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+                    if lock.state == LockState.WAITING:
+                        self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
+                    else:
+                        raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
 
                 hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
                 io = load_file_io({**self.properties, **hive_table.parameters}, hive_table.sd.location)
@@ -406,6 +453,8 @@ class HiveCatalog(MetastoreCatalog):
                 open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
             except NoSuchObjectException as e:
                 raise NoSuchTableError(f"Table does not exist: {table_name}") from e
+            except WaitingForLockException as e:
+                raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}") from e
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
