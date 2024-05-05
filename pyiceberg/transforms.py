@@ -20,7 +20,7 @@ import struct
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from functools import singledispatch
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 from typing import Literal as LiteralType
 from uuid import UUID
 
@@ -81,6 +81,9 @@ from pyiceberg.utils import datetime
 from pyiceberg.utils.decimal import decimal_to_bytes, truncate_decimal
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 S = TypeVar("S")
 T = TypeVar("T")
@@ -391,6 +394,21 @@ class YearTransform(TimeTransform[S]):
         """Return the string representation of the YearTransform class."""
         return "YearTransform()"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, DateType):
+            epoch = datetime.EPOCH_DATE
+        elif isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply year transform for type: {source}")
+
+        return lambda v: pc.years_between(pa.scalar(epoch), v) if v is not None else None
+
 
 class MonthTransform(TimeTransform[S]):
     """Transforms a datetime value into a month value.
@@ -433,28 +451,24 @@ class MonthTransform(TimeTransform[S]):
         """Return the string representation of the MonthTransform class."""
         return "MonthTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> Callable:
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
         import pyarrow as pa
         import pyarrow.compute as pc
-        
+
         if isinstance(source, DateType):
-
-            def month_func(v: Any) -> int:
-                return pc.add(
-                    pc.multiply(pc.years_between(pa.scalar(date(1970, 1, 1)), v), pa.scalar(12)),
-                    pc.add(pc.month(v), pa.scalar(-1)),
-                )
-
-        elif isinstance(source, (TimestampType, TimestamptzType)):
-
-            def month_func(v: Any) -> int:
-                return pc.add(
-                    pc.multiply(pc.years_between(pa.scalar(datetime(1970, 1, 1)), pc.local_timestamp(v)), pa.scalar(12)),
-                    pc.add(pc.month(v), pa.scalar(-1)),
-                )
-
+            epoch = datetime.EPOCH_DATE
+        elif isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
         else:
             raise ValueError(f"Cannot apply month transform for type: {source}")
+
+        def month_func(v: pa.Array) -> pa.Array:
+            return pc.add(
+                pc.multiply(pc.years_between(pa.scalar(epoch), v), pa.scalar(12)),
+                pc.add(pc.month(v), pa.scalar(-1)),
+            )
 
         return lambda v: month_func(v) if v is not None else None
 
@@ -503,6 +517,21 @@ class DayTransform(TimeTransform[S]):
         """Return the string representation of the DayTransform class."""
         return "DayTransform()"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, DateType):
+            epoch = datetime.EPOCH_DATE
+        elif isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply day transform for type: {source}")
+
+        return lambda v: pc.days_between(pa.scalar(epoch), v) if v is not None else None
+
 
 class HourTransform(TimeTransform[S]):
     """Transforms a datetime value into a hour value.
@@ -539,6 +568,19 @@ class HourTransform(TimeTransform[S]):
     def __repr__(self) -> str:
         """Return the string representation of the HourTransform class."""
         return "HourTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply month transform for type: {source}")
+
+        return lambda v: pc.hours_between(pa.scalar(epoch), v) if v is not None else None
 
 
 def _base64encode(buffer: bytes) -> str:

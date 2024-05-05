@@ -15,9 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 from uuid import UUID
 
 import mmh3 as mmh3
@@ -69,6 +69,7 @@ from pyiceberg.expressions.literals import (
     TimestampLiteral,
     literal,
 )
+from pyiceberg.partitioning import _to_partition_representation
 from pyiceberg.schema import Accessor
 from pyiceberg.transforms import (
     BucketTransform,
@@ -110,6 +111,9 @@ from pyiceberg.utils.datetime import (
     timestamp_to_micros,
     timestamptz_to_micros,
 )
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 @pytest.mark.parametrize(
@@ -1808,3 +1812,66 @@ def test_strict_binary(bound_reference_binary: BoundReference[str]) -> None:
     _test_projection(
         lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_binary, literals=set_of_literals)), rhs=None
     )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_date_timestamps() -> "pa.Table":
+    """Pyarrow table with only date, timestamp and timestamptz values."""
+    import pyarrow as pa
+
+    return pa.Table.from_pydict(
+        {
+            "date": [date(2023, 12, 31), date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1), date(2024, 2, 1), None],
+            "timestamp": [
+                datetime(2023, 12, 31, 0, 0, 0),
+                datetime(2024, 1, 1, 0, 0, 0),
+                datetime(2024, 1, 31, 0, 0, 0),
+                datetime(2024, 2, 1, 0, 0, 0),
+                datetime(2024, 2, 1, 6, 0, 0),
+                None,
+            ],
+            "timestamptz": [
+                datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
+                None,
+            ],
+        },
+        schema=pa.schema([
+            ("date", pa.date32()),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ]),
+    )
+
+
+@pytest.mark.parametrize('transform', [YearTransform(), MonthTransform(), DayTransform()])
+@pytest.mark.parametrize(
+    "source_col, source_type", [("date", DateType()), ("timestamp", TimestampType()), ("timestamptz", TimestamptzType())]
+)
+def test_ymd_pyarrow_transforms(
+    arrow_table_date_timestamps: "pa.Table",
+    source_col: str,
+    source_type: PrimitiveType,
+    transform: Transform[Any, Any],
+) -> None:
+    assert transform.pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col]).to_pylist() == [
+        transform.transform(source_type)(_to_partition_representation(source_type, v))
+        for v in arrow_table_date_timestamps[source_col].to_pylist()
+    ]
+
+
+@pytest.mark.parametrize("source_col, source_type", [("timestamp", TimestampType()), ("timestamptz", TimestamptzType())])
+def test_hour_pyarrow_transforms(arrow_table_date_timestamps: "pa.Table", source_col: str, source_type: PrimitiveType) -> None:
+    assert HourTransform().pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col]).to_pylist() == [
+        HourTransform().transform(source_type)(_to_partition_representation(source_type, v))
+        for v in arrow_table_date_timestamps[source_col].to_pylist()
+    ]
+
+
+def test_hour_pyarrow_transforms_throws_with_dates(arrow_table_date_timestamps: "pa.Table") -> None:
+    # HourTransform is not supported for DateType
+    with pytest.raises(ValueError):
+        HourTransform().pyarrow_transform(DateType())(arrow_table_date_timestamps["date"])
