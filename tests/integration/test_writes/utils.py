@@ -21,10 +21,10 @@ import pyarrow as pa
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.typedef import Properties
+from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -62,9 +62,9 @@ TABLE_SCHEMA = Schema(
 def _create_table(
     session_catalog: Catalog,
     identifier: str,
-    properties: Properties,
+    properties: Properties = EMPTY_DICT,
     data: Optional[List[pa.Table]] = None,
-    partition_spec: Optional[PartitionSpec] = None,
+    partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
     schema: Union[Schema, "pa.Schema"] = TABLE_SCHEMA,
 ) -> Table:
     try:
@@ -72,14 +72,9 @@ def _create_table(
     except NoSuchTableError:
         pass
 
-    if partition_spec:
-        tbl = session_catalog.create_table(
-            identifier=identifier, schema=schema, properties=properties, partition_spec=partition_spec
-        )
-    else:
-        tbl = session_catalog.create_table(identifier=identifier, schema=schema, properties=properties)
+    tbl = session_catalog.create_table(identifier=identifier, schema=schema, properties=properties, partition_spec=partition_spec)
 
-    if data:
+    if data is not None:
         for d in data:
             tbl.append(d)
 
