@@ -2158,3 +2158,46 @@ def arrow_table_with_only_nulls(pa_schema: "pa.Schema") -> "pa.Table":
     import pyarrow as pa
 
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_date_timestamps() -> "pa.Table":
+    """Pyarrow table with only date, timestamp and timestamptz values."""
+    import pyarrow as pa
+
+    return pa.Table.from_pydict(
+        {
+            "date": [date(2023, 12, 31), date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1), date(2024, 2, 1), None],
+            "timestamp": [
+                datetime(2023, 12, 31, 0, 0, 0),
+                datetime(2024, 1, 1, 0, 0, 0),
+                datetime(2024, 1, 31, 0, 0, 0),
+                datetime(2024, 2, 1, 0, 0, 0),
+                datetime(2024, 2, 1, 6, 0, 0),
+                None,
+            ],
+            "timestamptz": [
+                datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
+                None,
+            ],
+        },
+        schema=pa.schema([
+            ("date", pa.date32()),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ]),
+    )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_date_timestamps_schema() -> Schema:
+    """Pyarrow table Schema with only date, timestamp and timestamptz values."""
+    return Schema(
+        NestedField(field_id=1, name="date", field_type=DateType(), required=False),
+        NestedField(field_id=2, name="timestamp", field_type=TimestampType(), required=False),
+        NestedField(field_id=3, name="timestamptz", field_type=TimestamptzType(), required=False),
+    )

@@ -26,6 +26,7 @@ from pyspark.sql import SparkSession
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -355,18 +356,6 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog) -> Non
         (PartitionSpec(PartitionField(source_id=5, field_id=1001, transform=TruncateTransform(2), name="long_trunc"))),
         (PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(2), name="string_trunc"))),
         (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(2), name="binary_trunc"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=YearTransform(), name="timestamp_year"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=YearTransform(), name="timestamptz_year"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=YearTransform(), name="date_year"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=MonthTransform(), name="timestamp_month"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=MonthTransform(), name="timestamptz_month"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=MonthTransform(), name="date_month"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=DayTransform(), name="timestamp_day"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=DayTransform(), name="timestamptz_day"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=DayTransform(), name="date_day"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=HourTransform(), name="timestamp_hour"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=HourTransform(), name="timestamptz_hour"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=HourTransform(), name="date_hour"))),
     ],
 )
 def test_unsupported_transform(
@@ -386,7 +375,10 @@ def test_unsupported_transform(
         properties={"format-version": "1"},
     )
 
-    with pytest.raises(ValueError, match="All transforms are not supported.*"):
+    with pytest.raises(
+        ValueError,
+        match="Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: *",
+    ):
         tbl.append(arrow_table_with_null)
 
 
@@ -411,7 +403,7 @@ def test_append_ymd_transform_partitioned(
     format_version: int,
 ) -> None:
     # Given
-    identifier = f"default.arrow_table_v{format_version}_with_ymd_transform_partitioned_on_col_{part_col}"
+    identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_partition_on_col_{part_col}"
     nested_field = TABLE_SCHEMA.find_field(part_col)
     partition_spec = PartitionSpec(
         PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col)
@@ -442,3 +434,59 @@ def test_append_ymd_transform_partitioned(
         """
     )
     assert files_df.count() == expected_rows
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "transform,expected_partitions",
+    [
+        pytest.param(YearTransform(), 3, id="year_transform"),
+        pytest.param(MonthTransform(), 4, id="month_transform"),
+        pytest.param(DayTransform(), 5, id="day_transform"),
+        pytest.param(HourTransform(), 6, id="hour_transform"),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_transform_partition_verify_partitions_count(
+    session_catalog: Catalog,
+    spark: SparkSession,
+    arrow_table_date_timestamps: pa.Table,
+    arrow_table_date_timestamps_schema: Schema,
+    transform: Transform[Any, Any],
+    expected_partitions: int,
+    format_version: int,
+) -> None:
+    # Given
+    part_col = "timestamptz"
+    identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_transform_partitioned_on_col_{part_col}"
+    nested_field = arrow_table_date_timestamps_schema.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_date_timestamps],
+        partition_spec=partition_spec,
+        schema=arrow_table_date_timestamps_schema,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    assert df.count() == 6, f"Expected 6 total rows for {identifier}"
+    for col in arrow_table_date_timestamps.column_names:
+        assert df.where(f"{col} is not null").count() == 5, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    assert tbl.inspect.partitions().num_rows == expected_partitions
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == expected_partitions

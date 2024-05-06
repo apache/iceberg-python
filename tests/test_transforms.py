@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from uuid import UUID
@@ -1814,40 +1814,15 @@ def test_strict_binary(bound_reference_binary: BoundReference[str]) -> None:
     )
 
 
-@pytest.fixture(scope="session")
-def arrow_table_date_timestamps() -> "pa.Table":
-    """Pyarrow table with only date, timestamp and timestamptz values."""
-    import pyarrow as pa
-
-    return pa.Table.from_pydict(
-        {
-            "date": [date(2023, 12, 31), date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1), date(2024, 2, 1), None],
-            "timestamp": [
-                datetime(2023, 12, 31, 0, 0, 0),
-                datetime(2024, 1, 1, 0, 0, 0),
-                datetime(2024, 1, 31, 0, 0, 0),
-                datetime(2024, 2, 1, 0, 0, 0),
-                datetime(2024, 2, 1, 6, 0, 0),
-                None,
-            ],
-            "timestamptz": [
-                datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
-                None,
-            ],
-        },
-        schema=pa.schema([
-            ("date", pa.date32()),
-            ("timestamp", pa.timestamp(unit="us")),
-            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ]),
-    )
-
-
-@pytest.mark.parametrize('transform', [YearTransform(), MonthTransform(), DayTransform(), HourTransform()])
+@pytest.mark.parametrize(
+    'transform',
+    [
+        pytest.param(YearTransform(), id="year_transform"),
+        pytest.param(MonthTransform(), id="month_transform"),
+        pytest.param(DayTransform(), id="day_transform"),
+        pytest.param(HourTransform(), id="hour_transform"),
+    ],
+)
 @pytest.mark.parametrize(
     "source_col, source_type", [("date", DateType()), ("timestamp", TimestampType()), ("timestamptz", TimestamptzType())]
 )
