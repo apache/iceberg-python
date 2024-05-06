@@ -3603,7 +3603,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
     ]
     partition_values_table = pa.table({
-        str(partition.field_id): partition.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
         for partition, field in partition_columns
     })
 
