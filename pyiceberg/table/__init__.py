@@ -3715,6 +3715,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     arrow_table = arrow_table.take(sort_indices)
 
     # Get slice_instructions to group by partitions
+    partition_values_table = partition_values_table.take(sort_indices)
     reversed_indices = pa.compute.sort_indices(
         partition_values_table,
         sort_keys=[(col, "descending") for col in partition_values_table.column_names],
