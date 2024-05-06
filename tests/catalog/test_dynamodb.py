@@ -118,6 +118,21 @@ def test_create_table_with_given_location(
 
 
 @mock_aws
+def test_create_table_removes_trailing_slash_in_location(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
+    assert table.identifier == (catalog_name,) + identifier
+    assert table.location() == location
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+
+
+@mock_aws
 def test_create_table_with_no_location(
     _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:

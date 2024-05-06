@@ -271,6 +271,28 @@ def test_create_table_with_default_warehouse_location(
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_create_table_with_given_location_removes_trailing_slash(
+    warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+) -> None:
+    database_name, table_name = random_identifier
+    location = f"file://{warehouse}/{database_name}.db/{table_name}-given"
+    catalog.create_namespace(database_name)
+    catalog.create_table(random_identifier, table_schema_nested, location=f"{location}/")
+    table = catalog.load_table(random_identifier)
+    assert table.identifier == (catalog.name,) + random_identifier
+    assert table.metadata_location.startswith(f"file://{warehouse}")
+    assert os.path.exists(table.metadata_location[len("file://") :])
+    assert table.location() == location
+    catalog.drop_table(random_identifier)
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier) -> None:
     database_name, _table_name = random_identifier
     catalog.create_namespace(database_name)
