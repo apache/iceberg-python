@@ -3545,33 +3545,6 @@ class TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
-    order = 'ascending' if not reverse else 'descending'
-    null_placement = 'at_start' if reverse else 'at_end'
-    return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
-
-
-def group_by_partition_scheme(arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
-    """Given a table, sort it by current partition scheme."""
-    # only works for identity for now
-    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
-    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
-    return sorted_arrow_table
-
-
-def get_partition_columns(
-    spec: PartitionSpec,
-    schema: Schema,
-) -> list[str]:
-    partition_cols = []
-    for partition_field in spec.fields:
-        column_name = schema.find_column_name(partition_field.source_id)
-        if not column_name:
-            raise ValueError(f"{partition_field=} could not be found in {schema}.")
-        partition_cols.append(column_name)
-    return partition_cols
-
-
 def _get_table_partitions(
     arrow_table: pa.Table,
     partition_spec: PartitionSpec,
@@ -3626,13 +3599,29 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     """
     import pyarrow as pa
 
-    partition_columns = get_partition_columns(spec=spec, schema=schema)
-    arrow_table = group_by_partition_scheme(arrow_table, partition_columns)
+    partition_columns: List[Tuple[PartitionField, NestedField]] = [
+        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
+    ]
+    partition_values_table = pa.table({
+        str(partition.field_id): partition.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        for partition, field in partition_columns
+    })
 
-    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
-    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
+    # Sort by partitions
+    sort_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
+        null_placement="at_end",
+    ).to_pylist()
+    arrow_table = arrow_table.take(sort_indices)
 
-    slice_instructions: list[dict[str, Any]] = []
+    # Get slice_instructions to group by partitions
+    reversed_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
+        null_placement="at_start",
+    ).to_pylist()
+    slice_instructions: List[Dict[str, Any]] = []
     last = len(reversed_indices)
     reversed_indices_size = len(reversed_indices)
     ptr = 0
@@ -3643,6 +3632,6 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         last = reversed_indices[ptr]
         ptr = ptr + group_size
 
-    table_partitions: list[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+    table_partitions: List[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
 
     return table_partitions
