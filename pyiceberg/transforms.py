@@ -182,6 +182,9 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     def supports_pyarrow_transform(self) -> bool:
         return False
 
+    @abstractmethod
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
+
 
 class BucketTransform(Transform[S, int]):
     """Base Transform class to transform a value into a bucket partition value.
@@ -297,6 +300,9 @@ class BucketTransform(Transform[S, int]):
         """Return the string representation of the BucketTransform class."""
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
+
 
 class TimeResolution(IntEnum):
     YEAR = 6
@@ -355,9 +361,6 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
     @property
     def preserves_order(self) -> bool:
         return True
-
-    @abstractmethod
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
 
     @property
     def supports_pyarrow_transform(self) -> bool:
@@ -810,6 +813,9 @@ class TruncateTransform(Transform[S, S]):
         """Return the string representation of the TruncateTransform class."""
         return f"TruncateTransform(width={self._width})"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
+
 
 @singledispatch
 def _human_string(value: Any, _type: IcebergType) -> str:
@@ -892,6 +898,9 @@ class UnknownTransform(Transform[S, T]):
         """Return the string representation of the UnknownTransform class."""
         return f"UnknownTransform(transform={repr(self._transform)})"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
+
 
 class VoidTransform(Transform[S, None], Singleton):
     """A transform that always returns None."""
@@ -919,6 +928,9 @@ class VoidTransform(Transform[S, None], Singleton):
     def __repr__(self) -> str:
         """Return the string representation of the VoidTransform class."""
         return "VoidTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
 
 
 def _truncate_number(
