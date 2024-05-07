@@ -122,10 +122,12 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
+LOCK_CHECK_MIN_WAIT_TIME = "lock_check_min_wait_time"
+LOCK_CHECK_MAX_WAIT_TIME = "lock_check_max_wait_time"
+LOCK_CHECK_RETRIES = "lock_check_retries"
 DEFAULT_LOCK_CHECK_MIN_WAIT_TIME = 2
 DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 30
-DEFAULT_LOCK_CHECK_RETRIES = 5
-DEFAULT_LOCK_CHECK_MULTIPLIER = 2
+DEFAULT_LOCK_CHECK_RETRIES = 10
 
 logger = logging.getLogger(__name__)
 
@@ -257,10 +259,18 @@ class HiveCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
         self._client = _HiveClient(properties["uri"], properties.get("ugi"))
-        self._lock_check_min_wait_time = int(properties.get("lock_check_min_wait_time", DEFAULT_LOCK_CHECK_MIN_WAIT_TIME))
-        self._lock_check_max_wait_time = int(properties.get("lock_check_max_wait_time", DEFAULT_LOCK_CHECK_MAX_WAIT_TIME))
-        self._lock_check_retries = int(properties.get("lock_check_retries", DEFAULT_LOCK_CHECK_RETRIES))
-        self._lock_check_multiplier = float(properties.get("lock_check_multiplier", DEFAULT_LOCK_CHECK_MULTIPLIER))
+
+        self._lock_check_min_wait_time = PropertyUtil.property_as_float(
+            properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME
+        )
+        self._lock_check_max_wait_time = PropertyUtil.property_as_float(
+            properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME
+        )
+        self._lock_check_retries = PropertyUtil.property_as_float(
+            properties,
+            LOCK_CHECK_RETRIES,
+            DEFAULT_LOCK_CHECK_RETRIES,
+        )
 
     def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -381,9 +391,7 @@ class HiveCatalog(MetastoreCatalog):
     def _wait_for_lock(self, database_name: str, table_name: str, lockid: int, open_client: Client) -> LockResponse:
         @retry(
             retry=retry_if_exception_type(WaitingForLockException),
-            wait=wait_exponential(
-                multiplier=self._lock_check_multiplier, min=self._lock_check_min_wait_time, max=self._lock_check_max_wait_time
-            ),
+            wait=wait_exponential(multiplier=1.5, min=self._lock_check_min_wait_time, max=self._lock_check_max_wait_time),
             stop=stop_after_attempt(self._lock_check_retries),
             reraise=True,
         )
@@ -392,11 +400,11 @@ class HiveCatalog(MetastoreCatalog):
             if response.state == LockState.ACQUIRED:
                 return response
             elif response.state == LockState.WAITING:
-                msg = f"Wait on lock for {database_name}:{table_name}"
+                msg = f"Wait on lock for {database_name}.{table_name}"
                 logger.warning(msg)
                 raise WaitingForLockException(msg)
             else:
-                raise CommitFailedException(f"Failed to lock for {database_name}:{table_name}, state: {response.state}")
+                raise CommitFailedException(f"Failed to check lock for {database_name}.{table_name}, state: {response.state}")
 
         return _do_wait_for_lock()
 
