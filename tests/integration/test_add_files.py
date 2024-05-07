@@ -16,9 +16,8 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
-from collections.abc import Iterator
 from datetime import date
-from typing import Optional
+from typing import Iterator, Optional
 
 import pyarrow as pa
 import pyarrow.parquet as pq
