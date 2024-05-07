@@ -417,7 +417,12 @@ class GlueCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
-        raise NotImplementedError
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        io = self._load_file_io(location=metadata_location)
+        table_input = FromInputFile.table_metadata(io.new_input(metadata_location))
+        self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
+
+        return self.load_table(identifier=identifier)
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
