@@ -443,7 +443,7 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
 
@@ -455,7 +455,7 @@ class Transaction:
         """
         if self._table.name_mapping() is None:
             self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
-        with self.update_snapshot().fast_append() as update_snapshot:
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
             )
@@ -1341,7 +1341,7 @@ class Table:
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table.
 
@@ -1352,7 +1352,7 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         with self.transaction() as tx:
-            tx.add_files(file_paths=file_paths)
+            tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
