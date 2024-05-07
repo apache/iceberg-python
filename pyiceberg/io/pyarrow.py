@@ -737,6 +737,7 @@ def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
     # as an encoding detail, not as a separate type.
     # We will follow this approach in determining the Iceberg Type,
     # as we only support parquet in PyIceberg for now.
+    logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
     return visit_pyarrow(obj.value_type, visitor)
 
 
