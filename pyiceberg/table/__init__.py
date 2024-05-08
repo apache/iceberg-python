@@ -71,6 +71,7 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
+    PartitionFieldSummary,
     write_manifest,
     write_manifest_list,
 )
@@ -3535,6 +3536,94 @@ class InspectTable:
         return pa.Table.from_pylist(
             partitions_map.values(),
             schema=table_schema,
+        )
+
+    def manifests(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.conversions import from_bytes
+
+        partition_summary_schema = pa.struct([
+            pa.field("contains_null", pa.bool_(), nullable=False),
+            pa.field("contains_nan", pa.bool_(), nullable=True),
+            pa.field("lower_bound", pa.string(), nullable=True),
+            pa.field("upper_bound", pa.string(), nullable=True),
+        ])
+
+        manifest_schema = pa.schema([
+            pa.field('content', pa.int8(), nullable=False),
+            pa.field('path', pa.string(), nullable=False),
+            pa.field('length', pa.int64(), nullable=False),
+            pa.field('partition_spec_id', pa.int32(), nullable=False),
+            pa.field('added_snapshot_id', pa.int64(), nullable=False),
+            pa.field('added_data_files_count', pa.int32(), nullable=False),
+            pa.field('existing_data_files_count', pa.int32(), nullable=False),
+            pa.field('deleted_data_files_count', pa.int32(), nullable=False),
+            pa.field('added_delete_files_count', pa.int32(), nullable=False),
+            pa.field('existing_delete_files_count', pa.int32(), nullable=False),
+            pa.field('deleted_delete_files_count', pa.int32(), nullable=False),
+            pa.field('partition_summaries', pa.list_(partition_summary_schema), nullable=False),
+        ])
+
+        def _partition_summaries_to_rows(
+            spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
+        ) -> List[Dict[str, Any]]:
+            rows = []
+            for i, field_summary in enumerate(partition_summaries):
+                field = spec.fields[i]
+                partition_field_type = spec.partition_type(self.tbl.schema()).fields[i].field_type
+                lower_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
+                        )
+                    )
+                    if field_summary.lower_bound
+                    else None
+                )
+                upper_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
+                        )
+                    )
+                    if field_summary.upper_bound
+                    else None
+                )
+                rows.append({
+                    'contains_null': field_summary.contains_null,
+                    'contains_nan': field_summary.contains_nan,
+                    'lower_bound': lower_bound,
+                    'upper_bound': upper_bound,
+                })
+            return rows
+
+        specs = self.tbl.metadata.specs()
+        manifests = []
+        if snapshot := self.tbl.metadata.current_snapshot():
+            for manifest in snapshot.manifests(self.tbl.io):
+                is_data_file = manifest.content == ManifestContent.DATA
+                is_delete_file = manifest.content == ManifestContent.DELETES
+                manifests.append({
+                    'content': manifest.content,
+                    'path': manifest.manifest_path,
+                    'length': manifest.manifest_length,
+                    'partition_spec_id': manifest.partition_spec_id,
+                    'added_snapshot_id': manifest.added_snapshot_id,
+                    'added_data_files_count': manifest.added_files_count if is_data_file else 0,
+                    'existing_data_files_count': manifest.existing_files_count if is_data_file else 0,
+                    'deleted_data_files_count': manifest.deleted_files_count if is_data_file else 0,
+                    'added_delete_files_count': manifest.added_files_count if is_delete_file else 0,
+                    'existing_delete_files_count': manifest.existing_files_count if is_delete_file else 0,
+                    'deleted_delete_files_count': manifest.deleted_files_count if is_delete_file else 0,
+                    'partition_summaries': _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
+                    if manifest.partitions
+                    else [],
+                })
+
+        return pa.Table.from_pylist(
+            manifests,
+            schema=manifest_schema,
         )
 
 
