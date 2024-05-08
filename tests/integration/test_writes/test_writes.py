@@ -843,3 +843,5 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
     assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
     tbl.overwrite(arrow_table_without_some_columns)
     tbl.append(arrow_table_without_some_columns)
+    # overwrite and then append should produce twice the data
+    assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
