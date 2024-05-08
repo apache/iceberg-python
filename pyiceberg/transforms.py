@@ -592,7 +592,7 @@ class HourTransform(TimeTransform[S]):
         elif isinstance(source, TimestamptzType):
             epoch = datetime.EPOCH_TIMESTAMPTZ
         else:
-            raise ValueError(f"Cannot apply month transform for type: {source}")
+            raise ValueError(f"Cannot apply hour transform for type: {source}")
 
         return lambda v: pc.hours_between(pa.scalar(epoch), v) if v is not None else None
 
