@@ -30,6 +30,7 @@ import pytz
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
+from pytest_lazyfixture import lazy_fixture
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
@@ -838,7 +839,7 @@ def test_hive_catalog_storage_descriptor(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize('catalog', [lazy_fixture('session_catalog_hive'), lazy_fixture('session_catalog')])
 def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character"
     try:
