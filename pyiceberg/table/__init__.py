@@ -64,12 +64,13 @@ from pyiceberg.expressions.visitors import (
     ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
     _StrictMetricsEvaluator,
+    bind,
     expression_evaluator,
     inclusive_projection,
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import _dataframe_to_data_files, project_table
+from pyiceberg.io.pyarrow import _dataframe_to_data_files, expression_to_pyarrow, project_table
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -310,8 +311,6 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + requirements
-            else:
-                warnings.warn(f"Dropped duplicate requirement: {new_requirement}")
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
@@ -430,7 +429,10 @@ class Transaction:
                     update_snapshot.append_data_file(data_file)
 
     def overwrite(
-        self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        df: pa.Table,
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -458,8 +460,7 @@ class Transaction:
         if table_arrow_schema != df.schema:
             df = df.cast(table_arrow_schema)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            delete_snapshot.delete_by_predicate(overwrite_filter)
+        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -470,53 +471,73 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def delete(self, delete_filter: BooleanExpression, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_COPY_ON_WRITE)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
             raise NotImplementedError("Merge on read is not yet supported")
 
+        if isinstance(delete_filter, str):
+            delete_filter = _parse_row_filter(delete_filter)
+
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
             delete_snapshot.delete_by_predicate(delete_filter)
 
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
-            # When we want to filter out certain rows, we want to invert the expression
-            # delete id = 22 means that we want to look for that value, and then remove
-            # if from the Parquet file
-            delete_row_filter = Not(delete_filter)
-            with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as overwrite_snapshot:
-                # Potential optimization is where we check if the files actually contain relevant data.
-                files = self._scan(row_filter=delete_filter).plan_files()
+            bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
+            preserve_row_filter = expression_to_pyarrow(Not(bound_delete_filter))
+            commit_uuid = uuid.uuid4()
 
-                counter = itertools.count(0)
+            files = self._scan(row_filter=delete_filter).plan_files()
 
-                # This will load the Parquet file into memory, including:
-                #   - Filter out the rows based on the delete filter
-                #   - Projecting it to the current schema
-                #   - Applying the positional deletes if they are there
-                # When writing
-                #   - Apply the latest partition-spec
-                #   - And sort order when added
-                for original_file in files:
-                    df = project_table(
-                        tasks=[original_file],
-                        table_metadata=self._table.metadata,
-                        io=self._table.io,
-                        row_filter=delete_row_filter,
-                        projected_schema=self.table_metadata.schema(),
-                    )
-                    for data_file in _dataframe_to_data_files(
-                        io=self._table.io,
-                        df=df,
-                        table_metadata=self._table.metadata,
-                        write_uuid=overwrite_snapshot.commit_uuid,
-                        counter=counter,
-                    ):
-                        overwrite_snapshot.append_data_file(data_file)
+            counter = itertools.count(0)
 
-                    overwrite_snapshot.delete_data_file(original_file.file)
+            replaced_files: List[Tuple[DataFile, List[DataFile]]] = []
+            # This will load the Parquet file into memory, including:
+            #   - Filter out the rows based on the delete filter
+            #   - Projecting it to the current schema
+            #   - Applying the positional deletes if they are there
+            # When writing
+            #   - Apply the latest partition-spec
+            #   - And sort order when added
+            for original_file in files:
+                df = project_table(
+                    tasks=[original_file],
+                    table_metadata=self._table.metadata,
+                    io=self._table.io,
+                    row_filter=AlwaysTrue(),
+                    projected_schema=self.table_metadata.schema(),
+                )
+                filtered_df = df.filter(preserve_row_filter)
+
+                # Only rewrite if there are records being deleted
+                if len(df) != len(filtered_df):
+                    replaced_files.append((
+                        original_file.file,
+                        list(
+                            _dataframe_to_data_files(
+                                io=self._table.io,
+                                df=filtered_df,
+                                table_metadata=self._table.metadata,
+                                write_uuid=commit_uuid,
+                                counter=counter,
+                            )
+                        ),
+                    ))
+
+            if len(replaced_files) > 0:
+                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite(
+                    commit_uuid=commit_uuid
+                ) as overwrite_snapshot:
+                    for original_data_file, replaced_data_files in replaced_files:
+                        overwrite_snapshot.delete_data_file(original_data_file)
+                        for replaced_data_file in replaced_data_files:
+                            overwrite_snapshot.append_data_file(replaced_data_file)
+
+        if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
+            warnings.warn("Delete operation did not match any records")
 
     def add_files(self, file_paths: List[str]) -> None:
         """
@@ -1405,7 +1426,10 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties)
 
     def overwrite(
-        self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        df: pa.Table,
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1419,7 +1443,9 @@ class Table:
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-    def delete(self, delete_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def delete(
+        self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+    ) -> None:
         """
         Shorthand for deleting rows from the table.
 
@@ -3011,15 +3037,6 @@ class DeleteFiles(_MergingSnapshotProducer["DeleteFiles"]):
         spec = self._transaction.table_metadata.specs()[spec_id]
         return manifest_evaluator(spec, schema, self.partition_filters[spec_id], case_sensitive=True)
 
-    def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
-        schema = self._transaction.table_metadata.schema()
-        spec = self._transaction.table_metadata.specs()[spec_id]
-        partition_type = spec.partition_type(schema)
-        partition_schema = Schema(*partition_type.fields)
-        partition_expr = self.partition_filters[spec_id]
-
-        return lambda data_file: expression_evaluator(partition_schema, partition_expr, case_sensitive=True)(data_file.partition)
-
     def delete_by_predicate(self, predicate: BooleanExpression) -> None:
         self._predicate = Or(self._predicate, predicate)
 
@@ -3240,8 +3257,9 @@ class UpdateSnapshot:
             operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
         )
 
-    def overwrite(self) -> OverwriteFiles:
+    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> OverwriteFiles:
         return OverwriteFiles(
+            commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
             if self._transaction.table_metadata.current_snapshot() is not None
             else Operation.APPEND,

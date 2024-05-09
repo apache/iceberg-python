@@ -17,12 +17,16 @@
 # pylint:disable=redefined-outer-name
 from typing import List
 
+import pyarrow as pa
 import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import EqualTo
+from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Summary
+from pyiceberg.types import IntegerType, NestedField
 
 
 def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
@@ -127,7 +131,6 @@ def test_partitioned_table_no_match(spark: SparkSession, session_catalog: RestCa
     tbl = session_catalog.load_table(identifier)
     tbl.delete(EqualTo("number_partitioned", 22))  # Does not affect any data
 
-    # Open for discussion, do we want to create a new snapshot?
     assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ['append']
     assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [10, 10], 'number': [20, 30]}
 
@@ -255,3 +258,82 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     )
 
     assert tbl.scan().to_arrow().to_pydict() == {'number_partitioned': [20, 20, 10], 'number': [200, 202, 100]}
+
+
+@pytest.mark.integration
+def test_delete_no_match(session_catalog: RestCatalog) -> None:
+    arrow_schema = pa.schema([pa.field("ints", pa.int32())])
+    arrow_tbl = pa.Table.from_pylist(
+        [
+            {
+                'ints': 1,
+            },
+            {'ints': 3},
+        ],
+        schema=arrow_schema,
+    )
+
+    iceberg_schema = Schema(NestedField(1, "ints", IntegerType()))
+
+    tbl_identifier = "default.test_delete_no_match"
+
+    try:
+        session_catalog.drop_table(tbl_identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(tbl_identifier, iceberg_schema)
+    tbl.append(arrow_tbl)
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [Operation.APPEND]
+
+    tbl.delete('ints == 2')  # Only 1 and 3 in the file, but is between the lower and upper bound
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [Operation.APPEND]
+
+
+@pytest.mark.integration
+def test_delete_overwrite(session_catalog: RestCatalog) -> None:
+    arrow_schema = pa.schema([pa.field("ints", pa.int32())])
+    arrow_tbl = pa.Table.from_pylist(
+        [
+            {
+                'ints': 1,
+            },
+            {'ints': 2},
+        ],
+        schema=arrow_schema,
+    )
+
+    iceberg_schema = Schema(NestedField(1, "ints", IntegerType()))
+
+    tbl_identifier = "default.test_delete_overwrite"
+
+    try:
+        session_catalog.drop_table(tbl_identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(tbl_identifier, iceberg_schema)
+    tbl.append(arrow_tbl)
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [Operation.APPEND]
+
+    arrow_tbl_overwrite = pa.Table.from_pylist(
+        [
+            {
+                'ints': 3,
+            },
+            {'ints': 4},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.overwrite(arrow_tbl_overwrite, 'ints == 2')  # Should rewrite one file
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [
+        Operation.APPEND,
+        Operation.OVERWRITE,
+        Operation.OVERWRITE,
+    ]
+
+    assert tbl.scan().to_arrow()['ints'] == [[3, 4], [1]]
