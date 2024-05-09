@@ -1344,17 +1344,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.23"
+version = "0.2.24"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.2.23-cp37-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a59f6084ca865528b26ed478d584f98c102500005314dbc7fc44b7c4b3e18d49"},
-    {file = "getdaft-0.2.23-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:dfaf492bb453675999d70626a8fdb6d4ecaecafbf4a0548e68105757a7a4025a"},
-    {file = "getdaft-0.2.23-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0d6f4dbb7f3b5d62f8df1006bf55cc657148c2a3962766e62fbd3c2df337fa32"},
-    {file = "getdaft-0.2.23-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9bfa567569a8b53e9b0a7ab3eb0044afe8d5499d995bfeb40bd867661bfa2aa7"},
-    {file = "getdaft-0.2.23-cp37-abi3-win_amd64.whl", hash = "sha256:533b78abefa738cac97a6823ef2b8f2df3300bf2d4bda4e8336371fc2780bbb9"},
-    {file = "getdaft-0.2.23.tar.gz", hash = "sha256:c2d66e6a4ce75aeb4cedbe2c04c18fa8f3f7dcfe2799f66211f36c7be2f835a5"},
+    {file = "getdaft-0.2.24-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:6dbb2c25f14c008fe1323590dc86bbed9d0de8b470aa62c0844bb218864b42da"},
+    {file = "getdaft-0.2.24-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:1c27ff4e3e00275db611c8fad5edefc1a24f8494093ce18f0b846b147b4d6cd6"},
+    {file = "getdaft-0.2.24-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ae0d0ae1238fa5eb2ddfbefbc52e47aa6f9d00e9621dde0ecbee70be43cee8e8"},
+    {file = "getdaft-0.2.24-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:473881f9406d166dace7f12a3cb74915f8901b628f6d9f0900fdf69cf05b0031"},
+    {file = "getdaft-0.2.24-cp38-abi3-win_amd64.whl", hash = "sha256:c77266e55245c95a5c972dd49a47a764cde1b2007cc30ab08c2f25f7a36d6697"},
+    {file = "getdaft-0.2.24.tar.gz", hash = "sha256:1fa4eae81ab101bed544ee64e3128e2df4f267a87640cd1473e00f944c32a216"},
 ]
 
 [package.dependencies]
