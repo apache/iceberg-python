@@ -857,3 +857,15 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     )
 
     assert len(tbl.scan().to_arrow()) == 22
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    identifier = "default.table_append_subset_of_schema"
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
+    arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
+    assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
+    tbl.overwrite(arrow_table_without_some_columns)
+    tbl.append(arrow_table_without_some_columns)
+    # overwrite and then append should produce twice the data
+    assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
