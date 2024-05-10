@@ -462,7 +462,7 @@ class Transaction:
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
