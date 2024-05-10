@@ -731,6 +731,16 @@ def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:
     return visitor.map(obj, key_result, value_result)
 
 
+@visit_pyarrow.register(pa.DictionaryType)
+def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
+    # Parquet has no dictionary type. dictionary-encoding is handled
+    # as an encoding detail, not as a separate type.
+    # We will follow this approach in determining the Iceberg Type,
+    # as we only support parquet in PyIceberg for now.
+    logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
+    return visit_pyarrow(obj.value_type, visitor)
+
+
 @visit_pyarrow.register(pa.DataType)
 def _(obj: pa.DataType, visitor: PyArrowSchemaVisitor[T]) -> T:
     if pa.types.is_nested(obj):

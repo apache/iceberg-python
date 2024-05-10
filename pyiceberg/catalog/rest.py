@@ -519,6 +519,8 @@ class RestCatalog(Catalog):
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
         namespace_and_table = self._split_identifier_for_path(identifier)
+        if location:
+            location = location.rstrip("/")
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
