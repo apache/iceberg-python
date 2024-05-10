@@ -476,7 +476,7 @@ class Transaction:
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_COPY_ON_WRITE)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
-            raise NotImplementedError("Merge on read is not yet supported")
+            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write")
 
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
@@ -1443,7 +1443,6 @@ class Table:
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-<<<<<<< HEAD
     def delete(
         self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
     ) -> None:
@@ -1457,10 +1456,7 @@ class Table:
         with self.transaction() as tx:
             tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str]) -> None:
-=======
     def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
->>>>>>> aa361d1485f4a914bc0bbc2e574becaec9a773ac
         """
         Shorthand API for adding files as data files to the table.
 

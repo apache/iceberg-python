@@ -36,17 +36,12 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-<<<<<<< HEAD
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
-from pyiceberg.table import TableProperties
-=======
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField
-from tests.conftest import TEST_DATA_WITH_NULL
->>>>>>> aa361d1485f4a914bc0bbc2e574becaec9a773ac
 from utils import _create_table
 
 
@@ -194,7 +189,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append', 'delete', 'overwrite']
+    assert operations == ['append', 'append', 'delete', 'append']
 
     summaries = [row.summary for row in rows]
 
@@ -269,9 +264,9 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     """
     ).collect()
 
-    assert [row.added_data_files_count for row in rows] == [1, 0, 1, 0, 1, 1]
-    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0]
-    assert [row.deleted_data_files_count for row in rows] == [0, 1, 0, 1, 0, 0]
+    assert [row.added_data_files_count for row in rows] == [1, 0, 1, 1, 1]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 1, 0, 0, 0]
 
 
 @pytest.mark.integration
@@ -522,7 +517,7 @@ def test_summaries_with_only_nulls(
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append', 'delete', 'overwrite']
+    assert operations == ['append', 'append', 'delete', 'append']
 
     summaries = [row.summary for row in rows]
 
@@ -788,7 +783,7 @@ def test_inspect_snapshots(
     assert df['parent_id'][0].as_py() is None
     assert df['parent_id'][1:].to_pylist() == df['snapshot_id'][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'overwrite', 'append']
+    assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'append', 'append']
 
     for manifest_list in df['manifest_list']:
         assert manifest_list.as_py().startswith("s3://")

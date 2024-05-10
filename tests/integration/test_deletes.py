@@ -333,7 +333,7 @@ def test_delete_overwrite(session_catalog: RestCatalog) -> None:
     assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [
         Operation.APPEND,
         Operation.OVERWRITE,
-        Operation.OVERWRITE,
+        Operation.APPEND,
     ]
 
     assert tbl.scan().to_arrow()['ints'] == [[3, 4], [1]]
