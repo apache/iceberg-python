@@ -512,8 +512,10 @@ def test_inspect_files(
                 'lower_bounds',
                 'upper_bounds',
             ]:
-                # Arrow returns a list of tuples, instead of a dict
-                left = dict(left)
+                if isinstance(right, dict):
+                    left = dict(left)
+                assert left == right, f"Difference in column {column}: {left} != {right}"
+
             elif column == 'readable_metrics':
                 assert list(left.keys()) == [
                     'bool',
