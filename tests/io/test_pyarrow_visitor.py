@@ -39,6 +39,7 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    IcebergType,
     IntegerType,
     ListType,
     LongType,
@@ -278,6 +279,19 @@ def test_pyarrow_map_to_iceberg() -> None:
         value_required=True,
     )
     assert visit_pyarrow(pyarrow_map, _ConvertToIceberg()) == expected
+
+
+@pytest.mark.parametrize(
+    "value_type, expected_result",
+    [
+        (pa.string(), StringType()),
+        (pa.int32(), IntegerType()),
+        (pa.float64(), DoubleType()),
+    ],
+)
+def test_pyarrow_dictionary_encoded_type_to_iceberg(value_type: pa.DataType, expected_result: IcebergType) -> None:
+    pyarrow_dict = pa.dictionary(pa.int32(), value_type)
+    assert visit_pyarrow(pyarrow_dict, _ConvertToIceberg()) == expected_result
 
 
 def test_round_schema_conversion_simple(table_schema_simple: Schema) -> None:

@@ -59,9 +59,9 @@ def bytes_required(value: Union[int, Decimal]) -> int:
         int: the minimum number of bytes needed to serialize the value.
     """
     if isinstance(value, int):
-        return (value.bit_length() + 7) // 8
+        return (value.bit_length() + 8) // 8
     elif isinstance(value, Decimal):
-        return (decimal_to_unscaled(value).bit_length() + 7) // 8
+        return (decimal_to_unscaled(value).bit_length() + 8) // 8
 
     raise ValueError(f"Unsupported value: {value}")
 
