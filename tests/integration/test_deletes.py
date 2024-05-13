@@ -336,4 +336,4 @@ def test_delete_overwrite(session_catalog: RestCatalog) -> None:
         Operation.APPEND,
     ]
 
-    assert tbl.scan().to_arrow()['ints'] == [[3, 4], [1]]
+    assert tbl.scan().to_arrow()['ints'].to_pylist() == [3, 4, 1]

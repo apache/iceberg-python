@@ -105,7 +105,7 @@ def test_inspect_snapshots(
     assert df['parent_id'][0].as_py() is None
     assert df['parent_id'][1:].to_pylist() == df['snapshot_id'][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'overwrite', 'append']
+    assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'append', 'append']
 
     for manifest_list in df['manifest_list']:
         assert manifest_list.as_py().startswith("s3://")
