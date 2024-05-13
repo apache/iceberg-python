@@ -1237,6 +1237,26 @@ class Table:
         """
         return Transaction(self)
 
+    def set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        ref_name: str,
+        type: str,
+        max_age_ref_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> Transaction:
+        return self.transaction().set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            parent_snapshot_id=parent_snapshot_id,
+            ref_name=ref_name,
+            type=type,
+            max_age_ref_ms=max_age_ref_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+
     @property
     def inspect(self) -> InspectTable:
         """Return the InspectTable object to browse the table metadata."""
