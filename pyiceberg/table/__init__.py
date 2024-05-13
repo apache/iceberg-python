@@ -366,18 +366,22 @@ class Transaction:
         Returns:
             The transaction with the set-snapshot-ref staged
         """
-        updates = SetSnapshotRefUpdate(
-            snapshot_id=snapshot_id,
-            parent_snapshot_id=parent_snapshot_id,
-            ref_name=ref_name,
-            type=type,
-            max_age_ref_ms=max_age_ref_ms,
-            max_snapshot_age_ms=max_snapshot_age_ms,
-            min_snapshots_to_keep=min_snapshots_to_keep,
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_age_ref_ms=max_age_ref_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
         )
 
-        requirements = AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main")
-        return self._apply((updates,), (requirements,))
+        requirements = (
+            AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),
+            AssertTableUUID(uuid=self.table_metadata.table_uuid),
+        )
+        return self._apply(updates, requirements)
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
