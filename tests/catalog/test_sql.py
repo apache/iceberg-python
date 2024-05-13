@@ -640,6 +640,20 @@ def test_create_namespace(catalog: SqlCatalog, database_name: str) -> None:
         lazy_fixture('catalog_sqlite'),
     ],
 )
+def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str) -> None:
+    catalog.create_namespace(database_name)
+    assert (database_name,) in catalog.list_namespaces()
+    catalog.create_namespace_if_not_exists(database_name)
+    assert (database_name,) in catalog.list_namespaces()
+
+
+@pytest.mark.parametrize(
+    'catalog',
+    [
+        lazy_fixture('catalog_memory'),
+        lazy_fixture('catalog_sqlite'),
+    ],
+)
 def test_create_duplicate_namespace(catalog: SqlCatalog, database_name: str) -> None:
     catalog.create_namespace(database_name)
     with pytest.raises(NamespaceAlreadyExistsError):
