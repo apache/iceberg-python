@@ -24,6 +24,8 @@ from hive_metastore.ttypes import (
     AlreadyExistsException,
     FieldSchema,
     InvalidOperationException,
+    LockResponse,
+    LockState,
     MetaException,
     NoSuchObjectException,
     SerDeInfo,
@@ -34,12 +36,19 @@ from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
 
 from pyiceberg.catalog import PropertiesUpdateSummary
-from pyiceberg.catalog.hive import HiveCatalog, _construct_hive_storage_descriptor
+from pyiceberg.catalog.hive import (
+    LOCK_CHECK_MAX_WAIT_TIME,
+    LOCK_CHECK_MIN_WAIT_TIME,
+    LOCK_CHECK_RETRIES,
+    HiveCatalog,
+    _construct_hive_storage_descriptor,
+)
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    WaitingForLockException,
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -1158,3 +1167,31 @@ def test_resolve_table_location_warehouse(hive_database: HiveDatabase) -> None:
 
     location = catalog._resolve_table_location(None, "database", "table")
     assert location == "/tmp/warehouse/database.db/table"
+
+
+def test_hive_wait_for_lock() -> None:
+    lockid = 12345
+    acquired = LockResponse(lockid=lockid, state=LockState.ACQUIRED)
+    waiting = LockResponse(lockid=lockid, state=LockState.WAITING)
+    prop = {
+        "uri": HIVE_METASTORE_FAKE_URL,
+        LOCK_CHECK_MIN_WAIT_TIME: 0.1,
+        LOCK_CHECK_MAX_WAIT_TIME: 0.5,
+        LOCK_CHECK_RETRIES: 5,
+    }
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, **prop)  # type: ignore
+    catalog._client = MagicMock()
+    catalog._client.lock.return_value = LockResponse(lockid=lockid, state=LockState.WAITING)
+
+    # lock will be acquired after 3 retries
+    catalog._client.check_lock.side_effect = [waiting if i < 2 else acquired for i in range(10)]
+    response: LockResponse = catalog._wait_for_lock("db", "tbl", lockid, catalog._client)
+    assert response.state == LockState.ACQUIRED
+    assert catalog._client.check_lock.call_count == 3
+
+    # lock wait should exit with WaitingForLockException finally after enough retries
+    catalog._client.check_lock.side_effect = [waiting for _ in range(10)]
+    catalog._client.check_lock.call_count = 0
+    with pytest.raises(WaitingForLockException):
+        catalog._wait_for_lock("db", "tbl", lockid, catalog._client)
+    assert catalog._client.check_lock.call_count == 5
