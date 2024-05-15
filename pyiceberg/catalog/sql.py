@@ -97,11 +97,12 @@ class IcebergNamespaceProperties(SqlCatalogBaseTable):
 class SqlCatalog(MetastoreCatalog):
     """Implementation of a SQL based catalog.
 
-    In the JDBCCatalog implementation, a Namespace is composed of a list of strings separated by dots: 'ns1.ns2.ns3'.
-    And you can have as many levels as you want, but you need at least one.
+    In the `JDBCCatalog` implementation, a `Namespace` is composed of a list of strings separated by dots: `'ns1.ns2.ns3'`.
+    And you can have as many levels as you want, but you need at least one.  The `SqlCatalog` honors the same convention.
 
-    In the JDBCCatalog implementation, a TableIdentifier is composed of an optional Namespace and a table name.
-    When a Namespace is present, the full name will be 'ns1.ns2.ns3.table'.  A valid TableIdentifier could be 'name' (no namespace).
+    In the `JDBCCatalog` implementation, a `TableIdentifier` is composed of an optional `Namespace` and a table name.
+    When a `Namespace` is present, the full name will be `'ns1.ns2.ns3.table'`.  A valid `TableIdentifier` could be `'name'` (no namespace).
+    The `SqlCatalog` has a different convention where a `TableIdentifier` requires a `Namespace`.
     """
 
     def __init__(self, name: str, **properties: str):
@@ -548,7 +549,7 @@ class SqlCatalog(MetastoreCatalog):
         """
         if namespace and not self._namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
-        
+
         namespace = Catalog.namespace_to_string(namespace)
         stmt = select(IcebergTables).where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
         with Session(self.engine) as session:

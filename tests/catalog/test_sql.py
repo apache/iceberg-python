@@ -367,19 +367,29 @@ def test_create_table_with_default_warehouse_location(
         lazy_fixture('catalog_sqlite'),
     ],
 )
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
 def test_create_table_with_given_location_removes_trailing_slash(
-    warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, random_identifier: Identifier
+    warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    database_name, table_name = random_identifier
-    location = f"file://{warehouse}/{database_name}.db/{table_name}-given"
-    catalog.create_namespace(database_name)
-    catalog.create_table(random_identifier, table_schema_nested, location=f"{location}/")
-    table = catalog.load_table(random_identifier)
-    assert table.identifier == (catalog.name,) + random_identifier
+    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    table_name = Catalog.table_name_from(table_identifier_nocatalog)
+    location = f"file://{warehouse}/{catalog.name}.db/{table_name}-given"
+    catalog.create_namespace(namespace)
+    catalog.create_table(table_identifier, table_schema_nested, location=f"{location}/")
+    table = catalog.load_table(table_identifier)
+    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
     assert table.metadata_location.startswith(f"file://{warehouse}")
     assert os.path.exists(table.metadata_location[len("file://") :])
     assert table.location() == location
-    catalog.drop_table(random_identifier)
+    catalog.drop_table(table_identifier)
 
 
 @pytest.mark.parametrize(
@@ -1401,11 +1411,20 @@ def test_table_properties_raise_for_none_value(
         lazy_fixture('catalog_sqlite'),
     ],
 )
-def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, random_identifier: Identifier) -> None:
-    database_name, _table_name = random_identifier
-    catalog.create_namespace(database_name)
-    catalog.create_table(random_identifier, table_schema_simple, properties={"format-version": "2"})
-    existing_table = random_identifier
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
+def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
+    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    catalog.create_table(table_identifier, table_schema_simple, properties={"format-version": "2"})
+    existing_table = table_identifier
     # Act and Assert for an existing table
     assert catalog.table_exists(existing_table) is True
 
