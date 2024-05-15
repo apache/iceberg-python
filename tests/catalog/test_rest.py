@@ -500,6 +500,24 @@ def test_create_namespace_200(rest_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace(namespace)
 
 
+def test_create_namespace_if_exists_409(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "error": {
+                "message": "Namespace already exists: fokko in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace_if_not_exists(namespace)
+
+
 def test_create_namespace_409(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.post(
