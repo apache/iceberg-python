@@ -230,6 +230,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the snapshot by snapshot_id."""
         return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
 
+    def snapshot_by_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
+        """Get the snapshot right before the given timestamp."""
+        result, prev_timestamp = None, 0
+        for snapshot in self.snapshots:
+            if prev_timestamp < snapshot.timestamp_ms < timestamp_ms:
+                result, prev_timestamp = snapshot, snapshot.timestamp_ms
+        return result if result else None
+
     def schema_by_id(self, schema_id: int) -> Optional[Schema]:
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
