@@ -233,10 +233,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def latest_snapshot_before_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
         """Get the snapshot right before the given timestamp."""
         result, prev_timestamp = None, 0
-        for snapshot in self.snapshots:
-            if prev_timestamp < snapshot.timestamp_ms < timestamp_ms:
-                result, prev_timestamp = snapshot, snapshot.timestamp_ms
-        return result if result else None
+        if self.current_snapshot_id is not None:
+            for snapshot_id, snapshot_timestamp in self.ancestors_of(self.current_snapshot_id):
+                snapshot = self.snapshot_by_id(snapshot_id)
+                if prev_timestamp < snapshot_timestamp < timestamp_ms:
+                    result, prev_timestamp = snapshot, snapshot_timestamp
+        return result
 
     def ancestors_of(self, snapshot_id: int) -> List[tuple[int, int]]:
         """Get the snapshot_id of the ancestors of the given snapshot."""
