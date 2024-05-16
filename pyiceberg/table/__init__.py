@@ -1302,9 +1302,9 @@ class Table:
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
-    def snapshot_by_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
+    def latest_snapshot_before_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
         """Get the snapshot right before the given timestamp, or None if there is no matching snapshot."""
-        return self.metadata.snapshot_by_timestamp(timestamp_ms)
+        return self.metadata.latest_snapshot_before_timestamp(timestamp_ms)
 
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
