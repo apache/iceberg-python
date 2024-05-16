@@ -216,6 +216,13 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     )
 
 
+def test_ancestors_of(table_v2: Table) -> None:
+    assert table_v2.metadata.ancestors_of(3055729675574597004) == [
+        (3055729675574597004, 1555100955770),
+        (3051729675574597004, 1515100955770),
+    ]
+
+
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
     assert table_v2.snapshot_by_id(-1) is None
 
