@@ -238,6 +238,18 @@ class TableMetadataCommonFields(IcebergBaseModel):
                 result, prev_timestamp = snapshot, snapshot.timestamp_ms
         return result if result else None
 
+    def ancestors_of(self, snapshot_id: int) -> List[tuple[int, int]]:
+        """Get the snapshot_id of the ancestors of the given snapshot."""
+        current_id: Optional[int] = snapshot_id
+        result = []
+        while current_id is not None:
+            snapshot = self.snapshot_by_id(current_id)
+            if not snapshot:
+                break
+            result.append((current_id, snapshot.timestamp_ms))
+            current_id = snapshot.parent_snapshot_id
+        return result
+
     def schema_by_id(self, schema_id: int) -> Optional[Schema]:
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
