@@ -564,3 +564,13 @@ def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, table_
     test_catalog.create_namespace(database_name)
     test_catalog.create_table((database_name, table_name), table_schema_nested)
     assert test_catalog.table_exists((database_name, table_name)) is True
+
+
+def test_register_table(test_catalog: Catalog, metadata_location: str, table_name: str, database_name: str) -> None:
+    identifier = (database_name, table_name)
+    test_catalog.create_namespace(database_name)
+    location = metadata_location
+    table = test_catalog.register_table(identifier, location)
+    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.metadata_location == metadata_location
+    assert test_catalog.table_exists((database_name, table_name)) is True
