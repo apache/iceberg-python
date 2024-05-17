@@ -216,10 +216,26 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     )
 
 
-def test_ancestors_of(table_v2: Table) -> None:
-    assert table_v2.metadata.ancestors_of(3055729675574597004) == [
-        (3055729675574597004, 1555100955770),
-        (3051729675574597004, 1515100955770),
+def test_current_ancestors(table_v2: Table) -> None:
+    assert table_v2.current_ancestors() == [
+        Snapshot(
+            snapshot_id=3055729675574597004,
+            parent_snapshot_id=3051729675574597004,
+            sequence_number=1,
+            timestamp_ms=1555100955770,
+            manifest_list='s3://a/b/2.avro',
+            summary=Summary(Operation.APPEND),
+            schema_id=1,
+        ),
+        Snapshot(
+            snapshot_id=3051729675574597004,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            timestamp_ms=1515100955770,
+            manifest_list='s3://a/b/1.avro',
+            summary=Summary(Operation.APPEND),
+            schema_id=None,
+        ),
     ]
 
 
