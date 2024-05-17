@@ -113,6 +113,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -1304,7 +1305,16 @@ class Table:
 
     def latest_snapshot_before_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
         """Get the snapshot right before the given timestamp, or None if there is no matching snapshot."""
-        return self.metadata.latest_snapshot_before_timestamp(timestamp_ms)
+        result, prev_timestamp = None, 0
+        if self.metadata.current_snapshot_id is not None:
+            for snapshot in self.current_ancestors():
+                if snapshot and prev_timestamp < snapshot.timestamp_ms < timestamp_ms:
+                    result, prev_timestamp = snapshot, snapshot.timestamp_ms
+        return result
+
+    def current_ancestors(self) -> List[Optional[Snapshot]]:
+        """Get a list of ancestors of and including the current snapshot."""
+        return list(ancestors_of(self.current_snapshot(), self.metadata))  # type: ignore
 
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
