@@ -673,6 +673,16 @@ def test_table_exist_200(rest_mock: Mocker) -> None:
     assert catalog.table_exists(("fokko", "table"))
 
 
+def test_table_exist_204(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.table_exists(("fokko", "table"))
+
+
 def test_table_exist_500(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
