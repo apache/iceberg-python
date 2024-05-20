@@ -1775,7 +1775,19 @@ class DataScan(TableScan):
     def to_ray(self) -> ray.data.dataset.Dataset:
         import ray
 
-        return ray.data.from_arrow(self.to_arrow())
+        from pyiceberg.io.pyarrow import ray_project_table
+
+        tables = ray_project_table(
+            self.plan_files(),
+            self.table_metadata,
+            self.io,
+            self.row_filter,
+            self.projection(),
+            case_sensitive=self.case_sensitive,
+            limit=self.limit,
+        )
+
+        return ray.data.from_arrow_refs(tables)
 
 
 class MoveOperation(Enum):

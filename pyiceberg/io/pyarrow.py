@@ -61,6 +61,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.lib
 import pyarrow.parquet as pq
+import ray
 from pyarrow import ChunkedArray
 from pyarrow.fs import (
     FileInfo,
@@ -68,6 +69,7 @@ from pyarrow.fs import (
     FileType,
     FSSpecHandler,
 )
+from ray.types import ObjectRef
 from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
@@ -1138,6 +1140,88 @@ def project_table(
         return result.slice(0, limit)
 
     return result
+
+
+def ray_project_table(
+    tasks: Iterable[FileScanTask],
+    table_metadata: TableMetadata,
+    io: FileIO,
+    row_filter: BooleanExpression,
+    projected_schema: Schema,
+    case_sensitive: bool = True,
+    limit: Optional[int] = None,
+) -> List[ObjectRef[Union["pyarrow.Table", bytes]]]:
+    """Resolve the right columns based on the identifier.
+
+    Args:
+        tasks (Iterable[FileScanTask]): A URI or a path to a local file.
+        table_metadata (TableMetadata): The table metadata of the table that's being queried
+        io (FileIO): A FileIO to open streams to the object store
+        row_filter (BooleanExpression): The expression for filtering rows.
+        projected_schema (Schema): The output schema.
+        case_sensitive (bool): Case sensitivity when looking up column names.
+        limit (Optional[int]): Limit the number of records.
+
+    Raises:
+        ResolveError: When an incompatible query is done.
+    """
+    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
+    if isinstance(io, PyArrowFileIO):
+        fs = io.fs_by_scheme(scheme, netloc)
+    else:
+        try:
+            from pyiceberg.io.fsspec import FsspecFileIO
+
+            if isinstance(io, FsspecFileIO):
+                from pyarrow.fs import PyFileSystem
+
+                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
+            else:
+                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
+        except ModuleNotFoundError as e:
+            # When FsSpec is not installed
+            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
+
+    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+
+    projected_field_ids = {
+        id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
+    }.union(extract_field_ids(bound_row_filter))
+
+    deletes_per_file = _read_all_delete_files(fs, tasks)
+    remote_task = ray.remote(_task_to_table)
+    async_result_refs = []
+    for task in tasks:
+        async_result_refs.append(
+            remote_task.remote(
+                fs,
+                task,
+                bound_row_filter,
+                projected_schema,
+                projected_field_ids,
+                deletes_per_file.get(task.file.file_path),
+                case_sensitive,
+                limit,
+                table_metadata.name_mapping(),
+            )
+        )
+
+    result_refs = []
+    total_row_count = 0
+    if limit:
+        while True:
+            ready_refs, _ = ray.wait(async_result_refs, num_returns=1)
+            for task_ref in ready_refs:
+                total_row_count += len(ray.get(task_ref))
+                result_refs.append(task_ref)
+                if total_row_count >= limit or len(result_refs) == len(async_result_refs):
+                    break
+            if total_row_count >= limit or len(result_refs) == len(async_result_refs):
+                break
+    else:
+        result_refs = async_result_refs
+
+    return result_refs
 
 
 def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:

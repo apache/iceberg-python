@@ -227,6 +227,7 @@ def test_ray_nan(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan().to_ray()
     assert ray_dataset.count() == 3
+    assert len(ray_dataset.get_internal_block_refs()) == 1
     assert math.isnan(ray_dataset.take()[0]["col_numeric"])
 
 
@@ -238,6 +239,7 @@ def test_ray_nan_rewritten(catalog: Catalog) -> None:
         row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
     ).to_ray()
     assert ray_dataset.count() == 1
+    assert len(ray_dataset.get_internal_block_refs()) == 1
     assert ray_dataset.take()[0]["idx"] == 1
     assert math.isnan(ray_dataset.take()[0]["col_numeric"])
 
@@ -249,6 +251,7 @@ def test_ray_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan(row_filter=NotNaN("col_numeric"), selected_fields=("idx",)).to_ray()
     assert ray_dataset.count() == 2
+    assert len(ray_dataset.get_internal_block_refs()) == 1
 
 
 @pytest.mark.integration
@@ -257,8 +260,12 @@ def test_ray_all_types(catalog: Catalog) -> None:
     table_test_all_types = catalog.load_table("default.test_all_types")
     ray_dataset = table_test_all_types.scan().to_ray()
     pandas_dataframe = table_test_all_types.scan().to_pandas()
+    assert len(ray_dataset.get_internal_block_refs()) == 5
     assert ray_dataset.count() == pandas_dataframe.shape[0]
     assert pandas_dataframe.equals(ray_dataset.to_pandas())
+    # for limit, only one task ready will return immediately
+    limit_ray_dataset = table_test_all_types.scan(limit=1).to_ray()
+    assert len(limit_ray_dataset.get_internal_block_refs()) == 1
 
 
 @pytest.mark.integration
