@@ -276,6 +276,18 @@ class HiveCatalog(MetastoreCatalog):
             DEFAULT_LOCK_CHECK_RETRIES,
         )
 
+    @staticmethod
+    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+        uris = properties["uri"].split(",")
+        for idx, uri in enumerate(uris):
+            try:
+                return _HiveClient(uri, properties.get("ugi"), properties.get("auth_mechanism"))
+            except Exception as e:
+                if idx + 1 == len(uris):
+                    raise e
+                else:
+                    continue
+    
     def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
         properties: Dict[str, str] = table.parameters
         if TABLE_TYPE not in properties:
@@ -301,18 +313,6 @@ class HiveCatalog(MetastoreCatalog):
             io=self._load_file_io(metadata.properties, metadata_location),
             catalog=self,
         )
-
-    @staticmethod
-    def _create_hive_client(**properties: str) -> _HiveClient:
-        uris = properties["uri"].split(",")
-        for idx, uri in enumerate(uris):
-            try:
-                return _HiveClient(uri, properties.get("ugi"), properties.get("auth_mechanism"))
-            except Exception as e:
-                if idx + 1 == len(uris):
-                    raise e
-                else:
-                    continue
 
     def create_table(
         self,
