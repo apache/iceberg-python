@@ -276,6 +276,7 @@ class Transaction:
     _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
+    manage_snapshots: ManageSnapshot
 
     def __init__(self, table: Table, autocommit: bool = False):
         """Open a transaction to stage and commit changes to a table.
@@ -289,6 +290,37 @@ class Transaction:
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
+        self.manage_snapshots = Transaction.ManageSnapshot(self)
+
+    class ManageSnapshot:
+        """Run snapshot management operations using APIs."""
+
+        def __init__(self, transaction: Transaction):
+            self.transaction = transaction
+
+        def create_tag(self, snapshot_id: int, tag_name: str) -> Transaction:
+            parent_snapshot_id = None
+            if (parent := self.transaction._table.current_snapshot()) is not None:
+                parent_snapshot_id = parent.snapshot_id
+
+            return self.transaction._set_ref_snapshot(
+                snapshot_id=snapshot_id,
+                parent_snapshot_id=parent_snapshot_id,
+                ref_name=tag_name,
+                type="tag",
+            )
+
+        def create_branch(self, snapshot_id: int, branch_name: str) -> Transaction:
+            parent_snapshot_id = None
+            if (parent := self.transaction._table.current_snapshot()) is not None:
+                parent_snapshot_id = parent.snapshot_id
+
+            return self.transaction._set_ref_snapshot(
+                snapshot_id=snapshot_id,
+                parent_snapshot_id=parent_snapshot_id,
+                ref_name=branch_name,
+                type="branch",
+            )
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
