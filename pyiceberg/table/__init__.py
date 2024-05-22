@@ -357,6 +357,14 @@ class Transaction:
         removed_in="0.7.0",
         help_message="Please use one of the functions in transaction.manage_snapshots instead",
     )
+    def add_snapshot(self, snapshot: Snapshot) -> None:
+        pass
+
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.7.0",
+        help_message="Please use one of the functions in transaction.manage_snapshots instead",
+    )
     def set_ref_snapshot(
         self,
         snapshot_id: int,
