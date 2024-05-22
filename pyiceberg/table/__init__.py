@@ -252,6 +252,16 @@ class PropertyUtil:
             return default
 
     @staticmethod
+    def property_as_float(properties: Dict[str, str], property_name: str, default: Optional[float] = None) -> Optional[float]:
+        if value := properties.get(property_name):
+            try:
+                return float(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to a float: {value}") from e
+        else:
+            return default
+
+    @staticmethod
     def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
         if value := properties.get(property_name):
             return value.lower() == "true"

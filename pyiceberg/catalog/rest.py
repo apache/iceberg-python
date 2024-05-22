@@ -715,7 +715,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            self._handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceAlreadyExistsError})
+            self._handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
 
     @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
