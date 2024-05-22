@@ -566,11 +566,17 @@ def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, table_
     assert test_catalog.table_exists((database_name, table_name)) is True
 
 
-def test_register_table(test_catalog: Catalog, metadata_location: str, table_name: str, database_name: str) -> None:
+def test_register_table_with_given_location(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
     identifier = (database_name, table_name)
+    new_identifier = (database_name, f"new_{table_name}")
     test_catalog.create_namespace(database_name)
-    location = metadata_location
-    table = test_catalog.register_table(identifier, location)
-    assert table.identifier == (CATALOG_NAME,) + identifier
-    assert table.metadata_location == metadata_location
-    assert test_catalog.table_exists((database_name, table_name)) is True
+    tbl = test_catalog.create_table(identifier, table_schema_nested)
+    location = tbl.metadata_location
+    test_catalog.drop_table(identifier)  # drops the table but keeps the metadata file
+    assert not test_catalog.table_exists(identifier)
+    table = test_catalog.register_table(new_identifier, location)
+    assert table.identifier == (CATALOG_NAME,) + new_identifier
+    assert table.metadata_location == location
+    assert test_catalog.table_exists(new_identifier)
