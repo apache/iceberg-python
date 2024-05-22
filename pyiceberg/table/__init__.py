@@ -3594,8 +3594,6 @@ class InspectTable:
         files = []
 
         snapshot = self._get_snapshot(snapshot_id)
-        if not snapshot:
-            return pa.pylist([])
 
         io = self.tbl.io
         for manifest_list in snapshot.manifests(io):
