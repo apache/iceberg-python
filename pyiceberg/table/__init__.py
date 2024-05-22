@@ -276,7 +276,7 @@ class Transaction:
     _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
-    manage_snapshots: ManageSnapshot
+    _manage_snapshots: ManageSnapshot
 
     def __init__(self, table: Table, autocommit: bool = False):
         """Open a transaction to stage and commit changes to a table.
@@ -290,7 +290,7 @@ class Transaction:
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
-        self.manage_snapshots = Transaction.ManageSnapshot(self)
+        self._manage_snapshots = Transaction.ManageSnapshot(self)
 
     class ManageSnapshot:
         """Run snapshot management operations using APIs."""
@@ -298,7 +298,7 @@ class Transaction:
         def __init__(self, transaction: Transaction):
             self.transaction = transaction
 
-        def create_tag(self, snapshot_id: int, tag_name: str) -> Transaction:
+        def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> Transaction:
             parent_snapshot_id = None
             if (parent := self.transaction._table.current_snapshot()) is not None:
                 parent_snapshot_id = parent.snapshot_id
@@ -308,9 +308,17 @@ class Transaction:
                 parent_snapshot_id=parent_snapshot_id,
                 ref_name=tag_name,
                 type="tag",
+                max_ref_age_ms=max_ref_age_ms,
             )
 
-        def create_branch(self, snapshot_id: int, branch_name: str) -> Transaction:
+        def create_branch(
+            self,
+            snapshot_id: int,
+            branch_name: str,
+            max_ref_age_ms: Optional[int] = None,
+            max_snapshot_age_ms: Optional[int] = None,
+            min_snapshots_to_keep: Optional[int] = None,
+        ) -> Transaction:
             parent_snapshot_id = None
             if (parent := self.transaction._table.current_snapshot()) is not None:
                 parent_snapshot_id = parent.snapshot_id
@@ -320,6 +328,9 @@ class Transaction:
                 parent_snapshot_id=parent_snapshot_id,
                 ref_name=branch_name,
                 type="branch",
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
             )
 
     def __enter__(self) -> Transaction:
@@ -408,6 +419,9 @@ class Transaction:
         min_snapshots_to_keep: Optional[int] = None,
     ) -> None:
         pass
+
+    def manage_snapshots(self) -> ManageSnapshot:
+        return self._manage_snapshots
 
     def _set_ref_snapshot(
         self,
