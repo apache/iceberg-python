@@ -1427,6 +1427,10 @@ class Table:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
 
+    def manage_snapshots(self) -> Transaction.ManageSnapshot:
+        """Shorthand to run snapshot management operations using APIs."""
+        return self.transaction().manage_snapshots()
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 

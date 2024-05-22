@@ -690,7 +690,7 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
 
 
 def test_update_metadata_create_tag(table_v2: Table) -> None:
-    update = table_v2.transaction().manage_snapshots().create_tag(snapshot_id=3051729675574597004, tag_name="test123")
+    update = table_v2.manage_snapshots().create_tag(snapshot_id=3051729675574597004, tag_name="test123")
 
     new_metadata = update.table_metadata
     assert new_metadata.refs["test123"] == SnapshotRef(
@@ -703,7 +703,7 @@ def test_update_metadata_create_tag(table_v2: Table) -> None:
 
 
 def test_update_metadata_create_branch(table_v2: Table) -> None:
-    update = table_v2.transaction().manage_snapshots().create_branch(snapshot_id=3051729675574597004, branch_name="test")
+    update = table_v2.manage_snapshots().create_branch(snapshot_id=3051729675574597004, branch_name="test")
 
     new_metadata = update.table_metadata
     assert new_metadata.refs["test"] == SnapshotRef(
