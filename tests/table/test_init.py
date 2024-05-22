@@ -349,32 +349,6 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
     assert "Could not find column: 'a'" in str(exc_info.value)
 
 
-def test_table_set_ref_snapshot(table_v2: Table) -> None:
-    base_metadata = table_v2.metadata
-    update = table_v2.set_ref_snapshot(
-        snapshot_id=3051729675574597004,
-        parent_snapshot_id=base_metadata.current_snapshot_id,
-        ref_name="main",
-        type="branch",
-        max_ref_age_ms=123123123,
-        max_snapshot_age_ms=12312312312,
-        min_snapshots_to_keep=1,
-    )
-
-    new_metadata = update.table_metadata
-    assert len(new_metadata.snapshot_log) == 3
-    assert new_metadata.snapshot_log[2].snapshot_id == 3051729675574597004
-    assert new_metadata.current_snapshot_id == 3051729675574597004
-    assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
-    assert new_metadata.refs["main"] == SnapshotRef(
-        snapshot_id=3051729675574597004,
-        snapshot_ref_type="branch",
-        min_snapshots_to_keep=1,
-        max_snapshot_age_ms=12312312312,
-        max_ref_age_ms=123123123,
-    )
-
-
 def test_static_table_same_as_table(table_v2: Table, metadata_location: str) -> None:
     static_table = StaticTable.from_metadata(metadata_location)
     assert isinstance(static_table, Table)
@@ -718,7 +692,7 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
 def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     transaction = table_v2.transaction()
-    update = transaction.set_ref_snapshot(
+    update = transaction._set_ref_snapshot(
         snapshot_id=3051729675574597004,
         parent_snapshot_id=base_metadata.current_snapshot_id,
         ref_name="main",

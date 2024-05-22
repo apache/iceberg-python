@@ -138,6 +138,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -351,7 +352,24 @@ class Transaction:
         updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
 
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.7.0",
+        help_message="Please use one of the functions in transaction.manage_snapshots instead",
+    )
     def set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> None:
+        pass
+
+    def _set_ref_snapshot(
         self,
         snapshot_id: int,
         parent_snapshot_id: Optional[int],
@@ -1236,26 +1254,6 @@ class Table:
             The transaction object
         """
         return Transaction(self)
-
-    def set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        parent_snapshot_id: Optional[int],
-        ref_name: str,
-        type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
-    ) -> Transaction:
-        return self.transaction().set_ref_snapshot(
-            snapshot_id=snapshot_id,
-            parent_snapshot_id=parent_snapshot_id,
-            ref_name=ref_name,
-            type=type,
-            max_ref_age_ms=max_ref_age_ms,
-            max_snapshot_age_ms=max_snapshot_age_ms,
-            min_snapshots_to_keep=min_snapshots_to_keep,
-        )
 
     @property
     def inspect(self) -> InspectTable:
