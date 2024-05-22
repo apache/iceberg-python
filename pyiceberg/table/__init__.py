@@ -295,15 +295,17 @@ class Transaction:
     class ManageSnapshot:
         """Run snapshot management operations using APIs."""
 
+        _transaction: Transaction
+
         def __init__(self, transaction: Transaction):
-            self.transaction = transaction
+            self._transaction = transaction
 
         def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> Transaction:
             parent_snapshot_id = None
-            if (parent := self.transaction._table.current_snapshot()) is not None:
+            if (parent := self._transaction._table.current_snapshot()) is not None:
                 parent_snapshot_id = parent.snapshot_id
 
-            return self.transaction._set_ref_snapshot(
+            return self._transaction._set_ref_snapshot(
                 snapshot_id=snapshot_id,
                 parent_snapshot_id=parent_snapshot_id,
                 ref_name=tag_name,
@@ -320,10 +322,10 @@ class Transaction:
             min_snapshots_to_keep: Optional[int] = None,
         ) -> Transaction:
             parent_snapshot_id = None
-            if (parent := self.transaction._table.current_snapshot()) is not None:
+            if (parent := self._transaction._table.current_snapshot()) is not None:
                 parent_snapshot_id = parent.snapshot_id
 
-            return self.transaction._set_ref_snapshot(
+            return self._transaction._set_ref_snapshot(
                 snapshot_id=snapshot_id,
                 parent_snapshot_id=parent_snapshot_id,
                 ref_name=branch_name,
