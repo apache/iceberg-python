@@ -72,7 +72,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
     if TOKEN not in properties:
         raise SignError("Signer set, but token is not available")
 
-    signer_url = properties["uri"].rstrip("/")
+    signer_url = properties.get("s3.signer.uri", properties["uri"]).rstrip("/")
     signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
     signer_body = {
         "method": request.method,
