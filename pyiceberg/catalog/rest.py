@@ -790,4 +790,4 @@ class RestCatalog(Catalog):
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
-        return response.status_code == 200
+        return response.status_code in (200, 204)
