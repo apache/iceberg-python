@@ -445,3 +445,86 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
         df = tbl.inspect.partitions(snapshot_id=snapshot.snapshot_id)
         spark_df = spark.sql(f"SELECT * FROM {identifier}.partitions VERSION AS OF {snapshot.snapshot_id}")
         check_pyiceberg_df_equals_spark_df(df, spark_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_metadata_manifests"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES (1, "a")
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES (2, "b")
+    """
+    )
+
+    df = session_catalog.load_table(identifier).inspect.manifests()
+
+    assert df.column_names == [
+        'content',
+        'path',
+        'length',
+        'partition_spec_id',
+        'added_snapshot_id',
+        'added_data_files_count',
+        'existing_data_files_count',
+        'deleted_data_files_count',
+        'added_delete_files_count',
+        'existing_delete_files_count',
+        'deleted_delete_files_count',
+        'partition_summaries',
+    ]
+
+    int_cols = [
+        'content',
+        'length',
+        'partition_spec_id',
+        'added_snapshot_id',
+        'added_data_files_count',
+        'existing_data_files_count',
+        'deleted_data_files_count',
+        'added_delete_files_count',
+        'existing_delete_files_count',
+        'deleted_delete_files_count',
+    ]
+
+    for column in int_cols:
+        for value in df[column]:
+            assert isinstance(value.as_py(), int)
+
+    for value in df["path"]:
+        assert isinstance(value.as_py(), str)
+
+    for value in df["partition_summaries"]:
+        assert isinstance(value.as_py(), list)
+        for row in value:
+            assert isinstance(row["contains_null"].as_py(), bool)
+            assert isinstance(row["contains_nan"].as_py(), (bool, type(None)))
+            assert isinstance(row["lower_bound"].as_py(), (str, type(None)))
+            assert isinstance(row["upper_bound"].as_py(), (str, type(None)))
+
+    lhs = spark.table(f"{identifier}.manifests").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            assert left == right, f"Difference in column {column}: {left} != {right}"
