@@ -1929,10 +1929,11 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
-        self._requirements += (
-            AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
-            AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-        )
+        if self._updates:
+            self._requirements += (
+                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
+                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
+            )
         return self._updates, self._requirements
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
