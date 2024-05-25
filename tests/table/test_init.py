@@ -690,10 +690,9 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
 
 
 def test_update_metadata_create_tag(table_v2: Table) -> None:
-    update = table_v2.manage_snapshots().create_tag(snapshot_id=3051729675574597004, tag_name="test123")
-
-    new_metadata = update.table_metadata
-    assert new_metadata.refs["test123"] == SnapshotRef(
+    ms = table_v2.manage_snapshots().create_tag(snapshot_id=3051729675574597004, tag_name="tag123")
+    new_metadata = update_table_metadata(table_v2.metadata, ms._updates)
+    assert new_metadata.refs["tag123"] == SnapshotRef(
         snapshot_id=3051729675574597004,
         snapshot_ref_type="tag",
         min_snapshots_to_keep=None,
@@ -703,10 +702,9 @@ def test_update_metadata_create_tag(table_v2: Table) -> None:
 
 
 def test_update_metadata_create_branch(table_v2: Table) -> None:
-    update = table_v2.manage_snapshots().create_branch(snapshot_id=3051729675574597004, branch_name="test")
-
-    new_metadata = update.table_metadata
-    assert new_metadata.refs["test"] == SnapshotRef(
+    ms = table_v2.manage_snapshots().create_branch(snapshot_id=3051729675574597004, branch_name="branch123")
+    new_metadata = update_table_metadata(table_v2.metadata, ms._updates)
+    assert new_metadata.refs["branch123"] == SnapshotRef(
         snapshot_id=3051729675574597004,
         snapshot_ref_type="branch",
         min_snapshots_to_keep=None,
@@ -716,10 +714,8 @@ def test_update_metadata_create_branch(table_v2: Table) -> None:
 
 
 def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
-    base_metadata = table_v2.metadata
-    update = table_v2.transaction()._set_ref_snapshot(
+    update, _ = table_v2.transaction()._set_ref_snapshot(
         snapshot_id=3051729675574597004,
-        parent_snapshot_id=base_metadata.current_snapshot_id,
         ref_name="main",
         type="branch",
         max_ref_age_ms=123123123,
@@ -727,7 +723,7 @@ def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
         min_snapshots_to_keep=1,
     )
 
-    new_metadata = update.table_metadata
+    new_metadata = update_table_metadata(table_v2.metadata, update)
     assert len(new_metadata.snapshot_log) == 3
     assert new_metadata.snapshot_log[2].snapshot_id == 3051729675574597004
     assert new_metadata.current_snapshot_id == 3051729675574597004

@@ -276,7 +276,6 @@ class Transaction:
     _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
-    _manage_snapshots: ManageSnapshot
 
     def __init__(self, table: Table, autocommit: bool = False):
         """Open a transaction to stage and commit changes to a table.
@@ -290,50 +289,6 @@ class Transaction:
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
-        self._manage_snapshots = Transaction.ManageSnapshot(self)
-
-    class ManageSnapshot:
-        """Run snapshot management operations using APIs."""
-
-        _transaction: Transaction
-
-        def __init__(self, transaction: Transaction):
-            self._transaction = transaction
-
-        def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> Transaction:
-            parent_snapshot_id = None
-            if (parent := self._transaction._table.current_snapshot()) is not None:
-                parent_snapshot_id = parent.snapshot_id
-
-            return self._transaction._set_ref_snapshot(
-                snapshot_id=snapshot_id,
-                parent_snapshot_id=parent_snapshot_id,
-                ref_name=tag_name,
-                type="tag",
-                max_ref_age_ms=max_ref_age_ms,
-            )
-
-        def create_branch(
-            self,
-            snapshot_id: int,
-            branch_name: str,
-            max_ref_age_ms: Optional[int] = None,
-            max_snapshot_age_ms: Optional[int] = None,
-            min_snapshots_to_keep: Optional[int] = None,
-        ) -> Transaction:
-            parent_snapshot_id = None
-            if (parent := self._transaction._table.current_snapshot()) is not None:
-                parent_snapshot_id = parent.snapshot_id
-
-            return self._transaction._set_ref_snapshot(
-                snapshot_id=snapshot_id,
-                parent_snapshot_id=parent_snapshot_id,
-                ref_name=branch_name,
-                type="branch",
-                max_ref_age_ms=max_ref_age_ms,
-                max_snapshot_age_ms=max_snapshot_age_ms,
-                min_snapshots_to_keep=min_snapshots_to_keep,
-            )
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
@@ -399,33 +354,26 @@ class Transaction:
 
     @deprecated(
         deprecated_in="0.7.0",
-        removed_in="0.7.0",
-        help_message="Please use one of the functions in transaction.manage_snapshots instead",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
     )
-    def add_snapshot(self, snapshot: Snapshot) -> None:
-        pass
+    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
+        """Add a new snapshot to the table.
+
+        Returns:
+            The transaction with the add-snapshot staged.
+        """
+        updates = (AddSnapshotUpdate(snapshot=snapshot),)
+        requirements = (AssertTableUUID(uuid=self._table.metadata.table_uuid),)
+
+        return self._apply(updates, requirements)
 
     @deprecated(
         deprecated_in="0.7.0",
-        removed_in="0.7.0",
-        help_message="Please use one of the functions in transaction.manage_snapshots instead",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
     )
     def set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        parent_snapshot_id: Optional[int],
-        ref_name: str,
-        type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
-    ) -> None:
-        pass
-
-    def manage_snapshots(self) -> ManageSnapshot:
-        return self._manage_snapshots
-
-    def _set_ref_snapshot(
         self,
         snapshot_id: int,
         parent_snapshot_id: Optional[int],
@@ -456,6 +404,33 @@ class Transaction:
             AssertTableUUID(uuid=self.table_metadata.table_uuid),
         )
         return self._apply(updates, requirements)
+
+    def _set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> UpdatesAndRequirements:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The updates and requirements for the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+
+        return updates, ()
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -1429,9 +1404,9 @@ class Table:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
 
-    def manage_snapshots(self) -> Transaction.ManageSnapshot:
+    def manage_snapshots(self) -> ManageSnapshots:
         """Shorthand to run snapshot management operations using APIs."""
-        return self.transaction().manage_snapshots()
+        return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -1943,6 +1918,62 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def __enter__(self) -> U:
         """Update the table."""
         return self  # type: ignore
+
+
+class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
+    """Run snapshot management operations using APIs."""
+
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+    _parent_snapshot_id: Optional[int]
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """Apply the pending changes and commit."""
+        self._requirements += (
+            AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
+            AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
+        )
+        return self._updates, self._requirements
+
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+        self._parent_snapshot_id = None
+        if (parent := self._transaction._table.current_snapshot()) is not None:
+            self._parent_snapshot_id = parent.snapshot_id
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=tag_name,
+            type="tag",
+            max_ref_age_ms=max_ref_age_ms,
+        )
+        print(update, requirement)
+        self._updates += update
+        self._requirements += requirement
+        return self
+
+    def create_branch(
+        self,
+        snapshot_id: int,
+        branch_name: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> ManageSnapshots:
+        self._parent_snapshot_id = None
+        if (parent := self._transaction._table.current_snapshot()) is not None:
+            self._parent_snapshot_id = parent.snapshot_id
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=branch_name,
+            type="branch",
+            max_ref_age_ms=max_ref_age_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
