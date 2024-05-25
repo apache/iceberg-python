@@ -1937,6 +1937,17 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self._updates, self._requirements
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+        """
+        Create a tag at a snapshot.
+
+        Args:
+            :param snapshot_id: snapshot id of the existing snapshot to tag
+            :param tag_name: name of the tag
+            :param max_ref_age_ms: max ref age in milliseconds
+
+        Returns:
+            :return: This for method chaining
+        """
         self._parent_snapshot_id = None
         if (parent := self._transaction._table.current_snapshot()) is not None:
             self._parent_snapshot_id = parent.snapshot_id
@@ -1960,6 +1971,18 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         max_snapshot_age_ms: Optional[int] = None,
         min_snapshots_to_keep: Optional[int] = None,
     ) -> ManageSnapshots:
+        """
+        Create a branch at a snapshot.
+
+        Args:
+            :param snapshot_id: snapshot id of existing snapshot at which the branch is created.
+            :param branch_name: name of the new branch
+            :param max_ref_age_ms: max ref age in milliseconds
+            :param max_snapshot_age_ms: max age of snapshots to keep in milliseconds
+            :param min_snapshots_to_keep: min number of snapshots to keep in milliseconds
+        Returns:
+            :return: This for method chaining
+        """
         self._parent_snapshot_id = None
         if (parent := self._transaction._table.current_snapshot()) is not None:
             self._parent_snapshot_id = parent.snapshot_id
