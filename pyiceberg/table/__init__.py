@@ -1958,7 +1958,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             type="tag",
             max_ref_age_ms=max_ref_age_ms,
         )
-        print(update, requirement)
         self._updates += update
         self._requirements += requirement
         return self
