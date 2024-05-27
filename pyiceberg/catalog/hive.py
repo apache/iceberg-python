@@ -121,6 +121,9 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
+HIVE_KERBEROS_AUTH = "hive.use-kerberos"
+HIVE_KERBEROS_AUTH_DEFAULT = False
+
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
@@ -138,11 +141,17 @@ class _HiveClient:
     _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None):
+    def __init__(self, uri: str, ugi: Optional[str] = None, use_kerberos: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
         url_parts = urlparse(uri)
+
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        self._transport = TTransport.TBufferedTransport(transport)
-        protocol = TBinaryProtocol.TBinaryProtocol(transport)
+
+        if not use_kerberos:
+            self._transport = TTransport.TBufferedTransport(transport)
+        else:
+            self._transport = TTransport.TSaslClientTransport(transport, host=url_parts.hostname, service="hive")
+
+        protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
 
         self._client = Client(protocol)
         self._ugi = ugi.split(":") if ugi else None
@@ -257,7 +266,11 @@ class HiveCatalog(MetastoreCatalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
+        self._client = _HiveClient(
+            properties["uri"],
+            properties.get("ugi"),
+            PropertyUtil.property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
+        )
 
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)

@@ -268,19 +268,19 @@ catalog:
 catalog:
   default:
     uri: thrift://localhost:9083
-    s3.endpoint: http://localhost:9000
-    s3.access-key-id: admin
-    s3.secret-access-key: password
+    hive:
+      hive2-compatible: true
+      use-kerberos: true
 ```
 
-When using Hive 2.x, make sure to set the compatibility flag:
+<!-- markdown-link-check-disable -->
 
-```yaml
-catalog:
-  default:
-...
-    hive.hive2-compatible: true
-```
+| Key                   | Example | Description                       |
+| --------------------- | ------- | --------------------------------- |
+| hive.hive2-compatible | true    | Using Hive 2.x compatibility mode |
+| hive.use-kerberos     | true    | Using authentication via Kerberos |
+
+<!-- markdown-link-check-enable-->
 
 ### Glue Catalog
 
