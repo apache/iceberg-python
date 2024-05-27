@@ -217,7 +217,7 @@ def test_read_manifest_v1(generated_manifest_file_file_v1: str) -> None:
         summary=Summary(Operation.APPEND),
         schema_id=3,
     )
-    manifest_list = snapshot.manifests(io)[0]
+    manifest_list = snapshot.manifests(io, snapshot.manifest_list)[0]
 
     assert manifest_list.manifest_length == 7989
     assert manifest_list.partition_spec_id == 0
@@ -267,7 +267,7 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
         summary=Summary(Operation.APPEND),
         schema_id=3,
     )
-    manifest_list = snapshot.manifests(io)[0]
+    manifest_list = snapshot.manifests(io, manifest_list=snapshot.manifest_list)[0]
 
     assert manifest_list.manifest_length == 7989
     assert manifest_list.partition_spec_id == 0
@@ -336,7 +336,7 @@ def test_write_manifest(
         summary=Summary(Operation.APPEND),
         schema_id=3,
     )
-    demo_manifest_file = snapshot.manifests(io)[0]
+    demo_manifest_file = snapshot.manifests(io, snapshot.manifest_list)[0]
     manifest_entries = demo_manifest_file.fetch_manifest_entry(io)
     test_schema = Schema(
         NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", IntegerType(), False)
@@ -508,7 +508,7 @@ def test_write_manifest_list(
         schema_id=3,
     )
 
-    demo_manifest_list = snapshot.manifests(io)
+    demo_manifest_list = snapshot.manifests(io, snapshot.manifest_list)
     with TemporaryDirectory() as tmp_dir:
         path = tmp_dir + "/manifest-list.avro"
         output = io.new_output(path)
