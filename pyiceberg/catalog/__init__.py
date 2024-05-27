@@ -36,7 +36,13 @@ from typing import (
     cast,
 )
 
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInstalledError, TableAlreadyExistsError
+from pyiceberg.exceptions import (
+    NamespaceAlreadyExistsError,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+    NotInstalledError,
+    TableAlreadyExistsError,
+)
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -476,6 +482,18 @@ class Catalog(ABC):
         Raises:
             NamespaceAlreadyExistsError: If a namespace with the given name already exists.
         """
+
+    def create_namespace_if_not_exists(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+        """Create a namespace if it does not exist.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+            properties (Properties): A string dictionary of properties for the given namespace.
+        """
+        try:
+            self.create_namespace(namespace, properties)
+        except NamespaceAlreadyExistsError:
+            pass
 
     @abstractmethod
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
