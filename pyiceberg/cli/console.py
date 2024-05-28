@@ -112,9 +112,13 @@ def list(ctx: Context, parent: Optional[str]) -> None:  # pylint: disable=redefi
     """List tables or namespaces."""
     catalog, output = _catalog_and_output(ctx)
 
-    identifiers = catalog.list_namespaces(parent or ())
-    if not identifiers and parent:
+    identifiers = []
+    if parent:
+        # Do we have tables under parent namespace?
         identifiers = catalog.list_tables(parent)
+    if not identifiers:
+        # List hierarchical namespaces if parent, root namespaces otherwise.
+        identifiers = catalog.list_namespaces(parent or ())
     output.identifiers(identifiers)
 
 
