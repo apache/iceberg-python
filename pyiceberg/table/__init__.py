@@ -1303,18 +1303,16 @@ class Table:
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
-    def latest_snapshot_before_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
-        """Get the snapshot right before the given timestamp, or None if there is no matching snapshot."""
-        result, prev_timestamp = None, 0
-        if self.metadata.current_snapshot_id is not None:
-            for snapshot in self.current_ancestors():
-                if snapshot and prev_timestamp < snapshot.timestamp_ms < timestamp_ms:
-                    result, prev_timestamp = snapshot, snapshot.timestamp_ms
-        return result
+    def snapshot_at_or_before_timestamp(self, timestamp_ms: int) -> Optional[Snapshot]:
+        """Get the snapshot that was current at or right before the given timestamp, or None if there is no matching snapshot."""
+        for log_entry in reversed(self.history()):
+            if log_entry.timestamp_ms <= timestamp_ms:
+                return self.snapshot_by_id(log_entry.snapshot_id)
+        return None
 
-    def current_ancestors(self) -> List[Optional[Snapshot]]:
+    def current_ancestors(self) -> Iterable[Snapshot]:
         """Get a list of ancestors of and including the current snapshot."""
-        return list(ancestors_of(self.current_snapshot(), self.metadata))  # type: ignore
+        return ancestors_of(self.current_snapshot(), self.metadata)  # type: ignore
 
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""

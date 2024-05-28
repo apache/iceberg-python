@@ -423,6 +423,6 @@ def ancestors_of(current_snapshot: Snapshot, table_metadata: TableMetadata) -> I
     """Get the ancestors of and including the given snapshot."""
     if current_snapshot:
         yield current_snapshot
-    if current_snapshot.parent_snapshot_id is not None:
-        if parent := table_metadata.snapshot_by_id(current_snapshot.parent_snapshot_id):
-            yield from ancestors_of(parent, table_metadata)
+        if current_snapshot.parent_snapshot_id is not None:
+            if parent := table_metadata.snapshot_by_id(current_snapshot.parent_snapshot_id):
+                yield from ancestors_of(parent, table_metadata)
