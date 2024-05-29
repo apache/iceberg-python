@@ -332,7 +332,7 @@ class PyArrowFileIO(FileIO):
         uri = urlparse(location)
         if not uri.scheme:
             return "file", uri.netloc, os.path.abspath(location)
-        elif uri.scheme == "hdfs":
+        elif uri.scheme in ("hdfs", "viewfs"):
             return uri.scheme, uri.netloc, uri.path
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
@@ -356,12 +356,12 @@ class PyArrowFileIO(FileIO):
                 client_kwargs["connect_timeout"] = float(connect_timeout)
 
             return S3FileSystem(**client_kwargs)
-        elif scheme == "hdfs":
+        elif scheme in ("hdfs", "viewfs"):
             from pyarrow.fs import HadoopFileSystem
 
             hdfs_kwargs: Dict[str, Any] = {}
             if netloc:
-                return HadoopFileSystem.from_uri(f"hdfs://{netloc}")
+                return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
             if host := self.properties.get(HDFS_HOST):
                 hdfs_kwargs["host"] = host
             if port := self.properties.get(HDFS_PORT):
