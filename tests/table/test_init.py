@@ -995,9 +995,9 @@ def test_correct_schema() -> None:
     # Should use the current schema, instead the one from the snapshot
     projection_schema = t.scan().projection()
     assert projection_schema == Schema(
-        NestedField(field_id=1, name='x', field_type=LongType(), required=True),
-        NestedField(field_id=2, name='y', field_type=LongType(), required=True),
-        NestedField(field_id=3, name='z', field_type=LongType(), required=True),
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True),
+        NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         identifier_field_ids=[1, 2],
     )
     assert projection_schema.schema_id == 1
@@ -1005,7 +1005,7 @@ def test_correct_schema() -> None:
     # When we explicitly filter on the commit, we want to have the schema that's linked to the snapshot
     projection_schema = t.scan(snapshot_id=123).projection()
     assert projection_schema == Schema(
-        NestedField(field_id=1, name='x', field_type=LongType(), required=True),
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         identifier_field_ids=[],
     )
     assert projection_schema.schema_id == 0
@@ -1138,8 +1138,8 @@ def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[s
 
 def test_serialize_commit_table_request() -> None:
     request = CommitTableRequest(
-        requirements=(AssertTableUUID(uuid='4bfd18a3-74c6-478e-98b1-71c4c32f4163'),),
-        identifier=TableIdentifier(namespace=['a'], name='b'),
+        requirements=(AssertTableUUID(uuid="4bfd18a3-74c6-478e-98b1-71c4c32f4163"),),
+        identifier=TableIdentifier(namespace=["a"], name="b"),
     )
 
     deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
@@ -1149,17 +1149,17 @@ def test_serialize_commit_table_request() -> None:
 def test_partition_for_demo() -> None:
     import pyarrow as pa
 
-    test_pa_schema = pa.schema([('year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
-        NestedField(field_id=1, name='year', field_type=StringType(), required=False),
-        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        NestedField(field_id=1, name="year", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="n_legs", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="animal", field_type=StringType(), required=False),
         schema_id=1,
     )
     test_data = {
-        'year': [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
-        'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
-        'animal': ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
+        "year": [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
+        "n_legs": [2, 2, 2, 4, 4, 4, 4, 5, 100],
+        "animal": ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
     }
     arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
     partition_spec = PartitionSpec(
@@ -1183,11 +1183,11 @@ def test_partition_for_demo() -> None:
 def test_identity_partition_on_multi_columns() -> None:
     import pyarrow as pa
 
-    test_pa_schema = pa.schema([('born_year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
-        NestedField(field_id=1, name='born_year', field_type=StringType(), required=False),
-        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        NestedField(field_id=1, name="born_year", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="n_legs", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="animal", field_type=StringType(), required=False),
         schema_id=1,
     )
     # 5 partitions, 6 unique row values, 12 rows
@@ -1210,9 +1210,9 @@ def test_identity_partition_on_multi_columns() -> None:
     for _ in range(1000):
         random.shuffle(test_rows)
         test_data = {
-            'born_year': [row[0] for row in test_rows],
-            'n_legs': [row[1] for row in test_rows],
-            'animal': [row[2] for row in test_rows],
+            "born_year": [row[0] for row in test_rows],
+            "n_legs": [row[1] for row in test_rows],
+            "animal": [row[2] for row in test_rows],
         }
         arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
 
@@ -1222,7 +1222,7 @@ def test_identity_partition_on_multi_columns() -> None:
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
         assert concatenated_arrow_table.num_rows == arrow_table.num_rows
         assert concatenated_arrow_table.sort_by([
-            ('born_year', 'ascending'),
-            ('n_legs', 'ascending'),
-            ('animal', 'ascending'),
-        ]) == arrow_table.sort_by([('born_year', 'ascending'), ('n_legs', 'ascending'), ('animal', 'ascending')])
+            ("born_year", "ascending"),
+            ("n_legs", "ascending"),
+            ("animal", "ascending"),
+        ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])

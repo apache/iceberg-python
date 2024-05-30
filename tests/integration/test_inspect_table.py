@@ -88,18 +88,18 @@ def test_inspect_snapshots(
     df = tbl.inspect.snapshots()
 
     assert df.column_names == [
-        'committed_at',
-        'snapshot_id',
-        'parent_id',
-        'operation',
-        'manifest_list',
-        'summary',
+        "committed_at",
+        "snapshot_id",
+        "parent_id",
+        "operation",
+        "manifest_list",
+        "summary",
     ]
 
-    for committed_at in df['committed_at']:
+    for committed_at in df["committed_at"]:
         assert isinstance(committed_at.as_py(), datetime)
 
-    for snapshot_id in df['snapshot_id']:
+    for snapshot_id in df["snapshot_id"]:
         assert isinstance(snapshot_id.as_py(), int)
 
     assert df['parent_id'][0].as_py() is None
@@ -107,7 +107,7 @@ def test_inspect_snapshots(
 
     assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'append', 'append']
 
-    for manifest_list in df['manifest_list']:
+    for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
     # Append
@@ -140,7 +140,7 @@ def test_inspect_snapshots(
     rhs = df.to_pandas()
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-            if column == 'summary':
+            if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
 
@@ -164,29 +164,29 @@ def test_inspect_entries(
 
     def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
         assert df.column_names == [
-            'status',
-            'snapshot_id',
-            'sequence_number',
-            'file_sequence_number',
-            'data_file',
-            'readable_metrics',
+            "status",
+            "snapshot_id",
+            "sequence_number",
+            "file_sequence_number",
+            "data_file",
+            "readable_metrics",
         ]
 
         # Make sure that they are filled properly
-        for int_column in ['status', 'snapshot_id', 'sequence_number', 'file_sequence_number']:
+        for int_column in ["status", "snapshot_id", "sequence_number", "file_sequence_number"]:
             for value in df[int_column]:
                 assert isinstance(value.as_py(), int)
 
-        for snapshot_id in df['snapshot_id']:
+        for snapshot_id in df["snapshot_id"]:
             assert isinstance(snapshot_id.as_py(), int)
 
         lhs = df.to_pandas()
         rhs = spark_df.toPandas()
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-                if column == 'data_file':
+                if column == "data_file":
                     for df_column in left.keys():
-                        if df_column == 'partition':
+                        if df_column == "partition":
                             # Spark leaves out the partition if the table is unpartitioned
                             continue
 
@@ -197,20 +197,20 @@ def test_inspect_entries(
                             df_lhs = dict(df_lhs)
 
                         assert df_lhs == df_rhs, f"Difference in data_file column {df_column}: {df_lhs} != {df_rhs}"
-                elif column == 'readable_metrics':
+                elif column == "readable_metrics":
                     assert list(left.keys()) == [
-                        'bool',
-                        'string',
-                        'string_long',
-                        'int',
-                        'long',
-                        'float',
-                        'double',
-                        'timestamp',
-                        'timestamptz',
-                        'date',
-                        'binary',
-                        'fixed',
+                        "bool",
+                        "string",
+                        "string_long",
+                        "int",
+                        "long",
+                        "float",
+                        "double",
+                        "timestamp",
+                        "timestamptz",
+                        "date",
+                        "binary",
+                        "fixed",
                     ]
 
                     assert left.keys() == right.keys()
@@ -219,18 +219,18 @@ def test_inspect_entries(
                         rm_lhs = left[rm_column]
                         rm_rhs = right[rm_column]
 
-                        assert rm_lhs['column_size'] == rm_rhs['column_size']
-                        assert rm_lhs['value_count'] == rm_rhs['value_count']
-                        assert rm_lhs['null_value_count'] == rm_rhs['null_value_count']
-                        assert rm_lhs['nan_value_count'] == rm_rhs['nan_value_count']
+                        assert rm_lhs["column_size"] == rm_rhs["column_size"]
+                        assert rm_lhs["value_count"] == rm_rhs["value_count"]
+                        assert rm_lhs["null_value_count"] == rm_rhs["null_value_count"]
+                        assert rm_lhs["nan_value_count"] == rm_rhs["nan_value_count"]
 
-                        if rm_column == 'timestamptz':
+                        if rm_column == "timestamptz":
                             # PySpark does not correctly set the timstamptz
-                            rm_rhs['lower_bound'] = rm_rhs['lower_bound'].replace(tzinfo=pytz.utc)
-                            rm_rhs['upper_bound'] = rm_rhs['upper_bound'].replace(tzinfo=pytz.utc)
+                            rm_rhs["lower_bound"] = rm_rhs["lower_bound"].replace(tzinfo=pytz.utc)
+                            rm_rhs["upper_bound"] = rm_rhs["upper_bound"].replace(tzinfo=pytz.utc)
 
-                        assert rm_lhs['lower_bound'] == rm_rhs['lower_bound']
-                        assert rm_lhs['upper_bound'] == rm_rhs['upper_bound']
+                        assert rm_lhs["lower_bound"] == rm_rhs["lower_bound"]
+                        assert rm_lhs["upper_bound"] == rm_rhs["upper_bound"]
                 else:
                     assert left == right, f"Difference in column {column}: {left} != {right}"
 
@@ -279,8 +279,8 @@ def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catal
 
     df = session_catalog.load_table(identifier).inspect.entries()
 
-    assert df.to_pydict()['data_file'][0]['partition'] == {'dt_day': date(2021, 2, 1), 'dt_month': None}
-    assert df.to_pydict()['data_file'][1]['partition'] == {'dt_day': None, 'dt_month': 612}
+    assert df.to_pydict()["data_file"][0]["partition"] == {"dt_day": date(2021, 2, 1), "dt_month": None}
+    assert df.to_pydict()["data_file"][1]["partition"] == {"dt_day": None, "dt_month": 612}
 
 
 @pytest.mark.integration
@@ -315,21 +315,21 @@ def test_inspect_refs(
     df = tbl.refresh().inspect.refs()
 
     assert df.column_names == [
-        'name',
-        'type',
-        'snapshot_id',
-        'max_reference_age_in_ms',
-        'min_snapshots_to_keep',
-        'max_snapshot_age_in_ms',
+        "name",
+        "type",
+        "snapshot_id",
+        "max_reference_age_in_ms",
+        "min_snapshots_to_keep",
+        "max_snapshot_age_in_ms",
     ]
 
-    assert [name.as_py() for name in df['name']] == ['testBranch', 'main', 'testTag']
-    assert [ref_type.as_py() for ref_type in df['type']] == ['BRANCH', 'BRANCH', 'TAG']
+    assert [name.as_py() for name in df["name"]] == ["testBranch", "main", "testTag"]
+    assert [ref_type.as_py() for ref_type in df["type"]] == ["BRANCH", "BRANCH", "TAG"]
 
-    for snapshot_id in df['snapshot_id']:
+    for snapshot_id in df["snapshot_id"]:
         assert isinstance(snapshot_id.as_py(), int)
 
-    for int_column in ['max_reference_age_in_ms', 'min_snapshots_to_keep', 'max_snapshot_age_in_ms']:
+    for int_column in ["max_reference_age_in_ms", "min_snapshots_to_keep", "max_snapshot_age_in_ms"]:
         for value in df[int_column]:
             assert isinstance(value.as_py(), int) or not value.as_py()
 
@@ -357,28 +357,28 @@ def test_inspect_partitions_unpartitioned(
 
     df = tbl.inspect.partitions()
     assert df.column_names == [
-        'record_count',
-        'file_count',
-        'total_data_file_size_in_bytes',
-        'position_delete_record_count',
-        'position_delete_file_count',
-        'equality_delete_record_count',
-        'equality_delete_file_count',
-        'last_updated_at',
-        'last_updated_snapshot_id',
+        "record_count",
+        "file_count",
+        "total_data_file_size_in_bytes",
+        "position_delete_record_count",
+        "position_delete_file_count",
+        "equality_delete_record_count",
+        "equality_delete_file_count",
+        "last_updated_at",
+        "last_updated_snapshot_id",
     ]
-    for last_updated_at in df['last_updated_at']:
+    for last_updated_at in df["last_updated_at"]:
         assert isinstance(last_updated_at.as_py(), datetime)
 
     int_cols = [
-        'record_count',
-        'file_count',
-        'total_data_file_size_in_bytes',
-        'position_delete_record_count',
-        'position_delete_file_count',
-        'equality_delete_record_count',
-        'equality_delete_file_count',
-        'last_updated_snapshot_id',
+        "record_count",
+        "file_count",
+        "total_data_file_size_in_bytes",
+        "position_delete_record_count",
+        "position_delete_file_count",
+        "equality_delete_record_count",
+        "equality_delete_file_count",
+        "last_updated_snapshot_id",
     ]
     for column in int_cols:
         for value in df[column]:
@@ -448,8 +448,8 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
     )
 
     def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
-        lhs = df.to_pandas().sort_values('spec_id')
-        rhs = spark_df.toPandas().sort_values('spec_id')
+        lhs = df.to_pandas().sort_values("spec_id")
+        rhs = spark_df.toPandas().sort_values("spec_id")
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
                 assert left == right, f"Difference in column {column}: {left} != {right}"
@@ -495,31 +495,31 @@ def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format
     df = session_catalog.load_table(identifier).inspect.manifests()
 
     assert df.column_names == [
-        'content',
-        'path',
-        'length',
-        'partition_spec_id',
-        'added_snapshot_id',
-        'added_data_files_count',
-        'existing_data_files_count',
-        'deleted_data_files_count',
-        'added_delete_files_count',
-        'existing_delete_files_count',
-        'deleted_delete_files_count',
-        'partition_summaries',
+        "content",
+        "path",
+        "length",
+        "partition_spec_id",
+        "added_snapshot_id",
+        "added_data_files_count",
+        "existing_data_files_count",
+        "deleted_data_files_count",
+        "added_delete_files_count",
+        "existing_delete_files_count",
+        "deleted_delete_files_count",
+        "partition_summaries",
     ]
 
     int_cols = [
-        'content',
-        'length',
-        'partition_spec_id',
-        'added_snapshot_id',
-        'added_data_files_count',
-        'existing_data_files_count',
-        'deleted_data_files_count',
-        'added_delete_files_count',
-        'existing_delete_files_count',
-        'deleted_delete_files_count',
+        "content",
+        "length",
+        "partition_spec_id",
+        "added_snapshot_id",
+        "added_data_files_count",
+        "existing_data_files_count",
+        "deleted_data_files_count",
+        "added_delete_files_count",
+        "existing_delete_files_count",
+        "deleted_delete_files_count",
     ]
 
     for column in int_cols:
