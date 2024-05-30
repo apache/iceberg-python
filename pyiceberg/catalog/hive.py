@@ -86,15 +86,6 @@ from pyiceberg.table import (
     Table,
     TableProperties,
 )
-from pyiceberg.table import (
-    CommitTableRequest,
-    CommitTableResponse,
-    PropertyUtil,
-    Table,
-    TableProperties,
-    update_table_metadata,
-)
-from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
