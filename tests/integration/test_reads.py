@@ -426,7 +426,6 @@ def test_scan_branch(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
 def test_incremental_changelog_scan(catalog: Catalog) -> None:
-    print(catalog.list_tables("default"))
     test_table = catalog.load_table("default.test_table_read_from_snapshots")
 
     scan = test_table.incremental_changelog_scan().from_snapshot_exclusive(test_table.history()[0].snapshot_id)
