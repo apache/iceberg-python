@@ -484,7 +484,7 @@ def test_commit_table_properties(
 
     updated_table_metadata = table.metadata
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {'Description': 'test_description', "test_a": "test_aa", "test_c": "test_c"}
+    assert updated_table_metadata.properties == {"Description": "test_description", "test_a": "test_aa", "test_c": "test_c"}
 
     table_info = glue.get_table(
         DatabaseName=database_name,

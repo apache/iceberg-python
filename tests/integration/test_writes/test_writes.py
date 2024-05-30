@@ -186,47 +186,47 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append', 'overwrite']
+    assert operations == ["append", "append", "overwrite"]
 
     summaries = [row.summary for row in rows]
 
     assert summaries[0] == {
-        'added-data-files': '1',
-        'added-files-size': '5459',
-        'added-records': '3',
-        'total-data-files': '1',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '5459',
-        'total-position-deletes': '0',
-        'total-records': '3',
+        "added-data-files": "1",
+        "added-files-size": "5459",
+        "added-records": "3",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "5459",
+        "total-position-deletes": "0",
+        "total-records": "3",
     }
 
     assert summaries[1] == {
-        'added-data-files': '1',
-        'added-files-size': '5459',
-        'added-records': '3',
-        'total-data-files': '2',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '10918',
-        'total-position-deletes': '0',
-        'total-records': '6',
+        "added-data-files": "1",
+        "added-files-size": "5459",
+        "added-records": "3",
+        "total-data-files": "2",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "10918",
+        "total-position-deletes": "0",
+        "total-records": "6",
     }
 
     assert summaries[2] == {
-        'added-data-files': '1',
-        'added-files-size': '5459',
-        'added-records': '3',
-        'deleted-data-files': '2',
-        'deleted-records': '6',
-        'removed-files-size': '10918',
-        'total-data-files': '1',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '5459',
-        'total-position-deletes': '0',
-        'total-records': '3',
+        "added-data-files": "1",
+        "added-files-size": "5459",
+        "added-records": "3",
+        "deleted-data-files": "2",
+        "deleted-records": "6",
+        "removed-files-size": "10918",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "5459",
+        "total-position-deletes": "0",
+        "total-records": "3",
     }
 
 
@@ -283,25 +283,25 @@ def test_python_writes_special_character_column_with_spark_reads(
     identifier = "default.python_writes_special_character_column_with_spark_reads"
     column_name_with_special_character = "letter/abc"
     TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN = {
-        column_name_with_special_character: ['a', None, 'z'],
-        'id': [1, 2, 3],
-        'name': ['AB', 'CD', 'EF'],
-        'address': [
-            {'street': '123', 'city': 'SFO', 'zip': 12345, column_name_with_special_character: 'a'},
-            {'street': '456', 'city': 'SW', 'zip': 67890, column_name_with_special_character: 'b'},
-            {'street': '789', 'city': 'Random', 'zip': 10112, column_name_with_special_character: 'c'},
+        column_name_with_special_character: ["a", None, "z"],
+        "id": [1, 2, 3],
+        "name": ["AB", "CD", "EF"],
+        "address": [
+            {"street": "123", "city": "SFO", "zip": 12345, column_name_with_special_character: "a"},
+            {"street": "456", "city": "SW", "zip": 67890, column_name_with_special_character: "b"},
+            {"street": "789", "city": "Random", "zip": 10112, column_name_with_special_character: "c"},
         ],
     }
     pa_schema = pa.schema([
         pa.field(column_name_with_special_character, pa.string()),
-        pa.field('id', pa.int32()),
-        pa.field('name', pa.string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.string()),
         pa.field(
-            'address',
+            "address",
             pa.struct([
-                pa.field('street', pa.string()),
-                pa.field('city', pa.string()),
-                pa.field('zip', pa.int32()),
+                pa.field("street", pa.string()),
+                pa.field("city", pa.string()),
+                pa.field("zip", pa.int32()),
                 pa.field(column_name_with_special_character, pa.string()),
             ]),
         ),
@@ -322,12 +322,12 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
 ) -> None:
     identifier = "default.python_writes_dictionary_encoded_column_with_spark_reads"
     TEST_DATA = {
-        'id': [1, 2, 3, 1, 1],
-        'name': ['AB', 'CD', 'EF', 'CD', 'EF'],
+        "id": [1, 2, 3, 1, 1],
+        "name": ["AB", "CD", "EF", "CD", "EF"],
     }
     pa_schema = pa.schema([
-        pa.field('id', pa.dictionary(pa.int32(), pa.int32(), False)),
-        pa.field('name', pa.dictionary(pa.int32(), pa.string(), False)),
+        pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
+        pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
     ])
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
 
@@ -473,7 +473,7 @@ def test_write_parquet_unsupported_properties(
 @pytest.mark.integration
 def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_data_files"
-    tbl = _create_table(session_catalog, identifier, {'format-version': '1'}, [])
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
 
     with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
         tbl.overwrite("not a df")
@@ -488,7 +488,7 @@ def test_summaries_with_only_nulls(
 ) -> None:
     identifier = "default.arrow_table_summaries_with_only_nulls"
     tbl = _create_table(
-        session_catalog, identifier, {'format-version': '1'}, [arrow_table_without_data, arrow_table_with_only_nulls]
+        session_catalog, identifier, {"format-version": "1"}, [arrow_table_without_data, arrow_table_with_only_nulls]
     )
     tbl.overwrite(arrow_table_without_data)
 
@@ -501,49 +501,49 @@ def test_summaries_with_only_nulls(
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append', 'overwrite']
+    assert operations == ["append", "append", "overwrite"]
 
     summaries = [row.summary for row in rows]
 
     assert summaries[0] == {
-        'total-data-files': '0',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '0',
-        'total-position-deletes': '0',
-        'total-records': '0',
+        "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
+        "total-records": "0",
     }
 
     assert summaries[1] == {
-        'added-data-files': '1',
-        'added-files-size': '4239',
-        'added-records': '2',
-        'total-data-files': '1',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '4239',
-        'total-position-deletes': '0',
-        'total-records': '2',
+        "added-data-files": "1",
+        "added-files-size": "4239",
+        "added-records": "2",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "4239",
+        "total-position-deletes": "0",
+        "total-records": "2",
     }
 
     assert summaries[2] == {
-        'removed-files-size': '4239',
-        'total-equality-deletes': '0',
-        'total-position-deletes': '0',
-        'deleted-data-files': '1',
-        'total-delete-files': '0',
-        'total-files-size': '0',
-        'deleted-records': '2',
-        'total-data-files': '0',
-        'total-records': '0',
+        "removed-files-size": "4239",
+        "total-equality-deletes": "0",
+        "total-position-deletes": "0",
+        "deleted-data-files": "1",
+        "total-delete-files": "0",
+        "total-files-size": "0",
+        "deleted-records": "2",
+        "total-data-files": "0",
+        "total-records": "0",
     }
 
 
 @pytest.mark.integration
 def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> None:
-    os.environ['TZ'] = 'Etc/UTC'
+    os.environ["TZ"] = "Etc/UTC"
     time.tzset()
-    tz = pytz.timezone(os.environ['TZ'])
+    tz = pytz.timezone(os.environ["TZ"])
 
     catalog = SqlCatalog("test_sql_catalog", uri="sqlite:///:memory:", warehouse=f"/{warehouse}")
     catalog.create_namespace("default")
@@ -554,7 +554,7 @@ def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> 
 
     import duckdb
 
-    duckdb.sql('INSTALL iceberg; LOAD iceberg;')
+    duckdb.sql("INSTALL iceberg; LOAD iceberg;")
     result = duckdb.sql(
         f"""
     SELECT *
@@ -565,8 +565,8 @@ def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> 
     assert result == [
         (
             False,
-            'a',
-            'aaaaaaaaaaaaaaaaaaaaaa',
+            "a",
+            "aaaaaaaaaaaaaaaaaaaaaa",
             1,
             1,
             0.0,
@@ -574,14 +574,14 @@ def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> 
             datetime(2023, 1, 1, 19, 25),
             datetime(2023, 1, 1, 19, 25, tzinfo=tz),
             date(2023, 1, 1),
-            b'\x01',
-            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+            b"\x01",
+            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ),
         (None, None, None, None, None, None, None, None, None, None, None, None),
         (
             True,
-            'z',
-            'zzzzzzzzzzzzzzzzzzzzzz',
+            "z",
+            "zzzzzzzzzzzzzzzzzzzzzz",
             9,
             9,
             0.8999999761581421,
@@ -589,8 +589,8 @@ def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> 
             datetime(2023, 3, 1, 19, 25),
             datetime(2023, 3, 1, 19, 25, tzinfo=tz),
             date(2023, 3, 1),
-            b'\x12',
-            b'\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11',
+            b"\x12",
+            b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11",
         ),
     ]
 
@@ -607,7 +607,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
     pa_table = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
+            "foo": ["a", None, "z"],
         },
         schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
     )
@@ -618,8 +618,8 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
     pa_table_with_column = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
-            'bar': [19, None, 25],
+            "foo": ["a", None, "z"],
+            "bar": [19, None, 25],
         },
         schema=pa.schema([
             pa.field("foo", pa.string(), nullable=True),
@@ -653,15 +653,15 @@ def test_create_table_transaction(session_catalog: Catalog, format_version: int)
 
     pa_table = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
+            "foo": ["a", None, "z"],
         },
         schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
     )
 
     pa_table_with_column = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
-            'bar': [19, None, 25],
+            "foo": ["a", None, "z"],
+            "bar": [19, None, 25],
         },
         schema=pa.schema([
             pa.field("foo", pa.string(), nullable=True),
@@ -741,45 +741,45 @@ def test_inspect_snapshots(
     df = tbl.inspect.snapshots()
 
     assert df.column_names == [
-        'committed_at',
-        'snapshot_id',
-        'parent_id',
-        'operation',
-        'manifest_list',
-        'summary',
+        "committed_at",
+        "snapshot_id",
+        "parent_id",
+        "operation",
+        "manifest_list",
+        "summary",
     ]
 
-    for committed_at in df['committed_at']:
+    for committed_at in df["committed_at"]:
         assert isinstance(committed_at.as_py(), datetime)
 
-    for snapshot_id in df['snapshot_id']:
+    for snapshot_id in df["snapshot_id"]:
         assert isinstance(snapshot_id.as_py(), int)
 
-    assert df['parent_id'][0].as_py() is None
-    assert df['parent_id'][1:] == df['snapshot_id'][:2]
+    assert df["parent_id"][0].as_py() is None
+    assert df["parent_id"][1:] == df["snapshot_id"][:2]
 
-    assert [operation.as_py() for operation in df['operation']] == ['append', 'overwrite', 'append']
+    assert [operation.as_py() for operation in df["operation"]] == ["append", "overwrite", "append"]
 
-    for manifest_list in df['manifest_list']:
+    for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
-    assert df['summary'][0].as_py() == [
-        ('added-files-size', '5459'),
-        ('added-data-files', '1'),
-        ('added-records', '3'),
-        ('total-data-files', '1'),
-        ('total-delete-files', '0'),
-        ('total-records', '3'),
-        ('total-files-size', '5459'),
-        ('total-position-deletes', '0'),
-        ('total-equality-deletes', '0'),
+    assert df["summary"][0].as_py() == [
+        ("added-files-size", "5459"),
+        ("added-data-files", "1"),
+        ("added-records", "3"),
+        ("total-data-files", "1"),
+        ("total-delete-files", "0"),
+        ("total-records", "3"),
+        ("total-files-size", "5459"),
+        ("total-position-deletes", "0"),
+        ("total-equality-deletes", "0"),
     ]
 
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
     rhs = df.to_pandas()
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-            if column == 'summary':
+            if column == "summary":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
 
@@ -838,7 +838,7 @@ def test_hive_catalog_storage_descriptor(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     table_name = "default.test_table_partitioned_sanitized_character"
     try:

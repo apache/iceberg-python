@@ -50,8 +50,8 @@ def test_from_environment_variables_uppercase() -> None:
 )
 def test_fix_nested_objects_from_environment_variables() -> None:
     assert Config().get_catalog_config("PRODUCTION") == {
-        's3.region': 'eu-north-1',
-        's3.access-key-id': 'username',
+        "s3.region": "eu-north-1",
+        "s3.access-key-id": "username",
     }
 
 
