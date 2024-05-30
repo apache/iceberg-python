@@ -36,7 +36,13 @@ from typing import (
     cast,
 )
 
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, NotInstalledError, TableAlreadyExistsError
+from pyiceberg.exceptions import (
+    NamespaceAlreadyExistsError,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+    NotInstalledError,
+    TableAlreadyExistsError,
+)
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -477,6 +483,18 @@ class Catalog(ABC):
             NamespaceAlreadyExistsError: If a namespace with the given name already exists.
         """
 
+    def create_namespace_if_not_exists(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+        """Create a namespace if it does not exist.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier.
+            properties (Properties): A string dictionary of properties for the given namespace.
+        """
+        try:
+            self.create_namespace(namespace, properties)
+        except NamespaceAlreadyExistsError:
+            pass
+
     @abstractmethod
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         """Drop a namespace.
@@ -570,7 +588,7 @@ class Catalog(ABC):
         If the identifier is a string, it is split into a tuple on '.'. If it is a tuple, it is used as-is.
 
         Args:
-            identifier (str | Identifier: an identifier, either a string or tuple of strings.
+            identifier (str | Identifier): an identifier, either a string or tuple of strings.
 
         Returns:
             Identifier: a tuple of strings.
@@ -600,6 +618,29 @@ class Catalog(ABC):
             Identifier: Namespace identifier.
         """
         return Catalog.identifier_to_tuple(identifier)[:-1]
+
+    @staticmethod
+    def namespace_to_string(
+        identifier: Union[str, Identifier], err: Union[Type[ValueError], Type[NoSuchNamespaceError]] = ValueError
+    ) -> str:
+        """Transform a namespace identifier into a string.
+
+        Args:
+            identifier (Union[str, Identifier]): a namespace identifier.
+            err (Union[Type[ValueError], Type[NoSuchNamespaceError]]): the error type to raise when identifier is empty.
+
+        Returns:
+            Identifier: Namespace identifier.
+        """
+        tuple_identifier = Catalog.identifier_to_tuple(identifier)
+        if len(tuple_identifier) < 1:
+            raise err("Empty namespace identifier")
+
+        # Check if any segment of the tuple is an empty string
+        if any(segment.strip() == "" for segment in tuple_identifier):
+            raise err("Namespace identifier contains an empty segment or a segment with only whitespace")
+
+        return ".".join(segment.strip() for segment in tuple_identifier)
 
     @staticmethod
     def identifier_to_database(
@@ -779,7 +820,7 @@ class MetastoreCatalog(Catalog, ABC):
     def _resolve_table_location(self, location: Optional[str], database_name: str, table_name: str) -> str:
         if not location:
             return self._get_default_warehouse_location(database_name, table_name)
-        return location
+        return location.rstrip("/")
 
     def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
         database_properties = self.load_namespace_properties(database_name)

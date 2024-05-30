@@ -274,14 +274,14 @@ class SnapshotSummaryCollector:
 
     def add_file(self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC) -> None:
         self.metrics.add_file(data_file)
-        if len(data_file.partition.record_fields()) != 0:
+        if len(data_file.partition) > 0:
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=True, schema=schema)
 
     def remove_file(
         self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC
     ) -> None:
         self.metrics.remove_file(data_file)
-        if len(data_file.partition.record_fields()) != 0:
+        if len(data_file.partition) > 0:
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=False, schema=schema)
 
     def update_partition_metrics(self, partition_spec: PartitionSpec, file: DataFile, is_add_file: bool, schema: Schema) -> None:

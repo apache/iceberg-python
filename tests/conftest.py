@@ -1878,6 +1878,19 @@ def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
+@pytest.fixture()
+def hierarchical_namespace_name() -> str:
+    prefix = "my_iceberg_ns-"
+    random_tag1 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    random_tag2 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return ".".join([prefix + random_tag1, prefix + random_tag2]).lower()
+
+
+@pytest.fixture()
+def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
+    return [f"{hierarchical_namespace_name}_{idx}" for idx in range(NUM_TABLES)]
+
+
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/

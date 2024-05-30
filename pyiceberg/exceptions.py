@@ -110,3 +110,7 @@ class CommitFailedException(Exception):
 
 class CommitStateUnknownException(RESTError):
     """Commit failed due to unknown reason."""
+
+
+class WaitingForLockException(Exception):
+    """Need to wait for a lock, try again."""

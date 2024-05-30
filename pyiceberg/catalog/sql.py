@@ -43,6 +43,7 @@ from sqlalchemy.orm import (
 
 from pyiceberg.catalog import (
     METADATA_LOCATION,
+    Catalog,
     MetastoreCatalog,
     PropertiesUpdateSummary,
 )
@@ -94,6 +95,16 @@ class IcebergNamespaceProperties(SqlCatalogBaseTable):
 
 
 class SqlCatalog(MetastoreCatalog):
+    """Implementation of a SQL based catalog.
+
+    In the `JDBCCatalog` implementation, a `Namespace` is composed of a list of strings separated by dots: `'ns1.ns2.ns3'`.
+    And you can have as many levels as you want, but you need at least one.  The `SqlCatalog` honors the same convention.
+
+    In the `JDBCCatalog` implementation, a `TableIdentifier` is composed of an optional `Namespace` and a table name.
+    When a `Namespace` is present, the full name will be `'ns1.ns2.ns3.table'`.  A valid `TableIdentifier` could be `'name'` (no namespace).
+    The `SqlCatalog` has a different convention where a `TableIdentifier` requires a `Namespace`.
+    """
+
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
@@ -136,7 +147,7 @@ class SqlCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(self.name, table_namespace, table_name),
+            identifier=(self.name,) + Catalog.identifier_to_tuple(table_namespace) + (table_name,),
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),
@@ -173,11 +184,14 @@ class SqlCatalog(MetastoreCatalog):
         """
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
-        database_name, table_name = self.identifier_to_database_and_table(identifier)
-        if not self._namespace_exists(database_name):
-            raise NoSuchNamespaceError(f"Namespace does not exist: {database_name}")
+        identifier_nocatalog = self.identifier_to_tuple_without_catalog(identifier)
+        namespace_identifier = Catalog.namespace_from(identifier_nocatalog)
+        table_name = Catalog.table_name_from(identifier_nocatalog)
+        if not self._namespace_exists(namespace_identifier):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {namespace_identifier}")
 
-        location = self._resolve_table_location(location, database_name, table_name)
+        namespace = Catalog.namespace_to_string(namespace_identifier)
+        location = self._resolve_table_location(location, namespace, table_name)
         metadata_location = self._get_metadata_location(location=location)
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
@@ -190,7 +204,7 @@ class SqlCatalog(MetastoreCatalog):
                 session.add(
                     IcebergTables(
                         catalog_name=self.name,
-                        table_namespace=database_name,
+                        table_namespace=namespace,
                         table_name=table_name,
                         metadata_location=metadata_location,
                         previous_metadata_location=None,
@@ -198,7 +212,7 @@ class SqlCatalog(MetastoreCatalog):
                 )
                 session.commit()
             except IntegrityError as e:
-                raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+                raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
 
         return self.load_table(identifier=identifier)
 
@@ -216,16 +230,19 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If the table already exists
             NoSuchNamespaceError: If namespace does not exist
         """
-        database_name, table_name = self.identifier_to_database_and_table(identifier)
-        if not self._namespace_exists(database_name):
-            raise NoSuchNamespaceError(f"Namespace does not exist: {database_name}")
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace = Catalog.namespace_to_string(namespace_tuple)
+        table_name = Catalog.table_name_from(identifier_tuple)
+        if not self._namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         with Session(self.engine) as session:
             try:
                 session.add(
                     IcebergTables(
                         catalog_name=self.name,
-                        table_namespace=database_name,
+                        table_namespace=namespace,
                         table_name=table_name,
                         metadata_location=metadata_location,
                         previous_metadata_location=None,
@@ -233,7 +250,7 @@ class SqlCatalog(MetastoreCatalog):
                 )
                 session.commit()
             except IntegrityError as e:
-                raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+                raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
 
         return self.load_table(identifier=identifier)
 
@@ -253,17 +270,19 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the name does not exist.
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace = Catalog.namespace_to_string(namespace_tuple)
+        table_name = Catalog.table_name_from(identifier_tuple)
         with Session(self.engine) as session:
             stmt = select(IcebergTables).where(
                 IcebergTables.catalog_name == self.name,
-                IcebergTables.table_namespace == database_name,
+                IcebergTables.table_namespace == namespace,
                 IcebergTables.table_name == table_name,
             )
             result = session.scalar(stmt)
         if result:
             return self._convert_orm_to_iceberg(result)
-        raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}")
+        raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
@@ -275,18 +294,20 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the name does not exist.
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace = Catalog.namespace_to_string(namespace_tuple)
+        table_name = Catalog.table_name_from(identifier_tuple)
         with Session(self.engine) as session:
             if self.engine.dialect.supports_sane_rowcount:
                 res = session.execute(
                     delete(IcebergTables).where(
                         IcebergTables.catalog_name == self.name,
-                        IcebergTables.table_namespace == database_name,
+                        IcebergTables.table_namespace == namespace,
                         IcebergTables.table_name == table_name,
                     )
                 )
                 if res.rowcount < 1:
-                    raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}")
+                    raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
             else:
                 try:
                     tbl = (
@@ -294,14 +315,14 @@ class SqlCatalog(MetastoreCatalog):
                         .with_for_update(of=IcebergTables)
                         .filter(
                             IcebergTables.catalog_name == self.name,
-                            IcebergTables.table_namespace == database_name,
+                            IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
                         )
                         .one()
                     )
                     session.delete(tbl)
                 except NoResultFound as e:
-                    raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
+                    raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}") from e
             session.commit()
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
@@ -320,10 +341,15 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If the target namespace does not exist.
         """
         from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
-        to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
-        if not self._namespace_exists(to_database_name):
-            raise NoSuchNamespaceError(f"Namespace does not exist: {to_database_name}")
+        to_identifier_tuple = self.identifier_to_tuple_without_catalog(to_identifier)
+        from_namespace_tuple = Catalog.namespace_from(from_identifier_tuple)
+        from_namespace = Catalog.namespace_to_string(from_namespace_tuple)
+        from_table_name = Catalog.table_name_from(from_identifier_tuple)
+        to_namespace_tuple = Catalog.namespace_from(to_identifier_tuple)
+        to_namespace = Catalog.namespace_to_string(to_namespace_tuple)
+        to_table_name = Catalog.table_name_from(to_identifier_tuple)
+        if not self._namespace_exists(to_namespace):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
         with Session(self.engine) as session:
             try:
                 if self.engine.dialect.supports_sane_rowcount:
@@ -331,10 +357,10 @@ class SqlCatalog(MetastoreCatalog):
                         update(IcebergTables)
                         .where(
                             IcebergTables.catalog_name == self.name,
-                            IcebergTables.table_namespace == from_database_name,
+                            IcebergTables.table_namespace == from_namespace,
                             IcebergTables.table_name == from_table_name,
                         )
-                        .values(table_namespace=to_database_name, table_name=to_table_name)
+                        .values(table_namespace=to_namespace, table_name=to_table_name)
                     )
                     result = session.execute(stmt)
                     if result.rowcount < 1:
@@ -346,18 +372,18 @@ class SqlCatalog(MetastoreCatalog):
                             .with_for_update(of=IcebergTables)
                             .filter(
                                 IcebergTables.catalog_name == self.name,
-                                IcebergTables.table_namespace == from_database_name,
+                                IcebergTables.table_namespace == from_namespace,
                                 IcebergTables.table_name == from_table_name,
                             )
                             .one()
                         )
-                        tbl.table_namespace = to_database_name
+                        tbl.table_namespace = to_namespace
                         tbl.table_name = to_table_name
                     except NoResultFound as e:
                         raise NoSuchTableError(f"Table does not exist: {from_table_name}") from e
                 session.commit()
             except IntegrityError as e:
-                raise TableAlreadyExistsError(f"Table {to_database_name}.{to_table_name} already exists") from e
+                raise TableAlreadyExistsError(f"Table {to_namespace}.{to_table_name} already exists") from e
         return self.load_table(to_identifier)
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
@@ -376,7 +402,10 @@ class SqlCatalog(MetastoreCatalog):
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        current_table = self.load_table(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace = Catalog.namespace_to_string(namespace_tuple)
+        table_name = Catalog.table_name_from(identifier_tuple)
 
         current_table: Optional[Table]
         try:
@@ -455,7 +484,8 @@ class SqlCatalog(MetastoreCatalog):
         )
 
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
-        namespace = self.identifier_to_database(identifier)
+        namespace_tuple = Catalog.identifier_to_tuple(identifier)
+        namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
         with Session(self.engine) as session:
             stmt = (
                 select(IcebergTables)
@@ -488,18 +518,20 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NamespaceAlreadyExistsError: If a namespace with the given name already exists.
         """
+        if self._namespace_exists(namespace):
+            raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists")
+
         if not properties:
             properties = IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES
-        database_name = self.identifier_to_database(namespace)
-        if self._namespace_exists(database_name):
-            raise NamespaceAlreadyExistsError(f"Database {database_name} already exists")
-
         create_properties = properties if properties else IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES
         with Session(self.engine) as session:
             for key, value in create_properties.items():
                 session.add(
                     IcebergNamespaceProperties(
-                        catalog_name=self.name, namespace=database_name, property_key=key, property_value=value
+                        catalog_name=self.name,
+                        namespace=Catalog.namespace_to_string(namespace, NoSuchNamespaceError),
+                        property_key=key,
+                        property_value=value,
                     )
                 )
             session.commit()
@@ -514,16 +546,16 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             NamespaceNotEmptyError: If the namespace is not empty.
         """
-        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        if self._namespace_exists(database_name):
-            if tables := self.list_tables(database_name):
-                raise NamespaceNotEmptyError(f"Database {database_name} is not empty. {len(tables)} tables exist.")
+        if self._namespace_exists(namespace):
+            namespace_str = Catalog.namespace_to_string(namespace)
+            if tables := self.list_tables(namespace):
+                raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(tables)} tables exist.")
 
             with Session(self.engine) as session:
                 session.execute(
                     delete(IcebergNamespaceProperties).where(
                         IcebergNamespaceProperties.catalog_name == self.name,
-                        IcebergNamespaceProperties.namespace == database_name,
+                        IcebergNamespaceProperties.namespace == namespace_str,
                     )
                 )
                 session.commit()
@@ -542,14 +574,14 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        if namespace and not self._namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
-        stmt = select(IcebergTables).where(
-            IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == database_name
-        )
+        namespace = Catalog.namespace_to_string(namespace)
+        stmt = select(IcebergTables).where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
         with Session(self.engine) as session:
             result = session.scalars(stmt)
-            return [(table.table_namespace, table.table_name) for table in result]
+            return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
@@ -569,15 +601,15 @@ class SqlCatalog(MetastoreCatalog):
         table_stmt = select(IcebergTables.table_namespace).where(IcebergTables.catalog_name == self.name)
         namespace_stmt = select(IcebergNamespaceProperties.namespace).where(IcebergNamespaceProperties.catalog_name == self.name)
         if namespace:
-            database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(database_name))
-            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(database_name))
+            namespace_str = Catalog.namespace_to_string(namespace, NoSuchNamespaceError)
+            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_str))
+            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_str))
         stmt = union(
             table_stmt,
             namespace_stmt,
         )
         with Session(self.engine) as session:
-            return [self.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
+            return [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
@@ -591,12 +623,12 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
         """
-        database_name = self.identifier_to_database(namespace)
-        if not self._namespace_exists(database_name):
-            raise NoSuchNamespaceError(f"Database {database_name} does not exists")
+        namespace_str = Catalog.namespace_to_string(namespace)
+        if not self._namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         stmt = select(IcebergNamespaceProperties).where(
-            IcebergNamespaceProperties.catalog_name == self.name, IcebergNamespaceProperties.namespace == database_name
+            IcebergNamespaceProperties.catalog_name == self.name, IcebergNamespaceProperties.namespace == namespace_str
         )
         with Session(self.engine) as session:
             result = session.scalars(stmt)
@@ -616,9 +648,9 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             ValueError: If removals and updates have overlapping keys.
         """
-        database_name = self.identifier_to_database(namespace)
-        if not self._namespace_exists(database_name):
-            raise NoSuchNamespaceError(f"Database {database_name} does not exists")
+        namespace_str = Catalog.namespace_to_string(namespace)
+        if not self._namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         current_properties = self.load_namespace_properties(namespace=namespace)
         properties_update_summary = self._get_updated_props_and_update_summary(
@@ -629,7 +661,7 @@ class SqlCatalog(MetastoreCatalog):
             if removals:
                 delete_stmt = delete(IcebergNamespaceProperties).where(
                     IcebergNamespaceProperties.catalog_name == self.name,
-                    IcebergNamespaceProperties.namespace == database_name,
+                    IcebergNamespaceProperties.namespace == namespace_str,
                     IcebergNamespaceProperties.property_key.in_(removals),
                 )
                 session.execute(delete_stmt)
@@ -640,14 +672,14 @@ class SqlCatalog(MetastoreCatalog):
                 # This is not a problem since it runs in a single transaction
                 delete_stmt = delete(IcebergNamespaceProperties).where(
                     IcebergNamespaceProperties.catalog_name == self.name,
-                    IcebergNamespaceProperties.namespace == database_name,
+                    IcebergNamespaceProperties.namespace == namespace_str,
                     IcebergNamespaceProperties.property_key.in_(set(updates.keys())),
                 )
                 session.execute(delete_stmt)
                 insert_stmt = insert(IcebergNamespaceProperties)
                 for property_key, property_value in updates.items():
                     insert_stmt = insert_stmt.values(
-                        catalog_name=self.name, namespace=database_name, property_key=property_key, property_value=property_value
+                        catalog_name=self.name, namespace=namespace_str, property_key=property_key, property_value=property_value
                     )
                 session.execute(insert_stmt)
             session.commit()
