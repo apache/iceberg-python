@@ -1647,10 +1647,11 @@ def _open_manifest(
     manifest: ManifestFile,
     partition_filter: Callable[[DataFile], bool],
     metrics_evaluator: Callable[[DataFile], bool],
+    discard_deleted: bool = True,
 ) -> List[ManifestEntry]:
     return [
         manifest_entry
-        for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
+        for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=discard_deleted)
         if partition_filter(manifest_entry.data_file) and metrics_evaluator(manifest_entry.data_file)
     ]
 
@@ -1909,12 +1910,7 @@ class IncrementalChangelogScan(BaseIncrementalScan):
                 *executor.map(
                     lambda args: _open_manifest(*args),
                     [
-                        (
-                            self.io,
-                            manifest,
-                            partition_evaluators[manifest.partition_spec_id],
-                            metrics_evaluator,
-                        )
+                        (self.io, manifest, partition_evaluators[manifest.partition_spec_id], metrics_evaluator, False)
                         for manifest in manifests
                         if self._check_sequence_number(min_data_sequence_number, manifest)
                     ],
