@@ -45,5 +45,5 @@ def test_decimal_required_bytes() -> None:
 def test_decimal_to_bytes() -> None:
     # Check the boundary between 2 and 3 bytes.
     # 2 bytes has a minimum of -32,768 and a maximum value of 32,767 (inclusive).
-    assert decimal_to_bytes(Decimal('32767.')) == b'\x7f\xff'
-    assert decimal_to_bytes(Decimal('32768.')) == b'\x00\x80\x00'
+    assert decimal_to_bytes(Decimal("32767.")) == b"\x7f\xff"
+    assert decimal_to_bytes(Decimal("32768.")) == b"\x00\x80\x00"

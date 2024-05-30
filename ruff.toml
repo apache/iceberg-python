@@ -80,4 +80,4 @@ known-first-party = ["pyiceberg", "tests"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [format]
-quote-style = "preserve"
+quote-style = "double"
