@@ -430,10 +430,10 @@ def test_incremental_changelog_scan(catalog: Catalog) -> None:
     test_table = catalog.load_table("default.test_table_read_from_snapshots")
 
     scan = test_table.incremental_changelog_scan().from_snapshot_exclusive(test_table.history()[0].snapshot_id)
-    assert len(list(scan.plan_files())) == 3
+    assert len(list(scan.plan_files())) == 4
 
-    scan = test_table.incremental_changelog_scan().to_snapshot(test_table.history()[1].snapshot_id)
-    assert len(list(scan.plan_files())) == 2
+    scan = test_table.incremental_changelog_scan().to_snapshot(test_table.history()[4].snapshot_id)
+    assert len(list(scan.plan_files())) == 5
 
     scan = (
         test_table.incremental_changelog_scan()
