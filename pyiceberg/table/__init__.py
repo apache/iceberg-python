@@ -16,13 +16,13 @@
 # under the License.
 from __future__ import annotations
 
-import datetime
 import itertools
 import uuid
 import warnings
 from abc import ABC, abstractmethod
 from copy import copy
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from functools import cached_property, singledispatch
 from itertools import chain
@@ -47,6 +47,7 @@ from sortedcontainers import SortedList
 from typing_extensions import Annotated
 
 import pyiceberg.expressions.parser as parser
+from pyiceberg.conversions import from_bytes
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
     AlwaysTrue,
@@ -70,6 +71,7 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
+    PartitionFieldSummary,
     write_manifest,
     write_manifest_list,
 )
@@ -78,6 +80,8 @@ from pyiceberg.partitioning import (
     PARTITION_FIELD_ID_START,
     UNPARTITIONED_PARTITION_SPEC,
     PartitionField,
+    PartitionFieldValue,
+    PartitionKey,
     PartitionSpec,
     _PartitionNameGenerator,
     _visit_partition_field,
@@ -100,7 +104,6 @@ from pyiceberg.table.metadata import (
 )
 from pyiceberg.table.name_mapping import (
     NameMapping,
-    parse_mapping_from_json,
     update_mapping,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
@@ -135,6 +138,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
     import daft
@@ -247,6 +251,22 @@ class PropertyUtil:
                 raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
         else:
             return default
+
+    @staticmethod
+    def property_as_float(properties: Dict[str, str], property_name: str, default: Optional[float] = None) -> Optional[float]:
+        if value := properties.get(property_name):
+            try:
+                return float(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to a float: {value}") from e
+        else:
+            return default
+
+    @staticmethod
+    def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
+        if value := properties.get(property_name):
+            return value.lower() == "true"
+        return default
 
 
 class Transaction:
@@ -372,8 +392,11 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if len(self._table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
+        supported_transforms = {IdentityTransform}
+        if not all(type(field.transform) in supported_transforms for field in self.table_metadata.spec().fields):
+            raise ValueError(
+                f"All transforms are not supported, expected: {supported_transforms}, but get: {[str(field) for field in self.table_metadata.spec().fields if field.transform not in supported_transforms]}."
+            )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
@@ -431,7 +454,7 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
 
@@ -443,7 +466,7 @@ class Transaction:
         """
         if self._table.name_mapping() is None:
             self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
-        with self.update_snapshot().fast_append() as update_snapshot:
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
             )
@@ -896,7 +919,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     if update.ref_name == MAIN_BRANCH:
         metadata_updates["current_snapshot_id"] = snapshot_ref.snapshot_id
         if "last_updated_ms" not in metadata_updates:
-            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.datetime.now().astimezone())
+            metadata_updates["last_updated_ms"] = datetime_to_millis(datetime.now().astimezone())
 
         metadata_updates["snapshot_log"] = base_metadata.snapshot_log + [
             SnapshotLogEntry(
@@ -1203,7 +1226,8 @@ class Table:
         limit: Optional[int] = None,
     ) -> DataScan:
         return DataScan(
-            table=self,
+            table_metadata=self.metadata,
+            io=self.io,
             row_filter=row_filter,
             selected_fields=selected_fields,
             case_sensitive=case_sensitive,
@@ -1300,10 +1324,7 @@ class Table:
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
-        if name_mapping_json := self.properties.get(TableProperties.DEFAULT_NAME_MAPPING):
-            return parse_mapping_from_json(name_mapping_json)
-        else:
-            return None
+        return self.metadata.name_mapping()
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -1331,7 +1352,7 @@ class Table:
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table.
 
@@ -1342,7 +1363,7 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         with self.transaction() as tx:
-            tx.add_files(file_paths=file_paths)
+            tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -1456,7 +1477,8 @@ S = TypeVar("S", bound="TableScan", covariant=True)
 
 
 class TableScan(ABC):
-    table: Table
+    table_metadata: TableMetadata
+    io: FileIO
     row_filter: BooleanExpression
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
@@ -1466,7 +1488,8 @@ class TableScan(ABC):
 
     def __init__(
         self,
-        table: Table,
+        table_metadata: TableMetadata,
+        io: FileIO,
         row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
@@ -1474,7 +1497,8 @@ class TableScan(ABC):
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
-        self.table = table
+        self.table_metadata = table_metadata
+        self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.selected_fields = selected_fields
         self.case_sensitive = case_sensitive
@@ -1484,19 +1508,20 @@ class TableScan(ABC):
 
     def snapshot(self) -> Optional[Snapshot]:
         if self.snapshot_id:
-            return self.table.snapshot_by_id(self.snapshot_id)
-        return self.table.current_snapshot()
+            return self.table_metadata.snapshot_by_id(self.snapshot_id)
+        return self.table_metadata.current_snapshot()
 
     def projection(self) -> Schema:
-        current_schema = self.table.schema()
+        current_schema = self.table_metadata.schema()
         if self.snapshot_id is not None:
-            snapshot = self.table.snapshot_by_id(self.snapshot_id)
+            snapshot = self.table_metadata.snapshot_by_id(self.snapshot_id)
             if snapshot is not None:
                 if snapshot.schema_id is not None:
-                    snapshot_schema = self.table.schemas().get(snapshot.schema_id)
-                    if snapshot_schema is not None:
-                        current_schema = snapshot_schema
-                    else:
+                    try:
+                        current_schema = next(
+                            schema for schema in self.table_metadata.schemas if schema.schema_id == snapshot.schema_id
+                        )
+                    except StopIteration:
                         warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}")
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
@@ -1522,7 +1547,7 @@ class TableScan(ABC):
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
-        if snapshot := self.table.snapshot_by_name(name):
+        if snapshot := self.table_metadata.snapshot_by_name(name):
             return self.update(snapshot_id=snapshot.snapshot_id)
 
         raise ValueError(f"Cannot scan unknown ref={name}")
@@ -1614,20 +1639,8 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 
 class DataScan(TableScan):
-    def __init__(
-        self,
-        table: Table,
-        row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE,
-        selected_fields: Tuple[str, ...] = ("*",),
-        case_sensitive: bool = True,
-        snapshot_id: Optional[int] = None,
-        options: Properties = EMPTY_DICT,
-        limit: Optional[int] = None,
-    ):
-        super().__init__(table, row_filter, selected_fields, case_sensitive, snapshot_id, options, limit)
-
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table.schema(), self.table.specs()[spec_id])
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id])
         return project(self.row_filter)
 
     @cached_property
@@ -1635,12 +1648,12 @@ class DataScan(TableScan):
         return KeyDefaultDict(self._build_partition_projection)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        spec = self.table.specs()[spec_id]
-        return manifest_evaluator(spec, self.table.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        spec = self.table_metadata.specs()[spec_id]
+        return manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
-        spec = self.table.specs()[spec_id]
-        partition_type = spec.partition_type(self.table.schema())
+        spec = self.table_metadata.specs()[spec_id]
+        partition_type = spec.partition_type(self.table_metadata.schema())
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
 
@@ -1675,8 +1688,6 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
-        io = self.table.io
-
         # step 1: filter manifests using partition summaries
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
@@ -1684,7 +1695,7 @@ class DataScan(TableScan):
 
         manifests = [
             manifest_file
-            for manifest_file in snapshot.manifests(io)
+            for manifest_file in snapshot.manifests(self.io)
             if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
 
@@ -1693,7 +1704,7 @@ class DataScan(TableScan):
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
         metrics_evaluator = _InclusiveMetricsEvaluator(
-            self.table.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
+            self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
         min_data_sequence_number = _min_data_file_sequence_number(manifests)
@@ -1707,7 +1718,7 @@ class DataScan(TableScan):
                 lambda args: _open_manifest(*args),
                 [
                     (
-                        io,
+                        self.io,
                         manifest,
                         partition_evaluators[manifest.partition_spec_id],
                         metrics_evaluator,
@@ -1743,7 +1754,8 @@ class DataScan(TableScan):
 
         return project_table(
             self.plan_files(),
-            self.table,
+            self.table_metadata,
+            self.io,
             self.row_filter,
             self.projection(),
             case_sensitive=self.case_sensitive,
@@ -2645,15 +2657,22 @@ def _add_and_move_fields(
 class WriteTask:
     write_uuid: uuid.UUID
     task_id: int
+    schema: Schema
     record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
-
-    # Later to be extended with partition information
+    partition_key: Optional[PartitionKey] = None
 
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+
+    def generate_data_file_path(self, extension: str) -> str:
+        if self.partition_key:
+            file_path = f"{self.partition_key.to_path()}/{self.generate_data_file_filename(extension)}"
+            return file_path
+        else:
+            return self.generate_data_file_filename(extension)
 
 
 @dataclass(frozen=True)
@@ -2682,25 +2701,40 @@ def _dataframe_to_data_files(
     """
     from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
 
-    if len([spec for spec in table_metadata.partition_specs if spec.spec_id != 0]) > 0:
-        raise ValueError("Cannot write to partitioned tables")
-
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
-
-    target_file_size = PropertyUtil.property_as_int(
+    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
         properties=table_metadata.properties,
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
 
-    # This is an iter, so we don't have to materialize everything every time
-    # This will be more relevant when we start doing partitioned writes
-    yield from write_file(
-        io=io,
-        table_metadata=table_metadata,
-        tasks=iter([WriteTask(write_uuid, next(counter), batches) for batches in bin_pack_arrow_table(df, target_file_size)]),  # type: ignore
-    )
+    if len(table_metadata.spec().fields) > 0:
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=table_metadata.schema(),
+                )
+                for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+            ]),
+        )
+    else:
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                for batches in bin_pack_arrow_table(df, target_file_size)
+            ]),
+        )
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
@@ -3231,6 +3265,18 @@ class InspectTable:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
+    def _get_snapshot(self, snapshot_id: Optional[int] = None) -> Snapshot:
+        if snapshot_id is not None:
+            if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
+                return snapshot
+            else:
+                raise ValueError(f"Cannot find snapshot with ID {snapshot_id}")
+
+        if snapshot := self.tbl.metadata.current_snapshot():
+            return snapshot
+        else:
+            raise ValueError("Cannot get a snapshot as the table does not have any.")
+
     def snapshots(self) -> "pa.Table":
         import pyarrow as pa
 
@@ -3252,7 +3298,7 @@ class InspectTable:
                 additional_properties = None
 
             snapshots.append({
-                'committed_at': datetime.datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                'committed_at': datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
                 'snapshot_id': snapshot.snapshot_id,
                 'parent_id': snapshot.parent_snapshot_id,
                 'operation': str(operation),
@@ -3264,3 +3310,437 @@ class InspectTable:
             snapshots,
             schema=snapshots_schema,
         )
+
+    def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        schema = self.tbl.metadata.schema()
+
+        readable_metrics_struct = []
+
+        def _readable_metrics_struct(bound_type: PrimitiveType) -> pa.StructType:
+            pa_bound_type = schema_to_pyarrow(bound_type)
+            return pa.struct([
+                pa.field("column_size", pa.int64(), nullable=True),
+                pa.field("value_count", pa.int64(), nullable=True),
+                pa.field("null_value_count", pa.int64(), nullable=True),
+                pa.field("nan_value_count", pa.int64(), nullable=True),
+                pa.field("lower_bound", pa_bound_type, nullable=True),
+                pa.field("upper_bound", pa_bound_type, nullable=True),
+            ])
+
+        for field in self.tbl.metadata.schema().fields:
+            readable_metrics_struct.append(
+                pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
+            )
+
+        partition_record = self.tbl.metadata.specs_struct()
+        pa_record_struct = schema_to_pyarrow(partition_record)
+
+        entries_schema = pa.schema([
+            pa.field('status', pa.int8(), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('sequence_number', pa.int64(), nullable=False),
+            pa.field('file_sequence_number', pa.int64(), nullable=False),
+            pa.field(
+                'data_file',
+                pa.struct([
+                    pa.field('content', pa.int8(), nullable=False),
+                    pa.field('file_path', pa.string(), nullable=False),
+                    pa.field('file_format', pa.string(), nullable=False),
+                    pa.field('partition', pa_record_struct, nullable=False),
+                    pa.field('record_count', pa.int64(), nullable=False),
+                    pa.field('file_size_in_bytes', pa.int64(), nullable=False),
+                    pa.field('column_sizes', pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field('value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field('null_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field('nan_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field('lower_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
+                    pa.field('upper_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
+                    pa.field('key_metadata', pa.binary(), nullable=True),
+                    pa.field('split_offsets', pa.list_(pa.int64()), nullable=True),
+                    pa.field('equality_ids', pa.list_(pa.int32()), nullable=True),
+                    pa.field('sort_order_id', pa.int32(), nullable=True),
+                ]),
+                nullable=False,
+            ),
+            pa.field('readable_metrics', pa.struct(readable_metrics_struct), nullable=True),
+        ])
+
+        entries = []
+        snapshot = self._get_snapshot(snapshot_id)
+        for manifest in snapshot.manifests(self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+                column_sizes = entry.data_file.column_sizes or {}
+                value_counts = entry.data_file.value_counts or {}
+                null_value_counts = entry.data_file.null_value_counts or {}
+                nan_value_counts = entry.data_file.nan_value_counts or {}
+                lower_bounds = entry.data_file.lower_bounds or {}
+                upper_bounds = entry.data_file.upper_bounds or {}
+                readable_metrics = {
+                    schema.find_column_name(field.field_id): {
+                        "column_size": column_sizes.get(field.field_id),
+                        "value_count": value_counts.get(field.field_id),
+                        "null_value_count": null_value_counts.get(field.field_id),
+                        "nan_value_count": nan_value_counts.get(field.field_id),
+                        # Makes them readable
+                        "lower_bound": from_bytes(field.field_type, lower_bound)
+                        if (lower_bound := lower_bounds.get(field.field_id))
+                        else None,
+                        "upper_bound": from_bytes(field.field_type, upper_bound)
+                        if (upper_bound := upper_bounds.get(field.field_id))
+                        else None,
+                    }
+                    for field in self.tbl.metadata.schema().fields
+                }
+
+                partition = entry.data_file.partition
+                partition_record_dict = {
+                    field.name: partition[pos]
+                    for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                }
+
+                entries.append({
+                    'status': entry.status.value,
+                    'snapshot_id': entry.snapshot_id,
+                    'sequence_number': entry.data_sequence_number,
+                    'file_sequence_number': entry.file_sequence_number,
+                    'data_file': {
+                        "content": entry.data_file.content,
+                        "file_path": entry.data_file.file_path,
+                        "file_format": entry.data_file.file_format,
+                        "partition": partition_record_dict,
+                        "record_count": entry.data_file.record_count,
+                        "file_size_in_bytes": entry.data_file.file_size_in_bytes,
+                        "column_sizes": dict(entry.data_file.column_sizes),
+                        "value_counts": dict(entry.data_file.value_counts),
+                        "null_value_counts": dict(entry.data_file.null_value_counts),
+                        "nan_value_counts": entry.data_file.nan_value_counts,
+                        "lower_bounds": entry.data_file.lower_bounds,
+                        "upper_bounds": entry.data_file.upper_bounds,
+                        "key_metadata": entry.data_file.key_metadata,
+                        "split_offsets": entry.data_file.split_offsets,
+                        "equality_ids": entry.data_file.equality_ids,
+                        "sort_order_id": entry.data_file.sort_order_id,
+                        "spec_id": entry.data_file.spec_id,
+                    },
+                    'readable_metrics': readable_metrics,
+                })
+
+        return pa.Table.from_pylist(
+            entries,
+            schema=entries_schema,
+        )
+
+    def refs(self) -> "pa.Table":
+        import pyarrow as pa
+
+        ref_schema = pa.schema([
+            pa.field('name', pa.string(), nullable=False),
+            pa.field('type', pa.dictionary(pa.int32(), pa.string()), nullable=False),
+            pa.field('snapshot_id', pa.int64(), nullable=False),
+            pa.field('max_reference_age_in_ms', pa.int64(), nullable=True),
+            pa.field('min_snapshots_to_keep', pa.int32(), nullable=True),
+            pa.field('max_snapshot_age_in_ms', pa.int64(), nullable=True),
+        ])
+
+        ref_results = []
+        for ref in self.tbl.metadata.refs:
+            if snapshot_ref := self.tbl.metadata.refs.get(ref):
+                ref_results.append({
+                    'name': ref,
+                    'type': snapshot_ref.snapshot_ref_type.upper(),
+                    'snapshot_id': snapshot_ref.snapshot_id,
+                    'max_reference_age_in_ms': snapshot_ref.max_ref_age_ms,
+                    'min_snapshots_to_keep': snapshot_ref.min_snapshots_to_keep,
+                    'max_snapshot_age_in_ms': snapshot_ref.max_snapshot_age_ms,
+                })
+
+        return pa.Table.from_pylist(ref_results, schema=ref_schema)
+
+    def partitions(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        table_schema = pa.schema([
+            pa.field('record_count', pa.int64(), nullable=False),
+            pa.field('file_count', pa.int32(), nullable=False),
+            pa.field('total_data_file_size_in_bytes', pa.int64(), nullable=False),
+            pa.field('position_delete_record_count', pa.int64(), nullable=False),
+            pa.field('position_delete_file_count', pa.int32(), nullable=False),
+            pa.field('equality_delete_record_count', pa.int64(), nullable=False),
+            pa.field('equality_delete_file_count', pa.int32(), nullable=False),
+            pa.field('last_updated_at', pa.timestamp(unit='ms'), nullable=True),
+            pa.field('last_updated_snapshot_id', pa.int64(), nullable=True),
+        ])
+
+        partition_record = self.tbl.metadata.specs_struct()
+        has_partitions = len(partition_record.fields) > 0
+
+        if has_partitions:
+            pa_record_struct = schema_to_pyarrow(partition_record)
+            partitions_schema = pa.schema([
+                pa.field('partition', pa_record_struct, nullable=False),
+                pa.field('spec_id', pa.int32(), nullable=False),
+            ])
+
+            table_schema = pa.unify_schemas([partitions_schema, table_schema])
+
+        def update_partitions_map(
+            partitions_map: Dict[Tuple[str, Any], Any],
+            file: DataFile,
+            partition_record_dict: Dict[str, Any],
+            snapshot: Optional[Snapshot],
+        ) -> None:
+            partition_record_key = _convert_to_hashable_type(partition_record_dict)
+            if partition_record_key not in partitions_map:
+                partitions_map[partition_record_key] = {
+                    "partition": partition_record_dict,
+                    "spec_id": file.spec_id,
+                    "record_count": 0,
+                    "file_count": 0,
+                    "total_data_file_size_in_bytes": 0,
+                    "position_delete_record_count": 0,
+                    "position_delete_file_count": 0,
+                    "equality_delete_record_count": 0,
+                    "equality_delete_file_count": 0,
+                    "last_updated_at": snapshot.timestamp_ms if snapshot else None,
+                    "last_updated_snapshot_id": snapshot.snapshot_id if snapshot else None,
+                }
+
+            partition_row = partitions_map[partition_record_key]
+
+            if snapshot is not None:
+                if partition_row["last_updated_at"] is None or partition_row["last_updated_snapshot_id"] < snapshot.timestamp_ms:
+                    partition_row["last_updated_at"] = snapshot.timestamp_ms
+                    partition_row["last_updated_snapshot_id"] = snapshot.snapshot_id
+
+            if file.content == DataFileContent.DATA:
+                partition_row["record_count"] += file.record_count
+                partition_row["file_count"] += 1
+                partition_row["total_data_file_size_in_bytes"] += file.file_size_in_bytes
+            elif file.content == DataFileContent.POSITION_DELETES:
+                partition_row["position_delete_record_count"] += file.record_count
+                partition_row["position_delete_file_count"] += 1
+            elif file.content == DataFileContent.EQUALITY_DELETES:
+                partition_row["equality_delete_record_count"] += file.record_count
+                partition_row["equality_delete_file_count"] += 1
+            else:
+                raise ValueError(f"Unknown DataFileContent ({file.content})")
+
+        partitions_map: Dict[Tuple[str, Any], Any] = {}
+        snapshot = self._get_snapshot(snapshot_id)
+        for manifest in snapshot.manifests(self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+                partition = entry.data_file.partition
+                partition_record_dict = {
+                    field.name: partition[pos]
+                    for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
+                }
+                entry_snapshot = self.tbl.snapshot_by_id(entry.snapshot_id) if entry.snapshot_id is not None else None
+                update_partitions_map(partitions_map, entry.data_file, partition_record_dict, entry_snapshot)
+
+        return pa.Table.from_pylist(
+            partitions_map.values(),
+            schema=table_schema,
+        )
+
+    def manifests(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.conversions import from_bytes
+
+        partition_summary_schema = pa.struct([
+            pa.field("contains_null", pa.bool_(), nullable=False),
+            pa.field("contains_nan", pa.bool_(), nullable=True),
+            pa.field("lower_bound", pa.string(), nullable=True),
+            pa.field("upper_bound", pa.string(), nullable=True),
+        ])
+
+        manifest_schema = pa.schema([
+            pa.field('content', pa.int8(), nullable=False),
+            pa.field('path', pa.string(), nullable=False),
+            pa.field('length', pa.int64(), nullable=False),
+            pa.field('partition_spec_id', pa.int32(), nullable=False),
+            pa.field('added_snapshot_id', pa.int64(), nullable=False),
+            pa.field('added_data_files_count', pa.int32(), nullable=False),
+            pa.field('existing_data_files_count', pa.int32(), nullable=False),
+            pa.field('deleted_data_files_count', pa.int32(), nullable=False),
+            pa.field('added_delete_files_count', pa.int32(), nullable=False),
+            pa.field('existing_delete_files_count', pa.int32(), nullable=False),
+            pa.field('deleted_delete_files_count', pa.int32(), nullable=False),
+            pa.field('partition_summaries', pa.list_(partition_summary_schema), nullable=False),
+        ])
+
+        def _partition_summaries_to_rows(
+            spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
+        ) -> List[Dict[str, Any]]:
+            rows = []
+            for i, field_summary in enumerate(partition_summaries):
+                field = spec.fields[i]
+                partition_field_type = spec.partition_type(self.tbl.schema()).fields[i].field_type
+                lower_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
+                        )
+                    )
+                    if field_summary.lower_bound
+                    else None
+                )
+                upper_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
+                        )
+                    )
+                    if field_summary.upper_bound
+                    else None
+                )
+                rows.append({
+                    'contains_null': field_summary.contains_null,
+                    'contains_nan': field_summary.contains_nan,
+                    'lower_bound': lower_bound,
+                    'upper_bound': upper_bound,
+                })
+            return rows
+
+        specs = self.tbl.metadata.specs()
+        manifests = []
+        if snapshot := self.tbl.metadata.current_snapshot():
+            for manifest in snapshot.manifests(self.tbl.io):
+                is_data_file = manifest.content == ManifestContent.DATA
+                is_delete_file = manifest.content == ManifestContent.DELETES
+                manifests.append({
+                    'content': manifest.content,
+                    'path': manifest.manifest_path,
+                    'length': manifest.manifest_length,
+                    'partition_spec_id': manifest.partition_spec_id,
+                    'added_snapshot_id': manifest.added_snapshot_id,
+                    'added_data_files_count': manifest.added_files_count if is_data_file else 0,
+                    'existing_data_files_count': manifest.existing_files_count if is_data_file else 0,
+                    'deleted_data_files_count': manifest.deleted_files_count if is_data_file else 0,
+                    'added_delete_files_count': manifest.added_files_count if is_delete_file else 0,
+                    'existing_delete_files_count': manifest.existing_files_count if is_delete_file else 0,
+                    'deleted_delete_files_count': manifest.deleted_files_count if is_delete_file else 0,
+                    'partition_summaries': _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
+                    if manifest.partitions
+                    else [],
+                })
+
+        return pa.Table.from_pylist(
+            manifests,
+            schema=manifest_schema,
+        )
+
+
+@dataclass(frozen=True)
+class TablePartition:
+    partition_key: PartitionKey
+    arrow_table_partition: pa.Table
+
+
+def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
+    order = 'ascending' if not reverse else 'descending'
+    null_placement = 'at_start' if reverse else 'at_end'
+    return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
+
+
+def group_by_partition_scheme(arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
+    """Given a table, sort it by current partition scheme."""
+    # only works for identity for now
+    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
+    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
+    return sorted_arrow_table
+
+
+def get_partition_columns(
+    spec: PartitionSpec,
+    schema: Schema,
+) -> list[str]:
+    partition_cols = []
+    for partition_field in spec.fields:
+        column_name = schema.find_column_name(partition_field.source_id)
+        if not column_name:
+            raise ValueError(f"{partition_field=} could not be found in {schema}.")
+        partition_cols.append(column_name)
+    return partition_cols
+
+
+def _get_table_partitions(
+    arrow_table: pa.Table,
+    partition_spec: PartitionSpec,
+    schema: Schema,
+    slice_instructions: list[dict[str, Any]],
+) -> list[TablePartition]:
+    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x['offset'])
+
+    partition_fields = partition_spec.fields
+
+    offsets = [inst["offset"] for inst in sorted_slice_instructions]
+    projected_and_filtered = {
+        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
+        .take(offsets)
+        .to_pylist()
+        for partition_field in partition_fields
+    }
+
+    table_partitions = []
+    for idx, inst in enumerate(sorted_slice_instructions):
+        partition_slice = arrow_table.slice(**inst)
+        fieldvalues = [
+            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
+            for partition_field in partition_fields
+        ]
+        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
+        table_partitions.append(TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
+    return table_partitions
+
+
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
+    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+
+    Example:
+    Input:
+    An arrow table with partition key of ['n_legs', 'year'] and with data of
+    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
+     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
+    The algrithm:
+    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement of "at_end".
+    This gives the same table as raw input.
+    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement : "at_start".
+    This gives:
+    [8, 7, 4, 5, 6, 3, 1, 2, 0]
+    Based on this we get partition groups of indices:
+    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
+    We then retrieve the partition keys by offsets.
+    And slice the arrow table by offsets and lengths of each partition.
+    """
+    import pyarrow as pa
+
+    partition_columns = get_partition_columns(spec=spec, schema=schema)
+    arrow_table = group_by_partition_scheme(arrow_table, partition_columns)
+
+    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
+    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
+
+    slice_instructions: list[dict[str, Any]] = []
+    last = len(reversed_indices)
+    reversed_indices_size = len(reversed_indices)
+    ptr = 0
+    while ptr < reversed_indices_size:
+        group_size = last - reversed_indices[ptr]
+        offset = reversed_indices[ptr]
+        slice_instructions.append({"offset": offset, "length": group_size})
+        last = reversed_indices[ptr]
+        ptr = ptr + group_size
+
+    table_partitions: list[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+
+    return table_partitions

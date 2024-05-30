@@ -519,6 +519,8 @@ class RestCatalog(Catalog):
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
         namespace_and_table = self._split_identifier_for_path(identifier)
+        if location:
+            location = location.rstrip("/")
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
@@ -713,7 +715,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            self._handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceAlreadyExistsError})
+            self._handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
 
     @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
@@ -788,4 +790,4 @@ class RestCatalog(Catalog):
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
-        return response.status_code == 200
+        return response.status_code in (200, 204)

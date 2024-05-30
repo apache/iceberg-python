@@ -35,6 +35,7 @@ from typing_extensions import Annotated
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import MetadataLogEntry, Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import (
@@ -49,7 +50,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
-from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -237,6 +238,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
 
+    def name_mapping(self) -> Optional[NameMapping]:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get("schema.name-mapping.default"):
+            return parse_mapping_from_json(name_mapping_json)
+        else:
+            return None
+
     def spec(self) -> PartitionSpec:
         """Return the partition spec of this table."""
         return next(spec for spec in self.partition_specs if spec.spec_id == self.default_spec_id)
@@ -245,6 +253,31 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
+    def specs_struct(self) -> StructType:
+        """Produce a struct of all the combined PartitionSpecs.
+
+        The partition fields should be optional: Partition fields may be added later,
+        in which case not all files would have the result field, and it may be null.
+
+        :return: A StructType that represents all the combined PartitionSpecs of the table
+        """
+        specs = self.specs()
+
+        # Collect all the fields
+        struct_fields = {field.field_id: field for spec in specs.values() for field in spec.fields}
+
+        schema = self.schema()
+
+        nested_fields = []
+        # Sort them by field_id in order to get a deterministic output
+        for field_id in sorted(struct_fields):
+            field = struct_fields[field_id]
+            source_type = schema.find_type(field.source_id)
+            result_type = field.transform.result_type(source_type)
+            nested_fields.append(NestedField(field_id=field.field_id, name=field.name, type=result_type, required=False))
+
+        return StructType(*nested_fields)
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
@@ -252,6 +285,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
             snapshot_id = _generate_snapshot_id()
 
         return snapshot_id
+
+    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+        """Return the snapshot referenced by the given name or null if no such reference exists."""
+        if ref := self.refs.get(name):
+            return self.snapshot_by_id(ref.snapshot_id)
+        return None
 
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""

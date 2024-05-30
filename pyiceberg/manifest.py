@@ -20,7 +20,6 @@ import math
 from abc import ABC, abstractmethod
 from copy import copy
 from enum import Enum
-from functools import singledispatch
 from types import TracebackType
 from typing import (
     Any,
@@ -42,8 +41,6 @@ from pyiceberg.typedef import EMPTY_DICT, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
-    DateType,
-    IcebergType,
     IntegerType,
     ListType,
     LongType,
@@ -52,9 +49,6 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
-    TimestampType,
-    TimestamptzType,
-    TimeType,
 )
 
 UNASSIGNED_SEQ = -1
@@ -284,31 +278,12 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 }
 
 
-@singledispatch
-def partition_field_to_data_file_partition_field(partition_field_type: IcebergType) -> PrimitiveType:
-    raise TypeError(f"Unsupported partition field type: {partition_field_type}")
-
-
-@partition_field_to_data_file_partition_field.register(LongType)
-@partition_field_to_data_file_partition_field.register(DateType)
-@partition_field_to_data_file_partition_field.register(TimeType)
-@partition_field_to_data_file_partition_field.register(TimestampType)
-@partition_field_to_data_file_partition_field.register(TimestamptzType)
-def _(partition_field_type: PrimitiveType) -> IntegerType:
-    return IntegerType()
-
-
-@partition_field_to_data_file_partition_field.register(PrimitiveType)
-def _(partition_field_type: PrimitiveType) -> PrimitiveType:
-    return partition_field_type
-
-
 def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
     data_file_partition_type = StructType(*[
         NestedField(
             field_id=field.field_id,
             name=field.name,
-            field_type=partition_field_to_data_file_partition_field(field.field_type),
+            field_type=field.field_type,
             required=field.required,
         )
         for field in partition_type.fields

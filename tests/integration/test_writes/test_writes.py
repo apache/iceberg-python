@@ -18,10 +18,9 @@
 import math
 import os
 import time
-import uuid
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -34,123 +33,16 @@ from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table, TableProperties, _dataframe_to_data_files
-from pyiceberg.typedef import Properties
-from pyiceberg.types import (
-    BinaryType,
-    BooleanType,
-    DateType,
-    DoubleType,
-    FixedType,
-    FloatType,
-    IntegerType,
-    LongType,
-    NestedField,
-    StringType,
-    TimestampType,
-    TimestamptzType,
-)
-
-TEST_DATA_WITH_NULL = {
-    'bool': [False, None, True],
-    'string': ['a', None, 'z'],
-    # Go over the 16 bytes to kick in truncation
-    'string_long': ['a' * 22, None, 'z' * 22],
-    'int': [1, None, 9],
-    'long': [1, None, 9],
-    'float': [0.0, None, 0.9],
-    'double': [0.0, None, 0.9],
-    'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
-    # Not supported by Spark
-    # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
-    # Not natively supported by Arrow
-    # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
-    'binary': [b'\01', None, b'\22'],
-    'fixed': [
-        uuid.UUID('00000000-0000-0000-0000-000000000000').bytes,
-        None,
-        uuid.UUID('11111111-1111-1111-1111-111111111111').bytes,
-    ],
-}
-
-TABLE_SCHEMA = Schema(
-    NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
-    NestedField(field_id=2, name="string", field_type=StringType(), required=False),
-    NestedField(field_id=3, name="string_long", field_type=StringType(), required=False),
-    NestedField(field_id=4, name="int", field_type=IntegerType(), required=False),
-    NestedField(field_id=5, name="long", field_type=LongType(), required=False),
-    NestedField(field_id=6, name="float", field_type=FloatType(), required=False),
-    NestedField(field_id=7, name="double", field_type=DoubleType(), required=False),
-    NestedField(field_id=8, name="timestamp", field_type=TimestampType(), required=False),
-    NestedField(field_id=9, name="timestamptz", field_type=TimestamptzType(), required=False),
-    NestedField(field_id=10, name="date", field_type=DateType(), required=False),
-    # NestedField(field_id=11, name="time", field_type=TimeType(), required=False),
-    # NestedField(field_id=12, name="uuid", field_type=UuidType(), required=False),
-    NestedField(field_id=12, name="binary", field_type=BinaryType(), required=False),
-    NestedField(field_id=13, name="fixed", field_type=FixedType(16), required=False),
-)
-
-
-@pytest.fixture(scope="session")
-def pa_schema() -> pa.Schema:
-    return pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.large_binary()),
-        ("fixed", pa.binary(16)),
-    ])
-
-
-@pytest.fixture(scope="session")
-def arrow_table_with_null(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
-
-
-@pytest.fixture(scope="session")
-def arrow_table_without_data(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    return pa.Table.from_pylist([], schema=pa_schema)
-
-
-@pytest.fixture(scope="session")
-def arrow_table_with_only_nulls(pa_schema: pa.Schema) -> pa.Table:
-    """PyArrow table with all kinds of columns"""
-    return pa.Table.from_pylist([{}, {}], schema=pa_schema)
-
-
-def _create_table(
-    session_catalog: Catalog, identifier: str, properties: Properties, data: Optional[List[pa.Table]] = None
-) -> Table:
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(identifier=identifier, schema=TABLE_SCHEMA, properties=properties)
-
-    if data:
-        for d in data:
-            tbl.append(d)
-
-    return tbl
+from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.transforms import IdentityTransform
+from pyiceberg.types import IntegerType, NestedField
+from tests.conftest import TEST_DATA_WITH_NULL
+from utils import _create_table
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -247,7 +139,7 @@ def test_query_filter_without_data(spark: SparkSession, col: str, format_version
     identifier = f"default.arrow_table_v{format_version}_without_data"
     df = spark.table(identifier)
     assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
+    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
@@ -256,8 +148,8 @@ def test_query_filter_without_data(spark: SparkSession, col: str, format_version
 def test_query_filter_only_nulls(spark: SparkSession, col: str, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 2 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 rows for {col}"
+    assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
+    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
@@ -381,6 +273,70 @@ def test_python_writes_with_spark_snapshot_reads(
     assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
     tbl.append(arrow_table_with_null)
     assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_special_character_column_with_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_special_character_column_with_spark_reads"
+    column_name_with_special_character = "letter/abc"
+    TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN = {
+        column_name_with_special_character: ['a', None, 'z'],
+        'id': [1, 2, 3],
+        'name': ['AB', 'CD', 'EF'],
+        'address': [
+            {'street': '123', 'city': 'SFO', 'zip': 12345, column_name_with_special_character: 'a'},
+            {'street': '456', 'city': 'SW', 'zip': 67890, column_name_with_special_character: 'b'},
+            {'street': '789', 'city': 'Random', 'zip': 10112, column_name_with_special_character: 'c'},
+        ],
+    }
+    pa_schema = pa.schema([
+        pa.field(column_name_with_special_character, pa.string()),
+        pa.field('id', pa.int32()),
+        pa.field('name', pa.string()),
+        pa.field(
+            'address',
+            pa.struct([
+                pa.field('street', pa.string()),
+                pa.field('city', pa.string()),
+                pa.field('zip', pa.int32()),
+                pa.field(column_name_with_special_character, pa.string()),
+            ]),
+        ),
+    ])
+    arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table_with_special_character_column)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_dictionary_encoded_column_with_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_dictionary_encoded_column_with_spark_reads"
+    TEST_DATA = {
+        'id': [1, 2, 3, 1, 1],
+        'name': ['AB', 'CD', 'EF', 'CD', 'EF'],
+    }
+    pa_schema = pa.schema([
+        pa.field('id', pa.dictionary(pa.int32(), pa.int32(), False)),
+        pa.field('name', pa.dictionary(pa.int32(), pa.string(), False)),
+    ])
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
 
 
 @pytest.mark.integration
@@ -860,3 +816,56 @@ def test_write_within_transaction(spark: SparkSession, session_catalog: Catalog,
     tbl.transaction().set_properties({"test": "2"}).commit_transaction()
     tbl.append(arrow_table_with_null)
     assert get_metadata_entries_count(identifier) == 4
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_hive_catalog_storage_descriptor(
+    session_catalog_hive: HiveCatalog,
+    pa_schema: pa.Schema,
+    arrow_table_with_null: pa.Table,
+    spark: SparkSession,
+    format_version: int,
+) -> None:
+    tbl = _create_table(
+        session_catalog_hive, "default.test_storage_descriptor", {"format-version": format_version}, [arrow_table_with_null]
+    )
+
+    # check if pyiceberg can read the table
+    assert len(tbl.scan().to_arrow()) == 3
+    # check if spark can read the table
+    assert spark.sql("SELECT * FROM hive.default.test_storage_descriptor").count() == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_sanitize_character_partitioned(catalog: Catalog) -> None:
+    table_name = "default.test_table_partitioned_sanitized_character"
+    try:
+        catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass
+
+    tbl = _create_table(
+        session_catalog=catalog,
+        identifier=table_name,
+        schema=Schema(NestedField(field_id=1, name="some.id", type=IntegerType(), required=True)),
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, name="some.id_identity", transform=IdentityTransform())
+        ),
+        data=[pa.Table.from_arrays([range(22)], schema=pa.schema([pa.field("some.id", pa.int32(), nullable=False)]))],
+    )
+
+    assert len(tbl.scan().to_arrow()) == 22
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    identifier = "default.table_append_subset_of_schema"
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
+    arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
+    assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
+    tbl.overwrite(arrow_table_without_some_columns)
+    tbl.append(arrow_table_without_some_columns)
+    # overwrite and then append should produce twice the data
+    assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2

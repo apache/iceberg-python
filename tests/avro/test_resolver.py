@@ -29,6 +29,7 @@ from pyiceberg.avro.reader import (
     FloatReader,
     IntegerReader,
     MapReader,
+    OptionReader,
     StringReader,
     StructReader,
 )
@@ -91,7 +92,7 @@ def test_resolver() -> None:
             "location",
             location_struct,
         ),
-        NestedField(1, "id", LongType()),
+        NestedField(1, "id", LongType(), required=False),
         NestedField(6, "preferences", MapType(7, StringType(), 8, StringType())),
         schema_id=1,
     )
@@ -99,20 +100,22 @@ def test_resolver() -> None:
 
     assert read_tree == StructReader(
         (
-            (1, IntegerReader()),
-            (None, StringReader()),
+            (1, OptionReader(option=IntegerReader())),
+            (None, OptionReader(option=StringReader())),
             (
                 0,
-                StructReader(
-                    (
-                        (0, DoubleReader()),
-                        (1, DoubleReader()),
+                OptionReader(
+                    option=StructReader(
+                        (
+                            (0, OptionReader(option=DoubleReader())),
+                            (1, OptionReader(option=DoubleReader())),
+                        ),
+                        Record,
+                        location_struct,
                     ),
-                    Record,
-                    location_struct,
                 ),
             ),
-            (2, MapReader(StringReader(), StringReader())),
+            (2, OptionReader(option=MapReader(StringReader(), StringReader()))),
         ),
         Record,
         read_schema.as_struct(),
@@ -309,7 +312,7 @@ def test_resolver_initial_value() -> None:
 
     assert resolve_reader(write_schema, read_schema) == StructReader(
         (
-            (None, StringReader()),  # The one we skip
+            (None, OptionReader(option=StringReader())),  # The one we skip
             (0, DefaultReader("vo")),
         ),
         Record,

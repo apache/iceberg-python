@@ -105,6 +105,7 @@ class InMemoryCatalog(MetastoreCatalog):
 
             if not location:
                 location = f'{self._warehouse_location}/{"/".join(identifier)}'
+            location = location.rstrip("/")
 
             metadata_location = self._get_metadata_location(location=location)
             metadata = new_table_metadata(
@@ -269,9 +270,9 @@ TEST_TABLE_IDENTIFIER = ("com", "organization", "department", "my_table")
 TEST_TABLE_NAMESPACE = ("com", "organization", "department")
 TEST_TABLE_NAME = "my_table"
 TEST_TABLE_SCHEMA = Schema(
-    NestedField(1, "x", LongType()),
-    NestedField(2, "y", LongType(), doc="comment"),
-    NestedField(3, "z", LongType()),
+    NestedField(1, "x", LongType(), required=True),
+    NestedField(2, "y", LongType(), doc="comment", required=True),
+    NestedField(3, "z", LongType(), required=True),
 )
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
 TEST_TABLE_PROPERTIES = {"key1": "value1", "key2": "value2"}
@@ -346,6 +347,19 @@ def test_create_table_location_override(catalog: InMemoryCatalog) -> None:
         identifier=TEST_TABLE_IDENTIFIER,
         schema=TEST_TABLE_SCHEMA,
         location=new_location,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    assert catalog.load_table(TEST_TABLE_IDENTIFIER) == table
+    assert table.location() == new_location
+
+
+def test_create_table_removes_trailing_slash_from_location(catalog: InMemoryCatalog) -> None:
+    new_location = f"{catalog._warehouse_location}/new_location"
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        location=f"{new_location}/",
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=TEST_TABLE_PROPERTIES,
     )

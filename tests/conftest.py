@@ -30,7 +30,7 @@ import re
 import socket
 import string
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from random import choice
 from tempfile import TemporaryDirectory
@@ -69,7 +69,9 @@ from pyiceberg.types import (
     BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
+    FixedType,
     FloatType,
     IntegerType,
     ListType,
@@ -78,6 +80,9 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
     UUIDType,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
@@ -263,6 +268,54 @@ def table_schema_nested_with_struct_key_map() -> Schema:
         NestedField(field_id=29, name="double", field_type=DoubleType(), required=True),
         schema_id=1,
         identifier_field_ids=[1],
+    )
+
+
+@pytest.fixture(scope="session")
+def table_schema_with_all_types() -> Schema:
+    return schema.Schema(
+        NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
+        NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="long", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="float", field_type=FloatType(), required=True),
+        NestedField(field_id=5, name="double", field_type=DoubleType(), required=True),
+        NestedField(field_id=6, name="decimal", field_type=DecimalType(32, 3), required=True),
+        NestedField(field_id=7, name="date", field_type=DateType(), required=True),
+        NestedField(field_id=8, name="time", field_type=TimeType(), required=True),
+        NestedField(field_id=9, name="timestamp", field_type=TimestampType(), required=True),
+        NestedField(field_id=10, name="timestamptz", field_type=TimestamptzType(), required=True),
+        NestedField(field_id=11, name="string", field_type=StringType(), required=True),
+        NestedField(field_id=12, name="uuid", field_type=UUIDType(), required=True),
+        NestedField(field_id=14, name="fixed", field_type=FixedType(12), required=True),
+        NestedField(field_id=13, name="binary", field_type=BinaryType(), required=True),
+        NestedField(
+            field_id=15,
+            name="list",
+            field_type=ListType(element_id=16, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=17,
+            name="map",
+            field_type=MapType(
+                key_id=18,
+                key_type=StringType(),
+                value_id=19,
+                value_type=IntegerType(),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=20,
+            name="struct",
+            field_type=StructType(
+                NestedField(field_id=21, name="inner_string", field_type=StringType(), required=False),
+                NestedField(field_id=22, name="inner_int", field_type=IntegerType(), required=True),
+            ),
+        ),
+        schema_id=1,
+        identifier_field_ids=[2],
     )
 
 
@@ -1825,6 +1878,19 @@ def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
+@pytest.fixture()
+def hierarchical_namespace_name() -> str:
+    prefix = "my_iceberg_ns-"
+    random_tag1 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    random_tag2 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return ".".join([prefix + random_tag1, prefix + random_tag2]).lower()
+
+
+@pytest.fixture()
+def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
+    return [f"{hierarchical_namespace_name}_{idx}" for idx in range(NUM_TABLES)]
+
+
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
@@ -1878,9 +1944,11 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
     import pyarrow as pa
     from pyarrow import parquet as pq
 
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
     table = pa.table(
         {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, None]},
-        metadata={"iceberg.schema": table_schema_simple.model_dump_json()},
+        schema=schema_to_pyarrow(table_schema_simple),
     )
 
     file_path = f"{tmp_path}/0000-data.parquet"
@@ -1954,6 +2022,20 @@ def session_catalog() -> Catalog:
 
 
 @pytest.fixture(scope="session")
+def session_catalog_hive() -> Catalog:
+    return load_catalog(
+        "local",
+        **{
+            "type": "hive",
+            "uri": "http://localhost:9083",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+
+@pytest.fixture(scope="session")
 def spark() -> "SparkSession":
     import importlib.metadata
 
@@ -1984,6 +2066,14 @@ def spark() -> "SparkSession":
         .config("spark.sql.catalog.integration.s3.endpoint", "http://localhost:9000")
         .config("spark.sql.catalog.integration.s3.path-style-access", "true")
         .config("spark.sql.defaultCatalog", "integration")
+        .config("spark.sql.catalog.hive", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.hive.type", "hive")
+        .config("spark.sql.catalog.hive.uri", "http://localhost:9083")
+        .config("spark.sql.catalog.hive.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config("spark.sql.catalog.hive.warehouse", "s3://warehouse/hive/")
+        .config("spark.sql.catalog.hive.s3.endpoint", "http://localhost:9000")
+        .config("spark.sql.catalog.hive.s3.path-style-access", "true")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
         .getOrCreate()
     )
 
@@ -1999,8 +2089,13 @@ TEST_DATA_WITH_NULL = {
     'long': [1, None, 9],
     'float': [0.0, None, 0.9],
     'double': [0.0, None, 0.9],
+    # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
     'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    'timestamptz': [
+        datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+        None,
+        datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+    ],
     'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
@@ -2027,6 +2122,8 @@ def pa_schema() -> "pa.Schema":
         ("long", pa.int64()),
         ("float", pa.float32()),
         ("double", pa.float64()),
+        # Not supported by Spark
+        # ("time", pa.time64('us')),
         ("timestamp", pa.timestamp(unit="us")),
         ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
         ("date", pa.date32()),
@@ -2041,7 +2138,23 @@ def pa_schema() -> "pa.Schema":
 
 @pytest.fixture(scope="session")
 def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
+    """Pyarrow table with all kinds of columns."""
     import pyarrow as pa
 
-    """PyArrow table with all kinds of columns"""
     return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_without_data(pa_schema: "pa.Schema") -> "pa.Table":
+    """Pyarrow table without data."""
+    import pyarrow as pa
+
+    return pa.Table.from_pylist([], schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_with_only_nulls(pa_schema: "pa.Schema") -> "pa.Table":
+    """Pyarrow table with only null values."""
+    import pyarrow as pa
+
+    return pa.Table.from_pylist([{}, {}], schema=pa_schema)

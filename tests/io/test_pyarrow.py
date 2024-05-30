@@ -28,7 +28,6 @@ import pyarrow.parquet as pq
 import pytest
 from pyarrow.fs import FileType, LocalFileSystem
 
-from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -72,7 +71,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, Table, TableProperties
+from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.typedef import UTF8
 from pyiceberg.types import (
@@ -717,7 +716,9 @@ def schema_map_of_structs() -> Schema:
                 key_id=51,
                 value_id=52,
                 key_type=StringType(),
-                value_type=StructType(NestedField(511, "lat", DoubleType()), NestedField(512, "long", DoubleType())),
+                value_type=StructType(
+                    NestedField(511, "lat", DoubleType(), required=True), NestedField(512, "long", DoubleType(), required=True)
+                ),
                 element_required=False,
             ),
             required=False,
@@ -876,7 +877,7 @@ def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
     return project_table(
-        [
+        tasks=[
             FileScanTask(
                 DataFile(
                     content=DataFileContent.DATA,
@@ -889,21 +890,16 @@ def project(
             )
             for file in files
         ],
-        Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location="file://a/b/",
-                last_column_id=1,
-                format_version=2,
-                schemas=[table_schema or schema],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location="file://a/b/c.json",
-            io=PyArrowFileIO(),
-            catalog=NoopCatalog("NoopCatalog"),
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[table_schema or schema],
+            partition_specs=[PartitionSpec()],
         ),
-        expr or AlwaysTrue(),
-        schema,
+        io=PyArrowFileIO(),
+        row_filter=expr or AlwaysTrue(),
+        projected_schema=schema,
         case_sensitive=True,
     )
 
@@ -1044,7 +1040,7 @@ def test_projection_add_column_struct_required(file_int: str) -> None:
 def test_projection_rename_column(schema_int: Schema, file_int: str) -> None:
     schema = Schema(
         # Reuses the id 1
-        NestedField(1, "other_name", IntegerType())
+        NestedField(1, "other_name", IntegerType(), required=True)
     )
     result_table = project(schema, [file_int])
     assert len(result_table.columns[0]) == 3
@@ -1077,7 +1073,7 @@ def test_projection_filter(schema_int: Schema, file_int: str) -> None:
 def test_projection_filter_renamed_column(file_int: str) -> None:
     schema = Schema(
         # Reuses the id 1
-        NestedField(1, "other_id", IntegerType())
+        NestedField(1, "other_id", IntegerType(), required=True)
     )
     result_table = project(schema, [file_int], GreaterThan("other_id", 1))
     assert len(result_table.columns[0]) == 1
@@ -1095,7 +1091,7 @@ def test_projection_filter_add_column(schema_int: Schema, file_int: str, file_st
 
 
 def test_projection_filter_add_column_promote(file_int: str) -> None:
-    schema_long = Schema(NestedField(1, "id", LongType()))
+    schema_long = Schema(NestedField(1, "id", LongType(), required=True))
     result_table = project(schema_long, [file_int])
 
     for actual, expected in zip(result_table.columns[0], [0, 1, 2]):
@@ -1117,9 +1113,10 @@ def test_projection_nested_struct_subset(file_struct: str) -> None:
             4,
             "location",
             StructType(
-                NestedField(41, "lat", DoubleType()),
+                NestedField(41, "lat", DoubleType(), required=True),
                 # long is missing!
             ),
+            required=True,
         )
     )
 
@@ -1144,6 +1141,7 @@ def test_projection_nested_new_field(file_struct: str) -> None:
             StructType(
                 NestedField(43, "null", DoubleType(), required=False),  # Whoa, this column doesn't exist in the file
             ),
+            required=True,
         )
     )
 
@@ -1169,6 +1167,7 @@ def test_projection_nested_struct(schema_struct: Schema, file_struct: str) -> No
                 NestedField(43, "null", DoubleType(), required=False),
                 NestedField(42, "long", DoubleType(), required=False),
             ),
+            required=True,
         )
     )
 
@@ -1200,8 +1199,8 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
             ListType(
                 51,
                 StructType(
-                    NestedField(511, "latitude", DoubleType()),
-                    NestedField(512, "longitude", DoubleType()),
+                    NestedField(511, "latitude", DoubleType(), required=True),
+                    NestedField(512, "longitude", DoubleType(), required=True),
                     NestedField(513, "altitude", DoubleType(), required=False),
                 ),
                 element_required=False,
@@ -1245,9 +1244,9 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
                 value_id=52,
                 key_type=StringType(),
                 value_type=StructType(
-                    NestedField(511, "latitude", DoubleType()),
-                    NestedField(512, "longitude", DoubleType()),
-                    NestedField(513, "altitude", DoubleType(), required=False),
+                    NestedField(511, "latitude", DoubleType(), required=True),
+                    NestedField(512, "longitude", DoubleType(), required=True),
+                    NestedField(513, "altitude", DoubleType()),
                 ),
                 element_required=False,
             ),
@@ -1314,7 +1313,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
 
 
 def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int_str: str) -> None:
-    schema = Schema(NestedField(1, "id", IntegerType()))
+    schema = Schema(NestedField(1, "id", IntegerType(), required=True))
 
     result_table = project(schema, [file_int_str], GreaterThan("data", "1"), schema_int_str)
 
@@ -1362,20 +1361,15 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
 
     with_deletes = project_table(
         tasks=[example_task_with_delete],
-        table=Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location=metadata_location,
-                last_column_id=1,
-                format_version=2,
-                current_schema_id=1,
-                schemas=[table_schema_simple],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location=metadata_location,
-            io=load_file_io(),
-            catalog=NoopCatalog("noop"),
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
         ),
+        io=load_file_io(),
         row_filter=AlwaysTrue(),
         projected_schema=table_schema_simple,
     )
@@ -1384,7 +1378,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1405,20 +1399,15 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
 
     with_deletes = project_table(
         tasks=[example_task_with_delete],
-        table=Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location=metadata_location,
-                last_column_id=1,
-                format_version=2,
-                current_schema_id=1,
-                schemas=[table_schema_simple],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location=metadata_location,
-            io=load_file_io(),
-            catalog=NoopCatalog("noop"),
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
         ),
+        io=load_file_io(),
         row_filter=AlwaysTrue(),
         projected_schema=table_schema_simple,
     )
@@ -1427,7 +1416,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         str(with_deletes)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","c"]]
@@ -1439,21 +1428,16 @@ baz: [[true,null]]"""
 def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Schema) -> None:
     metadata_location = "file://a/b/c.json"
     projection = project_table(
-        [example_task],
-        Table(
-            ("namespace", "table"),
-            metadata=TableMetadataV2(
-                location=metadata_location,
-                last_column_id=1,
-                format_version=2,
-                current_schema_id=1,
-                schemas=[table_schema_simple],
-                partition_specs=[PartitionSpec()],
-            ),
-            metadata_location=metadata_location,
-            io=load_file_io(properties={"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}, location=metadata_location),
-            catalog=NoopCatalog("NoopCatalog"),
+        tasks=[example_task],
+        table_metadata=TableMetadataV2(
+            location=metadata_location,
+            last_column_id=1,
+            format_version=2,
+            current_schema_id=1,
+            schemas=[table_schema_simple],
+            partition_specs=[PartitionSpec()],
         ),
+        io=load_file_io(properties={"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}, location=metadata_location),
         case_sensitive=True,
         projected_schema=table_schema_simple,
         row_filter=AlwaysTrue(),
@@ -1463,7 +1447,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         str(projection)
         == """pyarrow.Table
 foo: string
-bar: int64 not null
+bar: int32 not null
 baz: bool
 ----
 foo: [["a","b","c"]]
@@ -1660,9 +1644,9 @@ def test_parse_location() -> None:
         assert netloc == expected_netloc
         assert uri == expected_uri
 
-    check_results("hdfs://127.0.0.1:9000/root/foo.txt", "hdfs", "127.0.0.1:9000", "hdfs://127.0.0.1:9000/root/foo.txt")
-    check_results("hdfs://127.0.0.1/root/foo.txt", "hdfs", "127.0.0.1", "hdfs://127.0.0.1/root/foo.txt")
-    check_results("hdfs://clusterA/root/foo.txt", "hdfs", "clusterA", "hdfs://clusterA/root/foo.txt")
+    check_results("hdfs://127.0.0.1:9000/root/foo.txt", "hdfs", "127.0.0.1:9000", "/root/foo.txt")
+    check_results("hdfs://127.0.0.1/root/foo.txt", "hdfs", "127.0.0.1", "/root/foo.txt")
+    check_results("hdfs://clusterA/root/foo.txt", "hdfs", "clusterA", "/root/foo.txt")
 
     check_results("/root/foo.txt", "file", "", "/root/foo.txt")
     check_results("/root/tmp/foo.txt", "file", "", "/root/tmp/foo.txt")

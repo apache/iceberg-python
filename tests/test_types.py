@@ -523,7 +523,7 @@ def test_serialization_struct() -> None:
     expected = (
         '{"type":"struct","fields":['
         '{"id":1,"name":"required_field","type":"string","required":true,"doc":"this is a doc"},'
-        '{"id":2,"name":"optional_field","type":"int","required":true}'
+        '{"id":2,"name":"optional_field","type":"int","required":false}'
         "]}"
     )
     assert actual == expected
@@ -545,7 +545,7 @@ def test_deserialization_struct() -> None:
                 "id": 2,
                 "name": "optional_field",
                 "type": "int",
-                "required": true
+                "required": false
             }
         ]
     }
@@ -560,13 +560,13 @@ def test_deserialization_struct() -> None:
 
 
 def test_str_struct(simple_struct: StructType) -> None:
-    assert str(simple_struct) == "struct<1: required_field: required string (this is a doc), 2: optional_field: required int>"
+    assert str(simple_struct) == "struct<1: required_field: required string (this is a doc), 2: optional_field: optional int>"
 
 
 def test_repr_struct(simple_struct: StructType) -> None:
     assert (
         repr(simple_struct)
-        == "StructType(fields=(NestedField(field_id=1, name='required_field', field_type=StringType(), required=True), NestedField(field_id=2, name='optional_field', field_type=IntegerType(), required=True),))"
+        == "StructType(fields=(NestedField(field_id=1, name='required_field', field_type=StringType(), required=True), NestedField(field_id=2, name='optional_field', field_type=IntegerType(), required=False),))"
     )
 
 

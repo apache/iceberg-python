@@ -291,6 +291,12 @@ def test_create_duplicate_namespace(test_catalog: Catalog, database_name: str) -
         test_catalog.create_namespace(database_name)
 
 
+def test_create_namespace_if_not_exists(test_catalog: Catalog, database_name: str) -> None:
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_namespace_if_not_exists(database_name)
+    assert (database_name,) in test_catalog.list_namespaces()
+
+
 def test_create_namespace_with_comment_and_location(test_catalog: Catalog, database_name: str) -> None:
     test_location = get_s3_path(get_bucket_name(), database_name)
     test_properties = {
@@ -462,7 +468,9 @@ def test_commit_table_update_schema(
     ]
 
 
-def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
+def test_commit_table_properties(
+    test_catalog: Catalog, glue: boto3.client, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
@@ -470,13 +478,19 @@ def test_commit_table_properties(test_catalog: Catalog, table_schema_nested: Sch
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
 
     transaction = table.transaction()
-    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c", Description="test_description")
     transaction.remove_properties("test_b")
     transaction.commit_transaction()
 
     updated_table_metadata = table.metadata
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {"test_a": "test_aa", "test_c": "test_c"}
+    assert updated_table_metadata.properties == {'Description': 'test_description', "test_a": "test_aa", "test_c": "test_c"}
+
+    table_info = glue.get_table(
+        DatabaseName=database_name,
+        Name=table_name,
+    )
+    assert table_info["Table"]["Description"] == "test_description"
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -550,3 +564,25 @@ def test_create_table_transaction(
             ]
         },
     ]
+
+
+def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str) -> None:
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_table((database_name, table_name), table_schema_nested)
+    assert test_catalog.table_exists((database_name, table_name)) is True
+
+
+def test_register_table_with_given_location(
+    test_catalog: Catalog, table_schema_nested: Schema, table_name: str, database_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    new_identifier = (database_name, f"new_{table_name}")
+    test_catalog.create_namespace(database_name)
+    tbl = test_catalog.create_table(identifier, table_schema_nested)
+    location = tbl.metadata_location
+    test_catalog.drop_table(identifier)  # drops the table but keeps the metadata file
+    assert not test_catalog.table_exists(identifier)
+    table = test_catalog.register_table(new_identifier, location)
+    assert table.identifier == (CATALOG_NAME,) + new_identifier
+    assert table.metadata_location == location
+    assert test_catalog.table_exists(new_identifier)

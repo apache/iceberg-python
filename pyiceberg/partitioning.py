@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from functools import cached_property, singledispatch
 from typing import (
     Any,
@@ -62,9 +62,10 @@ from pyiceberg.types import (
     StructType,
     TimestampType,
     TimestamptzType,
+    TimeType,
     UUIDType,
 )
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -429,6 +430,11 @@ def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
 @_to_partition_representation.register(DateType)
 def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
     return date_to_days(value) if value is not None else None
+
+
+@_to_partition_representation.register(TimeType)
+def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
+    return time_to_micros(value) if value is not None else None
 
 
 @_to_partition_representation.register(UUIDType)
