@@ -1618,19 +1618,19 @@ class ChangelogScanTask(ScanTask):
     file: DataFile
     change_type: ChangelogOperation
     change_ordinal: int
-    commit_snapshot_id: int
+    change_snapshot_id: int
 
     def __init__(
         self,
         data_file: DataFile,
         change_type: ChangelogOperation,
         change_ordinal: int,
-        commit_snapshot_id: int,
+        change_snapshot_id: int,
     ) -> None:
         self.file = data_file
         self.change_type = change_type
         self.change_ordinal = change_ordinal
-        self.commit_snapshot_id = commit_snapshot_id
+        self.change_snapshot_id = change_snapshot_id
 
 
 def _open_manifest(
@@ -1920,7 +1920,7 @@ class IncrementalChangelogScan(BaseIncrementalScan):
 
             yield ChangelogScanTask(
                 data_file=entry.data_file,
-                commit_snapshot_id=entry.snapshot_id,
+                change_snapshot_id=entry.snapshot_id,
                 change_type=operation,
                 change_ordinal=snapshot_ordinal[entry.snapshot_id]
             )
