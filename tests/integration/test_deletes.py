@@ -23,7 +23,8 @@ from pyspark.sql import SparkSession
 
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import EqualTo
+from pyiceberg.expressions import AlwaysTrue, EqualTo
+from pyiceberg.manifest import ManifestEntryStatus
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.types import IntegerType, NestedField
@@ -265,9 +266,7 @@ def test_delete_no_match(session_catalog: RestCatalog) -> None:
     arrow_schema = pa.schema([pa.field("ints", pa.int32())])
     arrow_tbl = pa.Table.from_pylist(
         [
-            {
-                'ints': 1,
-            },
+            {'ints': 1},
             {'ints': 3},
         ],
         schema=arrow_schema,
@@ -297,9 +296,7 @@ def test_delete_overwrite(session_catalog: RestCatalog) -> None:
     arrow_schema = pa.schema([pa.field("ints", pa.int32())])
     arrow_tbl = pa.Table.from_pylist(
         [
-            {
-                'ints': 1,
-            },
+            {'ints': 1},
             {'ints': 2},
         ],
         schema=arrow_schema,
@@ -321,9 +318,7 @@ def test_delete_overwrite(session_catalog: RestCatalog) -> None:
 
     arrow_tbl_overwrite = pa.Table.from_pylist(
         [
-            {
-                'ints': 3,
-            },
+            {'ints': 3},
             {'ints': 4},
         ],
         schema=arrow_schema,
@@ -337,3 +332,37 @@ def test_delete_overwrite(session_catalog: RestCatalog) -> None:
     ]
 
     assert tbl.scan().to_arrow()['ints'].to_pylist() == [3, 4, 1]
+
+
+@pytest.mark.integration
+def test_delete_truncate(session_catalog: RestCatalog) -> None:
+    arrow_schema = pa.schema([pa.field("ints", pa.int32())])
+    arrow_tbl = pa.Table.from_pylist(
+        [
+            {'ints': 1},
+        ],
+        schema=arrow_schema,
+    )
+
+    iceberg_schema = Schema(NestedField(1, "ints", IntegerType()))
+
+    tbl_identifier = "default.test_delete_overwrite"
+
+    try:
+        session_catalog.drop_table(tbl_identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(tbl_identifier, iceberg_schema)
+    tbl.append(arrow_tbl)
+
+    # Effectively a truncate
+    tbl.delete(delete_filter=AlwaysTrue())
+
+    manifests = tbl.current_snapshot().manifests(tbl.io)
+    assert len(manifests) == 1
+
+    entries = manifests[0].fetch_manifest_entry(tbl.io, discard_deleted=False)
+    assert len(entries) == 1
+
+    assert entries[0].status == ManifestEntryStatus.DELETED

@@ -499,10 +499,10 @@ class Transaction:
         if delete_snapshot.rewrites_needed is True:
             bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
             preserve_row_filter = expression_to_pyarrow(Not(bound_delete_filter))
-            commit_uuid = uuid.uuid4()
 
             files = self._scan(row_filter=delete_filter).plan_files()
 
+            commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
 
             replaced_files: List[Tuple[DataFile, List[DataFile]]] = []
@@ -3119,6 +3119,8 @@ class DeleteFiles(_MergingSnapshotProducer["DeleteFiles"]):
                                     for existing_entry in existing_entries:
                                         writer.add_entry(existing_entry)
                                 existing_manifests.append(writer.to_manifest_file())
+                            # else:
+                            # deleted_manifests.append()
                         else:
                             existing_manifests.append(manifest_file)
                 else:
