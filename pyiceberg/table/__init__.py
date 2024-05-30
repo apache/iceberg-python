@@ -1624,14 +1624,14 @@ class ChangelogScanTask(ScanTask):
     commit_snapshot_id: int
 
     def __init__(
-            self,
-            data_file: DataFile,
-            change_type: ChangelogOperation,
-            change_ordinal: int,
-            commit_snapshot_id: int,
-            delete_files: Optional[Set[DataFile]] = None,
-            start: Optional[int] = None,
-            length: Optional[int] = None,
+        self,
+        data_file: DataFile,
+        change_type: ChangelogOperation,
+        change_ordinal: int,
+        commit_snapshot_id: int,
+        delete_files: Optional[Set[DataFile]] = None,
+        start: Optional[int] = None,
+        length: Optional[int] = None,
     ) -> None:
         self.file = data_file
         self.change_type = change_type
@@ -1859,80 +1859,80 @@ class IncrementalChangelogScan(BaseIncrementalScan):
             from_snapshot_id_exclusive,
         )
 
-        def use_ref(self: S, name: str) -> S:
-            raise NotImplementedError("Not implemented for IncrementalChangelogScan yet.")
+    def use_ref(self: S, name: str) -> S:
+        raise NotImplementedError("Not implemented for IncrementalChangelogScan yet.")
 
-        def _do_plan_files(self, from_snapshot_id_exclusive: int, to_snapshot_id: int) -> Iterable[ChangelogScanTask]:
-            snapshots_between = collections.deque()
-            for snapshot in ancestors_between(to_snapshot_id, from_snapshot_id_exclusive, self.table_metadata):
-                if snapshot.summary.operation != Operation.REPLACE:  # type: ignore
-                    for manifest_file in self.table_metadata.snapshot_by_id(snapshot.snapshot_id).manifests(self.io):
-                        if manifest_file.content == ManifestContent.DELETES:
-                            raise "Delete files are currently not supported in changelog scans"
-                    snapshots_between.appendleft(snapshot)
+    def _do_plan_files(self, from_snapshot_id_exclusive: int, to_snapshot_id: int) -> Iterable[ChangelogScanTask]:
+        snapshots_between = collections.deque()
+        for snapshot in ancestors_between(to_snapshot_id, from_snapshot_id_exclusive, self.table_metadata):
+            if snapshot.summary.operation != Operation.REPLACE:  # type: ignore
+                for manifest_file in self.table_metadata.snapshot_by_id(snapshot.snapshot_id).manifests(self.io):
+                    if manifest_file.content == ManifestContent.DELETES:
+                        raise "Delete files are currently not supported in changelog scans"
+                snapshots_between.appendleft(snapshot)
 
-            if not snapshots_between:
-                return iter([])
+        if not snapshots_between:
+            return iter([])
 
-            snapshot_ids = {snapshot.snapshot_id for snapshot in snapshots_between}
-            snapshot_ordinal = {snapshot.snapshot_id: ordinal for ordinal, snapshot in enumerate(snapshots_between)}
+        snapshot_ids = {snapshot.snapshot_id for snapshot in snapshots_between}
+        snapshot_ordinal = {snapshot.snapshot_id: ordinal for ordinal, snapshot in enumerate(snapshots_between)}
 
-            # step 1: filter manifests using partition summaries
-            # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
+        # step 1: filter manifests using partition summaries
+        # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
-            manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
-            manifests = {
-                manifest_file
-                for snapshot_id in snapshot_ids
-                for manifest_file in self.table_metadata.snapshot_by_id(snapshot_id).manifests(self.io)  # type: ignore
-                if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
-                if manifest_file.added_snapshot_id in snapshot_ids
-            }
+        manifests = {
+            manifest_file
+            for snapshot_id in snapshot_ids
+            for manifest_file in self.table_metadata.snapshot_by_id(snapshot_id).manifests(self.io)  # type: ignore
+            if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
+            if manifest_file.added_snapshot_id in snapshot_ids
+        }
 
-            # step 2: filter the data files in each manifest
-            # this filter depends on the partition spec used to write the manifest file
+        # step 2: filter the data files in each manifest
+        # this filter depends on the partition spec used to write the manifest file
 
-            partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-            metrics_evaluator = _InclusiveMetricsEvaluator(
-                self.table_metadata.schema(),
-                self.row_filter,
-                self.case_sensitive,
-                self.options.get("include_empty_files") == "true",
-            ).eval
+        partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+        metrics_evaluator = _InclusiveMetricsEvaluator(
+            self.table_metadata.schema(),
+            self.row_filter,
+            self.case_sensitive,
+            self.options.get("include_empty_files") == "true",
+        ).eval
 
-            min_data_sequence_number = _min_data_file_sequence_number(manifests)  # type: ignore
+        min_data_sequence_number = _min_data_file_sequence_number(manifests)  # type: ignore
 
-            changelog_entries: List[ManifestEntry] = []
+        changelog_entries: List[ManifestEntry] = []
 
-            executor = ExecutorFactory.get_or_create()
-            for manifest_entry in chain(
-                *executor.map(
-                    lambda args: _open_manifest(*args),
-                    [
-                        (self.io, manifest, partition_evaluators[manifest.partition_spec_id], metrics_evaluator, False)
-                        for manifest in manifests
-                        if self._check_sequence_number(min_data_sequence_number, manifest)
-                    ],
-                )
-            ):
-                if manifest_entry.snapshot_id in snapshot_ids:
-                    changelog_entries.append(manifest_entry)
+        executor = ExecutorFactory.get_or_create()
+        for manifest_entry in chain(
+            *executor.map(
+                lambda args: _open_manifest(*args),
+                [
+                    (self.io, manifest, partition_evaluators[manifest.partition_spec_id], metrics_evaluator, False)
+                    for manifest in manifests
+                    if self._check_sequence_number(min_data_sequence_number, manifest)
+                ],
+            )
+        ):
+            if manifest_entry.snapshot_id in snapshot_ids:
+                changelog_entries.append(manifest_entry)
 
-            for entry in changelog_entries:
-                if entry.status == ManifestEntryStatus.ADDED:
-                    operation = ChangelogOperation.Insert
-                elif entry.status == ManifestEntryStatus.DELETED:
-                    operation = ChangelogOperation.Delete
-                else:
-                    raise f"Unexpected entry status: {entry.status}"
+        for entry in changelog_entries:
+            if entry.status == ManifestEntryStatus.ADDED:
+                operation = ChangelogOperation.Insert
+            elif entry.status == ManifestEntryStatus.DELETED:
+                operation = ChangelogOperation.Delete
+            else:
+                raise f"Unexpected entry status: {entry.status}"
 
-                yield ChangelogScanTask(
-                    data_file=entry.data_file,
-                    commit_snapshot_id=entry.snapshot_id,
-                    change_type=operation,
-                    change_ordinal=snapshot_ordinal[entry.snapshot_id]
-                )
+            yield ChangelogScanTask(
+                data_file=entry.data_file,
+                commit_snapshot_id=entry.snapshot_id,
+                change_type=operation,
+                change_ordinal=snapshot_ordinal[entry.snapshot_id]
+            )
 
 
 class MoveOperation(Enum):
