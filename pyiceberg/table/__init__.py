@@ -1616,9 +1616,6 @@ class ChangelogOperation(Enum):
 @dataclass(init=False)
 class ChangelogScanTask(ScanTask):
     file: DataFile
-    delete_files: Set[DataFile]
-    start: int
-    length: int
     change_type: ChangelogOperation
     change_ordinal: int
     commit_snapshot_id: int
@@ -1629,17 +1626,11 @@ class ChangelogScanTask(ScanTask):
         change_type: ChangelogOperation,
         change_ordinal: int,
         commit_snapshot_id: int,
-        delete_files: Optional[Set[DataFile]] = None,
-        start: Optional[int] = None,
-        length: Optional[int] = None,
     ) -> None:
         self.file = data_file
         self.change_type = change_type
         self.change_ordinal = change_ordinal
         self.commit_snapshot_id = commit_snapshot_id
-        self.delete_files = delete_files or set()
-        self.start = start or 0
-        self.length = length or data_file.file_size_in_bytes
 
 
 def _open_manifest(
