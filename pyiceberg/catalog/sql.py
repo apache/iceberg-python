@@ -402,7 +402,6 @@ class SqlCatalog(MetastoreCatalog):
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
-        current_table = self.load_table(identifier_tuple)
         namespace_tuple = Catalog.namespace_from(identifier_tuple)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier_tuple)
@@ -431,7 +430,7 @@ class SqlCatalog(MetastoreCatalog):
                         update(IcebergTables)
                         .where(
                             IcebergTables.catalog_name == self.name,
-                            IcebergTables.table_namespace == database_name,
+                            IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
                             IcebergTables.metadata_location == current_table.metadata_location,
                         )
@@ -442,7 +441,7 @@ class SqlCatalog(MetastoreCatalog):
                     )
                     result = session.execute(stmt)
                     if result.rowcount < 1:
-                        raise CommitFailedException(f"Table has been updated by another process: {database_name}.{table_name}")
+                        raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}")
                 else:
                     try:
                         tbl = (
@@ -450,7 +449,7 @@ class SqlCatalog(MetastoreCatalog):
                             .with_for_update(of=IcebergTables)
                             .filter(
                                 IcebergTables.catalog_name == self.name,
-                                IcebergTables.table_namespace == database_name,
+                                IcebergTables.table_namespace == namespace,
                                 IcebergTables.table_name == table_name,
                                 IcebergTables.metadata_location == current_table.metadata_location,
                             )
@@ -459,9 +458,7 @@ class SqlCatalog(MetastoreCatalog):
                         tbl.metadata_location = updated_staged_table.metadata_location
                         tbl.previous_metadata_location = current_table.metadata_location
                     except NoResultFound as e:
-                        raise CommitFailedException(
-                            f"Table has been updated by another process: {database_name}.{table_name}"
-                        ) from e
+                        raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}") from e
                 session.commit()
             else:
                 # table does not exist, create it
@@ -469,7 +466,7 @@ class SqlCatalog(MetastoreCatalog):
                     session.add(
                         IcebergTables(
                             catalog_name=self.name,
-                            table_namespace=database_name,
+                            table_namespace=namespace,
                             table_name=table_name,
                             metadata_location=updated_staged_table.metadata_location,
                             previous_metadata_location=None,
@@ -477,7 +474,7 @@ class SqlCatalog(MetastoreCatalog):
                     )
                     session.commit()
                 except IntegrityError as e:
-                    raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+                    raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
 
         return CommitTableResponse(
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
