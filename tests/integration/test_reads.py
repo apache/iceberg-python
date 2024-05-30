@@ -425,6 +425,25 @@ def test_scan_branch(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_incremental_changelog_scan(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_table_read_from_snapshots")
+
+    scan = test_table.incremental_changelog_scan().from_snapshot_exclusive(test_table.history()[0].snapshot_id)
+    assert len(list(scan.plan_files())) == 4
+
+    scan = test_table.incremental_changelog_scan().to_snapshot(test_table.history()[4].snapshot_id)
+    assert len(list(scan.plan_files())) == 5
+
+    scan = (
+        test_table.incremental_changelog_scan()
+        .from_snapshot_exclusive(test_table.history()[0].snapshot_id)
+        .to_snapshot(test_table.history()[2].snapshot_id)
+    )
+    assert len(list(scan.plan_files())) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
 def test_filter_on_new_column(catalog: Catalog) -> None:
     test_table_add_column = catalog.load_table("default.test_table_add_column")
     arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()

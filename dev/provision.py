@@ -342,3 +342,52 @@ for catalog_name, catalog in catalogs.items():
            (array(), map(), array(struct(1)))
     """
     )
+
+    spark.sql(
+        f"""
+    CREATE OR REPLACE TABLE {catalog_name}.default.test_table_read_from_snapshots (
+        dt     date,
+        number integer,
+        letter string
+    )
+    USING iceberg
+    TBLPROPERTIES (
+        'format-version'='2'
+    );
+    """
+    )
+
+    spark.sql(
+        f"""
+    INSERT INTO {catalog_name}.default.test_table_read_from_snapshots
+    VALUES (CAST('2022-03-01' AS date), 1, 'a')
+    """
+    )
+
+    spark.sql(
+        f"""
+    INSERT INTO {catalog_name}.default.test_table_read_from_snapshots
+    VALUES (CAST('2022-03-01' AS date), 2, 'b')
+    """
+    )
+
+    spark.sql(
+        f"""
+    DELETE FROM {catalog_name}.default.test_table_read_from_snapshots
+    WHERE number = 2
+    """
+    )
+
+    spark.sql(
+        f"""
+    INSERT INTO {catalog_name}.default.test_table_read_from_snapshots
+    VALUES (CAST('2022-03-02' AS date), 3, 'c')
+    """
+    )
+
+    spark.sql(
+        f"""
+    INSERT INTO {catalog_name}.default.test_table_read_from_snapshots
+    VALUES (CAST('2022-03-02' AS date), 4, 'd')
+    """
+    )
