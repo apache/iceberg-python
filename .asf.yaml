@@ -45,6 +45,7 @@ github:
   collaborators:  # Note: the number of collaborators is limited to 10
     - ajantha-bhat
     - syun64
+    - kevinjqliu
   ghp_branch: gh-pages
   ghp_path: /
 

@@ -71,6 +71,7 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
+    PartitionFieldSummary,
     write_manifest,
     write_manifest_list,
 )
@@ -248,6 +249,16 @@ class PropertyUtil:
                 return int(value)
             except ValueError as e:
                 raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
+        else:
+            return default
+
+    @staticmethod
+    def property_as_float(properties: Dict[str, str], property_name: str, default: Optional[float] = None) -> Optional[float]:
+        if value := properties.get(property_name):
+            try:
+                return float(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to a float: {value}") from e
         else:
             return default
 
@@ -443,7 +454,7 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
 
@@ -455,7 +466,7 @@ class Transaction:
         """
         if self._table.name_mapping() is None:
             self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
-        with self.update_snapshot().fast_append() as update_snapshot:
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
             )
@@ -1341,7 +1352,7 @@ class Table:
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table.
 
@@ -1352,7 +1363,7 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         with self.transaction() as tx:
-            tx.add_files(file_paths=file_paths)
+            tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -3535,6 +3546,94 @@ class InspectTable:
         return pa.Table.from_pylist(
             partitions_map.values(),
             schema=table_schema,
+        )
+
+    def manifests(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.conversions import from_bytes
+
+        partition_summary_schema = pa.struct([
+            pa.field("contains_null", pa.bool_(), nullable=False),
+            pa.field("contains_nan", pa.bool_(), nullable=True),
+            pa.field("lower_bound", pa.string(), nullable=True),
+            pa.field("upper_bound", pa.string(), nullable=True),
+        ])
+
+        manifest_schema = pa.schema([
+            pa.field('content', pa.int8(), nullable=False),
+            pa.field('path', pa.string(), nullable=False),
+            pa.field('length', pa.int64(), nullable=False),
+            pa.field('partition_spec_id', pa.int32(), nullable=False),
+            pa.field('added_snapshot_id', pa.int64(), nullable=False),
+            pa.field('added_data_files_count', pa.int32(), nullable=False),
+            pa.field('existing_data_files_count', pa.int32(), nullable=False),
+            pa.field('deleted_data_files_count', pa.int32(), nullable=False),
+            pa.field('added_delete_files_count', pa.int32(), nullable=False),
+            pa.field('existing_delete_files_count', pa.int32(), nullable=False),
+            pa.field('deleted_delete_files_count', pa.int32(), nullable=False),
+            pa.field('partition_summaries', pa.list_(partition_summary_schema), nullable=False),
+        ])
+
+        def _partition_summaries_to_rows(
+            spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
+        ) -> List[Dict[str, Any]]:
+            rows = []
+            for i, field_summary in enumerate(partition_summaries):
+                field = spec.fields[i]
+                partition_field_type = spec.partition_type(self.tbl.schema()).fields[i].field_type
+                lower_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
+                        )
+                    )
+                    if field_summary.lower_bound
+                    else None
+                )
+                upper_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
+                        )
+                    )
+                    if field_summary.upper_bound
+                    else None
+                )
+                rows.append({
+                    'contains_null': field_summary.contains_null,
+                    'contains_nan': field_summary.contains_nan,
+                    'lower_bound': lower_bound,
+                    'upper_bound': upper_bound,
+                })
+            return rows
+
+        specs = self.tbl.metadata.specs()
+        manifests = []
+        if snapshot := self.tbl.metadata.current_snapshot():
+            for manifest in snapshot.manifests(self.tbl.io):
+                is_data_file = manifest.content == ManifestContent.DATA
+                is_delete_file = manifest.content == ManifestContent.DELETES
+                manifests.append({
+                    'content': manifest.content,
+                    'path': manifest.manifest_path,
+                    'length': manifest.manifest_length,
+                    'partition_spec_id': manifest.partition_spec_id,
+                    'added_snapshot_id': manifest.added_snapshot_id,
+                    'added_data_files_count': manifest.added_files_count if is_data_file else 0,
+                    'existing_data_files_count': manifest.existing_files_count if is_data_file else 0,
+                    'deleted_data_files_count': manifest.deleted_files_count if is_data_file else 0,
+                    'added_delete_files_count': manifest.added_files_count if is_delete_file else 0,
+                    'existing_delete_files_count': manifest.existing_files_count if is_delete_file else 0,
+                    'deleted_delete_files_count': manifest.deleted_files_count if is_delete_file else 0,
+                    'partition_summaries': _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
+                    if manifest.partitions
+                    else [],
+                })
+
+        return pa.Table.from_pylist(
+            manifests,
+            schema=manifest_schema,
         )
 
 

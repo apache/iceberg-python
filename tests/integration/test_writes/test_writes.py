@@ -37,7 +37,11 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.transforms import IdentityTransform
+from pyiceberg.types import IntegerType, NestedField
 from tests.conftest import TEST_DATA_WITH_NULL
 from utils import _create_table
 
@@ -307,6 +311,30 @@ def test_python_writes_special_character_column_with_spark_reads(
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
     tbl.overwrite(arrow_table_with_special_character_column)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_dictionary_encoded_column_with_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_dictionary_encoded_column_with_spark_reads"
+    TEST_DATA = {
+        'id': [1, 2, 3, 1, 1],
+        'name': ['AB', 'CD', 'EF', 'CD', 'EF'],
+    }
+    pa_schema = pa.schema([
+        pa.field('id', pa.dictionary(pa.int32(), pa.int32(), False)),
+        pa.field('name', pa.dictionary(pa.int32(), pa.string(), False)),
+    ])
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
@@ -809,3 +837,37 @@ def test_hive_catalog_storage_descriptor(
     assert len(tbl.scan().to_arrow()) == 3
     # check if spark can read the table
     assert spark.sql("SELECT * FROM hive.default.test_storage_descriptor").count() == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_sanitize_character_partitioned(catalog: Catalog) -> None:
+    table_name = "default.test_table_partitioned_sanitized_character"
+    try:
+        catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass
+
+    tbl = _create_table(
+        session_catalog=catalog,
+        identifier=table_name,
+        schema=Schema(NestedField(field_id=1, name="some.id", type=IntegerType(), required=True)),
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, name="some.id_identity", transform=IdentityTransform())
+        ),
+        data=[pa.Table.from_arrays([range(22)], schema=pa.schema([pa.field("some.id", pa.int32(), nullable=False)]))],
+    )
+
+    assert len(tbl.scan().to_arrow()) == 22
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    identifier = "default.table_append_subset_of_schema"
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
+    arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
+    assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
+    tbl.overwrite(arrow_table_without_some_columns)
+    tbl.append(arrow_table_without_some_columns)
+    # overwrite and then append should produce twice the data
+    assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2

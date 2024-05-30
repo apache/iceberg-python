@@ -206,7 +206,7 @@ class PyArrowFile(InputFile, OutputFile):
         >>> # output_file.create().write(b'foobytes')
     """
 
-    _fs: FileSystem
+    _filesystem: FileSystem
     _path: str
     _buffer_size: int
 
@@ -333,7 +333,7 @@ class PyArrowFileIO(FileIO):
         if not uri.scheme:
             return "file", uri.netloc, os.path.abspath(location)
         elif uri.scheme == "hdfs":
-            return uri.scheme, uri.netloc, location
+            return uri.scheme, uri.netloc, uri.path
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
@@ -729,6 +729,16 @@ def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:
     visitor.after_map_value(obj.item_field)
 
     return visitor.map(obj, key_result, value_result)
+
+
+@visit_pyarrow.register(pa.DictionaryType)
+def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
+    # Parquet has no dictionary type. dictionary-encoding is handled
+    # as an encoding detail, not as a separate type.
+    # We will follow this approach in determining the Iceberg Type,
+    # as we only support parquet in PyIceberg for now.
+    logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
+    return visit_pyarrow(obj.value_type, visitor)
 
 
 @visit_pyarrow.register(pa.DataType)

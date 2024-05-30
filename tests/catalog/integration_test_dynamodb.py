@@ -184,6 +184,12 @@ def test_create_duplicate_namespace(test_catalog: Catalog, database_name: str) -
         test_catalog.create_namespace(database_name)
 
 
+def test_create_namepsace_if_not_exists(test_catalog: Catalog, database_name: str) -> None:
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_namespace_if_not_exists(database_name)
+    assert (database_name,) in test_catalog.list_namespaces()
+
+
 def test_create_namespace_with_comment_and_location(test_catalog: Catalog, database_name: str) -> None:
     test_location = get_s3_path(get_bucket_name(), database_name)
     test_properties = {
@@ -262,3 +268,9 @@ def test_update_namespace_properties(test_catalog: Catalog, database_name: str) 
         else:
             assert k in update_report.removed
     assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
+
+
+def test_table_exists(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
+    test_catalog.create_namespace(database_name)
+    test_catalog.create_table((database_name, table_name), table_schema_nested)
+    assert test_catalog.table_exists((database_name, table_name)) is True
