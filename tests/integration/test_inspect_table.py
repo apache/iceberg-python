@@ -102,38 +102,38 @@ def test_inspect_snapshots(
     for snapshot_id in df["snapshot_id"]:
         assert isinstance(snapshot_id.as_py(), int)
 
-    assert df['parent_id'][0].as_py() is None
-    assert df['parent_id'][1:].to_pylist() == df['snapshot_id'][:-1].to_pylist()
+    assert df["parent_id"][0].as_py() is None
+    assert df["parent_id"][1:].to_pylist() == df["snapshot_id"][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df['operation']] == ['append', 'delete', 'append', 'append']
+    assert [operation.as_py() for operation in df["operation"]] == ["append", "delete", "append", "append"]
 
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
     # Append
-    assert df['summary'][0].as_py() == [
-        ('added-files-size', '5459'),
-        ('added-data-files', '1'),
-        ('added-records', '3'),
-        ('total-data-files', '1'),
-        ('total-delete-files', '0'),
-        ('total-records', '3'),
-        ('total-files-size', '5459'),
-        ('total-position-deletes', '0'),
-        ('total-equality-deletes', '0'),
+    assert df["summary"][0].as_py() == [
+        ("added-files-size", "5459"),
+        ("added-data-files", "1"),
+        ("added-records", "3"),
+        ("total-data-files", "1"),
+        ("total-delete-files", "0"),
+        ("total-records", "3"),
+        ("total-files-size", "5459"),
+        ("total-position-deletes", "0"),
+        ("total-equality-deletes", "0"),
     ]
 
     # Delete
-    assert df['summary'][1].as_py() == [
-        ('removed-files-size', '5459'),
-        ('deleted-data-files', '1'),
-        ('deleted-records', '3'),
-        ('total-data-files', '0'),
-        ('total-delete-files', '0'),
-        ('total-records', '0'),
-        ('total-files-size', '0'),
-        ('total-position-deletes', '0'),
-        ('total-equality-deletes', '0'),
+    assert df["summary"][1].as_py() == [
+        ("removed-files-size", "5459"),
+        ("deleted-data-files", "1"),
+        ("deleted-records", "3"),
+        ("total-data-files", "0"),
+        ("total-delete-files", "0"),
+        ("total-records", "0"),
+        ("total-files-size", "0"),
+        ("total-position-deletes", "0"),
+        ("total-equality-deletes", "0"),
     ]
 
     lhs = spark.table(f"{identifier}.snapshots").toPandas()
