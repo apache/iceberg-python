@@ -205,15 +205,16 @@ def test_snapshot_by_id(table_v2: Table) -> None:
 
 
 def test_snapshot_by_timestamp(table_v2: Table) -> None:
-    assert table_v2.snapshot_at_or_before_timestamp(1555100955771) == Snapshot(
-        snapshot_id=3055729675574597004,
-        parent_snapshot_id=3051729675574597004,
-        sequence_number=1,
-        timestamp_ms=1555100955770,
-        manifest_list="s3://a/b/2.avro",
-        summary=Summary(operation=Operation.APPEND),
-        schema_id=1,
+    assert table_v2.snapshot_as_of_timestamp(1515100955770) == Snapshot(
+        snapshot_id=3051729675574597004,
+        parent_snapshot_id=None,
+        sequence_number=0,
+        timestamp_ms=1515100955770,
+        manifest_list='s3://a/b/1.avro',
+        summary=Summary(Operation.APPEND),
+        schema_id=None,
     )
+    assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
 
 
 def test_current_ancestors(table_v2: Table) -> None:
