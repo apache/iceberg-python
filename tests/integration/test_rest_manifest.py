@@ -104,7 +104,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
     wrapped_entry_v2_dict = todict(wrapped_entry_v2)
     # This one should not be written
-    del wrapped_entry_v2_dict['data_file']['spec_id']
+    del wrapped_entry_v2_dict["data_file"]["spec_id"]
 
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"

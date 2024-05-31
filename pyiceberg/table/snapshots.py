@@ -27,29 +27,29 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import IcebergBaseModel
 
-ADDED_DATA_FILES = 'added-data-files'
-ADDED_DELETE_FILES = 'added-delete-files'
-ADDED_EQUALITY_DELETES = 'added-equality-deletes'
-ADDED_FILE_SIZE = 'added-files-size'
-ADDED_POSITION_DELETES = 'added-position-deletes'
-ADDED_POSITION_DELETE_FILES = 'added-position-delete-files'
-ADDED_RECORDS = 'added-records'
-DELETED_DATA_FILES = 'deleted-data-files'
-DELETED_RECORDS = 'deleted-records'
-ADDED_EQUALITY_DELETE_FILES = 'added-equality-delete-files'
-REMOVED_DELETE_FILES = 'removed-delete-files'
-REMOVED_EQUALITY_DELETES = 'removed-equality-deletes'
-REMOVED_EQUALITY_DELETE_FILES = 'removed-equality-delete-files'
-REMOVED_FILE_SIZE = 'removed-files-size'
-REMOVED_POSITION_DELETES = 'removed-position-deletes'
-REMOVED_POSITION_DELETE_FILES = 'removed-position-delete-files'
-TOTAL_EQUALITY_DELETES = 'total-equality-deletes'
-TOTAL_POSITION_DELETES = 'total-position-deletes'
-TOTAL_DATA_FILES = 'total-data-files'
-TOTAL_DELETE_FILES = 'total-delete-files'
-TOTAL_RECORDS = 'total-records'
-TOTAL_FILE_SIZE = 'total-files-size'
-CHANGED_PARTITION_COUNT_PROP = 'changed-partition-count'
+ADDED_DATA_FILES = "added-data-files"
+ADDED_DELETE_FILES = "added-delete-files"
+ADDED_EQUALITY_DELETES = "added-equality-deletes"
+ADDED_FILE_SIZE = "added-files-size"
+ADDED_POSITION_DELETES = "added-position-deletes"
+ADDED_POSITION_DELETE_FILES = "added-position-delete-files"
+ADDED_RECORDS = "added-records"
+DELETED_DATA_FILES = "deleted-data-files"
+DELETED_RECORDS = "deleted-records"
+ADDED_EQUALITY_DELETE_FILES = "added-equality-delete-files"
+REMOVED_DELETE_FILES = "removed-delete-files"
+REMOVED_EQUALITY_DELETES = "removed-equality-deletes"
+REMOVED_EQUALITY_DELETE_FILES = "removed-equality-delete-files"
+REMOVED_FILE_SIZE = "removed-files-size"
+REMOVED_POSITION_DELETES = "removed-position-deletes"
+REMOVED_POSITION_DELETE_FILES = "removed-position-delete-files"
+TOTAL_EQUALITY_DELETES = "total-equality-deletes"
+TOTAL_POSITION_DELETES = "total-position-deletes"
+TOTAL_DATA_FILES = "total-data-files"
+TOTAL_DELETE_FILES = "total-delete-files"
+TOTAL_RECORDS = "total-records"
+TOTAL_FILE_SIZE = "total-files-size"
+CHANGED_PARTITION_COUNT_PROP = "changed-partition-count"
 CHANGED_PARTITION_PREFIX = "partitions."
 OPERATION = "operation"
 
@@ -181,14 +181,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
     def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
         """Return a key as it is a map."""
-        if __key.lower() == 'operation':
+        if __key.lower() == "operation":
             return self.operation
         else:
             return self._additional_properties.get(__key)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set a key as it is a map."""
-        if key.lower() == 'operation':
+        if key.lower() == "operation":
             self.operation = value
         else:
             self._additional_properties[key] = value
@@ -317,10 +317,10 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
         TOTAL_POSITION_DELETES,
         TOTAL_EQUALITY_DELETES,
     }:
-        summary[prop] = '0'
+        summary[prop] = "0"
 
     def get_prop(prop: str) -> int:
-        value = previous_summary.get(prop) or '0'
+        value = previous_summary.get(prop) or "0"
         try:
             return int(value)
         except ValueError as e:
@@ -353,12 +353,12 @@ def update_snapshot_summaries(
 
     if not previous_summary:
         previous_summary = {
-            TOTAL_DATA_FILES: '0',
-            TOTAL_DELETE_FILES: '0',
-            TOTAL_RECORDS: '0',
-            TOTAL_FILE_SIZE: '0',
-            TOTAL_POSITION_DELETES: '0',
-            TOTAL_EQUALITY_DELETES: '0',
+            TOTAL_DATA_FILES: "0",
+            TOTAL_DELETE_FILES: "0",
+            TOTAL_RECORDS: "0",
+            TOTAL_FILE_SIZE: "0",
+            TOTAL_POSITION_DELETES: "0",
+            TOTAL_EQUALITY_DELETES: "0",
         }
 
     def _update_totals(total_property: str, added_property: str, removed_property: str) -> None:

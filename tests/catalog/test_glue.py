@@ -715,7 +715,7 @@ def test_commit_table_properties(
 
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {'Description': 'test_description', "test_a": "test_aa", "test_c": "test_c"}
+    assert updated_table_metadata.properties == {"Description": "test_description", "test_a": "test_aa", "test_c": "test_c"}
 
     table_info = _glue.get_table(
         DatabaseName=database_name,
@@ -847,7 +847,7 @@ def test_table_exists(
     # Act and Assert for an existing table
     assert test_catalog.table_exists(identifier) is True
     # Act and Assert for a non-existing table
-    assert test_catalog.table_exists(('non', 'exist')) is False
+    assert test_catalog.table_exists(("non", "exist")) is False
 
 
 @mock_aws

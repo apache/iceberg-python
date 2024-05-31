@@ -40,12 +40,12 @@ class MappedField(IcebergBaseModel):
     names: List[str] = conlist(str, min_length=1)
     fields: List[MappedField] = Field(default_factory=list)
 
-    @field_validator('fields', mode='before')
+    @field_validator("fields", mode="before")
     @classmethod
     def convert_null_to_empty_List(cls, v: Any) -> Any:
         return v or []
 
-    @field_validator('names', mode='after')
+    @field_validator("names", mode="after")
     @classmethod
     def check_at_least_one(cls, v: List[str]) -> Any:
         """
@@ -60,10 +60,10 @@ class MappedField(IcebergBaseModel):
     @model_serializer
     def ser_model(self) -> Dict[str, Any]:
         """Set custom serializer to leave out the field when it is empty."""
-        fields = {'fields': self.fields} if len(self.fields) > 0 else {}
+        fields = {"fields": self.fields} if len(self.fields) > 0 else {}
         return {
-            'field-id': self.field_id,
-            'names': self.names,
+            "field-id": self.field_id,
+            "names": self.names,
             **fields,
         }
 
@@ -87,7 +87,7 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
         return visit_name_mapping(self, _IndexByName())
 
     def find(self, *names: str) -> MappedField:
-        name = '.'.join(names)
+        name = ".".join(names)
         try:
             return self._field_by_name[name]
         except KeyError as e:
@@ -109,7 +109,7 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
             return "[\n  " + "\n  ".join([str(e) for e in self.root]) + "\n]"
 
 
-S = TypeVar('S')
+S = TypeVar("S")
 T = TypeVar("T")
 
 

@@ -46,14 +46,14 @@ class SnapshotRef(IcebergBaseModel):
     max_snapshot_age_ms: Annotated[Optional[int], Field(alias="max-snapshot-age-ms", default=None, gt=0)]
     max_ref_age_ms: Annotated[Optional[int], Field(alias="max-ref-age-ms", default=None, gt=0)]
 
-    @model_validator(mode='after')
-    def check_min_snapshots_to_keep(self) -> 'SnapshotRef':
+    @model_validator(mode="after")
+    def check_min_snapshots_to_keep(self) -> "SnapshotRef":
         if self.min_snapshots_to_keep is not None and self.snapshot_ref_type == SnapshotRefType.TAG:
             raise ValidationError("Tags do not support setting minSnapshotsToKeep")
         return self
 
-    @model_validator(mode='after')
-    def check_max_snapshot_age_ms(self) -> 'SnapshotRef':
+    @model_validator(mode="after")
+    def check_max_snapshot_age_ms(self) -> "SnapshotRef":
         if self.max_snapshot_age_ms is not None and self.snapshot_ref_type == SnapshotRefType.TAG:
             raise ValidationError("Tags do not support setting maxSnapshotAgeMs")
         return self

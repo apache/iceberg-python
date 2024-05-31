@@ -169,10 +169,10 @@ def test_creation_with_unsupported_uri(catalog_name: str) -> None:
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_create_tables_idempotency(catalog: SqlCatalog) -> None:
@@ -182,10 +182,10 @@ def test_create_tables_idempotency(catalog: SqlCatalog) -> None:
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -207,10 +207,10 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -234,10 +234,10 @@ def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, table
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -263,10 +263,10 @@ def test_create_table_with_pyarrow_schema(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -288,10 +288,10 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
             pa.array([None, "A", "B", "C"]),  # 'large' column
         ],
         schema=pa.schema([
-            pa.field('foo', pa.string(), nullable=True),
-            pa.field('bar', pa.int32(), nullable=False),
-            pa.field('baz', pa.bool_(), nullable=True),
-            pa.field('large', pa.large_string(), nullable=True),
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("large", pa.large_string(), nullable=True),
         ]),
     )
     table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
@@ -302,10 +302,10 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -332,10 +332,10 @@ def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -361,10 +361,10 @@ def test_create_table_with_default_warehouse_location(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -393,10 +393,10 @@ def test_create_table_with_given_location_removes_trailing_slash(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -417,10 +417,10 @@ def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schem
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -443,10 +443,10 @@ def test_create_table_if_not_exists_duplicated_table(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_create_table_with_non_existing_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_name: str) -> None:
@@ -456,10 +456,10 @@ def test_create_table_with_non_existing_namespace(catalog: SqlCatalog, table_sch
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_create_table_without_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_name: str) -> None:
@@ -468,10 +468,10 @@ def test_create_table_without_namespace(catalog: SqlCatalog, table_schema_nested
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -494,10 +494,10 @@ def test_register_table(catalog: SqlCatalog, table_identifier: Identifier, metad
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -518,10 +518,10 @@ def test_register_existing_table(catalog: SqlCatalog, table_identifier: Identifi
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_register_table_with_non_existing_namespace(catalog: SqlCatalog, metadata_location: str, table_name: str) -> None:
@@ -531,10 +531,10 @@ def test_register_table_with_non_existing_namespace(catalog: SqlCatalog, metadat
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_register_table_without_namespace(catalog: SqlCatalog, metadata_location: str, table_name: str) -> None:
@@ -543,10 +543,10 @@ def test_register_table_without_namespace(catalog: SqlCatalog, metadata_location
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -569,10 +569,10 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -597,11 +597,11 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -624,11 +624,11 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -653,11 +653,11 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -674,11 +674,11 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, table_identifier: I
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -717,11 +717,11 @@ def test_rename_table(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -762,11 +762,11 @@ def test_rename_table_from_self_identifier(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -803,11 +803,11 @@ def test_rename_table_to_existing_one(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -835,11 +835,11 @@ def test_rename_missing_table(catalog: SqlCatalog, from_table_identifier: Identi
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -871,10 +871,10 @@ def test_rename_table_to_missing_namespace(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -914,10 +914,10 @@ def test_list_tables(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -927,10 +927,10 @@ def test_list_tables_when_missing_namespace(catalog: SqlCatalog, namespace: str)
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str) -> None:
@@ -941,10 +941,10 @@ def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str)
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -954,10 +954,10 @@ def test_create_namespace(catalog: SqlCatalog, namespace: str) -> None:
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -968,10 +968,10 @@ def test_create_duplicate_namespace(catalog: SqlCatalog, namespace: str) -> None
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -982,10 +982,10 @@ def test_create_namespaces_sharing_same_prefix(catalog: SqlCatalog, namespace: s
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -1004,10 +1004,10 @@ def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, namespa
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -1021,10 +1021,10 @@ def test_create_namespace_with_null_properties(catalog: SqlCatalog, namespace: s
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("empty_namespace", ["", (), (""), ("", ""), " ", (" ")])
@@ -1034,10 +1034,10 @@ def test_create_namespace_with_empty_identifier(catalog: SqlCatalog, empty_names
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace_list", [lazy_fixture("database_list"), lazy_fixture("hierarchical_namespace_list")])
@@ -1054,10 +1054,10 @@ def test_list_namespaces(catalog: SqlCatalog, namespace_list: List[str]) -> None
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
@@ -1066,10 +1066,10 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1094,10 +1094,10 @@ def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -1119,10 +1119,10 @@ def test_load_namespace_properties(catalog: SqlCatalog, namespace: str) -> None:
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -1133,10 +1133,10 @@ def test_load_empty_namespace_properties(catalog: SqlCatalog, namespace: str) ->
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 def test_load_namespace_properties_non_existing_namespace(catalog: SqlCatalog) -> None:
@@ -1145,10 +1145,10 @@ def test_load_namespace_properties_non_existing_namespace(catalog: SqlCatalog) -
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
@@ -1176,11 +1176,11 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1218,12 +1218,12 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
-        lazy_fixture('catalog_sqlite_fsspec'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
+        lazy_fixture("catalog_sqlite_fsspec"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1258,21 +1258,21 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_id
     assert table.metadata.snapshots[0].sequence_number == 1
     assert table.metadata.snapshots[0].summary is not None
     assert table.metadata.snapshots[0].summary.operation == Operation.APPEND
-    assert table.metadata.snapshots[0].summary['added-data-files'] == '1'
-    assert table.metadata.snapshots[0].summary['added-records'] == '1'
-    assert table.metadata.snapshots[0].summary['total-data-files'] == '1'
-    assert table.metadata.snapshots[0].summary['total-records'] == '1'
+    assert table.metadata.snapshots[0].summary["added-data-files"] == "1"
+    assert table.metadata.snapshots[0].summary["added-records"] == "1"
+    assert table.metadata.snapshots[0].summary["total-data-files"] == "1"
+    assert table.metadata.snapshots[0].summary["total-records"] == "1"
 
     # read back the data
     assert df == table.scan().to_arrow()
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1300,11 +1300,11 @@ def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schem
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -1323,7 +1323,7 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
 
     pa_table = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
+            "foo": ["a", None, "z"],
         },
         schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
     )
@@ -1332,8 +1332,8 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
 
     pa_table_with_column = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
-            'bar': [19, None, 25],
+            "foo": ["a", None, "z"],
+            "bar": [19, None, 25],
         },
         schema=pa.schema([
             pa.field("foo", pa.string(), nullable=True),
@@ -1351,11 +1351,11 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -1437,11 +1437,11 @@ def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Sc
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1465,10 +1465,10 @@ def test_table_properties_raise_for_none_value(
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1489,4 +1489,4 @@ def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_id
     assert catalog.table_exists(existing_table) is True
 
     # Act and Assert for a non-existing table
-    assert catalog.table_exists(('non', 'exist')) is False
+    assert catalog.table_exists(("non", "exist")) is False

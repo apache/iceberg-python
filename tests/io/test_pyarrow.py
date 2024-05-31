@@ -1215,13 +1215,13 @@ def test_projection_list_of_structs(schema_list_of_structs: Schema, file_list_of
     results = [row.as_py() for row in result_table.columns[0]]
     assert results == [
         [
-            {'latitude': 52.371807, 'longitude': 4.896029, 'altitude': None},
-            {'latitude': 52.387386, 'longitude': 4.646219, 'altitude': None},
+            {"latitude": 52.371807, "longitude": 4.896029, "altitude": None},
+            {"latitude": 52.387386, "longitude": 4.646219, "altitude": None},
         ],
         [],
         [
-            {'latitude': 52.078663, 'longitude': 4.288788, 'altitude': None},
-            {'latitude': 52.387386, 'longitude': 4.646219, 'altitude': None},
+            {"latitude": 52.078663, "longitude": 4.288788, "altitude": None},
+            {"latitude": 52.387386, "longitude": 4.646219, "altitude": None},
         ],
     ]
     assert (

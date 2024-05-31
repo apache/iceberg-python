@@ -78,7 +78,7 @@ LIKE = CaselessKeyword("like")
 identifier = Word(alphas, alphanums + "_$").set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
 
-like_regex = r'(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)'
+like_regex = r"(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)"
 
 
 @column.set_parse_action
@@ -232,12 +232,12 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
 
     match = re.search(like_regex, literal_like.value)
 
-    if match and match.groupdict()['invalid_wildcard']:
+    if match and match.groupdict()["invalid_wildcard"]:
         raise ValueError("LIKE expressions only supports wildcard, '%', at the end of a string")
-    elif match and match.groupdict()['valid_wildcard']:
-        return StartsWith(result.column, StringLiteral(literal_like.value[:-1].replace('\\%', '%')))
+    elif match and match.groupdict()["valid_wildcard"]:
+        return StartsWith(result.column, StringLiteral(literal_like.value[:-1].replace("\\%", "%")))
     else:
-        return EqualTo(result.column, StringLiteral(literal_like.value.replace('\\%', '%')))
+        return EqualTo(result.column, StringLiteral(literal_like.value.replace("\\%", "%")))
 
 
 predicate = (comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
