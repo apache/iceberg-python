@@ -40,6 +40,7 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField
 from tests.conftest import TEST_DATA_WITH_NULL
