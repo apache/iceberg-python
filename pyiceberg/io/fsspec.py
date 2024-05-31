@@ -63,6 +63,7 @@ from pyiceberg.io import (
     S3_REGION,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SIGNER_URI,
     ADLFS_ClIENT_SECRET,
     FileIO,
     InputFile,
@@ -79,7 +80,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
     if TOKEN not in properties:
         raise SignError("Signer set, but token is not available")
 
-    signer_url = properties["uri"].rstrip("/")
+    signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
     signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
     signer_body = {
         "method": request.method,
