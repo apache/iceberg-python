@@ -65,10 +65,10 @@ ARROW_TABLE = pa.Table.from_pylist(
 )
 
 ARROW_SCHEMA_WITH_IDS = pa.schema([
-    pa.field('foo', pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
-    pa.field('bar', pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
-    pa.field('baz', pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
-    pa.field('qux', pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
+    pa.field("foo", pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+    pa.field("bar", pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+    pa.field("baz", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
+    pa.field("qux", pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
 ])
 
 

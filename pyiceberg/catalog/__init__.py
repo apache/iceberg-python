@@ -588,7 +588,7 @@ class Catalog(ABC):
         If the identifier is a string, it is split into a tuple on '.'. If it is a tuple, it is used as-is.
 
         Args:
-            identifier (str | Identifier: an identifier, either a string or tuple of strings.
+            identifier (str | Identifier): an identifier, either a string or tuple of strings.
 
         Returns:
             Identifier: a tuple of strings.
@@ -618,6 +618,29 @@ class Catalog(ABC):
             Identifier: Namespace identifier.
         """
         return Catalog.identifier_to_tuple(identifier)[:-1]
+
+    @staticmethod
+    def namespace_to_string(
+        identifier: Union[str, Identifier], err: Union[Type[ValueError], Type[NoSuchNamespaceError]] = ValueError
+    ) -> str:
+        """Transform a namespace identifier into a string.
+
+        Args:
+            identifier (Union[str, Identifier]): a namespace identifier.
+            err (Union[Type[ValueError], Type[NoSuchNamespaceError]]): the error type to raise when identifier is empty.
+
+        Returns:
+            Identifier: Namespace identifier.
+        """
+        tuple_identifier = Catalog.identifier_to_tuple(identifier)
+        if len(tuple_identifier) < 1:
+            raise err("Empty namespace identifier")
+
+        # Check if any segment of the tuple is an empty string
+        if any(segment.strip() == "" for segment in tuple_identifier):
+            raise err("Namespace identifier contains an empty segment or a segment with only whitespace")
+
+        return ".".join(segment.strip() for segment in tuple_identifier)
 
     @staticmethod
     def identifier_to_database(
@@ -738,7 +761,7 @@ class MetastoreCatalog(Catalog, ABC):
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
-        io = load_file_io(properties=self.properties, location=metadata_location)
+        io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(
             identifier=(self.name, database_name, table_name),
             metadata=metadata,

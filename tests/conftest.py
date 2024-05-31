@@ -324,9 +324,9 @@ def pyarrow_schema_simple_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
     return pa.schema([
-        pa.field('foo', pa.string(), nullable=True),
-        pa.field('bar', pa.int32(), nullable=False),
-        pa.field('baz', pa.bool_(), nullable=True),
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
     ])
 
 
@@ -335,12 +335,12 @@ def pyarrow_schema_nested_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
     return pa.schema([
-        pa.field('foo', pa.string(), nullable=False),
-        pa.field('bar', pa.int32(), nullable=False),
-        pa.field('baz', pa.bool_(), nullable=True),
-        pa.field('qux', pa.list_(pa.string()), nullable=False),
+        pa.field("foo", pa.string(), nullable=False),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+        pa.field("qux", pa.list_(pa.string()), nullable=False),
         pa.field(
-            'quux',
+            "quux",
             pa.map_(
                 pa.string(),
                 pa.map_(pa.string(), pa.int32()),
@@ -348,20 +348,20 @@ def pyarrow_schema_nested_without_ids() -> "pa.Schema":
             nullable=False,
         ),
         pa.field(
-            'location',
+            "location",
             pa.list_(
                 pa.struct([
-                    pa.field('latitude', pa.float32(), nullable=False),
-                    pa.field('longitude', pa.float32(), nullable=False),
+                    pa.field("latitude", pa.float32(), nullable=False),
+                    pa.field("longitude", pa.float32(), nullable=False),
                 ]),
             ),
             nullable=False,
         ),
         pa.field(
-            'person',
+            "person",
             pa.struct([
-                pa.field('name', pa.string(), nullable=True),
-                pa.field('age', pa.int32(), nullable=False),
+                pa.field("name", pa.string(), nullable=True),
+                pa.field("age", pa.int32(), nullable=False),
             ]),
             nullable=True,
         ),
@@ -1878,6 +1878,19 @@ def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
+@pytest.fixture()
+def hierarchical_namespace_name() -> str:
+    prefix = "my_iceberg_ns-"
+    random_tag1 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    random_tag2 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return ".".join([prefix + random_tag1, prefix + random_tag2]).lower()
+
+
+@pytest.fixture()
+def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
+    return [f"{hierarchical_namespace_name}_{idx}" for idx in range(NUM_TABLES)]
+
+
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
@@ -2068,31 +2081,31 @@ def spark() -> "SparkSession":
 
 
 TEST_DATA_WITH_NULL = {
-    'bool': [False, None, True],
-    'string': ['a', None, 'z'],
+    "bool": [False, None, True],
+    "string": ["a", None, "z"],
     # Go over the 16 bytes to kick in truncation
-    'string_long': ['a' * 22, None, 'z' * 22],
-    'int': [1, None, 9],
-    'long': [1, None, 9],
-    'float': [0.0, None, 0.9],
-    'double': [0.0, None, 0.9],
+    "string_long": ["a" * 22, None, "z" * 22],
+    "int": [1, None, 9],
+    "long": [1, None, 9],
+    "float": [0.0, None, 0.9],
+    "double": [0.0, None, 0.9],
     # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
-    'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [
+    "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    "timestamptz": [
         datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
         None,
         datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
     ],
-    'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
+    "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
     # Not natively supported by Arrow
     # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
-    'binary': [b'\01', None, b'\22'],
-    'fixed': [
-        uuid.UUID('00000000-0000-0000-0000-000000000000').bytes,
+    "binary": [b"\01", None, b"\22"],
+    "fixed": [
+        uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
         None,
-        uuid.UUID('11111111-1111-1111-1111-111111111111').bytes,
+        uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
     ],
 }
 

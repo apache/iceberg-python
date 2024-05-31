@@ -1550,7 +1550,7 @@ def test_strict_bucket_bytes(bound_reference_binary: BoundReference[int]) -> Non
 
 
 def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
-    value = literal(UUID('12345678123456781234567812345678'))
+    value = literal(UUID("12345678123456781234567812345678"))
     transform: Transform[Any, int] = BucketTransform(num_buckets=10)
     _test_projection(
         lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_uuid, literal=value)),
@@ -1575,14 +1575,14 @@ def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
     _test_projection(
         lhs=transform.strict_project(
             name="name",
-            pred=BoundNotIn(term=bound_reference_uuid, literals={value, literal(UUID('12345678123456781234567812345679'))}),
+            pred=BoundNotIn(term=bound_reference_uuid, literals={value, literal(UUID("12345678123456781234567812345679"))}),
         ),
         rhs=NotIn(term=Reference("name"), literals={1, 4}),
     )
     _test_projection(
         lhs=transform.strict_project(
             name="name",
-            pred=BoundIn(term=bound_reference_uuid, literals={value, literal(UUID('12345678123456781234567812345679'))}),
+            pred=BoundIn(term=bound_reference_uuid, literals={value, literal(UUID("12345678123456781234567812345679"))}),
         ),
         rhs=None,
     )

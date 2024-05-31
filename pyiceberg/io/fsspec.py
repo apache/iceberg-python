@@ -40,6 +40,12 @@ from requests import HTTPError
 from pyiceberg.catalog import TOKEN
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
+    ADLFS_ACCOUNT_KEY,
+    ADLFS_ACCOUNT_NAME,
+    ADLFS_CLIENT_ID,
+    ADLFS_CONNECTION_STRING,
+    ADLFS_SAS_TOKEN,
+    ADLFS_TENANT_ID,
     GCS_ACCESS,
     GCS_CACHE_TIMEOUT,
     GCS_CONSISTENCY,
@@ -58,6 +64,7 @@ from pyiceberg.io import (
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     S3_SIGNER_URI,
+    ADLFS_ClIENT_SECRET,
     FileIO,
     InputFile,
     InputStream,
@@ -164,13 +171,13 @@ def _adlfs(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
     return AzureBlobFileSystem(
-        connection_string=properties.get("adlfs.connection-string"),
-        account_name=properties.get("adlfs.account-name"),
-        account_key=properties.get("adlfs.account-key"),
-        sas_token=properties.get("adlfs.sas-token"),
-        tenant_id=properties.get("adlfs.tenant-id"),
-        client_id=properties.get("adlfs.client-id"),
-        client_secret=properties.get("adlfs.client-secret"),
+        connection_string=properties.get(ADLFS_CONNECTION_STRING),
+        account_name=properties.get(ADLFS_ACCOUNT_NAME),
+        account_key=properties.get(ADLFS_ACCOUNT_KEY),
+        sas_token=properties.get(ADLFS_SAS_TOKEN),
+        tenant_id=properties.get(ADLFS_TENANT_ID),
+        client_id=properties.get(ADLFS_CLIENT_ID),
+        client_secret=properties.get(ADLFS_ClIENT_SECRET),
     )
 
 
