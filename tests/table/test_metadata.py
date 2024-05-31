@@ -220,7 +220,7 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
         partition_spec=partition_spec,
         sort_order=sort_order,
         location="s3://some_v1_location/",
-        properties={'format-version': "1"},
+        properties={"format-version": "1"},
     )
 
     expected_schema = Schema(

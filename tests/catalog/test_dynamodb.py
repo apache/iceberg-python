@@ -569,10 +569,10 @@ def test_passing_provided_profile() -> None:
     }
     props = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
     props.update(session_props)  # type: ignore
-    with mock.patch('boto3.Session', return_value=mock.Mock()) as mock_session:
+    with mock.patch("boto3.Session", return_value=mock.Mock()) as mock_session:
         mock_client = mock.Mock()
         mock_session.return_value.client.return_value = mock_client
-        mock_client.describe_table.return_value = {'Table': {'TableStatus': 'ACTIVE'}}
+        mock_client.describe_table.return_value = {"Table": {"TableStatus": "ACTIVE"}}
         test_catalog = DynamoDbCatalog(catalog_name, **props)
         assert test_catalog.dynamodb is mock_client
         mock_session.assert_called_with(**session_props)
@@ -590,4 +590,4 @@ def test_table_exists(
     # Act and Assert for an existing table
     assert test_catalog.table_exists(identifier) is True
     # Act and Assert for an non-existing  table
-    assert test_catalog.table_exists(('non', 'exist')) is False
+    assert test_catalog.table_exists(("non", "exist")) is False
