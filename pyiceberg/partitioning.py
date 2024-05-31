@@ -387,7 +387,7 @@ class PartitionKey:
         for raw_partition_field_value in self.raw_partition_field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
             if len(partition_fields) != 1:
-                raise ValueError("partition_fields must contain exactly one field.")
+                raise ValueError(f"Cannot have redundant partitions: {partition_fields}")
             partition_field = partition_fields[0]
             iceberg_typed_key_values[partition_field.name] = partition_record_value(
                 partition_field=partition_field,
