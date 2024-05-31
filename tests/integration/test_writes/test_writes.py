@@ -34,6 +34,7 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -637,17 +638,18 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [2])
-def test_create_table_transaction(session_catalog: Catalog, format_version: int) -> None:
-    if format_version == 1:
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
+    if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
             "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
         )
 
-    identifier = f"default.arrow_create_table_transaction{format_version}"
+    identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
     try:
-        session_catalog.drop_table(identifier=identifier)
+        catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
@@ -669,7 +671,7 @@ def test_create_table_transaction(session_catalog: Catalog, format_version: int)
         ]),
     )
 
-    with session_catalog.create_table_transaction(
+    with catalog.create_table_transaction(
         identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)}
     ) as txn:
         with txn.update_snapshot().fast_append() as snapshot_update:
@@ -685,7 +687,7 @@ def test_create_table_transaction(session_catalog: Catalog, format_version: int)
             ):
                 snapshot_update.append_data_file(data_file)
 
-    tbl = session_catalog.load_table(identifier=identifier)
+    tbl = catalog.load_table(identifier=identifier)
     assert tbl.format_version == format_version
     assert len(tbl.scan().to_arrow()) == 6
 
