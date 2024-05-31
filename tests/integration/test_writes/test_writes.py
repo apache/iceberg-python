@@ -639,7 +639,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
