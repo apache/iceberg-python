@@ -419,7 +419,7 @@ def set_when_positive(properties: Dict[str, str], num: int, property_name: str) 
         properties[property_name] = str(num)
 
 
-def ancestors_of(current_snapshot: Snapshot, table_metadata: TableMetadata) -> Iterable[Snapshot]:
+def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot."""
     if current_snapshot:
         yield current_snapshot
