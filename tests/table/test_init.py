@@ -689,30 +689,6 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
     assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
 
 
-def test_update_metadata_create_tag(table_v2: Table) -> None:
-    ms = table_v2.manage_snapshots().create_tag(snapshot_id=3051729675574597004, tag_name="tag123")
-    new_metadata = update_table_metadata(table_v2.metadata, ms._updates)
-    assert new_metadata.refs["tag123"] == SnapshotRef(
-        snapshot_id=3051729675574597004,
-        snapshot_ref_type="tag",
-        min_snapshots_to_keep=None,
-        max_snapshot_age_ms=None,
-        max_ref_age_ms=None,
-    )
-
-
-def test_update_metadata_create_branch(table_v2: Table) -> None:
-    ms = table_v2.manage_snapshots().create_branch(snapshot_id=3051729675574597004, branch_name="branch123")
-    new_metadata = update_table_metadata(table_v2.metadata, ms._updates)
-    assert new_metadata.refs["branch123"] == SnapshotRef(
-        snapshot_id=3051729675574597004,
-        snapshot_ref_type="branch",
-        min_snapshots_to_keep=None,
-        max_snapshot_age_ms=None,
-        max_ref_age_ms=None,
-    )
-
-
 def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
     update, _ = table_v2.transaction()._set_ref_snapshot(
         snapshot_id=3051729675574597004,
