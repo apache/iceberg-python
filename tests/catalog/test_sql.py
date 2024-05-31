@@ -1373,15 +1373,15 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
 
     pa_table = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
+            "foo": ["a", None, "z"],
         },
         schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
     )
 
     pa_table_with_column = pa.Table.from_pydict(
         {
-            'foo': ['a', None, 'z'],
-            'bar': [19, None, 25],
+            "foo": ["a", None, "z"],
+            "bar": [19, None, 25],
         },
         schema=pa.schema([
             pa.field("foo", pa.string(), nullable=True),
@@ -1411,11 +1411,11 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
 
 
 @pytest.mark.parametrize(
-    'catalog',
+    "catalog",
     [
-        lazy_fixture('catalog_memory'),
-        lazy_fixture('catalog_sqlite'),
-        lazy_fixture('catalog_sqlite_without_rowcount'),
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
