@@ -1815,7 +1815,7 @@ def test_strict_binary(bound_reference_binary: BoundReference[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    'transform',
+    "transform",
     [
         pytest.param(YearTransform(), id="year_transform"),
         pytest.param(MonthTransform(), id="month_transform"),

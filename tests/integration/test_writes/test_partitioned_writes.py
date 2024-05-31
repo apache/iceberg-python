@@ -487,7 +487,7 @@ def test_append_transform_partition_verify_partitions_count(
 
     partitions_table = tbl.inspect.partitions()
     assert partitions_table.num_rows == len(expected_partitions)
-    assert {part[part_col] for part in partitions_table['partition'].to_pylist()} == expected_partitions
+    assert {part[part_col] for part in partitions_table["partition"].to_pylist()} == expected_partitions
     files_df = spark.sql(
         f"""
             SELECT *
@@ -543,7 +543,7 @@ def test_append_multiple_partitions(
 
     partitions_table = tbl.inspect.partitions()
     assert partitions_table.num_rows == 6
-    partitions = partitions_table['partition'].to_pylist()
+    partitions = partitions_table["partition"].to_pylist()
     assert {(part["date_year"], part["timestamptz_hour"]) for part in partitions} == {
         (53, 473328),
         (54, 473352),
