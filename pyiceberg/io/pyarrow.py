@@ -655,12 +655,12 @@ def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedAr
     }
 
 
-def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], rows: int) -> pa.Array:
+def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
     if len(positional_deletes) == 1:
         all_chunks = positional_deletes[0]
     else:
         all_chunks = pa.chunked_array(itertools.chain(*[arr.chunks for arr in positional_deletes]))
-    return np.setdiff1d(np.arange(rows), all_chunks, assume_unique=False)
+    return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
 
 
 def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = None) -> Schema:
@@ -967,7 +967,7 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
         return -1
 
 
-def _task_to_table(
+def _task_to_record_batches(
     fs: FileSystem,
     task: FileScanTask,
     bound_row_filter: BooleanExpression,
@@ -975,9 +975,8 @@ def _task_to_table(
     projected_field_ids: Set[int],
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
-    limit: Optional[int] = None,
     name_mapping: Optional[NameMapping] = None,
-) -> Optional[pa.Table]:
+) -> Iterator[pa.RecordBatch]:
     _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with fs.open_input_file(path) as fin:
@@ -1005,36 +1004,27 @@ def _task_to_table(
             columns=[col.name for col in file_project_schema.columns],
         )
 
-        if positional_deletes:
-            # Create the mask of indices that we're interested in
-            indices = _combine_positional_deletes(positional_deletes, fragment.count_rows())
-
-            if limit:
-                if pyarrow_filter is not None:
-                    # In case of the filter, we don't exactly know how many rows
-                    # we need to fetch upfront, can be optimized in the future:
-                    # https://github.com/apache/arrow/issues/35301
-                    arrow_table = fragment_scanner.take(indices)
-                    arrow_table = arrow_table.filter(pyarrow_filter)
-                    arrow_table = arrow_table.slice(0, limit)
-                else:
-                    arrow_table = fragment_scanner.take(indices[0:limit])
-            else:
-                arrow_table = fragment_scanner.take(indices)
+        current_index = 0
+        batches = fragment_scanner.to_batches()
+        for batch in batches:
+            if positional_deletes:
+                # Create the mask of indices that we're interested in
+                indices = _combine_positional_deletes(positional_deletes, current_index, len(batch))
+                
+                batch = batch.take(indices)
                 # Apply the user filter
                 if pyarrow_filter is not None:
+                    # we need to switch back and forth between RecordBatch and Table
+                    # as Expression filter isn't yet supported in RecordBatch
+                    # https://github.com/apache/arrow/issues/39220
+                    arrow_table = pa.Table.from_batches([batch])
                     arrow_table = arrow_table.filter(pyarrow_filter)
-        else:
-            # If there are no deletes, we can just take the head
-            # and the user-filter is already applied
-            if limit:
-                arrow_table = fragment_scanner.head(limit)
+                    arrow_batches = arrow_table.to_batches()
+                    for arrow_batch in arrow_batches:
+                        yield to_requested_schema(projected_schema, file_project_schema, arrow_table)
             else:
-                arrow_table = fragment_scanner.to_table()
-
-        if len(arrow_table) < 1:
-            return None
-        return to_requested_schema(projected_schema, file_project_schema, arrow_table)
+                yield to_requested_schema(projected_schema, file_project_schema, arrow_table)
+            current_index += len(batch)
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1147,7 +1137,7 @@ def project_table(
     return result
 
 
-def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:
+def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.RecordBatch) -> pa.RecordBatch:
     struct_array = visit_with_partner(requested_schema, table, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
 
     arrays = []
@@ -1156,7 +1146,7 @@ def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa
         array = struct_array.field(pos)
         arrays.append(array)
         fields.append(pa.field(field.name, array.type, field.optional))
-    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+    return pa.RecordBatch.from_arrays(arrays, schema=pa.schema(fields))
 
 
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
