@@ -1763,6 +1763,19 @@ class DataScan(TableScan):
             limit=self.limit,
         )
 
+    def to_arrow_batches(self) -> pa.Table:
+        from pyiceberg.io.pyarrow import project_batches
+
+        return project_batches(
+            self.plan_files(),
+            self.table_metadata,
+            self.io,
+            self.row_filter,
+            self.projection(),
+            case_sensitive=self.case_sensitive,
+            limit=self.limit,
+        )
+
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         return self.to_arrow().to_pandas(**kwargs)
 
