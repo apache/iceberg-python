@@ -430,12 +430,12 @@ class Transaction:
 
     def merge_append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
-                Shorthand API for appending a PyArrow table to a table transaction.
+        Shorthand API for appending a PyArrow table to a table transaction.
 
-                Args:
-                    df: The Arrow dataframe that will be appended to overwrite the table
-                    snapshot_properties: Custom properties to be added to the snapshot summary
-                """
+        Args:
+            df: The Arrow dataframe that will be appended to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
         try:
             import pyarrow as pa
         except ModuleNotFoundError as e:
@@ -461,11 +461,11 @@ class Transaction:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self._table.metadata, write_uuid=update_snapshot.commit_uuid, df=df,
-                    io=self._table.io
+                    table_metadata=self._table.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
+
     def overwrite(
         self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
     ) -> None:
@@ -1392,12 +1392,12 @@ class Table:
 
     def merge_append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
-                Shorthand API for appending a PyArrow table to the table.
+        Shorthand API for appending a PyArrow table to the table.
 
-                Args:
-                    df: The Arrow dataframe that will be appended to overwrite the table
-                    snapshot_properties: Custom properties to be added to the snapshot summary
-                """
+        Args:
+            df: The Arrow dataframe that will be appended to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
         with self.transaction() as tx:
             tx.merge_append(df=df, snapshot_properties=snapshot_properties)
 
@@ -3919,26 +3919,18 @@ class _ManifestMergeManager:
     def _create_manifest(self, spec_id: int, manifest_bin: List[ManifestFile]) -> ManifestFile:
         with self._snapshot_producer.new_manifest_writer(spec=self._snapshot_producer.spec(spec_id)) as writer:
             for manifest in manifest_bin:
-                for entry in self._snapshot_producer.fetch_manifest_entry(manifest):
+                for entry in self._snapshot_producer.fetch_manifest_entry(manifest=manifest, discard_deleted=False):
                     if entry.status == ManifestEntryStatus.DELETED:
                         #  suppress deletes from previous snapshots. only files deleted by this snapshot
                         #                should be added to the new manifest
                         if entry.snapshot_id == self._snapshot_producer.snapshot_id:
-                            writer.add_entry(entry)
+                            writer.delete(entry)
                     elif entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == self._snapshot_producer.snapshot_id:
                         # adds from this snapshot are still adds, otherwise they should be existing
-                        writer.add_entry(entry)
+                        writer.add(entry)
                     else:
                         # add all files from the old manifest as existing files
-                        writer.add_entry(
-                            ManifestEntry(
-                                status=ManifestEntryStatus.EXISTING,
-                                snapshot_id=entry.snapshot_id,
-                                data_sequence_number=entry.data_sequence_number,
-                                file_sequence_number=entry.file_sequence_number,
-                                data_file=entry.data_file,
-                            )
-                        )
+                        writer.existing(entry)
 
         return writer.to_manifest_file()
 

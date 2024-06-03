@@ -402,6 +402,46 @@ class ManifestEntry(Record):
     def __init__(self, *data: Any, **named_data: Any) -> None:
         super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMAS_STRUCT[DEFAULT_READ_VERSION], **named_data})
 
+    def _wrap(
+        self,
+        new_status: ManifestEntryStatus,
+        new_snapshot_id: int,
+        new_data_sequence_number: Optional[int],
+        new_file_sequence_number: Optional[int],
+        new_file: DataFile,
+    ) -> ManifestEntry:
+        self.status = new_status
+        self.snapshot_id = new_snapshot_id
+        self.data_sequence_number = new_data_sequence_number
+        self.file_sequence_number = new_file_sequence_number
+        self.data_file = new_file
+        return self
+
+    def _wrap_append(self, new_snapshot_id: int, new_data_sequence_number: Optional[int], new_file: DataFile) -> ManifestEntry:
+        return self._wrap(ManifestEntryStatus.ADDED, new_snapshot_id, new_data_sequence_number, None, new_file)
+
+    def _wrap_delete(
+        self,
+        new_snapshot_id: int,
+        new_data_sequence_number: Optional[int],
+        new_file_sequence_number: Optional[int],
+        new_file: DataFile,
+    ) -> ManifestEntry:
+        return self._wrap(
+            ManifestEntryStatus.DELETED, new_snapshot_id, new_data_sequence_number, new_file_sequence_number, new_file
+        )
+
+    def _wrap_existing(
+        self,
+        new_snapshot_id: int,
+        new_data_sequence_number: Optional[int],
+        new_file_sequence_number: Optional[int],
+        new_file: DataFile,
+    ) -> ManifestEntry:
+        return self._wrap(
+            ManifestEntryStatus.EXISTING, new_snapshot_id, new_data_sequence_number, new_file_sequence_number, new_file
+        )
+
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
     NestedField(509, "contains_null", BooleanType(), required=True),
@@ -654,6 +694,7 @@ class ManifestWriter(ABC):
     _deleted_rows: int
     _min_data_sequence_number: Optional[int]
     _partitions: List[Record]
+    _reused_entry_wrapper: ManifestEntry
 
     def __init__(
         self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str] = EMPTY_DICT
@@ -673,6 +714,7 @@ class ManifestWriter(ABC):
         self._deleted_rows = 0
         self._min_data_sequence_number = None
         self._partitions = []
+        self._reused_entry_wrapper = ManifestEntry()
 
     def __enter__(self) -> ManifestWriter:
         """Open the writer."""
@@ -761,6 +803,31 @@ class ManifestWriter(ABC):
             self._min_data_sequence_number = entry.data_sequence_number
 
         self._writer.write_block([self.prepare_entry(entry)])
+        return self
+
+    def add(self, entry: ManifestEntry) -> ManifestWriter:
+        if entry.data_sequence_number is not None and entry.data_sequence_number >= 0:
+            self.add_entry(
+                self._reused_entry_wrapper._wrap_append(self._snapshot_id, entry.data_sequence_number, entry.data_file)
+            )
+        else:
+            self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, None, entry.data_file))
+        return self
+
+    def delete(self, entry: ManifestEntry) -> ManifestWriter:
+        self.add_entry(
+            self._reused_entry_wrapper._wrap_delete(
+                self._snapshot_id, entry.data_sequence_number, entry.file_sequence_number, entry.data_file
+            )
+        )
+        return self
+
+    def existing(self, entry: ManifestEntry) -> ManifestWriter:
+        self.add_entry(
+            self._reused_entry_wrapper._wrap_existing(
+                self._snapshot_id, entry.data_sequence_number, entry.file_sequence_number, entry.data_file
+            )
+        )
         return self
 
 
