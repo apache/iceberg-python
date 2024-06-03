@@ -871,3 +871,52 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
     tbl.append(arrow_table_without_some_columns)
     # overwrite and then append should produce twice the data
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_merge_manifest_min_count_to_merge(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    tbl_a = _create_table(
+        session_catalog,
+        "default.merge_manifest_a",
+        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        [],
+    )
+    tbl_b = _create_table(
+        session_catalog,
+        "default.merge_manifest_b",
+        {"commit.manifest.min-count-to-merge": "1", "commit.manifest.target-size-bytes": "1", "format-version": format_version},
+        [],
+    )
+    tbl_c = _create_table(
+        session_catalog,
+        "default.merge_manifest_c",
+        {"commit.manifest-merge.enabled": "false", "format-version": format_version},
+        [],
+    )
+
+    # tbl_a should merge all manifests into 1
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+
+    # tbl_b should not merge any manifests because the target size is too small
+    tbl_b.append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
+
+    # tbl_c should not merge any manifests because merging is disabled
+    tbl_c.append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
+
+    assert len(tbl_a.current_snapshot().manifests(tbl_a.io)) == 1  # type: ignore
+    assert len(tbl_b.current_snapshot().manifests(tbl_b.io)) == 3  # type: ignore
+    assert len(tbl_c.current_snapshot().manifests(tbl_c.io)) == 3  # type: ignore
+
+    # tbl_a and tbl_c should contain the same data
+    assert tbl_a.scan().to_arrow().equals(tbl_c.scan().to_arrow())
+    # tbl_b and tbl_c should contain the same data
+    assert tbl_b.scan().to_arrow().equals(tbl_c.scan().to_arrow())
