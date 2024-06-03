@@ -429,8 +429,14 @@ class Transaction:
                 min_snapshots_to_keep=min_snapshots_to_keep,
             ),
         )
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
+                ref=ref_name,
+            ),
+        )
 
-        return updates, ()
+        return updates, requirements
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -1945,10 +1951,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
         if self._updates:
-            self._requirements += (
-                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
-                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-            )
+            self._requirements += (AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),)
         return self._updates, self._requirements
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
