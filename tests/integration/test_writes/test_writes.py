@@ -876,7 +876,7 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_merge_manifest_min_count_to_merge(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     tbl_a = _create_table(
         session_catalog,
@@ -898,19 +898,19 @@ def test_merge_manifest_min_count_to_merge(
     )
 
     # tbl_a should merge all manifests into 1
-    tbl_a.append(arrow_table_with_null)
-    tbl_a.append(arrow_table_with_null)
-    tbl_a.append(arrow_table_with_null)
+    tbl_a.merge_append(arrow_table_with_null)
+    tbl_a.merge_append(arrow_table_with_null)
+    tbl_a.merge_append(arrow_table_with_null)
 
     # tbl_b should not merge any manifests because the target size is too small
-    tbl_b.append(arrow_table_with_null)
-    tbl_b.append(arrow_table_with_null)
-    tbl_b.append(arrow_table_with_null)
+    tbl_b.merge_append(arrow_table_with_null)
+    tbl_b.merge_append(arrow_table_with_null)
+    tbl_b.merge_append(arrow_table_with_null)
 
     # tbl_c should not merge any manifests because merging is disabled
-    tbl_c.append(arrow_table_with_null)
-    tbl_c.append(arrow_table_with_null)
-    tbl_c.append(arrow_table_with_null)
+    tbl_c.merge_append(arrow_table_with_null)
+    tbl_c.merge_append(arrow_table_with_null)
+    tbl_c.merge_append(arrow_table_with_null)
 
     assert len(tbl_a.current_snapshot().manifests(tbl_a.io)) == 1  # type: ignore
     assert len(tbl_b.current_snapshot().manifests(tbl_b.io)) == 3  # type: ignore
