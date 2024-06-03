@@ -179,7 +179,7 @@ def test_pyarrow_not_nan_count(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_batches_nan(catalog: Catalog) -> None:
-    table_test_null_nan = catalog.load_table("default.table_test_null_nan")
+    table_test_null_nan = catalog.load_table("default.test_null_nan")
     arrow_batches = table_test_null_nan.scan(
         row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
     ).to_arrow_batches()

@@ -1041,7 +1041,7 @@ def _task_to_table(
     # Hence we only use it to infer the pyarrow schema when the table is guaranteed to be empty
     list_of_batches = list(batches)
     if len(list_of_batches) > 0 and len(list_of_batches[0]) > 0:
-        pa.Table.from_batches(list_of_batches)
+        return pa.Table.from_batches(list_of_batches)
     else:
         return pa.Table.from_batches(list_of_batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
