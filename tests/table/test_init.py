@@ -75,7 +75,8 @@ from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
     SnapshotLogEntry,
-    Summary, ancestors_of,
+    Summary,
+    ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,

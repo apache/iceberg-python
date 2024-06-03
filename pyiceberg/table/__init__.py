@@ -113,7 +113,6 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
-    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
