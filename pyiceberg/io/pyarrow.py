@@ -627,6 +627,8 @@ def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
 def _get_file_format(file_format: FileFormat, **kwargs: Dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
         return ds.ParquetFileFormat(**kwargs)
+    elif file_format == FileFormat.ORC:
+        return ds.OrcFileFormat()
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
 
@@ -972,8 +974,11 @@ def _task_to_table(
     name_mapping: Optional[NameMapping] = None,
 ) -> Optional[pa.Table]:
     _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
-    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with fs.open_input_file(path) as fin:
+        if task.file.file_format == FileFormat.PARQUET:
+            arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+        if task.file.file_format == FileFormat.ORC:
+            arrow_format = ds.OrcFileFormat()  # currently ORC doesn't support any fragment scan options
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
         file_schema = pyarrow_to_schema(physical_schema, name_mapping)

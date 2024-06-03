@@ -537,3 +537,12 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 
         table.transaction().set_properties(lock="xxx").commit_transaction()
         assert table.properties.get("lock") == "xxx"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_read(catalog: Catalog) -> None:
+    table_orc = catalog.load_table("default.test_read_orc")
+    arrow_table = table_orc.scan(row_filter="number > -1", selected_fields=("number", "letter")).to_arrow()
+    assert len(arrow_table) == 1
+    assert arrow_table["number"][0].as_py() == 1

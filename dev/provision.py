@@ -342,3 +342,19 @@ for catalog_name, catalog in catalogs.items():
            (array(), map(), array(struct(1)))
     """
     )
+
+    spark.sql(
+        f"""
+    CREATE TABLE {catalog_name}.default.test_read_orc (
+        number integer,
+        letter string
+    )
+    USING iceberg
+    TBLPROPERTIES (
+        'format-version'='2',
+        'write.format.default'='orc'
+    );
+    """
+    )
+
+    spark.sql(f"INSERT INTO {catalog_name}.default.test_read_orc VALUES (1,'hello')")
