@@ -1921,7 +1921,22 @@ class UpdateTableMetadata(ABC, Generic[U]):
 
 
 class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
-    """Run snapshot management operations using APIs."""
+    """
+    Run snapshot management operations using APIs.
+
+    APIs include create branch, create tag, etc.
+
+    Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+    Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+    Pending changes are applied on commit.
+
+    We can also use context managers to make more changes. For example,
+
+    with table.manage_snapshots() as ms:
+       ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+       ms.commit()
+
+    """
 
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
@@ -1938,15 +1953,15 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
-        Create a tag at a snapshot.
+        Create a new tag pointing to the given snapshot id.
 
         Args:
-            :param snapshot_id: snapshot id of the existing snapshot to tag
-            :param tag_name: name of the tag
-            :param max_ref_age_ms: max ref age in milliseconds
+            snapshot_id (int): snapshot id of the existing snapshot to tag
+            tag_name (str): name of the tag
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
 
         Returns:
-            :return: This for method chaining
+            This for method chaining
         """
         self._parent_snapshot_id = None
         if (parent := self._transaction._table.current_snapshot()) is not None:
@@ -1971,16 +1986,16 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         min_snapshots_to_keep: Optional[int] = None,
     ) -> ManageSnapshots:
         """
-        Create a branch at a snapshot.
+        Create a new branch pointing to the given snapshot id.
 
         Args:
-            :param snapshot_id: snapshot id of existing snapshot at which the branch is created.
-            :param branch_name: name of the new branch
-            :param max_ref_age_ms: max ref age in milliseconds
-            :param max_snapshot_age_ms: max age of snapshots to keep in milliseconds
-            :param min_snapshots_to_keep: min number of snapshots to keep in milliseconds
+            snapshot_id (int): snapshot id of existing snapshot at which the branch is created.
+            branch_name (str): name of the new branch
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+            max_snapshot_age_ms (Optional[int]): max age of snapshots to keep in milliseconds
+            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep in milliseconds
         Returns:
-            :return: This for method chaining
+            This for method chaining
         """
         self._parent_snapshot_id = None
         if (parent := self._transaction._table.current_snapshot()) is not None:
