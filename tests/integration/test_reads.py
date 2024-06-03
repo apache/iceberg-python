@@ -19,8 +19,10 @@
 import math
 import time
 import uuid
+from typing import Iterator
 from urllib.parse import urlparse
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
@@ -172,6 +174,51 @@ def test_pyarrow_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan = catalog.load_table("default.test_null_nan")
     not_nan = table_test_null_nan.scan(row_filter=NotNaN("col_numeric"), selected_fields=("idx",)).to_arrow()
     assert len(not_nan) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_nan(catalog: Catalog) -> None:
+    table_test_null_nan = catalog.load_table("default.table_test_null_nan")
+    arrow_batches = table_test_null_nan.scan(
+        row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
+    ).to_arrow_batches()
+    assert isinstance(arrow_batches, Iterator)
+    list_of_batches = list(arrow_batches)
+    assert len(list_of_batches) == 1
+    arrow_table = pa.Table.from_batches(list_of_batches)
+    assert len(arrow_table) == 1
+    assert arrow_table["idx"][0].as_py() == 1
+    assert math.isnan(arrow_table["col_numeric"][0].as_py())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_nan_rewritten(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    arrow_batches = table_test_null_nan_rewritten.scan(
+        row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
+    ).to_arrow_batches()
+    assert isinstance(arrow_batches, Iterator)
+    list_of_batches = list(arrow_batches)
+    assert len(list_of_batches) == 1
+    arrow_table = pa.Table.from_batches(list_of_batches)
+    assert len(arrow_table) == 1
+    assert arrow_table["idx"][0].as_py() == 1
+    assert math.isnan(arrow_table["col_numeric"][0].as_py())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
+def test_pyarrow_batches_not_nan_count(catalog: Catalog) -> None:
+    table_test_null_nan = catalog.load_table("default.test_batches_null_nan")
+    arrow_batches = table_test_null_nan.scan(row_filter=NotNaN("col_numeric"), selected_fields=("idx",)).to_arrow_batches()
+    assert isinstance(arrow_batches, Iterator)
+    list_of_batches = list(arrow_batches)
+    assert len(list_of_batches) == 1
+    arrow_table = pa.Table.from_batches(list_of_batches)
+    assert len(arrow_table) == 2
 
 
 @pytest.mark.integration

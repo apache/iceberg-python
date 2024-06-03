@@ -1010,10 +1010,7 @@ def _task_to_record_batches(
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
-                print(f"DEBUG: {indices=} {current_index=} {len(batch)=}")
-                print(f"{batch=}")
                 batch = batch.take(indices)
-                print(f"{batch=}")
                 # Apply the user filter
                 if pyarrow_filter is not None:
                     # we need to switch back and forth between RecordBatch and Table
@@ -1039,7 +1036,14 @@ def _task_to_table(
     batches = _task_to_record_batches(
         fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
     )
-    return pa.Table.from_batches(batches, schema=schema_to_pyarrow(projected_schema))
+    # https://github.com/apache/iceberg-python/issues/791
+    # schema_to_pyarrow does not always match the physical_schema of the fragment
+    # Hence we only use it to infer the pyarrow schema when the table is guaranteed to be empty
+    list_of_batches = list(batches)
+    if len(list_of_batches) > 0 and len(list_of_batches[0]) > 0:
+        pa.Table.from_batches(list_of_batches)
+    else:
+        return pa.Table.from_batches(list_of_batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
