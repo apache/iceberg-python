@@ -877,7 +877,7 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_update_metadata_create_tag(catalog: Catalog) -> None:
-    identifier = "default.test_table_read_from_snapshots"
+    identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
     assert len(tbl.history()) > 3
     tag_snapshot_id = tbl.history()[-3].snapshot_id
@@ -890,7 +890,7 @@ def test_update_metadata_create_tag(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_update_metadata_create_branch(catalog: Catalog) -> None:
-    identifier = "default.test_table_read_from_snapshots"
+    identifier = "default.test_table_snapshot_operations"
     tbl = catalog.load_table(identifier)
     assert len(tbl.history()) > 2
     branch_snapshot_id = tbl.history()[-2].snapshot_id
