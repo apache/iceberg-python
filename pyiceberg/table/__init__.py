@@ -1315,10 +1315,6 @@ class Table:
                 return self.snapshot_by_id(log_entry.snapshot_id)
         return None
 
-    def current_ancestors(self) -> Iterable[Snapshot]:
-        """Get a list of ancestors of and including the current snapshot."""
-        return ancestors_of(self.current_snapshot(), self.metadata)
-
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log

@@ -75,7 +75,7 @@ from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
     SnapshotLogEntry,
-    Summary,
+    Summary, ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -217,8 +217,8 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
 
 
-def test_current_ancestors(table_v2: Table) -> None:
-    assert list(table_v2.current_ancestors()) == [
+def test_ancestors_of(table_v2: Table) -> None:
+    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
         Snapshot(
             snapshot_id=3055729675574597004,
             parent_snapshot_id=3051729675574597004,
