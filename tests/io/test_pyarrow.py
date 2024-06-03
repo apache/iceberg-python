@@ -344,7 +344,7 @@ def test_deleting_hdfs_file_not_found() -> None:
         assert "Cannot delete file, does not exist:" in str(exc_info.value)
 
 
-def test_schema_to_pyarrow_schema(table_schema_nested: Schema) -> None:
+def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:
     actual = schema_to_pyarrow(table_schema_nested)
     expected = """foo: string
   -- field metadata --
@@ -399,6 +399,30 @@ person: struct<name: string, age: int32 not null>
     PARQUET:field_id: '17'
   -- field metadata --
   PARQUET:field_id: '15'"""
+    assert repr(actual) == expected
+
+
+def test_schema_to_pyarrow_schema_exclude_field_ids(table_schema_nested: Schema) -> None:
+    actual = schema_to_pyarrow(table_schema_nested, include_field_ids=False)
+    expected = """foo: string
+bar: int32 not null
+baz: bool
+qux: list<element: string not null> not null
+  child 0, element: string not null
+quux: map<string, map<string, int32>> not null
+  child 0, entries: struct<key: string not null, value: map<string, int32> not null> not null
+      child 0, key: string not null
+      child 1, value: map<string, int32> not null
+          child 0, entries: struct<key: string not null, value: int32 not null> not null
+              child 0, key: string not null
+              child 1, value: int32 not null
+location: list<element: struct<latitude: float, longitude: float> not null> not null
+  child 0, element: struct<latitude: float, longitude: float> not null
+      child 0, latitude: float
+      child 1, longitude: float
+person: struct<name: string, age: int32 not null>
+  child 0, name: string
+  child 1, age: int32 not null"""
     assert repr(actual) == expected
 
 
@@ -945,23 +969,13 @@ def test_projection_add_column(file_int: str) -> None:
         == """id: int32
 list: list<element: int32>
   child 0, element: int32
-    -- field metadata --
-    PARQUET:field_id: '21'
 map: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
-      -- field metadata --
-      PARQUET:field_id: '31'
       child 1, value: string
-      -- field metadata --
-      PARQUET:field_id: '32'
 location: struct<lat: double, lon: double>
   child 0, lat: double
-    -- field metadata --
-    PARQUET:field_id: '41'
-  child 1, lon: double
-    -- field metadata --
-    PARQUET:field_id: '42'"""
+  child 1, lon: double"""
     )
 
 
@@ -1014,11 +1028,7 @@ def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None
         == """id: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
-      -- field metadata --
-      PARQUET:field_id: '3'
-      child 1, value: string
-      -- field metadata --
-      PARQUET:field_id: '4'"""
+      child 1, value: string"""
     )
 
 
@@ -1062,12 +1072,7 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:
     result_table = project(schema_int, [file_int], GreaterThan("id", 4))
     assert len(result_table.columns[0]) == 0
-    assert (
-        repr(result_table.schema)
-        == """id: int32
-  -- field metadata --
-  PARQUET:field_id: '1'"""
-    )
+    assert repr(result_table.schema) == """id: int32"""
 
 
 def test_projection_filter_renamed_column(file_int: str) -> None:
@@ -1304,11 +1309,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
         repr(result_table.schema)
         == """location: struct<lat: double, long: double>
   child 0, lat: double
-    -- field metadata --
-    PARQUET:field_id: '41'
-  child 1, long: double
-    -- field metadata --
-    PARQUET:field_id: '42'"""
+  child 1, long: double"""
     )
 
 
