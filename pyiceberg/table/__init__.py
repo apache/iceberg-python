@@ -1411,7 +1411,19 @@ class Table:
         return self.metadata.snapshot_log
 
     def manage_snapshots(self) -> ManageSnapshots:
-        """Shorthand to run snapshot management operations using APIs."""
+        """
+        Shorthand to run snapshot management operations like create branch, create tag, etc.
+
+        Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+        Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example,
+
+        with table.manage_snapshots() as ms:
+           ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+           ms.commit()
+        """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
