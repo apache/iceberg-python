@@ -469,15 +469,18 @@ class PyArrowFileIO(FileIO):
         self.fs_by_scheme = lru_cache(self._initialize_fs)
 
 
-def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema(metadata))
+def schema_to_pyarrow(
+    schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True
+) -> pa.schema:
+    return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
 
 
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     _metadata: Dict[bytes, bytes]
 
-    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT) -> None:
+    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True) -> None:
         self._metadata = metadata
+        self._include_field_ids = include_field_ids
 
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
         return pa.schema(list(struct_result), metadata=self._metadata)
@@ -486,13 +489,18 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.struct(field_results)
 
     def field(self, field: NestedField, field_result: pa.DataType) -> pa.Field:
+        metadata = (
+            {PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
+            if field.doc
+            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
+            if self._include_field_ids
+            else None
+        )
         return pa.field(
             name=field.name,
             type=field_result,
             nullable=field.optional,
-            metadata={PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
-            if field.doc
-            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
+            metadata=metadata,
         )
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
@@ -1130,7 +1138,7 @@ def project_table(
     tables = [f.result() for f in completed_futures if f.result()]
 
     if len(tables) < 1:
-        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema))
+        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
     result = pa.concat_tables(tables)
 
