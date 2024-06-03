@@ -1946,7 +1946,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
-    _parent_snapshot_id: Optional[int]
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
@@ -1966,10 +1965,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        self._parent_snapshot_id = None
-        if (parent := self._transaction._table.current_snapshot()) is not None:
-            self._parent_snapshot_id = parent.snapshot_id
-
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
@@ -2000,10 +1995,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        self._parent_snapshot_id = None
-        if (parent := self._transaction._table.current_snapshot()) is not None:
-            self._parent_snapshot_id = parent.snapshot_id
-
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
