@@ -969,23 +969,13 @@ def test_projection_add_column(file_int: str) -> None:
         == """id: int32
 list: list<element: int32>
   child 0, element: int32
-    -- field metadata --
-    PARQUET:field_id: '21'
 map: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
-      -- field metadata --
-      PARQUET:field_id: '31'
       child 1, value: string
-      -- field metadata --
-      PARQUET:field_id: '32'
 location: struct<lat: double, lon: double>
   child 0, lat: double
-    -- field metadata --
-    PARQUET:field_id: '41'
-  child 1, lon: double
-    -- field metadata --
-    PARQUET:field_id: '42'"""
+  child 1, lon: double"""
     )
 
 
@@ -1038,11 +1028,7 @@ def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None
         == """id: map<int32, string>
   child 0, entries: struct<key: int32 not null, value: string> not null
       child 0, key: int32 not null
-      -- field metadata --
-      PARQUET:field_id: '3'
-      child 1, value: string
-      -- field metadata --
-      PARQUET:field_id: '4'"""
+      child 1, value: string"""
     )
 
 
@@ -1323,11 +1309,7 @@ def test_projection_nested_struct_different_parent_id(file_struct: str) -> None:
         repr(result_table.schema)
         == """location: struct<lat: double, long: double>
   child 0, lat: double
-    -- field metadata --
-    PARQUET:field_id: '41'
-  child 1, long: double
-    -- field metadata --
-    PARQUET:field_id: '42'"""
+  child 1, long: double"""
     )
 
 

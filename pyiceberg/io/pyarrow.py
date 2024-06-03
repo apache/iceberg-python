@@ -489,13 +489,12 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.struct(field_results)
 
     def field(self, field: NestedField, field_result: pa.DataType) -> pa.Field:
-        metadata = (
-            {PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
-            if field.doc
-            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
-            if self._include_field_ids
-            else None
-        )
+        metadata = {}
+        if field.doc:
+            metadata[PYARROW_FIELD_DOC_KEY] = field.doc
+        if self._include_field_ids:
+            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+
         return pa.field(
             name=field.name,
             type=field_result,
@@ -1169,7 +1168,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
         if field.field_type.is_primitive and field.field_type != file_field.field_type:
-            return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type)))
+            return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -1196,7 +1195,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional:
-                arrow_type = schema_to_pyarrow(field.field_type)
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 fields.append(self._construct_field(field, arrow_type))
             else:
