@@ -252,10 +252,10 @@ class Snapshot(IcebergBaseModel):
 
     @staticmethod
     @lru_cache
-    def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
+    def _manifests(io: FileIO, manifest_list: Optional[str]) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
         if manifest_list not in (None, ""):
-            file = io.new_input(manifest_list)
+            file = io.new_input(manifest_list)  # type: ignore
             return list(read_manifest_list(file))
         return []
 
