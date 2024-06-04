@@ -72,7 +72,7 @@ Iceberg tables support table properties to configure table behavior.
 <!-- prettier-ignore-start -->
 
 !!! note "Fast append"
-    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) which ignores `commit.manifest*` and does not merge manifests on writes. To make table commit respect `commit.manifest*`, use [`merge_append`](api.md#write-support) instead.
+    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) which ignores `commit.manifest*` and does not merge manifests on writes. To make table merge manifests on writes and respect `commit.manifest*`, use [`merge_append`](api.md#write-support) instead.
 
 <!-- prettier-ignore-end -->
 

@@ -430,7 +430,12 @@ class Transaction:
 
     def merge_append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
-        Shorthand API for appending a PyArrow table to a table transaction.
+        Shorthand API for appending a PyArrow table to a table transaction and merging manifests on write.
+
+        The manifest merge behavior is controlled by table properties:
+        - commit.manifest.target-size-bytes
+        - commit.manifest.min-count-to-merge
+        - commit.manifest-merge.enabled
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
@@ -1392,7 +1397,12 @@ class Table:
 
     def merge_append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
-        Shorthand API for appending a PyArrow table to the table.
+        Shorthand API for appending a PyArrow table to a table transaction and merging manifests on write.
+
+        The manifest merge behavior is controlled by table properties:
+        - commit.manifest.target-size-bytes
+        - commit.manifest.min-count-to-merge
+        - commit.manifest-merge.enabled
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
@@ -3069,13 +3079,6 @@ class MergeAppendFiles(FastAppendFiles):
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
         )
-
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        """To determine if we need to record any deleted manifest entries.
-
-        In case of an append, nothing is deleted.
-        """
-        return []
 
     def _process_manifests(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
         """To perform any post-processing on the manifests before writing them to the new snapshot.
