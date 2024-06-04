@@ -2870,7 +2870,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                     snapshot_id=self._snapshot_id,
                 ) as writer:
                     for data_file in self._added_data_files:
-                        writer.add_entry(
+                        writer.add(
                             ManifestEntry(
                                 status=ManifestEntryStatus.ADDED,
                                 snapshot_id=self._snapshot_id,

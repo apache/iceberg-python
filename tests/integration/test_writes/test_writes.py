@@ -920,3 +920,96 @@ def test_merge_manifest_min_count_to_merge(
     assert tbl_a.scan().to_arrow().equals(tbl_c.scan().to_arrow())
     # tbl_b and tbl_c should contain the same data
     assert tbl_b.scan().to_arrow().equals(tbl_c.scan().to_arrow())
+
+    # verify the sequence number of tbl_a's only manifest file
+    tbl_a_manifest = tbl_a.current_snapshot().manifests(tbl_a.io)[0]  # type: ignore
+    assert tbl_a_manifest.sequence_number == (3 if format_version == 2 else 0)
+    assert tbl_a_manifest.min_sequence_number == (1 if format_version == 2 else 0)
+
+    # verify the manifest entries of tbl_a, in which the manifests are merged
+    tbl_a_entries = tbl_a.inspect.entries().to_pydict()
+    assert tbl_a_entries["status"] == [1, 0, 0]
+    assert tbl_a_entries["sequence_number"] == [3, 2, 1] if format_version == 2 else [0, 0, 0]
+    assert tbl_a_entries["file_sequence_number"] == [3, 2, 1] if format_version == 2 else [0, 0, 0]
+    for i in range(3):
+        tbl_a_data_file = tbl_a_entries["data_file"][i]
+        assert tbl_a_data_file["column_sizes"] == [
+            (1, 49),
+            (2, 78),
+            (3, 128),
+            (4, 94),
+            (5, 118),
+            (6, 94),
+            (7, 118),
+            (8, 118),
+            (9, 118),
+            (10, 94),
+            (11, 78),
+            (12, 109),
+        ]
+        assert tbl_a_data_file["content"] == 0
+        assert tbl_a_data_file["equality_ids"] is None
+        assert tbl_a_data_file["file_format"] == "PARQUET"
+        assert tbl_a_data_file["file_path"].startswith("s3://warehouse/default/merge_manifest_a/data/")
+        assert tbl_a_data_file["key_metadata"] is None
+        assert tbl_a_data_file["lower_bounds"] == [
+            (1, b"\x00"),
+            (2, b"a"),
+            (3, b"aaaaaaaaaaaaaaaa"),
+            (4, b"\x01\x00\x00\x00"),
+            (5, b"\x01\x00\x00\x00\x00\x00\x00\x00"),
+            (6, b"\x00\x00\x00\x80"),
+            (7, b"\x00\x00\x00\x00\x00\x00\x00\x80"),
+            (8, b"\x00\x9bj\xca8\xf1\x05\x00"),
+            (9, b"\x00\x9bj\xca8\xf1\x05\x00"),
+            (10, b"\x9eK\x00\x00"),
+            (11, b"\x01"),
+            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" b"\x00\x00\x00\x00"),
+        ]
+        assert tbl_a_data_file["nan_value_counts"] == []
+        assert tbl_a_data_file["null_value_counts"] == [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (5, 1),
+            (6, 1),
+            (7, 1),
+            (8, 1),
+            (9, 1),
+            (10, 1),
+            (11, 1),
+            (12, 1),
+        ]
+        assert tbl_a_data_file["partition"] == {}
+        assert tbl_a_data_file["record_count"] == 3
+        assert tbl_a_data_file["sort_order_id"] is None
+        assert tbl_a_data_file["split_offsets"] == [4]
+        assert tbl_a_data_file["upper_bounds"] == [
+            (1, b"\x01"),
+            (2, b"z"),
+            (3, b"zzzzzzzzzzzzzzz{"),
+            (4, b"\t\x00\x00\x00"),
+            (5, b"\t\x00\x00\x00\x00\x00\x00\x00"),
+            (6, b"fff?"),
+            (7, b"\xcd\xcc\xcc\xcc\xcc\xcc\xec?"),
+            (8, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
+            (9, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
+            (10, b"\xd9K\x00\x00"),
+            (11, b"\x12"),
+            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11" b"\x11\x11\x11\x11"),
+        ]
+        assert tbl_a_data_file["value_counts"] == [
+            (1, 3),
+            (2, 3),
+            (3, 3),
+            (4, 3),
+            (5, 3),
+            (6, 3),
+            (7, 3),
+            (8, 3),
+            (9, 3),
+            (10, 3),
+            (11, 3),
+            (12, 3),
+        ]
