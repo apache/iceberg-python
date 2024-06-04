@@ -252,12 +252,16 @@ class Snapshot(IcebergBaseModel):
 
     @staticmethod
     @lru_cache
-    def manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
+    def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
         if manifest_list not in (None, ""):
             file = io.new_input(manifest_list)
             return list(read_manifest_list(file))
         return []
+
+    def manifests(self, io: FileIO) -> List[ManifestFile]:
+        """Return the manifests for the given snapshot."""
+        return Snapshot._manifests(io, self.manifest_list)
 
 
 class MetadataLogEntry(IcebergBaseModel):

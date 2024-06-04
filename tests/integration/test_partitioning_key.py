@@ -763,14 +763,10 @@ def test_partition_key(
         snapshot = iceberg_table.current_snapshot()
         assert snapshot
         spark_partition_for_justification = (
-            snapshot.manifests(iceberg_table.io, snapshot.manifest_list)[0]
-            .fetch_manifest_entry(iceberg_table.io)[0]
-            .data_file.partition
+            snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.partition
         )
         spark_path_for_justification = (
-            snapshot.manifests(iceberg_table.io, snapshot.manifest_list)[0]
-            .fetch_manifest_entry(iceberg_table.io)[0]
-            .data_file.file_path
+            snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
         )
         assert spark_partition_for_justification == expected_partition_record
         assert expected_hive_partition_path_slice in spark_path_for_justification

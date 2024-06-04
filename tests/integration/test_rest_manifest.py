@@ -75,7 +75,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     if test_snapshot is None:
         raise ValueError("Table has no current snapshot, check the docker environment")
     io = table_test_all_types.io
-    test_manifest_file = test_snapshot.manifests(io, test_snapshot.manifest_list)[0]
+    test_manifest_file = test_snapshot.manifests(io)[0]
     test_manifest_entries = test_manifest_file.fetch_manifest_entry(io)
     entry = test_manifest_entries[0]
     test_schema = table_test_all_types.schema()
