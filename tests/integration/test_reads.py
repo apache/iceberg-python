@@ -403,6 +403,88 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
+    # number, letter
+    #  (1, 'a'),
+    #  (2, 'b'),
+    #  (3, 'c'),
+    #  (4, 'd'),
+    #  (5, 'e'),
+    #  (6, 'f'),
+    #  (7, 'g'),
+    #  (8, 'h'),
+    #  (9, 'i'), <- deleted
+    #  (10, 'j'),
+    #  (11, 'k'),
+    #  (12, 'l')
+    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+    arrow_table = pa.Table.from_batches(test_positional_mor_deletes.scan().to_arrow_batches())
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
+
+    # Checking the filter
+    arrow_table = pa.Table.from_batches(
+        test_positional_mor_deletes.scan(
+            row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k"))
+        ).to_arrow_batches()
+    )
+    assert arrow_table["number"].to_pylist() == [5, 6, 7, 8, 10]
+
+    # Testing the combination of a filter and a limit
+    arrow_table = pa.Table.from_batches(
+        test_positional_mor_deletes.scan(
+            row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k")), limit=1
+        ).to_arrow_batches()
+    )
+    assert arrow_table["number"].to_pylist() == [5]
+
+    # Testing the slicing of indices
+    arrow_table = pa.Table.from_batches(test_positional_mor_deletes.scan(limit=3).to_arrow_batches())
+    assert arrow_table["number"].to_pylist() == [1, 2, 3]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_deletes_double(catalog: Catalog) -> None:
+    # number, letter
+    #  (1, 'a'),
+    #  (2, 'b'),
+    #  (3, 'c'),
+    #  (4, 'd'),
+    #  (5, 'e'),
+    #  (6, 'f'), <- second delete
+    #  (7, 'g'),
+    #  (8, 'h'),
+    #  (9, 'i'), <- first delete
+    #  (10, 'j'),
+    #  (11, 'k'),
+    #  (12, 'l')
+    test_positional_mor_double_deletes = catalog.load_table("default.test_positional_mor_double_deletes")
+    arrow_table = pa.Table.from_batches(test_positional_mor_double_deletes.scan().to_arrow_batches())
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
+
+    # Checking the filter
+    arrow_table = pa.Table.from_batches(
+        test_positional_mor_double_deletes.scan(
+            row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k"))
+        ).to_arrow_batches()
+    )
+    assert arrow_table["number"].to_pylist() == [5, 7, 8, 10]
+
+    # Testing the combination of a filter and a limit
+    arrow_table = pa.Table.from_batches(
+        test_positional_mor_double_deletes.scan(
+            row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k")), limit=1
+        ).to_arrow_batches()
+    )
+    assert arrow_table["number"].to_pylist() == [5]
+
+    # Testing the slicing of indices
+    arrow_table = pa.Table.from_batches(test_positional_mor_double_deletes.scan(limit=8).to_arrow_batches())
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_partitioned_tables(catalog: Catalog) -> None:
     for table_name, predicate in [
         ("test_partitioned_by_identity", "ts >= '2023-03-05T00:00:00+00:00'"),

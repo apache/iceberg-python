@@ -1219,7 +1219,7 @@ def project_batches(
         for batch in batches:
             if limit is not None:
                 if total_row_count + len(batch) >= limit:
-                    yield batch.take(limit - total_row_count)
+                    yield batch.slice(0, limit - total_row_count)
                     break
             yield batch
             total_row_count += len(batch)

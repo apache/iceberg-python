@@ -33,6 +33,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -1763,7 +1764,7 @@ class DataScan(TableScan):
             limit=self.limit,
         )
 
-    def to_arrow_batches(self) -> pa.Table:
+    def to_arrow_batches(self) -> Iterator[pa.RecordBatch]:
         from pyiceberg.io.pyarrow import project_batches
 
         return project_batches(
