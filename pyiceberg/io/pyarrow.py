@@ -168,6 +168,7 @@ BUFFER_SIZE = "buffer-size"
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
+PYARROW_ORC_FIELD_ID_KEY = b"iceberg.id"
 PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
@@ -801,11 +802,12 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
 
 
 def _get_field_id(field: pa.Field) -> Optional[int]:
-    return (
-        int(field_id_str.decode())
-        if (field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)))
-        else None
-    )
+    if field.metadata and (field_id_str := field.metadata.get(PYARROW_ORC_FIELD_ID_KEY)):
+        return int(field_id_str.decode())
+    elif field.metadata and (field_id_str := field.metadata.get(PYARROW_PARQUET_FIELD_ID_KEY)):
+        return int(field_id_str.decode())
+    else:
+        return None
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
@@ -914,6 +916,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     return TimestamptzType()
                 elif primitive.tz is None:
                     return TimestampType()
+            if primitive.unit == "ns":
+                if primitive.tz == "UTC":
+                    return TimestamptzType()
         elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
