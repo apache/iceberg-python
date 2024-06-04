@@ -61,6 +61,21 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
 | `write.parquet.row-group-limit`   | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
 
+## Table behavior options
+
+| Key                                  | Options             | Default | Description                                                 |
+| ------------------------------------ | ------------------- | ------- | ----------------------------------------------------------- |
+| `commit.manifest.target-size-bytes`  | Size in bytes       | 8MB     | Target size when merging manifest files                     |
+| `commit.manifest.min-count-to-merge` | Number of manifests | 100     | Target size when merging manifest files                     |
+| `commit.manifest-merge.enabled`      | Boolean             | True    | Controls whether to automatically merge manifests on writes |
+
+<!-- prettier-ignore-start -->
+
+!!! note "Fast append"
+    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) which ignores `commit.manifest*` and does not merge manifests on writes. To make table commit respect `commit.manifest*`, use [`merge_append`](api.md#write-support) instead.
+
+<!-- prettier-ignore-end -->
+
 # FileIO
 
 Iceberg works with the concept of a FileIO which is a pluggable module for reading, writing, and deleting files. By default, PyIceberg will try to initialize the FileIO that's suitable for the scheme (`s3://`, `gs://`, etc.) and will use the first one that's installed.
