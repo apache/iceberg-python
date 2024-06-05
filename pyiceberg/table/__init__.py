@@ -2022,9 +2022,9 @@ class BaseIncrementalScan(TableScan):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     @abstractmethod
-    def _do_plan_files(self, from_snapshot_id_exclusive: int, to_snapshot_id: int) -> Iterable[FileScanTask]: ...
+    def _do_plan_files(self, from_snapshot_id_exclusive: int, to_snapshot_id: int) -> Iterable[ScanTask]: ...
 
-    def plan_files(self) -> Iterable[FileScanTask]:
+    def plan_files(self) -> Iterable[ScanTask]:
         if (
             self.from_snapshot_id_exclusive is None
             and self.to_snapshot_id is None
