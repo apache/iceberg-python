@@ -82,7 +82,7 @@ fastavro = "1.9.4"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.12.1"
+typing-extensions = "4.12.2"
 pytest-mock = "3.14.0"
 pyspark = "3.5.1"
 cython = "3.0.10"
