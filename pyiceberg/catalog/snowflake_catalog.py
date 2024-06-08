@@ -17,9 +17,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import warnings
 from dataclasses import dataclass
 from typing import Iterator, List, Optional, Set, Union
+from urllib.parse import urlparse
 
 import pyarrow as pa
 from boto3.session import Session
@@ -32,6 +35,8 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import CommitTableRequest, CommitTableResponse, StaticTable, Table, sorting
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+
+logger = logging.getLogger(__name__)
 
 
 class SnowflakeCatalog(MetastoreCatalog):
@@ -92,14 +97,23 @@ class SnowflakeCatalog(MetastoreCatalog):
             return ".".join(self)
 
     def __init__(self, name: str, **properties: str):
-        '''
+        """
+        params:
+            name: Name of the catalog.
+            user: Snowflake user.
+            account: Snowflake account.
+            authenticator: Snowflake authenticator.
+            password: Snowflake password.
+            private_key: Snowflake private key.
+            role: Snowflake role.
+
         There are multiple ways to authenticate with Snowflake. We are supporting the following
         as of now:
 
         1. externalbrowser
         2. password
         3. private_key
-        '''
+        """
 
         super().__init__(name, **properties)
 
@@ -117,6 +131,9 @@ class SnowflakeCatalog(MetastoreCatalog):
         if "private_key" in properties:
             params["private_key"] = properties["private_key"]
 
+        if "role" in properties:
+            params["role"] = properties["role"]
+
         self.connection = SnowflakeConnection(**params)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -133,18 +150,19 @@ class SnowflakeCatalog(MetastoreCatalog):
             except Exception as e:
                 raise NoSuchTableError(f"Table {sf_identifier.table_name} not found") from e
 
-        session = Session()
-        credentials = session.get_credentials()
-        current_credentials = credentials.get_frozen_credentials()
+        _fs_scheme = urlparse(metadata)
+        _fs_props = {}
 
-        s3_props = {
-            S3_ACCESS_KEY_ID: current_credentials.access_key,
-            S3_SECRET_ACCESS_KEY: current_credentials.secret_key,
-            S3_SESSION_TOKEN: current_credentials.token,
-            S3_REGION: os.environ.get("AWS_REGION", "us-east-1"),
-        }
+        if _fs_scheme.scheme == "s3":
+            _fs_props.update(self._generate_s3_access_credentials())
+        elif _fs_scheme.scheme == "gcs":
+            assert os.environ.get(
+                "GOOGLE_APPLICATION_CREDENTIALS"
+            ), "GOOGLE_APPLICATION_CREDENTIALS not set. This is required for GCS access."
+        else:
+            warnings.warn(f"Unsupported filesystem scheme: {_fs_scheme.scheme}")
 
-        tbl = StaticTable.from_metadata(metadata, properties=s3_props)
+        tbl = StaticTable.from_metadata(metadata, properties=_fs_props)
         tbl.identifier = tuple(identifier.split(".")) if isinstance(identifier, str) else identifier
         tbl.catalog = self
 
@@ -255,3 +273,17 @@ class SnowflakeCatalog(MetastoreCatalog):
         properties: Properties = EMPTY_DICT,
     ) -> Table:
         raise NotImplementedError
+
+    @staticmethod
+    def _generate_s3_access_credentials():
+        session = Session()
+
+        credentials = session.get_credentials()
+        current_credentials = credentials.get_frozen_credentials()
+
+        return {
+            S3_ACCESS_KEY_ID: current_credentials.access_key,
+            S3_SECRET_ACCESS_KEY: current_credentials.secret_key,
+            S3_SESSION_TOKEN: current_credentials.token,
+            S3_REGION: os.environ.get("AWS_REGION", "us-east-1"),
+        }

@@ -14,7 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import json
+import os
 from typing import Any, Generator, List
 from unittest.mock import MagicMock, patch
 
@@ -51,6 +54,7 @@ class TestSnowflakeIdentifier:
 
 class MockSnowflakeCursor:
     q = ""
+    q_params: list = []
     qs: List[Any] = []
 
     def __enter__(self) -> Any:
@@ -81,14 +85,22 @@ class MockSnowflakeCursor:
 
     def fetchone(self) -> Any:
         if "SYSTEM$GET_ICEBERG_TABLE_INFORMATION" in self.q:
+            _schema_simulator = "s3"
+
+            if "gcs_table" in self.q_params[0]:
+                _schema_simulator = "gcs"
+
             return {
-                "METADATA": json.dumps({
-                    "metadataLocation": "s3://bucket/path/to/metadata.json",
-                })
+                "METADATA": json.dumps(
+                    {
+                        "metadataLocation": f"{_schema_simulator}://bucket/path/to/metadata.json",
+                    }
+                )
             }
 
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         self.q = args[0]
+        self.q_params = args[1]
         self.qs.append(args)
 
 
@@ -117,13 +129,15 @@ class TestSnowflakeCatalog:
     def snowflake_catalog(self) -> Generator[SnowflakeCatalog, None, None]:
         with patch(
             "pyiceberg.serializers.FromInputFile.table_metadata",
-            return_value=TableMetadataUtil.parse_obj({
-                "format-version": 2,
-                "location": "s3://bucket/path/to/",
-                "last-column-id": 4,
-                "schemas": [{}],
-                "partition-specs": [{}],
-            }),
+            return_value=TableMetadataUtil.parse_obj(
+                {
+                    "format-version": 2,
+                    "location": "s3://bucket/path/to/",
+                    "last-column-id": 4,
+                    "schemas": [{}],
+                    "partition-specs": [{}],
+                }
+            ),
         ):
             with patch("pyiceberg.catalog.snowflake_catalog.Session.get_credentials", MockCreds):
                 with patch("pyiceberg.catalog.snowflake_catalog.SnowflakeConnection", MockSnowflakeConnection):
@@ -133,8 +147,14 @@ class TestSnowflakeCatalog:
                         account="",
                     )
 
-    def test_load_table(self, snowflake_catalog: SnowflakeCatalog) -> None:
+    def test_load_table_s3(self, snowflake_catalog: SnowflakeCatalog) -> None:
         tbl = snowflake_catalog.load_table("db.schema.table")
+
+        assert tbl is not None
+
+    def test_load_table_gcs(self, snowflake_catalog: SnowflakeCatalog) -> None:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/path/to/creds.json"
+        tbl = snowflake_catalog.load_table("db.schema.gcs_table")
 
         assert tbl is not None
 
