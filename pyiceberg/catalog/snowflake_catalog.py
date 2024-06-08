@@ -37,6 +37,17 @@ from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 class SnowflakeCatalog(MetastoreCatalog):
     @dataclass(frozen=True, eq=True)
     class _SnowflakeIdentifier:
+        """
+        Snowflake follows the following format for identifiers:
+        [database_name].[schema_name].[table_name]
+
+        If the database_name is not provided, the schema_name is the first part of the identifier.
+        Similarly, if the schema_name is not provided, the table_name is the first part of the identifier.
+
+        This class is used to parse the identifier into its constituent parts and
+        provide utility methods to work with them.
+        """
+
         database: str | None
         schema: str | None
         table: str | None
@@ -81,6 +92,15 @@ class SnowflakeCatalog(MetastoreCatalog):
             return ".".join(self)
 
     def __init__(self, name: str, **properties: str):
+        '''
+        There are multiple ways to authenticate with Snowflake. We are supporting the following
+        as of now:
+
+        1. externalbrowser
+        2. password
+        3. private_key
+        '''
+
         super().__init__(name, **properties)
 
         params = {
