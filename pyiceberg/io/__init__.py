@@ -283,6 +283,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "s3a": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3n": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "gs": [ARROW_FILE_IO],
+    "gcs": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
     "viewfs": [ARROW_FILE_IO],

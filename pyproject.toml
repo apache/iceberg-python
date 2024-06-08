@@ -58,6 +58,7 @@ fsspec = ">=2023.1.0,<2025.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<9.0.0"
+snowflake-connector-python = { version = ">=3.10.0", optional = true }
 pyarrow = { version = ">=9.0.0,<17.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
@@ -178,10 +179,6 @@ module = "tests.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "botocore.*"
 ignore_missing_imports = true
 
@@ -203,10 +200,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "duckdb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "ray.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -235,18 +228,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "sqlalchemy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "Cython.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "setuptools.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tenacity.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -334,10 +315,6 @@ module = "tests.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "botocore.*"
 ignore_missing_imports = true
 
@@ -359,10 +336,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "duckdb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "ray.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -391,18 +364,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "sqlalchemy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "Cython.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "setuptools.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tenacity.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -490,10 +451,6 @@ module = "tests.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "botocore.*"
 ignore_missing_imports = true
 
@@ -515,10 +472,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "duckdb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "ray.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -547,18 +500,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "sqlalchemy.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "Cython.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "setuptools.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "tenacity.*"
 ignore_missing_imports = true
 
 [tool.poetry.scripts]
@@ -588,6 +529,7 @@ zstandard = ["zstandard"]
 sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
 gcsfs = ["gcsfs"]
+snowflake = ["snowflake-connector-python"]
 
 [tool.pytest.ini_options]
 markers = [
@@ -710,6 +652,10 @@ module = "boto3"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "boto3.session"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "botocore.*"
 ignore_missing_imports = true
 
@@ -775,6 +721,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tenacity.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "snowflake.connector.*"
 ignore_missing_imports = true
 
 [tool.coverage.run]
