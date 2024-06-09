@@ -216,7 +216,7 @@ def test_pyarrow_string_to_iceberg() -> None:
 
 
 def test_pyarrow_variable_binary_to_iceberg() -> None:
-    pyarrow_type = pa.large_binary()
+    pyarrow_type = pa.binary()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == BinaryType()
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type

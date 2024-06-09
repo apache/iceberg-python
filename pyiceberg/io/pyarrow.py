@@ -554,7 +554,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(16)
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
-        return pa.large_binary()
+        return pa.binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
