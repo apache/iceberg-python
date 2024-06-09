@@ -33,7 +33,6 @@ from typing import (
     Dict,
     Generic,
     Iterable,
-    Iterator,
     List,
     Literal,
     Optional,
@@ -1764,18 +1763,25 @@ class DataScan(TableScan):
             limit=self.limit,
         )
 
-    def to_arrow_batches(self) -> Iterator[pa.RecordBatch]:
-        from pyiceberg.io.pyarrow import project_batches
-
-        return project_batches(
-            self.plan_files(),
-            self.table_metadata,
-            self.io,
-            self.row_filter,
-            self.projection(),
-            case_sensitive=self.case_sensitive,
-            limit=self.limit,
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
+        import pyarrow as pa
+        
+        reader = pa.RecordBatchReader.from_batches(
+            schema_to_pyarrow(self.projection()),
+            project_batches(
+                self.plan_files(),
+                self.table_metadata,
+                self.io,
+                self.row_filter,
+                self.projection(),
+                case_sensitive=self.case_sensitive,
+                limit=self.limit,
+            ),
         )
+        # Cast the reader to its projected schema its projected schema for consistency
+        # https://github.com/apache/iceberg-python/issues/791
+        return reader.cast(reader.schema)
 
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         return self.to_arrow().to_pandas(**kwargs)
