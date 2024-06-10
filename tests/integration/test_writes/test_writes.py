@@ -881,9 +881,7 @@ def test_create_tag(catalog: Catalog) -> None:
     tbl = catalog.load_table(identifier)
     assert len(tbl.history()) > 3
     tag_snapshot_id = tbl.history()[-3].snapshot_id
-    ms = tbl.manage_snapshots().create_tag(snapshot_id=tag_snapshot_id, tag_name="tag123")
-    ms.commit()
-    tbl.refresh()
+    tbl.manage_snapshots().create_tag(snapshot_id=tag_snapshot_id, tag_name="tag123")
     assert tbl.metadata.refs["tag123"] == SnapshotRef(snapshot_id=tag_snapshot_id, snapshot_ref_type="tag")
 
 
@@ -894,7 +892,5 @@ def test_create_branch(catalog: Catalog) -> None:
     tbl = catalog.load_table(identifier)
     assert len(tbl.history()) > 2
     branch_snapshot_id = tbl.history()[-2].snapshot_id
-    ms = tbl.manage_snapshots().create_branch(snapshot_id=branch_snapshot_id, branch_name="branch123")
-    ms.commit()
-    tbl.refresh()
+    tbl.manage_snapshots().create_branch(snapshot_id=branch_snapshot_id, branch_name="branch123")
     assert tbl.metadata.refs["branch123"] == SnapshotRef(snapshot_id=branch_snapshot_id, snapshot_ref_type="branch")

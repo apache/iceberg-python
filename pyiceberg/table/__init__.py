@@ -1422,7 +1422,6 @@ class Table:
 
         with table.manage_snapshots() as ms:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
-           ms.commit()
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
@@ -1952,8 +1951,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     with table.manage_snapshots() as ms:
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
-       ms.commit()
-
     """
 
     _updates: Tuple[TableUpdate, ...] = ()
