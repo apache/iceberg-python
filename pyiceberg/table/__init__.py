@@ -2834,7 +2834,7 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
-class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
+class _SnapshotProducer(UpdateTableMetadata["_SnapshotProducer"]):
     commit_uuid: uuid.UUID
     _io: FileIO
     _operation: Operation
@@ -2864,7 +2864,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
 
-    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
+    def append_data_file(self, data_file: DataFile) -> _SnapshotProducer:
         self._added_data_files.append(data_file)
         return self
 
@@ -3034,7 +3034,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
 
 
-class FastAppendFiles(_MergingSnapshotProducer):
+class FastAppendFiles(_SnapshotProducer):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
 
@@ -3111,7 +3111,7 @@ class MergeAppendFiles(FastAppendFiles):
         return data_manifest_merge_manager.merge_manifests(unmerged_data_manifests) + unmerged_deletes_manifests
 
 
-class OverwriteFiles(_MergingSnapshotProducer):
+class OverwriteFiles(_SnapshotProducer):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
 
@@ -3912,10 +3912,10 @@ class _ManifestMergeManager:
     _target_size_bytes: int
     _min_count_to_merge: int
     _merge_enabled: bool
-    _snapshot_producer: _MergingSnapshotProducer
+    _snapshot_producer: _SnapshotProducer
 
     def __init__(
-        self, target_size_bytes: int, min_count_to_merge: int, merge_enabled: bool, snapshot_producer: _MergingSnapshotProducer
+        self, target_size_bytes: int, min_count_to_merge: int, merge_enabled: bool, snapshot_producer: _SnapshotProducer
     ) -> None:
         self._target_size_bytes = target_size_bytes
         self._min_count_to_merge = min_count_to_merge
