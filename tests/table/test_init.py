@@ -76,6 +76,7 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
     Summary,
+    ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -202,6 +203,42 @@ def test_snapshot_by_id(table_v2: Table) -> None:
         summary=Summary(operation=Operation.APPEND),
         schema_id=1,
     )
+
+
+def test_snapshot_by_timestamp(table_v2: Table) -> None:
+    assert table_v2.snapshot_as_of_timestamp(1515100955770) == Snapshot(
+        snapshot_id=3051729675574597004,
+        parent_snapshot_id=None,
+        sequence_number=0,
+        timestamp_ms=1515100955770,
+        manifest_list="s3://a/b/1.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=None,
+    )
+    assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
+
+
+def test_ancestors_of(table_v2: Table) -> None:
+    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
+        Snapshot(
+            snapshot_id=3055729675574597004,
+            parent_snapshot_id=3051729675574597004,
+            sequence_number=1,
+            timestamp_ms=1555100955770,
+            manifest_list="s3://a/b/2.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=1,
+        ),
+        Snapshot(
+            snapshot_id=3051729675574597004,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            timestamp_ms=1515100955770,
+            manifest_list="s3://a/b/1.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=None,
+        ),
+    ]
 
 
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:

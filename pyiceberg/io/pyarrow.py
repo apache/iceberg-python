@@ -469,15 +469,18 @@ class PyArrowFileIO(FileIO):
         self.fs_by_scheme = lru_cache(self._initialize_fs)
 
 
-def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema(metadata))
+def schema_to_pyarrow(
+    schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True
+) -> pa.schema:
+    return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
 
 
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     _metadata: Dict[bytes, bytes]
 
-    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT) -> None:
+    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True) -> None:
         self._metadata = metadata
+        self._include_field_ids = include_field_ids
 
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
         return pa.schema(list(struct_result), metadata=self._metadata)
@@ -486,13 +489,17 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.struct(field_results)
 
     def field(self, field: NestedField, field_result: pa.DataType) -> pa.Field:
+        metadata = {}
+        if field.doc:
+            metadata[PYARROW_FIELD_DOC_KEY] = field.doc
+        if self._include_field_ids:
+            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+
         return pa.field(
             name=field.name,
             type=field_result,
             nullable=field.optional,
-            metadata={PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
-            if field.doc
-            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
+            metadata=metadata,
         )
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
@@ -1130,7 +1137,7 @@ def project_table(
     tables = [f.result() for f in completed_futures if f.result()]
 
     if len(tables) < 1:
-        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema))
+        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
     result = pa.concat_tables(tables)
 
@@ -1161,7 +1168,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
         if field.field_type.is_primitive and field.field_type != file_field.field_type:
-            return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type)))
+            return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -1188,7 +1195,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional:
-                arrow_type = schema_to_pyarrow(field.field_type)
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 fields.append(self._construct_field(field, arrow_type))
             else:

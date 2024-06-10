@@ -1359,6 +1359,18 @@ class Table:
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
+    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Optional[Snapshot]:
+        """Get the snapshot that was current as of or right before the given timestamp, or None if there is no matching snapshot.
+
+        Args:
+            timestamp_ms: Find snapshot that was current at/before this timestamp
+            inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
+        """
+        for log_entry in reversed(self.history()):
+            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
+                return self.snapshot_by_id(log_entry.snapshot_id)
+        return None
+
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
