@@ -511,6 +511,7 @@ class Transaction:
             The table with the updates applied.
         """
         if len(self._updates) > 0:
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
                 requirements=self._requirements,
@@ -565,7 +566,11 @@ class CreateTableTransaction(Transaction):
             The table with the updates applied.
         """
         self._requirements = (AssertCreate(),)
-        return super().commit_transaction()
+        self._table._do_commit(  # pylint: disable=W0212
+            updates=self._updates,
+            requirements=self._requirements,
+        )
+        return self._table
 
 
 class AssignUUIDUpdate(IcebergBaseModel):
@@ -2919,10 +2924,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                     snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
                 ),
             ),
-            (
-                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
-            ),
+            (AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),),
         )
 
 
