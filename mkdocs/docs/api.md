@@ -928,12 +928,11 @@ table.manage_snapshots()
 # Operations are applied on commit.
 ```
 
-You can also use context managers to make more changes. For example,
+You can also use context managers to make more changes:
 
 ```python
 with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
-    ms.commit()
 ```
 
 ## Query the data
