@@ -232,12 +232,10 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 
 @lru_cache
-def _manifests(io: FileIO, manifest_list: Optional[str]) -> List[ManifestFile]:
+def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
     """Return the manifests from the manifest list."""
-    if manifest_list not in (None, ""):
-        file = io.new_input(manifest_list)  # type: ignore
-        return list(read_manifest_list(file))
-    return []
+    file = io.new_input(manifest_list)
+    return list(read_manifest_list(file))
 
 
 class Snapshot(IcebergBaseModel):
@@ -261,7 +259,9 @@ class Snapshot(IcebergBaseModel):
 
     def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
-        return _manifests(io, self.manifest_list)
+        if self.manifest_list:
+            return _manifests(io, self.manifest_list)
+        return []
 
 
 class MetadataLogEntry(IcebergBaseModel):
