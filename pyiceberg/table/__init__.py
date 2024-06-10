@@ -3922,12 +3922,9 @@ class _ManifestMergeManager:
         self._merge_enabled = merge_enabled
         self._snapshot_producer = snapshot_producer
 
-    def _group_by_spec(
-        self, first_manifest: ManifestFile, remaining_manifests: List[ManifestFile]
-    ) -> Dict[int, List[ManifestFile]]:
+    def _group_by_spec(self, manifests: List[ManifestFile]) -> Dict[int, List[ManifestFile]]:
         groups = defaultdict(list)
-        groups[first_manifest.partition_spec_id].append(first_manifest)
-        for manifest in remaining_manifests:
+        for manifest in manifests:
             groups[manifest.partition_spec_id].append(manifest)
         return groups
 
@@ -3935,16 +3932,14 @@ class _ManifestMergeManager:
         with self._snapshot_producer.new_manifest_writer(spec=self._snapshot_producer.spec(spec_id)) as writer:
             for manifest in manifest_bin:
                 for entry in self._snapshot_producer.fetch_manifest_entry(manifest=manifest, discard_deleted=False):
-                    if entry.status == ManifestEntryStatus.DELETED:
-                        #  suppress deletes from previous snapshots. only files deleted by this snapshot
-                        #                should be added to the new manifest
-                        if entry.snapshot_id == self._snapshot_producer.snapshot_id:
-                            writer.delete(entry)
+                    if entry.status == ManifestEntryStatus.DELETED and entry.snapshot_id == self._snapshot_producer.snapshot_id:
+                        #  only files deleted by this snapshot should be added to the new manifest
+                        writer.delete(entry)
                     elif entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == self._snapshot_producer.snapshot_id:
-                        # adds from this snapshot are still adds, otherwise they should be existing
+                        # added entries from this snapshot are still added, otherwise they should be existing
                         writer.add(entry)
-                    else:
-                        # add all files from the old manifest as existing files
+                    elif entry.status != ManifestEntryStatus.DELETED:
+                        # add all non-deleted files from the old manifest as existing files
                         writer.existing(entry)
 
         return writer.to_manifest_file()
@@ -3958,11 +3953,9 @@ class _ManifestMergeManager:
             if len(manifest_bin) == 1:
                 output_manifests.append(manifest_bin[0])
             elif first_manifest in manifest_bin and len(manifest_bin) < self._min_count_to_merge:
-                #  if the bin has the first manifest (the new data files or an appended manifest file)
-                #  then only merge it
-                #  if the number of manifests is above the minimum count. this is applied only to bins
-                #  with an in-memory
-                #  manifest so that large manifests don't prevent merging older groups.
+                #  if the bin has the first manifest (the new data files or an appended manifest file) then only
+                #  merge it if the number of manifests is above the minimum count. this is applied only to bins
+                #  with an in-memory manifest so that large manifests don't prevent merging older groups.
                 output_manifests.extend(manifest_bin)
             else:
                 output_manifests.append(self._create_manifest(spec_id, manifest_bin))
@@ -3987,8 +3980,7 @@ class _ManifestMergeManager:
             return manifests
 
         first_manifest = manifests[0]
-        remaining_manifests = manifests[1:]
-        groups = self._group_by_spec(first_manifest, remaining_manifests)
+        groups = self._group_by_spec(manifests)
 
         merged_manifests = []
         for spec_id in reversed(groups.keys()):
