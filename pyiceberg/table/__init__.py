@@ -364,9 +364,8 @@ class Transaction:
             The transaction with the add-snapshot staged.
         """
         updates = (AddSnapshotUpdate(snapshot=snapshot),)
-        requirements = (AssertTableUUID(uuid=self._table.metadata.table_uuid),)
 
-        return self._apply(updates, requirements)
+        return self._apply(updates, ())
 
     @deprecated(
         deprecated_in="0.7.0",
@@ -399,10 +398,7 @@ class Transaction:
             ),
         )
 
-        requirements = (
-            AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),
-            AssertTableUUID(uuid=self.table_metadata.table_uuid),
-        )
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
         return self._apply(updates, requirements)
 
     def _set_ref_snapshot(
@@ -1958,8 +1954,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
-        if self._updates:
-            self._requirements += (AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),)
         return self._updates, self._requirements
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
