@@ -288,7 +288,7 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
             pa.array([None, "A", "B", "C"]),  # 'large' column
         ],
         schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
+            pa.field("foo", pa.large_string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=False),
             pa.field("baz", pa.bool_(), nullable=True),
             pa.field("large", pa.large_string(), nullable=True),
@@ -1325,7 +1325,7 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
         {
             "foo": ["a", None, "z"],
         },
-        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
     )
 
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
@@ -1336,7 +1336,7 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
             "bar": [19, None, 25],
         },
         schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
+            pa.field("foo", pa.large_string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=True),
         ]),
     )
@@ -1375,7 +1375,7 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
         {
             "foo": ["a", None, "z"],
         },
-        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
     )
 
     pa_table_with_column = pa.Table.from_pydict(
@@ -1384,7 +1384,7 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
             "bar": [19, None, 25],
         },
         schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
+            pa.field("foo", pa.large_string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=True),
         ]),
     )

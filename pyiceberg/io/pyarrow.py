@@ -504,7 +504,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
         element_field = self.field(list_type.element_field, element_result)
-        return pa.list_(value_type=element_field)
+        return pa.large_list(value_type=element_field)
 
     def map(self, map_type: MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
         key_field = self.field(map_type.key_field, key_result)
@@ -548,7 +548,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.timestamp(unit="us", tz="UTC")
 
     def visit_string(self, _: StringType) -> pa.DataType:
-        return pa.string()
+        return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
         return pa.binary(16)
@@ -678,6 +678,10 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
 
 def _pyarrow_to_schema_without_ids(schema: pa.Schema) -> Schema:
     return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+
+
+def _pyarrow_with_large_types(schema: pa.Schema) -> pa.Schema:
+    return visit_pyarrow(schema, _ConvertToLargeTypes())
 
 
 @singledispatch
@@ -952,6 +956,30 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names.pop()
 
 
+class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+        return pa.schema(struct_result)
+
+    def struct(self, struct: pa.StructType, field_results: List[pa.Field]) -> pa.StructType:
+        return pa.struct(field_results)
+
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+        return field.with_type(field_result)
+
+    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
+        return pa.large_list(element_result)
+
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+        return pa.map_(key_result, value_result)
+
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+        if primitive == pa.string():
+            return pa.large_string()
+        elif primitive == pa.binary():
+            return pa.large_binary()
+        return primitive
+
+
 class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
     Converts PyArrowSchema to Iceberg Schema with all -1 ids.
@@ -998,7 +1026,7 @@ def _task_to_table(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            schema=physical_schema,
+            schema=_pyarrow_with_large_types(physical_schema),
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
@@ -1207,13 +1235,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         return field_array
 
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
-        if isinstance(list_array, pa.ListArray) and value_array is not None:
+        if isinstance(list_array, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) and value_array is not None:
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                list_array = pa.ListArray.from_arrays(list_array.offsets, value_array)
+                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
 
-            arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
+            arrow_field = pa.large_list(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
         else:
             return None
@@ -1263,7 +1291,7 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
         return None
 
     def list_element_partner(self, partner_list: Optional[pa.Array]) -> Optional[pa.Array]:
-        return partner_list.values if isinstance(partner_list, pa.ListArray) else None
+        return partner_list.values if isinstance(partner_list, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) else None
 
     def map_key_partner(self, partner_map: Optional[pa.Array]) -> Optional[pa.Array]:
         return partner_map.keys if isinstance(partner_map, pa.MapArray) else None
