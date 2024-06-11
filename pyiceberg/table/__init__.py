@@ -474,6 +474,26 @@ class Transaction:
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
 
+    def add_files_overwrite(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """
+        Shorthand API for adding files as data files and overwriting the table.
+
+        Args:
+            file_paths: The list of full file paths to be added as data files to the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        if self._table.name_mapping() is None:
+            self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
+        with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
+            data_files = _parquet_files_to_data_files(
+                table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
+            )
+            for data_file in data_files:
+                update_snapshot.append_data_file(data_file)
+
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
 
@@ -1382,6 +1402,20 @@ class Table:
         """
         with self.transaction() as tx:
             tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
+
+    def add_files_overwrite(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """
+        Shorthand API for adding files as data files and overwriting the table.
+
+        Args:
+            file_paths: The list of full file paths to be added as data files to the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        with self.transaction() as tx:
+            tx.add_files_overwrite(file_paths=file_paths, snapshot_properties=snapshot_properties)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -3017,9 +3051,9 @@ class UpdateSnapshot:
 
     def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(
-            operation=Operation.OVERWRITE
-            if self._transaction.table_metadata.current_snapshot() is not None
-            else Operation.APPEND,
+            operation=(
+                Operation.OVERWRITE if self._transaction.table_metadata.current_snapshot() is not None else Operation.APPEND
+            ),
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
@@ -3401,12 +3435,16 @@ class InspectTable:
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
                         # Makes them readable
-                        "lower_bound": from_bytes(field.field_type, lower_bound)
-                        if (lower_bound := lower_bounds.get(field.field_id))
-                        else None,
-                        "upper_bound": from_bytes(field.field_type, upper_bound)
-                        if (upper_bound := upper_bounds.get(field.field_id))
-                        else None,
+                        "lower_bound": (
+                            from_bytes(field.field_type, lower_bound)
+                            if (lower_bound := lower_bounds.get(field.field_id))
+                            else None
+                        ),
+                        "upper_bound": (
+                            from_bytes(field.field_type, upper_bound)
+                            if (upper_bound := upper_bounds.get(field.field_id))
+                            else None
+                        ),
                     }
                     for field in self.tbl.metadata.schema().fields
                 }
@@ -3641,9 +3679,11 @@ class InspectTable:
                     "added_delete_files_count": manifest.added_files_count if is_delete_file else 0,
                     "existing_delete_files_count": manifest.existing_files_count if is_delete_file else 0,
                     "deleted_delete_files_count": manifest.deleted_files_count if is_delete_file else 0,
-                    "partition_summaries": _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
-                    if manifest.partitions
-                    else [],
+                    "partition_summaries": (
+                        _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
+                        if manifest.partitions
+                        else []
+                    ),
                 })
 
         return pa.Table.from_pylist(

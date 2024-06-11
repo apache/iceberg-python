@@ -672,7 +672,12 @@ file_paths = [
 
 tbl.add_files(file_paths=file_paths)
 
+# or if you want to overwrite
+
+tbl.add_files_overwrite(file_paths=file_paths)
+
 # A new snapshot is committed to the table with manifests pointing to the existing parquet files
+
 ```
 
 <!-- prettier-ignore-start -->
