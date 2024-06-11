@@ -328,7 +328,7 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
     }
     pa_schema = pa.schema([
         pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
-        pa.field("name", pa.dictionary(pa.int32(), pa.large_string(), False)),
+        pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
     ])
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
 
