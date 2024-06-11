@@ -121,7 +121,7 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
-HIVE_KERBEROS_AUTH = "hive.use-kerberos"
+HIVE_KERBEROS_AUTH = "hive.kerberos-authorization"
 HIVE_KERBEROS_AUTH_DEFAULT = False
 
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
@@ -141,12 +141,12 @@ class _HiveClient:
     _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None, use_kerberos: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
+    def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
         url_parts = urlparse(uri)
 
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
 
-        if not use_kerberos:
+        if not kerberos_auth:
             self._transport = TTransport.TBufferedTransport(transport)
         else:
             self._transport = TTransport.TSaslClientTransport(transport, host=url_parts.hostname, service="hive")
