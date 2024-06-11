@@ -294,16 +294,16 @@ def test_python_writes_special_character_column_with_spark_reads(
         ],
     }
     pa_schema = pa.schema([
-        pa.field(column_name_with_special_character, pa.string()),
+        pa.field(column_name_with_special_character, pa.large_string()),
         pa.field("id", pa.int32()),
-        pa.field("name", pa.string()),
+        pa.field("name", pa.large_string()),
         pa.field(
             "address",
             pa.struct([
-                pa.field("street", pa.string()),
-                pa.field("city", pa.string()),
+                pa.field("street", pa.large_string()),
+                pa.field("city", pa.large_string()),
                 pa.field("zip", pa.int32()),
-                pa.field(column_name_with_special_character, pa.string()),
+                pa.field(column_name_with_special_character, pa.large_string()),
             ]),
         ),
     ])
@@ -328,7 +328,7 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
     }
     pa_schema = pa.schema([
         pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
-        pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
+        pa.field("name", pa.dictionary(pa.int32(), pa.large_string(), False)),
     ])
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
 
@@ -610,7 +610,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
         {
             "foo": ["a", None, "z"],
         },
-        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
     )
 
     tbl = session_catalog.create_table(
@@ -623,7 +623,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
             "bar": [19, None, 25],
         },
         schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
+            pa.field("foo", pa.large_string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=True),
         ]),
     )
@@ -657,7 +657,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
         {
             "foo": ["a", None, "z"],
         },
-        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
+        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
     )
 
     pa_table_with_column = pa.Table.from_pydict(
@@ -666,7 +666,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
             "bar": [19, None, 25],
         },
         schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
+            pa.field("foo", pa.large_string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=True),
         ]),
     )
