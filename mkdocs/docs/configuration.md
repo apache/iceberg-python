@@ -268,19 +268,15 @@ catalog:
 catalog:
   default:
     uri: thrift://localhost:9083
-    hive:
-      hive2-compatible: true
-      use-kerberos: true
+    hive.hive2-compatible: true
+    hive.kerberos-authorization: true
+    s3.endpoint: http://localhost:9000
 ```
 
-<!-- markdown-link-check-disable -->
-
-| Key                   | Example | Description                       |
-| --------------------- | ------- | --------------------------------- |
-| hive.hive2-compatible | true    | Using Hive 2.x compatibility mode |
-| hive.use-kerberos     | true    | Using authentication via Kerberos |
-
-<!-- markdown-link-check-enable-->
+| Key                         | Example | Description                       |
+| --------------------------- | ------- | --------------------------------- |
+| hive.hive2-compatible       | true    | Using Hive 2.x compatibility mode |
+| hive.kerberos-authorization | true    | Using authentication via Kerberos |
 
 ### Glue Catalog
 
