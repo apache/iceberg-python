@@ -142,22 +142,33 @@ class _HiveClient:
     _ugi: Optional[List[str]]
 
     def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
-        url_parts = urlparse(uri)
+        self._uri = uri
+        self._kerberos_auth = kerberos_auth
+        self._ugi = ugi.split(":") if ugi else None
 
-        transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
+        self._init_thrift_client()
 
-        if not kerberos_auth:
-            self._transport = TTransport.TBufferedTransport(transport)
+    def _init_thrift_client(self):
+        url_parts = urlparse(self._uri)
+
+        socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
+
+        if not self._kerberos_auth:
+            self._transport = TTransport.TBufferedTransport(socket)
         else:
-            self._transport = TTransport.TSaslClientTransport(transport, host=url_parts.hostname, service="hive")
+            self._transport = TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service="hive")
 
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
 
         self._client = Client(protocol)
-        self._ugi = ugi.split(":") if ugi else None
 
     def __enter__(self) -> Client:
-        self._transport.open()
+        if not self._kerberos_auth:
+            self._transport.open()
+        else:
+            self._init_thrift_client()
+            self._transport.open()
+
         if self._ugi:
             self._client.set_ugi(*self._ugi)
         return self._client
