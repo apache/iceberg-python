@@ -294,16 +294,16 @@ def test_python_writes_special_character_column_with_spark_reads(
         ],
     }
     pa_schema = pa.schema([
-        pa.field(column_name_with_special_character, pa.large_string()),
+        pa.field(column_name_with_special_character, pa.string()),
         pa.field("id", pa.int32()),
-        pa.field("name", pa.large_string()),
+        pa.field("name", pa.string()),
         pa.field(
             "address",
             pa.struct([
-                pa.field("street", pa.large_string()),
-                pa.field("city", pa.large_string()),
+                pa.field("street", pa.string()),
+                pa.field("city", pa.string()),
                 pa.field("zip", pa.int32()),
-                pa.field(column_name_with_special_character, pa.large_string()),
+                pa.field(column_name_with_special_character, pa.string()),
             ]),
         ),
     ])
@@ -338,6 +338,60 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_with_small_and_large_types_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_with_small_and_large_types_spark_reads"
+    TEST_DATA = {
+        "foo": ["a", None, "z"],
+        "id": [1, 2, 3],
+        "name": ["AB", "CD", "EF"],
+        "address": [
+            {"street": "123", "city": "SFO", "zip": 12345, "bar": "a"},
+            {"street": "456", "city": "SW", "zip": 67890, "bar": "b"},
+            {"street": "789", "city": "Random", "zip": 10112, "bar": "c"},
+        ],
+    }
+    pa_schema = pa.schema([
+        pa.field("foo", pa.large_string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.string()),
+        pa.field(
+            "address",
+            pa.struct([
+                pa.field("street", pa.string()),
+                pa.field("city", pa.string()),
+                pa.field("zip", pa.int32()),
+                pa.field("bar", pa.large_string()),
+            ]),
+        ),
+    ])
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+    arrow_table_on_read = tbl.scan().to_arrow()
+    assert arrow_table_on_read.schema == pa.schema([
+        pa.field("foo", pa.large_string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.large_string()),
+        pa.field(
+            "address",
+            pa.struct([
+                pa.field("street", pa.large_string()),
+                pa.field("city", pa.large_string()),
+                pa.field("zip", pa.int32()),
+                pa.field("bar", pa.large_string()),
+            ]),
+        ),
+    ])
 
 
 @pytest.mark.integration
@@ -610,7 +664,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
         {
             "foo": ["a", None, "z"],
         },
-        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
     )
 
     tbl = session_catalog.create_table(
@@ -623,7 +677,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
             "bar": [19, None, 25],
         },
         schema=pa.schema([
-            pa.field("foo", pa.large_string(), nullable=True),
+            pa.field("foo", pa.string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=True),
         ]),
     )
@@ -657,7 +711,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
         {
             "foo": ["a", None, "z"],
         },
-        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
+        schema=pa.schema([pa.field("foo", pa.string(), nullable=True)]),
     )
 
     pa_table_with_column = pa.Table.from_pydict(
@@ -666,7 +720,7 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
             "bar": [19, None, 25],
         },
         schema=pa.schema([
-            pa.field("foo", pa.large_string(), nullable=True),
+            pa.field("foo", pa.string(), nullable=True),
             pa.field("bar", pa.int32(), nullable=True),
         ]),
     )

@@ -680,7 +680,7 @@ def _pyarrow_to_schema_without_ids(schema: pa.Schema) -> Schema:
     return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
 
 
-def _pyarrow_with_large_types(schema: pa.Schema) -> pa.Schema:
+def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
     return visit_pyarrow(schema, _ConvertToLargeTypes())
 
 
@@ -1026,7 +1026,9 @@ def _task_to_table(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            schema=_pyarrow_with_large_types(physical_schema),
+            # We always use large types in memory as it uses larger offsets
+            # That can chunk more row values into the buffers
+            schema=_pyarrow_schema_ensure_large_types(physical_schema),
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
@@ -1195,8 +1197,14 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
-        if field.field_type.is_primitive and field.field_type != file_field.field_type:
-            return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
+        if field.field_type.is_primitive:
+            if field.field_type != file_field.field_type:
+                return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
+            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=False)) != values.type:
+                # if file_field and field type  (e.g. String) are the same
+                # but the pyarrow type of the array is different from the expected type
+                # (e.g. string vs larger_string), we want to cast the array to the larger type
+                return values.cast(target_type)
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -1828,10 +1836,10 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         # otherwise use the original schema
         if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
             file_schema = sanitized_schema
-            arrow_table = to_requested_schema(requested_schema=file_schema, file_schema=table_schema, table=arrow_table)
         else:
             file_schema = table_schema
 
+        arrow_table = to_requested_schema(requested_schema=file_schema, file_schema=table_schema, table=arrow_table)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:

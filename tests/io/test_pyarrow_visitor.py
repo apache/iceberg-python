@@ -25,7 +25,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
     _HasIds,
-    _pyarrow_with_large_types,
+    _pyarrow_schema_ensure_large_types,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -546,7 +546,7 @@ def test_pyarrow_schema_to_schema_fresh_ids_nested_schema(
     assert visit_pyarrow(pyarrow_schema_nested_without_ids, _ConvertToIcebergWithoutIDs()) == iceberg_schema_nested_no_ids
 
 
-def test_pyarrow_with_large_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
+def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
     expected_schema = pa.schema([
         pa.field("foo", pa.large_string(), nullable=False),
         pa.field("bar", pa.int32(), nullable=False),
@@ -579,4 +579,4 @@ def test_pyarrow_with_large_types(pyarrow_schema_nested_without_ids: pa.Schema) 
             nullable=True,
         ),
     ])
-    assert _pyarrow_with_large_types(pyarrow_schema_nested_without_ids) == expected_schema
+    assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
