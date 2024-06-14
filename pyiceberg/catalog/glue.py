@@ -746,3 +746,6 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.update_database(Name=database_name, DatabaseInput=_construct_database_input(database_name, updated_properties))
 
         return properties_update_summary
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError

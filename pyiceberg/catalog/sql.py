@@ -681,3 +681,6 @@ class SqlCatalog(MetastoreCatalog):
                 session.execute(insert_stmt)
             session.commit()
         return properties_update_summary
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
