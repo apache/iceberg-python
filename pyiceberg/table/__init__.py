@@ -511,6 +511,7 @@ class Transaction:
             The table with the updates applied.
         """
         if len(self._updates) > 0:
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
                 requirements=self._requirements,
@@ -565,7 +566,11 @@ class CreateTableTransaction(Transaction):
             The table with the updates applied.
         """
         self._requirements = (AssertCreate(),)
-        return super().commit_transaction()
+        self._table._do_commit(  # pylint: disable=W0212
+            updates=self._updates,
+            requirements=self._requirements,
+        )
+        return self._table
 
 
 class AssignUUIDUpdate(IcebergBaseModel):
@@ -1300,6 +1305,18 @@ class Table:
         """Return the snapshot referenced by the given name or null if no such reference exists."""
         if ref := self.metadata.refs.get(name):
             return self.snapshot_by_id(ref.snapshot_id)
+        return None
+
+    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Optional[Snapshot]:
+        """Get the snapshot that was current as of or right before the given timestamp, or None if there is no matching snapshot.
+
+        Args:
+            timestamp_ms: Find snapshot that was current at/before this timestamp
+            inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
+        """
+        for log_entry in reversed(self.history()):
+            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
+                return self.snapshot_by_id(log_entry.snapshot_id)
         return None
 
     def history(self) -> List[SnapshotLogEntry]:
@@ -2927,10 +2944,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                     snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
                 ),
             ),
-            (
-                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
-            ),
+            (AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),),
         )
 
 

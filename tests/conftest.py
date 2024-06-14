@@ -2116,8 +2116,8 @@ def pa_schema() -> "pa.Schema":
 
     return pa.schema([
         ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
+        ("string", pa.large_string()),
+        ("string_long", pa.large_string()),
         ("int", pa.int32()),
         ("long", pa.int64()),
         ("float", pa.float32()),
