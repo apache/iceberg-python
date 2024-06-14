@@ -1918,9 +1918,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_schema = table_schema
 
         batches = [
-                to_requested_schema(requested_schema=file_schema, file_schema=table_schema, batch=batch)
-                for batch in task.record_batches
-            ]
+            to_requested_schema(requested_schema=file_schema, file_schema=table_schema, batch=batch)
+            for batch in task.record_batches
+        ]
         arrow_table = pa.Table.from_batches(batches)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
