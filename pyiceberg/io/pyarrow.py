@@ -1201,7 +1201,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             if field.field_type != file_field.field_type:
                 return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
             elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=False)) != values.type:
-                # if file_field and field type  (e.g. String) are the same
+                # if file_field and field_type  (e.g. String) are the same
                 # but the pyarrow type of the array is different from the expected type
                 # (e.g. string vs larger_string), we want to cast the array to the larger type
                 return values.cast(target_type)
