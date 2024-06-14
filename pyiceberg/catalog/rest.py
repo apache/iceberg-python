@@ -56,6 +56,7 @@ from pyiceberg.exceptions import (
     ServiceUnavailableError,
     TableAlreadyExistsError,
     UnauthorizedError,
+    NoSuchIdentifierError,
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
@@ -389,7 +390,7 @@ class RestCatalog(Catalog):
     def _identifier_to_validated_tuple(self, identifier: Union[str, Identifier]) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
-            raise NoSuchTableError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
+            raise NoSuchIdentifierError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
         return identifier_tuple
 
     def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
