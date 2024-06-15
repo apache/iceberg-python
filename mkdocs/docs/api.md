@@ -913,6 +913,28 @@ tbl.overwrite(df, snapshot_properties={"abc": "def"})
 assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
+## Snapshot Management
+
+Manage snapshots with operations through the `Table` API:
+
+```python
+# To run a specific operation
+table.manage_snapshots().create_tag(snapshot_id, "tag123").commit()
+# To run multiple operations
+table.manage_snapshots()
+    .create_tag(snapshot_id1, "tag123")
+    .create_tag(snapshot_id2, "tag456")
+    .commit()
+# Operations are applied on commit.
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.manage_snapshots() as ms:
+    ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
+```
+
 ## Query the data
 
 To query a table, a table scan is needed. A table scan accepts a filter, columns, optionally a limit and a snapshot ID:

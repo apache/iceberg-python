@@ -138,6 +138,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -350,6 +351,88 @@ class Transaction:
             raise ValueError("Cannot pass both properties and kwargs")
         updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
+
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
+    )
+    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
+        """Add a new snapshot to the table.
+
+        Returns:
+            The transaction with the add-snapshot staged.
+        """
+        updates = (AddSnapshotUpdate(snapshot=snapshot),)
+
+        return self._apply(updates, ())
+
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
+    )
+    def set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> Transaction:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The transaction with the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
+        return self._apply(updates, requirements)
+
+    def _set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> UpdatesAndRequirements:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The updates and requirements for the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
+                ref=ref_name,
+            ),
+        )
+
+        return updates, requirements
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -1323,6 +1406,21 @@ class Table:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
 
+    def manage_snapshots(self) -> ManageSnapshots:
+        """
+        Shorthand to run snapshot management operations like create branch, create tag, etc.
+
+        Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+        Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example,
+
+        with table.manage_snapshots() as ms:
+           ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+        """
+        return ManageSnapshots(transaction=Transaction(self, autocommit=True))
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -1833,6 +1931,84 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def __enter__(self) -> U:
         """Update the table."""
         return self  # type: ignore
+
+
+class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
+    """
+    Run snapshot management operations using APIs.
+
+    APIs include create branch, create tag, etc.
+
+    Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+    Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+    Pending changes are applied on commit.
+
+    We can also use context managers to make more changes. For example,
+
+    with table.manage_snapshots() as ms:
+       ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+    """
+
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """Apply the pending changes and commit."""
+        return self._updates, self._requirements
+
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+        """
+        Create a new tag pointing to the given snapshot id.
+
+        Args:
+            snapshot_id (int): snapshot id of the existing snapshot to tag
+            tag_name (str): name of the tag
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+
+        Returns:
+            This for method chaining
+        """
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=tag_name,
+            type="tag",
+            max_ref_age_ms=max_ref_age_ms,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
+
+    def create_branch(
+        self,
+        snapshot_id: int,
+        branch_name: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> ManageSnapshots:
+        """
+        Create a new branch pointing to the given snapshot id.
+
+        Args:
+            snapshot_id (int): snapshot id of existing snapshot at which the branch is created.
+            branch_name (str): name of the new branch
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+            max_snapshot_age_ms (Optional[int]): max age of snapshots to keep in milliseconds
+            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep in milliseconds
+        Returns:
+            This for method chaining
+        """
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=branch_name,
+            type="branch",
+            max_ref_age_ms=max_ref_age_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
