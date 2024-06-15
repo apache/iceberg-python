@@ -331,12 +331,25 @@ df = pa.Table.from_pylist(
 table.append(df)
 ```
 
-<!-- prettier-ignore-start -->
+You can delete some of the data from the table by calling `tbl.delete()` with a desired `delete_filter`.
 
-!!! example "Under development"
-    Writing using PyIceberg is still under development. Support for [partial overwrites](https://github.com/apache/iceberg-python/issues/268) and writing to [partitioned tables](https://github.com/apache/iceberg-python/issues/208) is planned and being worked on.
+```python
+tbl.delete(delete_filter="city == 'Paris'")
+```
 
-<!-- prettier-ignore-end -->
+In the above example, any records where the city field value equals to `Paris` will be deleted.
+Running `tbl.scan().to_arrow()` will now yield:
+
+```
+pyarrow.Table
+city: string
+lat: double
+long: double
+----
+city: [["Amsterdam","San Francisco","Drachten"],["Groningen"]]
+lat: [[52.371807,37.773972,53.11254],[53.21917]]
+long: [[4.896029,-122.431297,6.0989],[6.56667]]
+```
 
 ## Inspecting tables
 
