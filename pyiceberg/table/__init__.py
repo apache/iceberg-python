@@ -2033,7 +2033,15 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self
 
     def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
-        """Rollback the table to the given snapshot id, whose snapshot needs to be an ancestor of the current table state."""
+        """Rollback the table to the given snapshot id.
+
+         The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (int): rollback to this snapshot_id that used to be current.
+        Returns:
+            This for method chaining
+        """
         self._commit_if_ref_updates_exist()
         if self._transaction._table.snapshot_by_id(snapshot_id) is None:
             raise ValidationError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
@@ -2046,7 +2054,15 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self
 
     def rollback_to_timestamp(self, timestamp: int) -> ManageSnapshots:
-        """Rollback the table to the snapshot right before the given timestamp."""
+        """Rollback the table to the snapshot right before the given timestamp.
+
+        The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            timestamp (int): rollback to the snapshot that used to be current right before this timestamp.
+        Returns:
+            This for method chaining
+        """
         self._commit_if_ref_updates_exist()
         if (snapshot := self._transaction._table.snapshot_as_of_timestamp(timestamp, inclusive=False)) is None:
             raise ValidationError(f"Cannot roll back, no valid snapshot older than: {timestamp}")
@@ -2059,7 +2075,16 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self
 
     def set_current_snapshot(self, snapshot_id: Optional[int] = None, ref_name: Optional[str] = None) -> ManageSnapshots:
-        """Set the table to a specific snapshot identified either by its id or the branch/tag its on, not both."""
+        """Set the table to a specific snapshot identified either by its id or the branch/tag its on, not both.
+
+        The snapshot is not required to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (Optional[int]): id of the snapshot to be set as current
+            ref_name (Optional[str]): branch/tag where the snapshot to be set as current exists.
+        Returns:
+            This for method chaining
+        """
         self._commit_if_ref_updates_exist()
         if (not snapshot_id or ref_name) and (snapshot_id or not ref_name):
             raise ValidationError("Either snapshot_id or ref must be provided")
