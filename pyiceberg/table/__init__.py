@@ -113,6 +113,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -140,6 +141,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
+from pyiceberg.utils.wap import get_wap_id, validate_wap_publish
 
 if TYPE_CHECKING:
     import daft
@@ -1956,6 +1958,10 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _commit_if_ref_updates_exist(self) -> None:
+        self.commit()
+        self._updates, self._requirements = (), ()
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -2008,6 +2014,53 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         )
         self._updates += update
         self._requirements += requirement
+        return self
+
+    def cherrypick_snapshot(self, snapshot_id: int) -> ManageSnapshots:
+        """Create a new snapshot from an existing snapshot without altering or removing the original.
+
+        Only append & overwrite snapshots can be cherry-picked.
+
+        Args:
+            snapshot_id: snapshot id of the snapshot to cherry-pick
+        """
+        self._commit_if_ref_updates_exist()
+        if snapshot := self._transaction._table.metadata.snapshot_by_id(snapshot_id):
+            if snapshot.summary:
+                CherryPickSnapshot(
+                    snapshot_id=snapshot_id,
+                    operation=snapshot.summary.operation,
+                    transaction=self._transaction,
+                    io=self._transaction._table.io,
+                ).cherrypick().commit()
+        return self
+
+    def publish_changes(self, staged_wap_id: str) -> ManageSnapshots:
+        """Apply changes in a snapshot created within a Write-Audit-Publish workflow with a wap_id. Then create a new snapshot which will be set as the current snapshot in a table.
+
+        Only append and dynamic overwrite snapshots can be successfully published.
+
+        Args:
+            staged_wap_id: staged wap id of the snapshot to cherry-pick
+        """
+        self._commit_if_ref_updates_exist()
+        if wap_snapshot := next(
+            (
+                snapshot
+                for snapshot in self._transaction._table.metadata.snapshots
+                if staged_wap_id == get_wap_id(snapshot, STAGED_WAP_ID_PROP)
+            ),
+            None,
+        ):
+            if wap_snapshot.summary:
+                CherryPickSnapshot(
+                    snapshot_id=wap_snapshot.snapshot_id,
+                    operation=wap_snapshot.summary.operation,
+                    transaction=self._transaction,
+                    io=self._transaction._table.io,
+                ).cherrypick().commit()
+        else:
+            raise ValidationError(f"Cannot apply unknown WAP ID {staged_wap_id}")
         return self
 
 
@@ -2948,6 +3001,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
+    snapshot_properties: Dict[str, str]
 
     def __init__(
         self,
@@ -3102,6 +3156,98 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             ),
             (AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),),
         )
+
+
+STAGED_WAP_ID_PROP = "wap.id"
+PUBLISHED_WAP_ID_PROP = "published-wap-id"
+SOURCE_SNAPSHOT_ID_PROP = "source-snapshot-id"
+REPLACE_PARTITIONS_PROP = "replace-partitions"
+
+
+class CherryPickSnapshot(_MergingSnapshotProducer):
+    _cherry_pick_snapshot_id: int
+    _cherry_pick_snapshot: Optional[Snapshot]
+    _table_metadata: TableMetadata
+    _replaced_partitions: set
+    _require_fast_forward: bool
+    _properties: Dict[str, str]
+
+    def __init__(self, snapshot_id: int, operation: Operation, transaction: Transaction, io: FileIO):
+        super().__init__(operation=operation, transaction=transaction, io=io)
+        self._cherry_pick_snapshot_id = snapshot_id
+        self._cherry_pick_snapshot = transaction.table_metadata.snapshot_by_id(snapshot_id)
+        self._table_metadata = transaction.table_metadata
+        self._replaced_partitions = set()
+        self._properties = dict()
+
+    def is_fast_forward(self):
+        if self._table_metadata.current_snapshot():
+            # can fast-forward if the cherry-picked snapshot's parent is the current snapshot
+            return (
+                self._cherry_pick_snapshot.parent_snapshot_id is not None
+                and self._table_metadata.current_snapshot().snapshot_id == self._cherry_pick_snapshot.snapshot_id
+            )
+        else:
+            # ... or if the parent and current snapshot are both null
+            return self._cherry_pick_snapshot is None
+
+    def cherrypick(self) -> CherryPickSnapshot:
+        if not self._cherry_pick_snapshot:
+            raise ValidationError(f"Cannot cherry-pick unknown snapshot ID: {self._cherry_pick_snapshot_id}")
+
+        summary = self._properties
+        if self._operation == Operation.APPEND:
+            if (wap_id := validate_wap_publish(self._table_metadata, self._cherry_pick_snapshot)) not in (None, ""):
+                summary[STAGED_WAP_ID_PROP] = wap_id
+            summary[SOURCE_SNAPSHOT_ID_PROP] = str(self._cherry_pick_snapshot_id)
+
+            for manifest in self._cherry_pick_snapshot.manifests(self._io):
+                if manifest.content == ManifestContent.DATA:
+                    for entry in manifest.fetch_manifest_entry(self._io):
+                        if entry.status == ManifestEntryStatus.ADDED:
+                            self.append_data_file(entry.data_file)
+
+        elif self._operation == Operation.OVERWRITE and (
+            self._cherry_pick_snapshot.summary
+            and self._cherry_pick_snapshot.summary.get(REPLACE_PARTITIONS_PROP, "").lower() == "true"
+        ):
+            if self._cherry_pick_snapshot.parent_snapshot_id is not None and (
+                self._cherry_pick_snapshot.parent_snapshot_id
+                not in {
+                    ancestor.snapshot_id
+                    for ancestor in ancestors_of(self._table_metadata.current_snapshot(), self._table_metadata)
+                }
+            ):
+                raise ValidationError(
+                    f"Cannot cherry-pick overwrite not based on an ancestor of the current state: {self._cherry_pick_snapshot_id}"
+                )
+
+            if (wap_id := validate_wap_publish(self._table_metadata, self._cherry_pick_snapshot)) not in (None, ""):
+                summary[STAGED_WAP_ID_PROP] = wap_id
+            summary[SOURCE_SNAPSHOT_ID_PROP] = str(self._cherry_pick_snapshot_id)
+
+            # TODO: failMissingDeletePaths() from Java
+            for manifest in self._cherry_pick_snapshot.manifests(self._io):
+                if manifest.content == ManifestContent.DATA:
+                    for entry in manifest.fetch_manifest_entry(self._io):
+                        if entry.status == ManifestEntryStatus.ADDED:
+                            self.append_data_file(entry.data_file)
+                            self._replaced_partitions.add((entry.data_file.spec_id, entry.data_file.partition))
+                        elif entry.status == ManifestEntryStatus.DELETED:
+                            self.delete_data_file(entry.data_file)
+
+        elif not self.is_fast_forward():
+            raise ValidationError(
+                f"Cannot cherry-pick snapshot {self._cherry_pick_snapshot.snapshot_id}: not append, dynamic overwrite, or fast-forward"
+            )
+        self.snapshot_properties = self._properties
+        return self
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        return []
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        return []
 
 
 class FastAppendFiles(_MergingSnapshotProducer):
