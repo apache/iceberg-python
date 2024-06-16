@@ -113,7 +113,6 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
-    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -2038,10 +2037,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._commit_if_ref_updates_exist()
         if self._transaction._table.snapshot_by_id(snapshot_id) is None:
             raise ValidationError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
-        if snapshot_id not in {
-            ancestor.snapshot_id
-            for ancestor in ancestors_of(self._transaction._table.current_snapshot(), self._transaction.table_metadata)
-        }:
+        if snapshot_id not in {ancestor.snapshot_id for ancestor in self._transaction._table.history()}:
             raise ValidationError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
 
         update, requirement = self._transaction._set_ref_snapshot(snapshot_id=snapshot_id, ref_name="main", type="branch")
