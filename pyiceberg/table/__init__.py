@@ -113,6 +113,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestor_right_before_timestamp,
     ancestors_of,
     update_snapshot_summaries,
 )
@@ -2068,7 +2069,11 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         self._commit_if_ref_updates_exist()
-        if (snapshot := self._transaction._table.snapshot_as_of_timestamp(timestamp, inclusive=False)) is None:
+        if (
+            snapshot := ancestor_right_before_timestamp(
+                self._transaction._table.current_snapshot(), self._transaction.table_metadata, timestamp
+            )
+        ) is None:
             raise ValidationError(f"Cannot roll back, no valid snapshot older than: {timestamp}")
 
         update, requirement = self._transaction._set_ref_snapshot(
