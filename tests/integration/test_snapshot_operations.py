@@ -53,7 +53,7 @@ def test_manage_snapshots_context_manager(catalog: Catalog) -> None:
     with tbl.manage_snapshots() as ms:
         ms.create_tag(snapshot_id=current_snapshot_id, tag_name="testing")
         ms.set_current_snapshot(snapshot_id=expected_snapshot_id)
-        ms.create_tag(snapshot_id=expected_snapshot_id, tag_name="testing2")
+        ms.create_branch(snapshot_id=expected_snapshot_id, branch_name="testing2")
     assert tbl.current_snapshot().snapshot_id is not current_snapshot_id  # type: ignore
     assert tbl.metadata.refs["testing"].snapshot_id == current_snapshot_id
     assert tbl.metadata.refs["main"] == SnapshotRef(snapshot_id=expected_snapshot_id, snapshot_ref_type="branch")
