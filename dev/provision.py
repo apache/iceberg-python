@@ -389,3 +389,51 @@ for catalog_name, catalog in catalogs.items():
         VALUES (4)
         """
     )
+
+    spark.sql(
+        f"""
+        CREATE OR REPLACE TABLE {catalog_name}.default.test_table_rollback_to_snapshot_id (
+            timestamp int,
+            number integer
+        )
+        USING iceberg
+        TBLPROPERTIES (
+            'format-version'='2'
+        );
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_rollback_to_snapshot_id
+        VALUES (200, 1)
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_rollback_to_snapshot_id
+        VALUES (202, 2)
+        """
+    )
+
+    spark.sql(
+        f"""
+        DELETE FROM {catalog_name}.default.test_table_rollback_to_snapshot_id
+        WHERE number = 2
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_rollback_to_snapshot_id
+        VALUES (204, 3)
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_rollback_to_snapshot_id
+        VALUES (206, 4)
+        """
+    )
