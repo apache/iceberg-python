@@ -425,7 +425,7 @@ def ancestor_right_before_timestamp(
     current_snapshot: Optional[Snapshot], table_metadata: TableMetadata, timestamp_ms: int
 ) -> Optional[Snapshot]:
     """Get the ancestor right before the given timestamp."""
-    if current_snapshot is not None:
+    if current_snapshot:
         for ancestor in ancestors_of(current_snapshot, table_metadata):
             if ancestor.timestamp_ms < timestamp_ms:
                 return ancestor
