@@ -17,6 +17,7 @@
 import pytest
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.table import SOURCE_SNAPSHOT_ID_PROP
 from pyiceberg.table.refs import SnapshotRef
 
 
@@ -40,3 +41,17 @@ def test_create_branch(catalog: Catalog) -> None:
     branch_snapshot_id = tbl.history()[-2].snapshot_id
     tbl.manage_snapshots().create_branch(snapshot_id=branch_snapshot_id, branch_name="branch123").commit()
     assert tbl.metadata.refs["branch123"] == SnapshotRef(snapshot_id=branch_snapshot_id, snapshot_ref_type="branch")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_cherrypick_snapshot(catalog: Catalog):
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 3
+    current_snapshot_id = tbl.current_snapshot().snapshot_id
+    cherrypick_snapshot_id = tbl.history()[-2].snapshot_id
+    tbl.manage_snapshots().cherrypick_snapshot(snapshot_id=cherrypick_snapshot_id).commit()
+    assert tbl.current_snapshot().snapshot_id is not current_snapshot_id
+    assert tbl.current_snapshot().snapshot_id is not cherrypick_snapshot_id
+    assert tbl.current_snapshot().summary[SOURCE_SNAPSHOT_ID_PROP] == str(cherrypick_snapshot_id)
