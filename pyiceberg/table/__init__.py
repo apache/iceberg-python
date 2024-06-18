@@ -482,7 +482,7 @@ class Transaction:
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
 
-        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        # _check_schema_compatible(self._table.schema(), other_schema=df.schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -519,7 +519,7 @@ class Transaction:
         if len(self._table.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        # _check_schema_compatible(self._table.schema(), other_schema=df.schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -2885,7 +2885,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
+    from pyiceberg.io.pyarrow import bin_pack_arrow_table, pyarrow_to_schema, write_file
 
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
@@ -2894,6 +2894,9 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
+
+    # projects schema to match the pyarrow table
+    write_schema = pyarrow_to_schema(df.schema, name_mapping=table_metadata.schema().name_mapping)
 
     if len(table_metadata.spec().fields) > 0:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
@@ -2906,7 +2909,7 @@ def _dataframe_to_data_files(
                     task_id=next(counter),
                     record_batches=batches,
                     partition_key=partition.partition_key,
-                    schema=table_metadata.schema(),
+                    schema=write_schema,
                 )
                 for partition in partitions
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
@@ -2917,7 +2920,7 @@ def _dataframe_to_data_files(
             io=io,
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=write_schema)
                 for batches in bin_pack_arrow_table(df, target_file_size)
             ]),
         )
