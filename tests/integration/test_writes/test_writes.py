@@ -964,8 +964,8 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
-    identifier = "default.table_append_subset_of_schema"
+def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    identifier = "default.test_table_write_subset_of_schema"
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
     assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
@@ -976,10 +976,10 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+def test_table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     import random
 
-    identifier = "default.table_write_out_of_order_schema"
+    identifier = "default.test_table_write_out_of_order_schema"
     shuffled_schema = pa.schema(random.shuffle(arrow_table_with_null.schema))
 
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=shuffled_schema)
