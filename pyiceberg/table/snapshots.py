@@ -421,8 +421,9 @@ def set_when_positive(properties: Dict[str, str], num: int, property_name: str) 
 
 def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot."""
-    if current_snapshot:
-        yield current_snapshot
-        if current_snapshot.parent_snapshot_id is not None:
-            if parent := table_metadata.snapshot_by_id(current_snapshot.parent_snapshot_id):
-                yield from ancestors_of(parent, table_metadata)
+    snapshot = current_snapshot
+    while snapshot is not None:
+        yield snapshot
+        if snapshot.parent_snapshot_id is None:
+            break
+        snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
