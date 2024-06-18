@@ -18,6 +18,7 @@ import pytest
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.snapshots import ancestors_of
 
 
 @pytest.mark.integration
@@ -54,7 +55,7 @@ def test_manage_snapshots_context_manager(catalog: Catalog) -> None:
         ms.create_tag(snapshot_id=current_snapshot_id, tag_name="testing")
         ms.set_current_snapshot(snapshot_id=expected_snapshot_id)
         ms.create_branch(snapshot_id=expected_snapshot_id, branch_name="testing2")
-    assert tbl.current_snapshot().snapshot_id is not current_snapshot_id  # type: ignore
+    assert tbl.current_snapshot().snapshot_id != current_snapshot_id  # type: ignore
     assert tbl.metadata.refs["testing"].snapshot_id == current_snapshot_id
     assert tbl.metadata.refs["main"] == SnapshotRef(snapshot_id=expected_snapshot_id, snapshot_ref_type="branch")
     assert tbl.metadata.refs["testing2"].snapshot_id == expected_snapshot_id
@@ -69,7 +70,7 @@ def test_rollback_to_snapshot(catalog: Catalog) -> None:
     rollback_snapshot_id = tbl.current_snapshot().parent_snapshot_id  # type: ignore
     current_snapshot_id = tbl.current_snapshot().snapshot_id  # type: ignore
     tbl.manage_snapshots().rollback_to_snapshot(snapshot_id=rollback_snapshot_id).commit()  # type: ignore
-    assert tbl.current_snapshot().snapshot_id is not current_snapshot_id  # type: ignore
+    assert tbl.current_snapshot().snapshot_id != current_snapshot_id  # type: ignore
     assert tbl.metadata.refs["main"] == SnapshotRef(snapshot_id=rollback_snapshot_id, snapshot_ref_type="branch")
 
 
@@ -79,11 +80,11 @@ def test_rollback_to_timestamp(catalog: Catalog) -> None:
     identifier = "default.test_table_rollback_to_snapshot_id"
     tbl = catalog.load_table(identifier)
     assert len(tbl.history()) > 4
-    current_snapshot_id, timestamp = tbl.history()[-1].snapshot_id, tbl.history()[-1].timestamp_ms
-    expected_snapshot_id = tbl.snapshot_by_id(current_snapshot_id).parent_snapshot_id  # type: ignore
+    ancestors = list(ancestor for ancestor in ancestors_of(tbl.current_snapshot(), tbl.metadata))  # noqa
+    ancestor_to_rollback_to = ancestors[-1]
+    expected_snapshot_id, timestamp = ancestor_to_rollback_to.snapshot_id, ancestor_to_rollback_to.timestamp_ms + 1
     # not inclusive of rollback_timestamp
     tbl.manage_snapshots().rollback_to_timestamp(timestamp=timestamp).commit()
-    assert tbl.current_snapshot().snapshot_id is not current_snapshot_id  # type: ignore
     assert tbl.metadata.refs["main"] == SnapshotRef(snapshot_id=expected_snapshot_id, snapshot_ref_type="branch")
 
 
@@ -96,7 +97,7 @@ def test_set_current_snapshot_with_snapshot_id(catalog: Catalog) -> None:
     current_snapshot_id = tbl.current_snapshot().snapshot_id  # type: ignore
     expected_snapshot_id = tbl.history()[-3].snapshot_id
     tbl.manage_snapshots().set_current_snapshot(snapshot_id=expected_snapshot_id).commit()
-    assert tbl.current_snapshot().snapshot_id is not current_snapshot_id  # type: ignore
+    assert tbl.current_snapshot().snapshot_id != current_snapshot_id  # type: ignore
     assert tbl.metadata.refs["main"] == SnapshotRef(snapshot_id=expected_snapshot_id, snapshot_ref_type="branch")
 
 
@@ -110,5 +111,5 @@ def test_set_current_snapshot_with_ref_name(catalog: Catalog) -> None:
     expected_snapshot_id = tbl.history()[-3].snapshot_id
     tbl.manage_snapshots().create_tag(snapshot_id=expected_snapshot_id, tag_name="test-tag").commit()
     tbl.manage_snapshots().set_current_snapshot(ref_name="test-tag").commit()
-    assert tbl.current_snapshot().snapshot_id is not current_snapshot_id  # type: ignore
+    assert tbl.current_snapshot().snapshot_id != current_snapshot_id  # type: ignore
     assert tbl.metadata.refs["main"] == SnapshotRef(snapshot_id=expected_snapshot_id, snapshot_ref_type="branch")
