@@ -978,6 +978,7 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 @pytest.mark.parametrize("format_version", [1, 2])
 def table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     import random
+
     identifier = "default.table_write_out_of_order_schema"
     shuffled_schema = pa.schema(random.shuffle(arrow_table_with_null.schema))
 
