@@ -483,10 +483,6 @@ class Transaction:
             )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -524,10 +520,6 @@ class Transaction:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
