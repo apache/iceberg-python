@@ -484,10 +484,6 @@ class Transaction:
         _check_schema_compatible(
             self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
 
         manifest_merge_enabled = PropertyUtil.property_as_bool(
             self.table_metadata.properties,
@@ -545,10 +541,6 @@ class Transaction:
         _check_schema_compatible(
             self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
