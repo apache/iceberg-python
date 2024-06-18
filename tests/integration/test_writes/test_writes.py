@@ -975,6 +975,20 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
 
 
+@pytest.mark.parametrize("format_version", [1, 2])
+def table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    import random
+    identifier = "default.table_write_out_of_order_schema"
+    shuffled_schema = pa.schema(random.shuffle(arrow_table_with_null.schema))
+
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=shuffled_schema)
+
+    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+    # overwrite and then append should produce twice the data
+    assert len(tbl.scan().to_arrow()) == len(arrow_table_with_null) * 2
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: Catalog, format_version: int) -> None:
