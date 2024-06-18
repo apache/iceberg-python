@@ -977,12 +977,13 @@ def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with
 
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
-    import random
-
     identifier = "default.test_table_write_out_of_order_schema"
-    shuffled_schema = pa.schema(random.shuffle(arrow_table_with_null.schema))
-
-    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=shuffled_schema)
+    # rotate the schema fields by 1
+    fields = list(arrow_table_with_null.schema)
+    rotated_fields = fields[1:] + fields[:1]
+    rotated_schema = pa.schema(rotated_fields)
+    assert arrow_table_with_null.schema != rotated_schema
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=rotated_schema)
 
     tbl.overwrite(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
