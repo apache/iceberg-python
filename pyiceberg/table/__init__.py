@@ -160,7 +160,9 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
     """
     Check if the `table_schema` is compatible with `other_schema`.
 
-    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+    The schemas are compatible if:
+    - All fields in `other_schema` are present in `table_schema`. (other_schema <= table_schema)
+    - All required fields in `table_schema` are present in `other_schema`.
 
     Raises:
         ValueError: If the schemas are not compatible.
@@ -169,7 +171,7 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
 
     name_mapping = table_schema.name_mapping
     try:
-        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
+        other_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
     except ValueError as e:
         other_schema = _pyarrow_to_schema_without_ids(other_schema)
         additional_names = set(other_schema.column_names) - set(table_schema.column_names)
@@ -177,7 +179,10 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
 
-    if table_schema.as_struct() != task_schema.as_struct():
+    missing_table_schema_fields = {field for field in other_schema.fields if field not in table_schema.fields}
+    required_table_schema_fields = {field for field in table_schema.fields if field.required}
+    missing_required_fields = {field for field in required_table_schema_fields if field not in other_schema.fields}
+    if missing_table_schema_fields or missing_required_fields:
         from rich.console import Console
         from rich.table import Table as RichTable
 
@@ -190,7 +195,7 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
 
         for lhs in table_schema.fields:
             try:
-                rhs = task_schema.find_field(lhs.field_id)
+                rhs = other_schema.find_field(lhs.field_id)
                 rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
             except ValueError:
                 rich_table.add_row("❌", str(lhs), "Missing")
@@ -482,7 +487,7 @@ class Transaction:
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
 
-        # _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -519,7 +524,7 @@ class Transaction:
         if len(self._table.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned tables")
 
-        # _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
