@@ -3850,7 +3850,8 @@ class InspectTable:
                 "latest_sequence_number": latest_snapshot.sequence_number if latest_snapshot else None,
             }
 
-        # imitates `addPreviousFile` from Java, might could move this to `metadata_log` constructor
+        # imitates `addPreviousFile` from Java
+        # https://github.com/apache/iceberg/blob/8248663a2a1ffddd2664ea37b45882455466f71c/core/src/main/java/org/apache/iceberg/TableMetadata.java#L1450-L1451
         metadata_log_entries = self.tbl.metadata.metadata_log + [
             MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)
         ]
