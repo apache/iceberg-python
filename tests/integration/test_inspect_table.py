@@ -538,6 +538,11 @@ def test_inspect_metadata_log_entries(
     from pandas.testing import assert_frame_equal
 
     identifier = "default.table_metadata_log_entries"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
     # Write some data
@@ -555,6 +560,7 @@ def test_inspect_metadata_log_entries(
     left_before_last, left_last = lhs[:-1], lhs[-1:]
     right_before_last, right_last = rhs[:-1], rhs[-1:]
 
+    # compare all rows except for the last row
     assert_frame_equal(left_before_last, right_before_last, check_dtype=False)
     # compare the last row, except for the timestamp
     for column in df.column_names:
