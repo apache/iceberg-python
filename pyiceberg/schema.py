@@ -1311,11 +1311,11 @@ def _valid_avro_name(name: str) -> bool:
     length = len(name)
     assert length > 0, ValueError("Can not validate empty avro name")
     first = name[0]
-    if not (first.isalpha() or first == '_'):
+    if not (first.isalpha() or first == "_"):
         return False
 
     for character in name[1:]:
-        if not (character.isalnum() or character == '_'):
+        if not (character.isalnum() or character == "_"):
             return False
     return True
 
@@ -1323,17 +1323,17 @@ def _valid_avro_name(name: str) -> bool:
 def _sanitize_name(name: str) -> str:
     sb = []
     first = name[0]
-    if not (first.isalpha() or first == '_'):
+    if not (first.isalpha() or first == "_"):
         sb.append(_sanitize_char(first))
     else:
         sb.append(first)
 
     for character in name[1:]:
-        if not (character.isalnum() or character == '_'):
+        if not (character.isalnum() or character == "_"):
             sb.append(_sanitize_char(character))
         else:
             sb.append(character)
-    return ''.join(sb)
+    return "".join(sb)
 
 
 def _sanitize_char(character: str) -> str:

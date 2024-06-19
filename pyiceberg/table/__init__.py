@@ -71,6 +71,7 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
+    PartitionFieldSummary,
     write_manifest,
     write_manifest_list,
 )
@@ -137,6 +138,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -252,6 +254,16 @@ class PropertyUtil:
             return default
 
     @staticmethod
+    def property_as_float(properties: Dict[str, str], property_name: str, default: Optional[float] = None) -> Optional[float]:
+        if value := properties.get(property_name):
+            try:
+                return float(value)
+            except ValueError as e:
+                raise ValueError(f"Could not parse table property {property_name} to a float: {value}") from e
+        else:
+            return default
+
+    @staticmethod
     def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
         if value := properties.get(property_name):
             return value.lower() == "true"
@@ -340,6 +352,88 @@ class Transaction:
         updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
 
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
+    )
+    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
+        """Add a new snapshot to the table.
+
+        Returns:
+            The transaction with the add-snapshot staged.
+        """
+        updates = (AddSnapshotUpdate(snapshot=snapshot),)
+
+        return self._apply(updates, ())
+
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
+    )
+    def set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> Transaction:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The transaction with the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
+        return self._apply(updates, requirements)
+
+    def _set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> UpdatesAndRequirements:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The updates and requirements for the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
+                ref=ref_name,
+            ),
+        )
+
+        return updates, requirements
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -381,10 +475,11 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        supported_transforms = {IdentityTransform}
-        if not all(type(field.transform) in supported_transforms for field in self.table_metadata.spec().fields):
+        if unsupported_partitions := [
+            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
+        ]:
             raise ValueError(
-                f"All transforms are not supported, expected: {supported_transforms}, but get: {[str(field) for field in self.table_metadata.spec().fields if field.transform not in supported_transforms]}."
+                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
@@ -443,7 +538,7 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
 
@@ -455,7 +550,7 @@ class Transaction:
         """
         if self._table.name_mapping() is None:
             self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
-        with self.update_snapshot().fast_append() as update_snapshot:
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
             )
@@ -499,6 +594,7 @@ class Transaction:
             The table with the updates applied.
         """
         if len(self._updates) > 0:
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
                 requirements=self._requirements,
@@ -553,21 +649,25 @@ class CreateTableTransaction(Transaction):
             The table with the updates applied.
         """
         self._requirements = (AssertCreate(),)
-        return super().commit_transaction()
+        self._table._do_commit(  # pylint: disable=W0212
+            updates=self._updates,
+            requirements=self._requirements,
+        )
+        return self._table
 
 
 class AssignUUIDUpdate(IcebergBaseModel):
-    action: Literal['assign-uuid'] = Field(default="assign-uuid")
+    action: Literal["assign-uuid"] = Field(default="assign-uuid")
     uuid: uuid.UUID
 
 
 class UpgradeFormatVersionUpdate(IcebergBaseModel):
-    action: Literal['upgrade-format-version'] = Field(default="upgrade-format-version")
+    action: Literal["upgrade-format-version"] = Field(default="upgrade-format-version")
     format_version: int = Field(alias="format-version")
 
 
 class AddSchemaUpdate(IcebergBaseModel):
-    action: Literal['add-schema'] = Field(default="add-schema")
+    action: Literal["add-schema"] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
     # This field is required: https://github.com/apache/iceberg/pull/7445
     last_column_id: int = Field(alias="last-column-id")
@@ -576,47 +676,47 @@ class AddSchemaUpdate(IcebergBaseModel):
 
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
-    action: Literal['set-current-schema'] = Field(default="set-current-schema")
+    action: Literal["set-current-schema"] = Field(default="set-current-schema")
     schema_id: int = Field(
         alias="schema-id", description="Schema ID to set as current, or -1 to set last added schema", default=-1
     )
 
 
 class AddPartitionSpecUpdate(IcebergBaseModel):
-    action: Literal['add-spec'] = Field(default="add-spec")
+    action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
     initial_change: bool = Field(default=False, exclude=True)
 
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
-    action: Literal['set-default-spec'] = Field(default="set-default-spec")
+    action: Literal["set-default-spec"] = Field(default="set-default-spec")
     spec_id: int = Field(
         alias="spec-id", description="Partition spec ID to set as the default, or -1 to set last added spec", default=-1
     )
 
 
 class AddSortOrderUpdate(IcebergBaseModel):
-    action: Literal['add-sort-order'] = Field(default="add-sort-order")
+    action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
 
     initial_change: bool = Field(default=False, exclude=True)
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
-    action: Literal['set-default-sort-order'] = Field(default="set-default-sort-order")
+    action: Literal["set-default-sort-order"] = Field(default="set-default-sort-order")
     sort_order_id: int = Field(
         alias="sort-order-id", description="Sort order ID to set as the default, or -1 to set last added sort order", default=-1
     )
 
 
 class AddSnapshotUpdate(IcebergBaseModel):
-    action: Literal['add-snapshot'] = Field(default="add-snapshot")
+    action: Literal["add-snapshot"] = Field(default="add-snapshot")
     snapshot: Snapshot
 
 
 class SetSnapshotRefUpdate(IcebergBaseModel):
-    action: Literal['set-snapshot-ref'] = Field(default="set-snapshot-ref")
+    action: Literal["set-snapshot-ref"] = Field(default="set-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
     type: Literal["tag", "branch"]
     snapshot_id: int = Field(alias="snapshot-id")
@@ -626,31 +726,31 @@ class SetSnapshotRefUpdate(IcebergBaseModel):
 
 
 class RemoveSnapshotsUpdate(IcebergBaseModel):
-    action: Literal['remove-snapshots'] = Field(default="remove-snapshots")
+    action: Literal["remove-snapshots"] = Field(default="remove-snapshots")
     snapshot_ids: List[int] = Field(alias="snapshot-ids")
 
 
 class RemoveSnapshotRefUpdate(IcebergBaseModel):
-    action: Literal['remove-snapshot-ref'] = Field(default="remove-snapshot-ref")
+    action: Literal["remove-snapshot-ref"] = Field(default="remove-snapshot-ref")
     ref_name: str = Field(alias="ref-name")
 
 
 class SetLocationUpdate(IcebergBaseModel):
-    action: Literal['set-location'] = Field(default="set-location")
+    action: Literal["set-location"] = Field(default="set-location")
     location: str
 
 
 class SetPropertiesUpdate(IcebergBaseModel):
-    action: Literal['set-properties'] = Field(default="set-properties")
+    action: Literal["set-properties"] = Field(default="set-properties")
     updates: Dict[str, str]
 
-    @field_validator('updates', mode='before')
+    @field_validator("updates", mode="before")
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
         return transform_dict_value_to_str(properties)
 
 
 class RemovePropertiesUpdate(IcebergBaseModel):
-    action: Literal['remove-properties'] = Field(default="remove-properties")
+    action: Literal["remove-properties"] = Field(default="remove-properties")
     removals: List[str]
 
 
@@ -672,7 +772,7 @@ TableUpdate = Annotated[
         SetPropertiesUpdate,
         RemovePropertiesUpdate,
     ],
-    Field(discriminator='action'),
+    Field(discriminator="action"),
 ]
 
 
@@ -1131,7 +1231,7 @@ TableRequirement = Annotated[
         AssertDefaultSpecId,
         AssertDefaultSortOrderId,
     ],
-    Field(discriminator='type'),
+    Field(discriminator="type"),
 ]
 
 UpdatesAndRequirements = Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]
@@ -1142,7 +1242,7 @@ class Namespace(IcebergRootModel[List[str]]):
 
     root: List[str] = Field(
         ...,
-        description='Reference to one or more levels of a namespace',
+        description="Reference to one or more levels of a namespace",
     )
 
 
@@ -1290,9 +1390,36 @@ class Table:
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
+    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Optional[Snapshot]:
+        """Get the snapshot that was current as of or right before the given timestamp, or None if there is no matching snapshot.
+
+        Args:
+            timestamp_ms: Find snapshot that was current at/before this timestamp
+            inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
+        """
+        for log_entry in reversed(self.history()):
+            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
+                return self.snapshot_by_id(log_entry.snapshot_id)
+        return None
+
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
+
+    def manage_snapshots(self) -> ManageSnapshots:
+        """
+        Shorthand to run snapshot management operations like create branch, create tag, etc.
+
+        Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+        Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example,
+
+        with table.manage_snapshots() as ms:
+           ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+        """
+        return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -1341,7 +1468,7 @@ class Table:
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table.
 
@@ -1352,7 +1479,7 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         with self.transaction() as tx:
-            tx.add_files(file_paths=file_paths)
+            tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -1782,7 +1909,7 @@ class Move:
     other_field_id: Optional[int] = None
 
 
-U = TypeVar('U')
+U = TypeVar("U")
 
 
 class UpdateTableMetadata(ABC, Generic[U]):
@@ -1804,6 +1931,84 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def __enter__(self) -> U:
         """Update the table."""
         return self  # type: ignore
+
+
+class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
+    """
+    Run snapshot management operations using APIs.
+
+    APIs include create branch, create tag, etc.
+
+    Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+    Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+    Pending changes are applied on commit.
+
+    We can also use context managers to make more changes. For example,
+
+    with table.manage_snapshots() as ms:
+       ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+    """
+
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """Apply the pending changes and commit."""
+        return self._updates, self._requirements
+
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+        """
+        Create a new tag pointing to the given snapshot id.
+
+        Args:
+            snapshot_id (int): snapshot id of the existing snapshot to tag
+            tag_name (str): name of the tag
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+
+        Returns:
+            This for method chaining
+        """
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=tag_name,
+            type="tag",
+            max_ref_age_ms=max_ref_age_ms,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
+
+    def create_branch(
+        self,
+        snapshot_id: int,
+        branch_name: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> ManageSnapshots:
+        """
+        Create a new branch pointing to the given snapshot id.
+
+        Args:
+            snapshot_id (int): snapshot id of existing snapshot at which the branch is created.
+            branch_name (str): name of the new branch
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+            max_snapshot_age_ms (Optional[int]): max age of snapshots to keep in milliseconds
+            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep in milliseconds
+        Returns:
+            This for method chaining
+        """
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=branch_name,
+            type="branch",
+            max_ref_age_ms=max_ref_age_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
@@ -2671,13 +2876,13 @@ class AddFileTask:
 
 
 def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
-    return f'{location}/metadata/{commit_uuid}-m{num}.avro'
+    return f"{location}/metadata/{commit_uuid}-m{num}.avro"
 
 
 def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
-    return f'{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro'
+    return f"{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
 def _dataframe_to_data_files(
@@ -2895,10 +3100,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                     snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
                 ),
             ),
-            (
-                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-                AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),
-            ),
+            (AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),),
         )
 
 
@@ -3231,7 +3433,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
 
         new_field_id = self._new_field_id()
         if name is None:
-            tmp_field = PartitionField(transform_key[0], new_field_id, transform_key[1], 'unassigned_field_name')
+            tmp_field = PartitionField(transform_key[0], new_field_id, transform_key[1], "unassigned_field_name")
             name = _visit_partition_field(self._transaction.table_metadata.schema(), tmp_field, _PartitionNameGenerator())
         return PartitionField(transform_key[0], new_field_id, transform_key[1], name)
 
@@ -3270,12 +3472,12 @@ class InspectTable:
         import pyarrow as pa
 
         snapshots_schema = pa.schema([
-            pa.field('committed_at', pa.timestamp(unit='ms'), nullable=False),
-            pa.field('snapshot_id', pa.int64(), nullable=False),
-            pa.field('parent_id', pa.int64(), nullable=True),
-            pa.field('operation', pa.string(), nullable=True),
-            pa.field('manifest_list', pa.string(), nullable=False),
-            pa.field('summary', pa.map_(pa.string(), pa.string()), nullable=True),
+            pa.field("committed_at", pa.timestamp(unit="ms"), nullable=False),
+            pa.field("snapshot_id", pa.int64(), nullable=False),
+            pa.field("parent_id", pa.int64(), nullable=True),
+            pa.field("operation", pa.string(), nullable=True),
+            pa.field("manifest_list", pa.string(), nullable=False),
+            pa.field("summary", pa.map_(pa.string(), pa.string()), nullable=True),
         ])
         snapshots = []
         for snapshot in self.tbl.metadata.snapshots:
@@ -3287,12 +3489,12 @@ class InspectTable:
                 additional_properties = None
 
             snapshots.append({
-                'committed_at': datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
-                'snapshot_id': snapshot.snapshot_id,
-                'parent_id': snapshot.parent_snapshot_id,
-                'operation': str(operation),
-                'manifest_list': snapshot.manifest_list,
-                'summary': additional_properties,
+                "committed_at": datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                "snapshot_id": snapshot.snapshot_id,
+                "parent_id": snapshot.parent_snapshot_id,
+                "operation": str(operation),
+                "manifest_list": snapshot.manifest_list,
+                "summary": additional_properties,
             })
 
         return pa.Table.from_pylist(
@@ -3329,33 +3531,33 @@ class InspectTable:
         pa_record_struct = schema_to_pyarrow(partition_record)
 
         entries_schema = pa.schema([
-            pa.field('status', pa.int8(), nullable=False),
-            pa.field('snapshot_id', pa.int64(), nullable=False),
-            pa.field('sequence_number', pa.int64(), nullable=False),
-            pa.field('file_sequence_number', pa.int64(), nullable=False),
+            pa.field("status", pa.int8(), nullable=False),
+            pa.field("snapshot_id", pa.int64(), nullable=False),
+            pa.field("sequence_number", pa.int64(), nullable=False),
+            pa.field("file_sequence_number", pa.int64(), nullable=False),
             pa.field(
-                'data_file',
+                "data_file",
                 pa.struct([
-                    pa.field('content', pa.int8(), nullable=False),
-                    pa.field('file_path', pa.string(), nullable=False),
-                    pa.field('file_format', pa.string(), nullable=False),
-                    pa.field('partition', pa_record_struct, nullable=False),
-                    pa.field('record_count', pa.int64(), nullable=False),
-                    pa.field('file_size_in_bytes', pa.int64(), nullable=False),
-                    pa.field('column_sizes', pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field('value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field('null_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field('nan_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field('lower_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
-                    pa.field('upper_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
-                    pa.field('key_metadata', pa.binary(), nullable=True),
-                    pa.field('split_offsets', pa.list_(pa.int64()), nullable=True),
-                    pa.field('equality_ids', pa.list_(pa.int32()), nullable=True),
-                    pa.field('sort_order_id', pa.int32(), nullable=True),
+                    pa.field("content", pa.int8(), nullable=False),
+                    pa.field("file_path", pa.string(), nullable=False),
+                    pa.field("file_format", pa.string(), nullable=False),
+                    pa.field("partition", pa_record_struct, nullable=False),
+                    pa.field("record_count", pa.int64(), nullable=False),
+                    pa.field("file_size_in_bytes", pa.int64(), nullable=False),
+                    pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+                    pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+                    pa.field("key_metadata", pa.binary(), nullable=True),
+                    pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
+                    pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
+                    pa.field("sort_order_id", pa.int32(), nullable=True),
                 ]),
                 nullable=False,
             ),
-            pa.field('readable_metrics', pa.struct(readable_metrics_struct), nullable=True),
+            pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
         ])
 
         entries = []
@@ -3392,11 +3594,11 @@ class InspectTable:
                 }
 
                 entries.append({
-                    'status': entry.status.value,
-                    'snapshot_id': entry.snapshot_id,
-                    'sequence_number': entry.data_sequence_number,
-                    'file_sequence_number': entry.file_sequence_number,
-                    'data_file': {
+                    "status": entry.status.value,
+                    "snapshot_id": entry.snapshot_id,
+                    "sequence_number": entry.data_sequence_number,
+                    "file_sequence_number": entry.file_sequence_number,
+                    "data_file": {
                         "content": entry.data_file.content,
                         "file_path": entry.data_file.file_path,
                         "file_format": entry.data_file.file_format,
@@ -3415,7 +3617,7 @@ class InspectTable:
                         "sort_order_id": entry.data_file.sort_order_id,
                         "spec_id": entry.data_file.spec_id,
                     },
-                    'readable_metrics': readable_metrics,
+                    "readable_metrics": readable_metrics,
                 })
 
         return pa.Table.from_pylist(
@@ -3427,24 +3629,24 @@ class InspectTable:
         import pyarrow as pa
 
         ref_schema = pa.schema([
-            pa.field('name', pa.string(), nullable=False),
-            pa.field('type', pa.dictionary(pa.int32(), pa.string()), nullable=False),
-            pa.field('snapshot_id', pa.int64(), nullable=False),
-            pa.field('max_reference_age_in_ms', pa.int64(), nullable=True),
-            pa.field('min_snapshots_to_keep', pa.int32(), nullable=True),
-            pa.field('max_snapshot_age_in_ms', pa.int64(), nullable=True),
+            pa.field("name", pa.string(), nullable=False),
+            pa.field("type", pa.dictionary(pa.int32(), pa.string()), nullable=False),
+            pa.field("snapshot_id", pa.int64(), nullable=False),
+            pa.field("max_reference_age_in_ms", pa.int64(), nullable=True),
+            pa.field("min_snapshots_to_keep", pa.int32(), nullable=True),
+            pa.field("max_snapshot_age_in_ms", pa.int64(), nullable=True),
         ])
 
         ref_results = []
         for ref in self.tbl.metadata.refs:
             if snapshot_ref := self.tbl.metadata.refs.get(ref):
                 ref_results.append({
-                    'name': ref,
-                    'type': snapshot_ref.snapshot_ref_type.upper(),
-                    'snapshot_id': snapshot_ref.snapshot_id,
-                    'max_reference_age_in_ms': snapshot_ref.max_ref_age_ms,
-                    'min_snapshots_to_keep': snapshot_ref.min_snapshots_to_keep,
-                    'max_snapshot_age_in_ms': snapshot_ref.max_snapshot_age_ms,
+                    "name": ref,
+                    "type": snapshot_ref.snapshot_ref_type.upper(),
+                    "snapshot_id": snapshot_ref.snapshot_id,
+                    "max_reference_age_in_ms": snapshot_ref.max_ref_age_ms,
+                    "min_snapshots_to_keep": snapshot_ref.min_snapshots_to_keep,
+                    "max_snapshot_age_in_ms": snapshot_ref.max_snapshot_age_ms,
                 })
 
         return pa.Table.from_pylist(ref_results, schema=ref_schema)
@@ -3455,15 +3657,15 @@ class InspectTable:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         table_schema = pa.schema([
-            pa.field('record_count', pa.int64(), nullable=False),
-            pa.field('file_count', pa.int32(), nullable=False),
-            pa.field('total_data_file_size_in_bytes', pa.int64(), nullable=False),
-            pa.field('position_delete_record_count', pa.int64(), nullable=False),
-            pa.field('position_delete_file_count', pa.int32(), nullable=False),
-            pa.field('equality_delete_record_count', pa.int64(), nullable=False),
-            pa.field('equality_delete_file_count', pa.int32(), nullable=False),
-            pa.field('last_updated_at', pa.timestamp(unit='ms'), nullable=True),
-            pa.field('last_updated_snapshot_id', pa.int64(), nullable=True),
+            pa.field("record_count", pa.int64(), nullable=False),
+            pa.field("file_count", pa.int32(), nullable=False),
+            pa.field("total_data_file_size_in_bytes", pa.int64(), nullable=False),
+            pa.field("position_delete_record_count", pa.int64(), nullable=False),
+            pa.field("position_delete_file_count", pa.int32(), nullable=False),
+            pa.field("equality_delete_record_count", pa.int64(), nullable=False),
+            pa.field("equality_delete_file_count", pa.int32(), nullable=False),
+            pa.field("last_updated_at", pa.timestamp(unit="ms"), nullable=True),
+            pa.field("last_updated_snapshot_id", pa.int64(), nullable=True),
         ])
 
         partition_record = self.tbl.metadata.specs_struct()
@@ -3472,8 +3674,8 @@ class InspectTable:
         if has_partitions:
             pa_record_struct = schema_to_pyarrow(partition_record)
             partitions_schema = pa.schema([
-                pa.field('partition', pa_record_struct, nullable=False),
-                pa.field('spec_id', pa.int32(), nullable=False),
+                pa.field("partition", pa_record_struct, nullable=False),
+                pa.field("spec_id", pa.int32(), nullable=False),
             ])
 
             table_schema = pa.unify_schemas([partitions_schema, table_schema])
@@ -3537,13 +3739,101 @@ class InspectTable:
             schema=table_schema,
         )
 
+    def manifests(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.conversions import from_bytes
+
+        partition_summary_schema = pa.struct([
+            pa.field("contains_null", pa.bool_(), nullable=False),
+            pa.field("contains_nan", pa.bool_(), nullable=True),
+            pa.field("lower_bound", pa.string(), nullable=True),
+            pa.field("upper_bound", pa.string(), nullable=True),
+        ])
+
+        manifest_schema = pa.schema([
+            pa.field("content", pa.int8(), nullable=False),
+            pa.field("path", pa.string(), nullable=False),
+            pa.field("length", pa.int64(), nullable=False),
+            pa.field("partition_spec_id", pa.int32(), nullable=False),
+            pa.field("added_snapshot_id", pa.int64(), nullable=False),
+            pa.field("added_data_files_count", pa.int32(), nullable=False),
+            pa.field("existing_data_files_count", pa.int32(), nullable=False),
+            pa.field("deleted_data_files_count", pa.int32(), nullable=False),
+            pa.field("added_delete_files_count", pa.int32(), nullable=False),
+            pa.field("existing_delete_files_count", pa.int32(), nullable=False),
+            pa.field("deleted_delete_files_count", pa.int32(), nullable=False),
+            pa.field("partition_summaries", pa.list_(partition_summary_schema), nullable=False),
+        ])
+
+        def _partition_summaries_to_rows(
+            spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
+        ) -> List[Dict[str, Any]]:
+            rows = []
+            for i, field_summary in enumerate(partition_summaries):
+                field = spec.fields[i]
+                partition_field_type = spec.partition_type(self.tbl.schema()).fields[i].field_type
+                lower_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
+                        )
+                    )
+                    if field_summary.lower_bound
+                    else None
+                )
+                upper_bound = (
+                    (
+                        field.transform.to_human_string(
+                            partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
+                        )
+                    )
+                    if field_summary.upper_bound
+                    else None
+                )
+                rows.append({
+                    "contains_null": field_summary.contains_null,
+                    "contains_nan": field_summary.contains_nan,
+                    "lower_bound": lower_bound,
+                    "upper_bound": upper_bound,
+                })
+            return rows
+
+        specs = self.tbl.metadata.specs()
+        manifests = []
+        if snapshot := self.tbl.metadata.current_snapshot():
+            for manifest in snapshot.manifests(self.tbl.io):
+                is_data_file = manifest.content == ManifestContent.DATA
+                is_delete_file = manifest.content == ManifestContent.DELETES
+                manifests.append({
+                    "content": manifest.content,
+                    "path": manifest.manifest_path,
+                    "length": manifest.manifest_length,
+                    "partition_spec_id": manifest.partition_spec_id,
+                    "added_snapshot_id": manifest.added_snapshot_id,
+                    "added_data_files_count": manifest.added_files_count if is_data_file else 0,
+                    "existing_data_files_count": manifest.existing_files_count if is_data_file else 0,
+                    "deleted_data_files_count": manifest.deleted_files_count if is_data_file else 0,
+                    "added_delete_files_count": manifest.added_files_count if is_delete_file else 0,
+                    "existing_delete_files_count": manifest.existing_files_count if is_delete_file else 0,
+                    "deleted_delete_files_count": manifest.deleted_files_count if is_delete_file else 0,
+                    "partition_summaries": _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
+                    if manifest.partitions
+                    else [],
+                })
+
+        return pa.Table.from_pylist(
+            manifests,
+            schema=manifest_schema,
+        )
+
     def metadata_log_entries(self) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.table.snapshots import MetadataLogEntry
 
         table_schema = pa.schema([
-            pa.field("timestamp", pa.timestamp(unit='ms'), nullable=False),
+            pa.field("timestamp", pa.timestamp(unit="ms"), nullable=False),
             pa.field("file", pa.string(), nullable=False),
             pa.field("latest_snapshot_id", pa.int64(), nullable=True),
             pa.field("latest_schema_id", pa.int32(), nullable=True),
@@ -3577,40 +3867,13 @@ class TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
-    order = 'ascending' if not reverse else 'descending'
-    null_placement = 'at_start' if reverse else 'at_end'
-    return {'sort_keys': [(column_name, order) for column_name in partition_columns], 'null_placement': null_placement}
-
-
-def group_by_partition_scheme(arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
-    """Given a table, sort it by current partition scheme."""
-    # only works for identity for now
-    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
-    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options['sort_keys'], null_placement=sort_options['null_placement'])
-    return sorted_arrow_table
-
-
-def get_partition_columns(
-    spec: PartitionSpec,
-    schema: Schema,
-) -> list[str]:
-    partition_cols = []
-    for partition_field in spec.fields:
-        column_name = schema.find_column_name(partition_field.source_id)
-        if not column_name:
-            raise ValueError(f"{partition_field=} could not be found in {schema}.")
-        partition_cols.append(column_name)
-    return partition_cols
-
-
 def _get_table_partitions(
     arrow_table: pa.Table,
     partition_spec: PartitionSpec,
     schema: Schema,
     slice_instructions: list[dict[str, Any]],
 ) -> list[TablePartition]:
-    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x['offset'])
+    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
 
     partition_fields = partition_spec.fields
 
@@ -3658,13 +3921,30 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     """
     import pyarrow as pa
 
-    partition_columns = get_partition_columns(spec=spec, schema=schema)
-    arrow_table = group_by_partition_scheme(arrow_table, partition_columns)
+    partition_columns: List[Tuple[PartitionField, NestedField]] = [
+        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
+    ]
+    partition_values_table = pa.table({
+        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        for partition, field in partition_columns
+    })
 
-    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
-    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
+    # Sort by partitions
+    sort_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
+        null_placement="at_end",
+    ).to_pylist()
+    arrow_table = arrow_table.take(sort_indices)
 
-    slice_instructions: list[dict[str, Any]] = []
+    # Get slice_instructions to group by partitions
+    partition_values_table = partition_values_table.take(sort_indices)
+    reversed_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
+        null_placement="at_start",
+    ).to_pylist()
+    slice_instructions: List[Dict[str, Any]] = []
     last = len(reversed_indices)
     reversed_indices_size = len(reversed_indices)
     ptr = 0
@@ -3675,6 +3955,6 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         last = reversed_indices[ptr]
         ptr = ptr + group_size
 
-    table_partitions: list[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+    table_partitions: List[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
 
     return table_partitions

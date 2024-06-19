@@ -20,7 +20,7 @@ import struct
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from functools import singledispatch
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 from typing import Literal as LiteralType
 from uuid import UUID
 
@@ -81,6 +81,9 @@ from pyiceberg.utils import datetime
 from pyiceberg.utils.decimal import decimal_to_bytes, truncate_decimal
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 S = TypeVar("S")
 T = TypeVar("T")
@@ -174,6 +177,13 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
         if isinstance(other, Transform):
             return self.root == other.root
         return False
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return False
+
+    @abstractmethod
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
 
 
 class BucketTransform(Transform[S, int]):
@@ -290,6 +300,9 @@ class BucketTransform(Transform[S, int]):
         """Return the string representation of the BucketTransform class."""
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
+
 
 class TimeResolution(IntEnum):
     YEAR = 6
@@ -349,6 +362,10 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
     def preserves_order(self) -> bool:
         return True
 
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
+
 
 class YearTransform(TimeTransform[S]):
     """Transforms a datetime value into a year value.
@@ -391,6 +408,21 @@ class YearTransform(TimeTransform[S]):
         """Return the string representation of the YearTransform class."""
         return "YearTransform()"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, DateType):
+            epoch = datetime.EPOCH_DATE
+        elif isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply year transform for type: {source}")
+
+        return lambda v: pc.years_between(pa.scalar(epoch), v) if v is not None else None
+
 
 class MonthTransform(TimeTransform[S]):
     """Transforms a datetime value into a month value.
@@ -432,6 +464,27 @@ class MonthTransform(TimeTransform[S]):
     def __repr__(self) -> str:
         """Return the string representation of the MonthTransform class."""
         return "MonthTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, DateType):
+            epoch = datetime.EPOCH_DATE
+        elif isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply month transform for type: {source}")
+
+        def month_func(v: pa.Array) -> pa.Array:
+            return pc.add(
+                pc.multiply(pc.years_between(pa.scalar(epoch), v), pa.scalar(12)),
+                pc.add(pc.month(v), pa.scalar(-1)),
+            )
+
+        return lambda v: month_func(v) if v is not None else None
 
 
 class DayTransform(TimeTransform[S]):
@@ -478,6 +531,21 @@ class DayTransform(TimeTransform[S]):
         """Return the string representation of the DayTransform class."""
         return "DayTransform()"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, DateType):
+            epoch = datetime.EPOCH_DATE
+        elif isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply day transform for type: {source}")
+
+        return lambda v: pc.days_between(pa.scalar(epoch), v) if v is not None else None
+
 
 class HourTransform(TimeTransform[S]):
     """Transforms a datetime value into a hour value.
@@ -514,6 +582,19 @@ class HourTransform(TimeTransform[S]):
     def __repr__(self) -> str:
         """Return the string representation of the HourTransform class."""
         return "HourTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        if isinstance(source, TimestampType):
+            epoch = datetime.EPOCH_TIMESTAMP
+        elif isinstance(source, TimestamptzType):
+            epoch = datetime.EPOCH_TIMESTAMPTZ
+        else:
+            raise ValueError(f"Cannot apply hour transform for type: {source}")
+
+        return lambda v: pc.hours_between(pa.scalar(epoch), v) if v is not None else None
 
 
 def _base64encode(buffer: bytes) -> str:
@@ -584,6 +665,13 @@ class IdentityTransform(Transform[S, S]):
     def __repr__(self) -> str:
         """Return the string representation of the IdentityTransform class."""
         return "IdentityTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        return lambda v: v
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 class TruncateTransform(Transform[S, S]):
@@ -725,6 +813,9 @@ class TruncateTransform(Transform[S, S]):
         """Return the string representation of the TruncateTransform class."""
         return f"TruncateTransform(width={self._width})"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
+
 
 @singledispatch
 def _human_string(value: Any, _type: IcebergType) -> str:
@@ -807,6 +898,9 @@ class UnknownTransform(Transform[S, T]):
         """Return the string representation of the UnknownTransform class."""
         return f"UnknownTransform(transform={repr(self._transform)})"
 
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
+
 
 class VoidTransform(Transform[S, None], Singleton):
     """A transform that always returns None."""
@@ -834,6 +928,9 @@ class VoidTransform(Transform[S, None], Singleton):
     def __repr__(self) -> str:
         """Return the string representation of the VoidTransform class."""
         return "VoidTransform()"
+
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+        raise NotImplementedError()
 
 
 def _truncate_number(

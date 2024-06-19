@@ -17,7 +17,7 @@
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from datetime import date
 from decimal import Decimal
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 from uuid import UUID
 
 import mmh3 as mmh3
@@ -69,6 +69,7 @@ from pyiceberg.expressions.literals import (
     TimestampLiteral,
     literal,
 )
+from pyiceberg.partitioning import _to_partition_representation
 from pyiceberg.schema import Accessor
 from pyiceberg.transforms import (
     BucketTransform,
@@ -110,6 +111,9 @@ from pyiceberg.utils.datetime import (
     timestamp_to_micros,
     timestamptz_to_micros,
 )
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 @pytest.mark.parametrize(
@@ -1550,7 +1554,7 @@ def test_strict_bucket_bytes(bound_reference_binary: BoundReference[int]) -> Non
 
 
 def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
-    value = literal(UUID('12345678123456781234567812345678'))
+    value = literal(UUID("12345678123456781234567812345678"))
     transform: Transform[Any, int] = BucketTransform(num_buckets=10)
     _test_projection(
         lhs=transform.strict_project(name="name", pred=BoundNotEqualTo(term=bound_reference_uuid, literal=value)),
@@ -1575,14 +1579,14 @@ def test_strict_bucket_uuid(bound_reference_uuid: BoundReference[int]) -> None:
     _test_projection(
         lhs=transform.strict_project(
             name="name",
-            pred=BoundNotIn(term=bound_reference_uuid, literals={value, literal(UUID('12345678123456781234567812345679'))}),
+            pred=BoundNotIn(term=bound_reference_uuid, literals={value, literal(UUID("12345678123456781234567812345679"))}),
         ),
         rhs=NotIn(term=Reference("name"), literals={1, 4}),
     )
     _test_projection(
         lhs=transform.strict_project(
             name="name",
-            pred=BoundIn(term=bound_reference_uuid, literals={value, literal(UUID('12345678123456781234567812345679'))}),
+            pred=BoundIn(term=bound_reference_uuid, literals={value, literal(UUID("12345678123456781234567812345679"))}),
         ),
         rhs=None,
     )
@@ -1808,3 +1812,31 @@ def test_strict_binary(bound_reference_binary: BoundReference[str]) -> None:
     _test_projection(
         lhs=transform.strict_project(name="name", pred=BoundIn(term=bound_reference_binary, literals=set_of_literals)), rhs=None
     )
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
+        pytest.param(YearTransform(), id="year_transform"),
+        pytest.param(MonthTransform(), id="month_transform"),
+        pytest.param(DayTransform(), id="day_transform"),
+        pytest.param(HourTransform(), id="hour_transform"),
+    ],
+)
+@pytest.mark.parametrize(
+    "source_col, source_type", [("date", DateType()), ("timestamp", TimestampType()), ("timestamptz", TimestamptzType())]
+)
+def test_ymd_pyarrow_transforms(
+    arrow_table_date_timestamps: "pa.Table",
+    source_col: str,
+    source_type: PrimitiveType,
+    transform: Transform[Any, Any],
+) -> None:
+    if transform.can_transform(source_type):
+        assert transform.pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col]).to_pylist() == [
+            transform.transform(source_type)(_to_partition_representation(source_type, v))
+            for v in arrow_table_date_timestamps[source_col].to_pylist()
+        ]
+    else:
+        with pytest.raises(ValueError):
+            transform.pyarrow_transform(DateType())(arrow_table_date_timestamps[source_col])

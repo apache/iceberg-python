@@ -606,6 +606,56 @@ min_snapshots_to_keep: [[null,10]]
 max_snapshot_age_in_ms: [[null,604800000]]
 ```
 
+### Manifests
+
+To show a table's current file manifests:
+
+```python
+table.inspect.manifests()
+```
+
+```
+pyarrow.Table
+content: int8 not null
+path: string not null
+length: int64 not null
+partition_spec_id: int32 not null
+added_snapshot_id: int64 not null
+added_data_files_count: int32 not null
+existing_data_files_count: int32 not null
+deleted_data_files_count: int32 not null
+added_delete_files_count: int32 not null
+existing_delete_files_count: int32 not null
+deleted_delete_files_count: int32 not null
+partition_summaries: list<item: struct<contains_null: bool not null, contains_nan: bool, lower_bound: string, upper_bound: string>> not null
+  child 0, item: struct<contains_null: bool not null, contains_nan: bool, lower_bound: string, upper_bound: string>
+      child 0, contains_null: bool not null
+      child 1, contains_nan: bool
+      child 2, lower_bound: string
+      child 3, upper_bound: string
+----
+content: [[0]]
+path: [["s3://warehouse/default/table_metadata_manifests/metadata/3bf5b4c6-a7a4-4b43-a6ce-ca2b4887945a-m0.avro"]]
+length: [[6886]]
+partition_spec_id: [[0]]
+added_snapshot_id: [[3815834705531553721]]
+added_data_files_count: [[1]]
+existing_data_files_count: [[0]]
+deleted_data_files_count: [[0]]
+added_delete_files_count: [[0]]
+existing_delete_files_count: [[0]]
+deleted_delete_files_count: [[0]]
+partition_summaries: [[    -- is_valid: all not null
+    -- child 0 type: bool
+[false]
+    -- child 1 type: bool
+[false]
+    -- child 2 type: string
+["test"]
+    -- child 3 type: string
+["test"]]]
+```
+
 ### Metadata Log Entries
 
 To show table metadata log entries:
@@ -884,6 +934,28 @@ tbl.append(df, snapshot_properties={"abc": "def"})
 tbl.overwrite(df, snapshot_properties={"abc": "def"})
 
 assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
+```
+
+## Snapshot Management
+
+Manage snapshots with operations through the `Table` API:
+
+```python
+# To run a specific operation
+table.manage_snapshots().create_tag(snapshot_id, "tag123").commit()
+# To run multiple operations
+table.manage_snapshots()
+    .create_tag(snapshot_id1, "tag123")
+    .create_tag(snapshot_id2, "tag456")
+    .commit()
+# Operations are applied on commit.
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.manage_snapshots() as ms:
+    ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
 ## Query the data

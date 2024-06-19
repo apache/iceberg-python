@@ -500,6 +500,24 @@ def test_create_namespace_200(rest_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace(namespace)
 
 
+def test_create_namespace_if_exists_409(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "error": {
+                "message": "Namespace already exists: fokko in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace_if_not_exists(namespace)
+
+
 def test_create_namespace_409(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.post(
@@ -673,6 +691,16 @@ def test_table_exist_200(rest_mock: Mocker) -> None:
     assert catalog.table_exists(("fokko", "table"))
 
 
+def test_table_exist_204(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.table_exists(("fokko", "table"))
+
+
 def test_table_exist_500(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
@@ -730,6 +758,31 @@ def test_create_table_200(
         catalog=catalog,
     )
     assert actual == expected
+
+
+def test_create_table_with_given_location_removes_trailing_slash_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    location = "s3://warehouse/database/table-custom-location"
+    catalog.create_table(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=f"{location}/",
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+        ),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    assert rest_mock.last_request
+    assert rest_mock.last_request.json()["location"] == location
 
 
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:

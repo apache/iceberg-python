@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import getpass
+import logging
 import socket
 import time
 from types import TracebackType
@@ -33,6 +34,7 @@ from urllib.parse import urlparse
 from hive_metastore.ThriftHiveMetastore import Client
 from hive_metastore.ttypes import (
     AlreadyExistsException,
+    CheckLockRequest,
     FieldSchema,
     InvalidOperationException,
     LockComponent,
@@ -49,6 +51,7 @@ from hive_metastore.ttypes import (
 )
 from hive_metastore.ttypes import Database as HiveDatabase
 from hive_metastore.ttypes import Table as HiveTable
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TSocket, TTransport
 
@@ -67,15 +70,22 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
     NoSuchNamespaceError,
+    NoSuchPropertyException,
     NoSuchTableError,
     TableAlreadyExistsError,
+    WaitingForLockException,
 )
-from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, PropertyUtil, Table, TableProperties, update_table_metadata
-from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table import (
+    CommitTableRequest,
+    CommitTableResponse,
+    PropertyUtil,
+    StagedTable,
+    Table,
+    TableProperties,
+)
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
@@ -111,6 +121,15 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
+LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
+LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
+LOCK_CHECK_RETRIES = "lock-check-retries"
+DEFAULT_LOCK_CHECK_MIN_WAIT_TIME = 0.1  # 100 milliseconds
+DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 60  # 1 min
+DEFAULT_LOCK_CHECK_RETRIES = 4
+
+logger = logging.getLogger(__name__)
+
 
 class _HiveClient:
     """Helper class to nicely open and close the transport."""
@@ -126,7 +145,7 @@ class _HiveClient:
         protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
         self._client = Client(protocol)
-        self._ugi = ugi.split(':') if ugi else None
+        self._ugi = ugi.split(":") if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
@@ -240,10 +259,24 @@ class HiveCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
         self._client = _HiveClient(properties["uri"], properties.get("ugi"))
 
-    def _convert_hive_into_iceberg(self, table: HiveTable, io: FileIO) -> Table:
+        self._lock_check_min_wait_time = PropertyUtil.property_as_float(
+            properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME
+        )
+        self._lock_check_max_wait_time = PropertyUtil.property_as_float(
+            properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME
+        )
+        self._lock_check_retries = PropertyUtil.property_as_float(
+            properties,
+            LOCK_CHECK_RETRIES,
+            DEFAULT_LOCK_CHECK_RETRIES,
+        )
+
+    def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
         if TABLE_TYPE not in properties:
-            raise NoSuchTableError(f"Property table_type missing, could not determine type: {table.dbName}.{table.tableName}")
+            raise NoSuchPropertyException(
+                f"Property table_type missing, could not determine type: {table.dbName}.{table.tableName}"
+            )
 
         table_type = properties[TABLE_TYPE]
         if table_type.lower() != ICEBERG:
@@ -254,8 +287,9 @@ class HiveCatalog(MetastoreCatalog):
         if prop_metadata_location := properties.get(METADATA_LOCATION):
             metadata_location = prop_metadata_location
         else:
-            raise NoSuchTableError(f"Table property {METADATA_LOCATION} is missing")
+            raise NoSuchPropertyException(f"Table property {METADATA_LOCATION} is missing")
 
+        io = self._load_file_io(location=metadata_location)
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
@@ -265,6 +299,38 @@ class HiveCatalog(MetastoreCatalog):
             io=self._load_file_io(metadata.properties, metadata_location),
             catalog=self,
         )
+
+    def _convert_iceberg_into_hive(self, table: Table) -> HiveTable:
+        identifier_tuple = self.identifier_to_tuple_without_catalog(table.identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        current_time_millis = int(time.time() * 1000)
+
+        return HiveTable(
+            dbName=database_name,
+            tableName=table_name,
+            owner=table.properties[OWNER] if table.properties and OWNER in table.properties else getpass.getuser(),
+            createTime=current_time_millis // 1000,
+            lastAccessTime=current_time_millis // 1000,
+            sd=_construct_hive_storage_descriptor(
+                table.schema(),
+                table.location(),
+                PropertyUtil.property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+            ),
+            tableType=EXTERNAL_TABLE,
+            parameters=_construct_parameters(table.metadata_location),
+        )
+
+    def _create_hive_table(self, open_client: Client, hive_table: HiveTable) -> None:
+        try:
+            open_client.create_table(hive_table)
+        except AlreadyExistsException as e:
+            raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
+
+    def _get_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
+        try:
+            return open_client.get_table(dbname=database_name, tbl_name=table_name)
+        except NoSuchObjectException as e:
+            raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
     def create_table(
         self,
@@ -292,45 +358,25 @@ class HiveCatalog(MetastoreCatalog):
             AlreadyExistsError: If a table with the name already exists.
             ValueError: If the identifier is invalid.
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
-
         properties = {**DEFAULT_PROPERTIES, **properties}
-        database_name, table_name = self.identifier_to_database_and_table(identifier)
-        current_time_millis = int(time.time() * 1000)
-
-        location = self._resolve_table_location(location, database_name, table_name)
-
-        metadata_location = self._get_metadata_location(location=location)
-        metadata = new_table_metadata(
-            location=location,
+        staged_table = self._create_staged_table(
+            identifier=identifier,
             schema=schema,
+            location=location,
             partition_spec=partition_spec,
             sort_order=sort_order,
             properties=properties,
         )
-        io = load_file_io({**self.properties, **properties}, location=location)
-        self._write_metadata(metadata, io, metadata_location)
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
 
-        tbl = HiveTable(
-            dbName=database_name,
-            tableName=table_name,
-            owner=properties[OWNER] if properties and OWNER in properties else getpass.getuser(),
-            createTime=current_time_millis // 1000,
-            lastAccessTime=current_time_millis // 1000,
-            sd=_construct_hive_storage_descriptor(
-                schema, location, PropertyUtil.property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT)
-            ),
-            tableType=EXTERNAL_TABLE,
-            parameters=_construct_parameters(metadata_location),
-        )
-        try:
-            with self._client as open_client:
-                open_client.create_table(tbl)
-                hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
-        except AlreadyExistsException as e:
-            raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+        self._write_metadata(staged_table.metadata, staged_table.io, staged_table.metadata_location)
+        tbl = self._convert_iceberg_into_hive(staged_table)
 
-        return self._convert_hive_into_iceberg(hive_table, io)
+        with self._client as open_client:
+            self._create_hive_table(open_client, tbl)
+            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+
+        return self._convert_hive_into_iceberg(hive_table)
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
@@ -356,6 +402,26 @@ class HiveCatalog(MetastoreCatalog):
 
         return lock_request
 
+    def _wait_for_lock(self, database_name: str, table_name: str, lockid: int, open_client: Client) -> LockResponse:
+        @retry(
+            retry=retry_if_exception_type(WaitingForLockException),
+            wait=wait_exponential(multiplier=2, min=self._lock_check_min_wait_time, max=self._lock_check_max_wait_time),
+            stop=stop_after_attempt(self._lock_check_retries),
+            reraise=True,
+        )
+        def _do_wait_for_lock() -> LockResponse:
+            response: LockResponse = open_client.check_lock(CheckLockRequest(lockid=lockid))
+            if response.state == LockState.ACQUIRED:
+                return response
+            elif response.state == LockState.WAITING:
+                msg = f"Wait on lock for {database_name}.{table_name}"
+                logger.warning(msg)
+                raise WaitingForLockException(msg)
+            else:
+                raise CommitFailedException(f"Failed to check lock for {database_name}.{table_name}, state: {response.state}")
+
+        return _do_wait_for_lock()
+
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
 
@@ -380,36 +446,57 @@ class HiveCatalog(MetastoreCatalog):
 
             try:
                 if lock.state != LockState.ACQUIRED:
-                    raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+                    if lock.state == LockState.WAITING:
+                        self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
+                    else:
+                        raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
 
-                hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
-                io = load_file_io({**self.properties, **hive_table.parameters}, hive_table.sd.location)
-                current_table = self._convert_hive_into_iceberg(hive_table, io)
+                hive_table: Optional[HiveTable]
+                current_table: Optional[Table]
+                try:
+                    hive_table = self._get_hive_table(open_client, database_name, table_name)
+                    current_table = self._convert_hive_into_iceberg(hive_table)
+                except NoSuchTableError:
+                    hive_table = None
+                    current_table = None
 
-                base_metadata = current_table.metadata
-                for requirement in table_request.requirements:
-                    requirement.validate(base_metadata)
-
-                updated_metadata = update_table_metadata(base_metadata, table_request.updates)
-                if updated_metadata == base_metadata:
+                updated_staged_table = self._update_and_stage_table(current_table, table_request)
+                if current_table and updated_staged_table.metadata == current_table.metadata:
                     # no changes, do nothing
-                    return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
-
-                # write new metadata
-                new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
-                new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
-                self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
-
-                hive_table.parameters = _construct_parameters(
-                    metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location
+                    return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+                self._write_metadata(
+                    metadata=updated_staged_table.metadata,
+                    io=updated_staged_table.io,
+                    metadata_path=updated_staged_table.metadata_location,
                 )
-                open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
-            except NoSuchObjectException as e:
-                raise NoSuchTableError(f"Table does not exist: {table_name}") from e
+
+                if hive_table and current_table:
+                    # Table exists, update it.
+                    hive_table.parameters = _construct_parameters(
+                        metadata_location=updated_staged_table.metadata_location,
+                        previous_metadata_location=current_table.metadata_location,
+                    )
+                    open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
+                else:
+                    # Table does not exist, create it.
+                    hive_table = self._convert_iceberg_into_hive(
+                        StagedTable(
+                            identifier=(self.name, database_name, table_name),
+                            metadata=updated_staged_table.metadata,
+                            metadata_location=updated_staged_table.metadata_location,
+                            io=updated_staged_table.io,
+                            catalog=self,
+                        )
+                    )
+                    self._create_hive_table(open_client, hive_table)
+            except WaitingForLockException as e:
+                raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}") from e
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
-        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and return the table instance.
@@ -428,14 +515,11 @@ class HiveCatalog(MetastoreCatalog):
         """
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
-        try:
-            with self._client as open_client:
-                hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
-        except NoSuchObjectException as e:
-            raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
-        io = load_file_io({**self.properties, **hive_table.parameters}, hive_table.sd.location)
-        return self._convert_hive_into_iceberg(hive_table, io)
+        with self._client as open_client:
+            hive_table = self._get_hive_table(open_client, database_name, table_name)
+
+        return self._convert_hive_into_iceberg(hive_table)
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.

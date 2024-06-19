@@ -58,9 +58,9 @@ fsspec = ">=2023.1.0,<2025.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<9.0.0"
-pyarrow = { version = ">=9.0.0,<16.0.0", optional = true }
+pyarrow = { version = ">=9.0.0,<17.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
-duckdb = { version = ">=0.5.0,<1.0.0", optional = true }
+duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = { version = ">=2.0.0,<2.10.0", optional = true }
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
@@ -82,10 +82,10 @@ fastavro = "1.9.4"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
-typing-extensions = "4.11.0"
+typing-extensions = "4.12.2"
 pytest-mock = "3.14.0"
 pyspark = "3.5.1"
-cython = "3.0.8"
+cython = "3.0.10"
 deptry = ">=0.14,<0.17"
 docutils = "!=0.21"
 

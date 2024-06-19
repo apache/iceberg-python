@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import math
+import time
 import uuid
 from urllib.parse import urlparse
 
@@ -48,8 +49,9 @@ from pyiceberg.types import (
     StringType,
     TimestampType,
 )
+from pyiceberg.utils.concurrent import ExecutorFactory
 
-DEFAULT_PROPERTIES = {'write.parquet.compression-codec': 'zstd'}
+DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
 
 TABLE_NAME = ("default", "t1")
@@ -72,7 +74,7 @@ def create_table(catalog: Catalog) -> Table:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_properties(catalog: Catalog) -> None:
     table = create_table(catalog)
 
@@ -102,7 +104,7 @@ def test_table_properties(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_properties_dict(catalog: Catalog) -> None:
     table = create_table(catalog)
 
@@ -132,7 +134,7 @@ def test_table_properties_dict(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_properties_error(catalog: Catalog) -> None:
     table = create_table(catalog)
     properties = {"abc": "def"}
@@ -142,7 +144,7 @@ def test_table_properties_error(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_nan(catalog: Catalog) -> None:
     table_test_null_nan = catalog.load_table("default.test_null_nan")
     arrow_table = table_test_null_nan.scan(row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")).to_arrow()
@@ -152,7 +154,7 @@ def test_pyarrow_nan(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_nan_rewritten(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     arrow_table = table_test_null_nan_rewritten.scan(
@@ -164,7 +166,7 @@ def test_pyarrow_nan_rewritten(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 @pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
 def test_pyarrow_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan = catalog.load_table("default.test_null_nan")
@@ -173,7 +175,7 @@ def test_pyarrow_not_nan_count(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_duckdb_nan(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     con = table_test_null_nan_rewritten.scan().to_duckdb("table_test_null_nan")
@@ -183,7 +185,7 @@ def test_duckdb_nan(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_limit(catalog: Catalog) -> None:
     table_test_limit = catalog.load_table("default.test_limit")
     limited_result = table_test_limit.scan(selected_fields=("idx",), limit=1).to_arrow()
@@ -198,7 +200,7 @@ def test_pyarrow_limit(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
@@ -207,7 +209,7 @@ def test_daft_nan(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
@@ -220,7 +222,7 @@ def test_daft_nan_rewritten(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_ray_nan(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan().to_ray()
@@ -229,7 +231,7 @@ def test_ray_nan(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_ray_nan_rewritten(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     ray_dataset = table_test_null_nan_rewritten.scan(
@@ -241,7 +243,7 @@ def test_ray_nan_rewritten(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 @pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
 def test_ray_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
@@ -250,7 +252,7 @@ def test_ray_not_nan_count(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_ray_all_types(catalog: Catalog) -> None:
     table_test_all_types = catalog.load_table("default.test_all_types")
     ray_dataset = table_test_all_types.scan().to_ray()
@@ -260,7 +262,7 @@ def test_ray_all_types(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_to_iceberg_all_types(catalog: Catalog) -> None:
     table_test_all_types = catalog.load_table("default.test_all_types")
     fs = S3FileSystem(
@@ -279,7 +281,7 @@ def test_pyarrow_to_iceberg_all_types(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_deletes(catalog: Catalog) -> None:
     # number, letter
     #  (1, 'a'),
@@ -316,7 +318,7 @@ def test_pyarrow_deletes(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_pyarrow_deletes_double(catalog: Catalog) -> None:
     # number, letter
     #  (1, 'a'),
@@ -353,7 +355,7 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_partitioned_tables(catalog: Catalog) -> None:
     for table_name, predicate in [
         ("test_partitioned_by_identity", "ts >= '2023-03-05T00:00:00+00:00'"),
@@ -370,7 +372,7 @@ def test_partitioned_tables(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_unpartitioned_uuid_table(catalog: Catalog) -> None:
     unpartitioned_uuid = catalog.load_table("default.test_uuid_and_fixed_unpartitioned")
     arrow_table_eq = unpartitioned_uuid.scan(row_filter="uuid_col == '102cb62f-e6f8-4eb0-9973-d9b012ff0967'").to_arrow()
@@ -387,7 +389,7 @@ def test_unpartitioned_uuid_table(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_unpartitioned_fixed_table(catalog: Catalog) -> None:
     fixed_table = catalog.load_table("default.test_uuid_and_fixed_unpartitioned")
     arrow_table_eq = fixed_table.scan(row_filter=EqualTo("fixed_col", b"1234567890123456789012345")).to_arrow()
@@ -406,7 +408,7 @@ def test_unpartitioned_fixed_table(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_scan_tag(catalog: Catalog) -> None:
     test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
     arrow_table = test_positional_mor_deletes.scan().use_ref("tag_12").to_arrow()
@@ -414,7 +416,7 @@ def test_scan_tag(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_scan_branch(catalog: Catalog) -> None:
     test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
     arrow_table = test_positional_mor_deletes.scan().use_ref("without_5").to_arrow()
@@ -422,21 +424,21 @@ def test_scan_branch(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_filter_on_new_column(catalog: Catalog) -> None:
     test_table_add_column = catalog.load_table("default.test_table_add_column")
     arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()
-    assert arrow_table["b"].to_pylist() == ['2']
+    assert arrow_table["b"].to_pylist() == ["2"]
 
     arrow_table = test_table_add_column.scan(row_filter="b is not null").to_arrow()
-    assert arrow_table["b"].to_pylist() == ['2']
+    assert arrow_table["b"].to_pylist() == ["2"]
 
     arrow_table = test_table_add_column.scan(row_filter="b is null").to_arrow()
     assert arrow_table["b"].to_pylist() == [None]
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_upgrade_table_version(catalog: Catalog) -> None:
     table_test_table_version = catalog.load_table("default.test_table_version")
 
@@ -464,7 +466,7 @@ def test_upgrade_table_version(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_sanitize_character(catalog: Catalog) -> None:
     table_test_table_sanitized_character = catalog.load_table("default.test_table_sanitized_character")
     arrow_table = table_test_table_sanitized_character.scan().to_arrow()
@@ -474,7 +476,7 @@ def test_sanitize_character(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_null_list_and_map(catalog: Catalog) -> None:
     table_test_empty_list_and_map = catalog.load_table("default.test_table_empty_list_and_map")
     arrow_table = table_test_empty_list_and_map.scan().to_arrow()
@@ -483,7 +485,7 @@ def test_null_list_and_map(catalog: Catalog) -> None:
     # This should be:
     # assert arrow_table["col_list_with_struct"].to_pylist() == [None, [{'test': 1}]]
     # Once https://github.com/apache/arrow/issues/38809 has been fixed
-    assert arrow_table["col_list_with_struct"].to_pylist() == [[], [{'test': 1}]]
+    assert arrow_table["col_list_with_struct"].to_pylist() == [[], [{"test": 1}]]
 
 
 @pytest.mark.integration
@@ -506,3 +508,32 @@ def test_hive_locking(session_catalog_hive: HiveCatalog) -> None:
                 table.transaction().set_properties(lock="fail").commit_transaction()
         finally:
             open_client.unlock(UnlockRequest(lock.lockid))
+
+
+@pytest.mark.integration
+def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
+    table = create_table(session_catalog_hive)
+    database_name: str
+    table_name: str
+    _, database_name, table_name = table.identifier
+    session_catalog_hive._lock_check_min_wait_time = 0.1
+    session_catalog_hive._lock_check_max_wait_time = 0.5
+    session_catalog_hive._lock_check_retries = 5
+
+    hive_client: _HiveClient = _HiveClient(session_catalog_hive.properties["uri"])
+
+    executor = ExecutorFactory.get_or_create()
+
+    with hive_client as open_client:
+
+        def another_task() -> None:
+            lock: LockResponse = open_client.lock(session_catalog_hive._create_lock_request(database_name, table_name))
+            time.sleep(1)
+            open_client.unlock(UnlockRequest(lock.lockid))
+
+        # test transaction commit with concurrent locking
+        executor.submit(another_task)
+        time.sleep(0.5)
+
+        table.transaction().set_properties(lock="xxx").commit_transaction()
+        assert table.properties.get("lock") == "xxx"

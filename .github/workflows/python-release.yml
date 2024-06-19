@@ -59,7 +59,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.17.0
+        uses: pypa/cibuildwheel@v2.19.1
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"

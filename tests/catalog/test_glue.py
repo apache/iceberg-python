@@ -138,6 +138,22 @@ def test_create_table_with_given_location(
 
 
 @mock_aws
+def test_create_table_removes_trailing_slash_in_location(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
+    assert table.identifier == (catalog_name,) + identifier
+    assert table.location() == location
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+
+@mock_aws
 def test_create_table_with_pyarrow_schema(
     _bucket_initialize: None,
     moto_endpoint_url: str,
@@ -699,7 +715,7 @@ def test_commit_table_properties(
 
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {'Description': 'test_description', "test_a": "test_aa", "test_c": "test_c"}
+    assert updated_table_metadata.properties == {"Description": "test_description", "test_a": "test_aa", "test_c": "test_c"}
 
     table_info = _glue.get_table(
         DatabaseName=database_name,
@@ -817,3 +833,32 @@ def test_create_table_transaction(
     assert table.spec().fields_by_source_id(2)[0].name == "bar"
     assert table.spec().fields_by_source_id(2)[0].field_id == 1001
     assert table.spec().fields_by_source_id(2)[0].transform == IdentityTransform()
+
+
+@mock_aws
+def test_table_exists(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
+    # Act and Assert for an existing table
+    assert test_catalog.table_exists(identifier) is True
+    # Act and Assert for a non-existing table
+    assert test_catalog.table_exists(("non", "exist")) is False
+
+
+@mock_aws
+def test_register_table_with_given_location(
+    _bucket_initialize: None, moto_endpoint_url: str, metadata_location: str, database_name: str, table_name: str
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    location = metadata_location
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
+    table = test_catalog.register_table(identifier, location)
+    assert table.identifier == (catalog_name,) + identifier
+    assert test_catalog.table_exists(identifier) is True

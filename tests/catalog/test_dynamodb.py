@@ -118,6 +118,21 @@ def test_create_table_with_given_location(
 
 
 @mock_aws
+def test_create_table_removes_trailing_slash_in_location(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
+    assert table.identifier == (catalog_name,) + identifier
+    assert table.location() == location
+    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
+
+
+@mock_aws
 def test_create_table_with_no_location(
     _bucket_initialize: None, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
@@ -554,11 +569,25 @@ def test_passing_provided_profile() -> None:
     }
     props = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
     props.update(session_props)  # type: ignore
-    with mock.patch('boto3.Session', return_value=mock.Mock()) as mock_session:
+    with mock.patch("boto3.Session", return_value=mock.Mock()) as mock_session:
         mock_client = mock.Mock()
         mock_session.return_value.client.return_value = mock_client
-        mock_client.describe_table.return_value = {'Table': {'TableStatus': 'ACTIVE'}}
+        mock_client.describe_table.return_value = {"Table": {"TableStatus": "ACTIVE"}}
         test_catalog = DynamoDbCatalog(catalog_name, **props)
         assert test_catalog.dynamodb is mock_client
         mock_session.assert_called_with(**session_props)
         assert test_catalog.dynamodb is mock_session().client()
+
+
+@mock_aws
+def test_table_exists(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    test_catalog.create_table(identifier, table_schema_nested)
+    # Act and Assert for an existing table
+    assert test_catalog.table_exists(identifier) is True
+    # Act and Assert for an non-existing  table
+    assert test_catalog.table_exists(("non", "exist")) is False

@@ -17,7 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 from datetime import date
-from typing import Optional
+from typing import Iterator, Optional
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -65,10 +65,10 @@ ARROW_TABLE = pa.Table.from_pylist(
 )
 
 ARROW_SCHEMA_WITH_IDS = pa.schema([
-    pa.field('foo', pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
-    pa.field('bar', pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
-    pa.field('baz', pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
-    pa.field('qux', pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
+    pa.field("foo", pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+    pa.field("bar", pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+    pa.field("baz", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
+    pa.field("qux", pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
 ])
 
 
@@ -122,8 +122,13 @@ def _create_table(
     return tbl
 
 
+@pytest.fixture(name="format_version", params=[pytest.param(1, id="format_version=1"), pytest.param(2, id="format_version=2")])
+def format_version_fixure(request: pytest.FixtureRequest) -> Iterator[int]:
+    """Fixture to run tests with different table format versions."""
+    yield request.param
+
+
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.unpartitioned_table_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -163,7 +168,6 @@ def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: 
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_unpartitioned_table_raises_file_not_found(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
@@ -184,7 +188,6 @@ def test_add_files_to_unpartitioned_table_raises_file_not_found(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_unpartitioned_table_raises_has_field_ids(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
@@ -205,7 +208,6 @@ def test_add_files_to_unpartitioned_table_raises_has_field_ids(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_unpartitioned_table_with_schema_updates(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
@@ -263,7 +265,6 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.partitioned_table_v{format_version}"
 
@@ -335,7 +336,6 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.partitioned_table_bucket_fails_v{format_version}"
 
@@ -378,7 +378,6 @@ def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, sessio
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
 def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
@@ -424,3 +423,28 @@ def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
         "Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: baz. lower_value=123, upper_value=124"
         in str(exc_info.value)
     )
+
+
+@pytest.mark.integration
+def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.unpartitioned_table_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths, snapshot_properties={"snapshot_prop_a": "test_prop_a"})
+
+    # NameMapping must have been set to enable reads
+    assert tbl.name_mapping() is not None
+
+    summary = spark.sql(f"SELECT * FROM {identifier}.snapshots;").collect()[0].summary
+
+    assert "snapshot_prop_a" in summary
+    assert summary["snapshot_prop_a"] == "test_prop_a"
