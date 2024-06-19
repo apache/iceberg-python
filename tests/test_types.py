@@ -619,3 +619,12 @@ def test_types_singleton() -> None:
     assert id(BooleanType()) == id(BooleanType())
     assert id(FixedType(22)) == id(FixedType(22))
     assert id(FixedType(19)) != id(FixedType(25))
+
+
+def test_types_singleton_model_copy() -> None:
+    struct_type = StructType(
+        NestedField(field_id=1, name="fixed_8", field_type=FixedType(8), required=False),
+        NestedField(field_id=2, name="fixed_16", field_type=FixedType(16), required=False),
+    )
+    assert struct_type.model_copy() == struct_type
+    assert struct_type.model_copy(deep=True) == struct_type
