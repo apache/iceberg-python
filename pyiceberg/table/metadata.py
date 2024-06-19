@@ -292,13 +292,6 @@ class TableMetadataCommonFields(IcebergBaseModel):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
-    def _snapshot_as_of_timestamp_ms(self, timestamp_ms: int) -> Optional[Snapshot]:
-        """Return the snapshot that was current at the given timestamp or null if no such snapshot exists."""
-        for entry in reversed(self.snapshot_log):
-            if entry.timestamp_ms <= timestamp_ms:
-                return self.snapshot_by_id(entry.snapshot_id)
-        return None
-
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
         if self.current_snapshot_id is not None:
