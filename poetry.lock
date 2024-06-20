@@ -1343,17 +1343,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.27"
+version = "0.2.28"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.2.27-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:13f75cd4fa5037760757743fbd04fdcdf5c8294dd7975cc369081f9a2c53e49a"},
-    {file = "getdaft-0.2.27-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:2d31c0ecb211e8801c158702c53659be13db82c1656aac67cdaa4f8dad6e29e9"},
-    {file = "getdaft-0.2.27-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f71bd99964105dc8464fe568c53464f6a44db116bc743cdbc7a5cc83fb126318"},
-    {file = "getdaft-0.2.27-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:de90e30ebd727423afe32cd2333a7bfa4fceff6a5cc69e3af3839af37f0afdd7"},
-    {file = "getdaft-0.2.27-cp38-abi3-win_amd64.whl", hash = "sha256:9eba98926f7fac3e15d63a82a2b510afae454e6e6e509e2026aeebe3a3f74b3d"},
-    {file = "getdaft-0.2.27.tar.gz", hash = "sha256:fcb62ddc260c7a8ac8cfaada87d5dd38b46886b02d9b8fe57a27d2aa176325d3"},
+    {file = "getdaft-0.2.28-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:052632bf156dfabc61b00bc3e055f11c045ed1011818ed398e82bee549346510"},
+    {file = "getdaft-0.2.28-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:6d120504f05dadac6fa0c170558f2635e5654d1e49ffcd95c20952847427e069"},
+    {file = "getdaft-0.2.28-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:477d77f695129843d1bdfe3896d17cd5af43024e06c1956077f6afe2069e4dcf"},
+    {file = "getdaft-0.2.28-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:da7be6b900798061090ea99f474ad1d128fb493f958c17854248eacfad68a969"},
+    {file = "getdaft-0.2.28-cp38-abi3-win_amd64.whl", hash = "sha256:679a9d26f76f695f4fa3c51c732c02f511eeb5a832b305bbd237c2e62333f815"},
+    {file = "getdaft-0.2.28.tar.gz", hash = "sha256:1389ef47caa61f0daf3217b4bd5042b50e854bfb1315b104341110c09a6c072f"},
 ]
 
 [package.dependencies]
@@ -1363,7 +1363,7 @@ tqdm = "*"
 typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.10\""}
 
 [package.extras]
-all = ["getdaft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,sql]"]
+all = ["getdaft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,sql,unity]"]
 aws = ["boto3"]
 deltalake = ["deltalake"]
 hudi = ["pyarrow (>=8.0.0)"]
@@ -1373,6 +1373,7 @@ numpy = ["numpy"]
 pandas = ["pandas"]
 ray = ["packaging", "ray[client,data] (>=2.0.0)", "ray[client,data] (>=2.10.0)"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
+unity = ["unitycatalog"]
 
 [[package]]
 name = "google-api-core"
