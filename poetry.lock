@@ -3304,13 +3304,13 @@ six = ">=1.5"
 
 [[package]]
 name = "python-snappy"
-version = "0.7.1"
+version = "0.7.2"
 description = "Python library for the snappy compression library from Google"
 optional = true
 python-versions = "*"
 files = [
-    {file = "python-snappy-0.7.1.tar.gz", hash = "sha256:1bc29d36211d44bb9f04f3d7ccfbaeaebbc2f62b6d40f4fc4edd1fb16bc52c13"},
-    {file = "python_snappy-0.7.1-py3-none-any.whl", hash = "sha256:7c9111be1ae1dcbf4ce32b752366d4a5d4f07898d517691c4003d41e04b03488"},
+    {file = "python_snappy-0.7.2-py3-none-any.whl", hash = "sha256:b4b2c39142064925d5a554672a09de4188fc4f2b2494a2ecb35042930e129444"},
+    {file = "python_snappy-0.7.2.tar.gz", hash = "sha256:04bf182f9d9f67b7a846dae2f1df36180ceeee8d3380e4b6799deff5272c4978"},
 ]
 
 [package.dependencies]
