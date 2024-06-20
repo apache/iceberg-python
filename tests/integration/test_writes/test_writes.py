@@ -916,7 +916,7 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.table_append_subset_of_schema"
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
@@ -925,3 +925,47 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
     tbl.append(arrow_table_without_some_columns)
     # overwrite and then append should produce twice the data
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_all_timestamp_precision(session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_all_timestamp_precision"
+    arrow_table_schema_with_all_timestamp_precisions = pa.schema([
+        ("timestamp_s", pa.timestamp(unit="s")),
+        ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
+        ("timestamp_ms", pa.timestamp(unit="ms")),
+        ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
+        ("timestamp_us", pa.timestamp(unit="us")),
+        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ns", pa.timestamp(unit="ns")),
+        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+    ])
+    TEST_DATA_WITH_NULL = {
+        "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_s": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_ms": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_us": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_ns": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_ns": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+    }
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_schema_with_all_timestamp_precisions])
+    test_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
+    tbl.overwrite(test_arrow_table)
