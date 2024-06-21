@@ -1066,14 +1066,7 @@ def _task_to_table(
     batches = _task_to_record_batches(
         fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
     )
-    # https://github.com/apache/iceberg-python/issues/791
-    # schema_to_pyarrow does not always match the physical_schema of the fragment
-    # Hence we only use it to infer the pyarrow schema when the table is guaranteed to be empty
-    list_of_batches = list(batches)
-    if len(list_of_batches) > 0 and len(list_of_batches[0]) > 0:
-        return pa.Table.from_batches(list_of_batches)
-    else:
-        return pa.Table.from_batches(list_of_batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
+    return pa.Table.from_batches(batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1193,7 +1186,7 @@ def project_batches(
     projected_schema: Schema,
     case_sensitive: bool = True,
     limit: Optional[int] = None,
-) -> Iterator[pa.ReordBatch]:
+) -> Iterator[pa.RecordBatch]:
     """Resolve the right columns based on the identifier.
 
     Args:
@@ -1373,6 +1366,8 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
                 return partner_struct.field(name)
             elif isinstance(partner_struct, pa.RecordBatch):
                 return partner_struct.column(name)
+            else:
+                raise ValueError(f"Cannot find {name} in expected partner_struct type {type(partner_struct)}")
 
         return None
 
