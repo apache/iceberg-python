@@ -21,6 +21,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
@@ -172,6 +173,47 @@ def test_pyarrow_not_nan_count(catalog: Catalog) -> None:
     table_test_null_nan = catalog.load_table("default.test_null_nan")
     not_nan = table_test_null_nan.scan(row_filter=NotNaN("col_numeric"), selected_fields=("idx",)).to_arrow()
     assert len(not_nan) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_nan(catalog: Catalog) -> None:
+    table_test_null_nan = catalog.load_table("default.test_null_nan")
+    arrow_batch_reader = table_test_null_nan.scan(
+        row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
+    ).to_arrow_batch_reader()
+    assert isinstance(arrow_batch_reader, pa.RecordBatchReader)
+    arrow_table = arrow_batch_reader.read_all()
+    assert len(arrow_table) == 1
+    assert arrow_table["idx"][0].as_py() == 1
+    assert math.isnan(arrow_table["col_numeric"][0].as_py())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_nan_rewritten(catalog: Catalog) -> None:
+    table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
+    arrow_batch_reader = table_test_null_nan_rewritten.scan(
+        row_filter=IsNaN("col_numeric"), selected_fields=("idx", "col_numeric")
+    ).to_arrow_batch_reader()
+    assert isinstance(arrow_batch_reader, pa.RecordBatchReader)
+    arrow_table = arrow_batch_reader.read_all()
+    assert len(arrow_table) == 1
+    assert arrow_table["idx"][0].as_py() == 1
+    assert math.isnan(arrow_table["col_numeric"][0].as_py())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+@pytest.mark.skip(reason="Fixing issues with NaN's: https://github.com/apache/arrow/issues/34162")
+def test_pyarrow_batches_not_nan_count(catalog: Catalog) -> None:
+    table_test_null_nan = catalog.load_table("default.test_null_nan")
+    arrow_batch_reader = table_test_null_nan.scan(
+        row_filter=NotNaN("col_numeric"), selected_fields=("idx",)
+    ).to_arrow_batch_reader()
+    assert isinstance(arrow_batch_reader, pa.RecordBatchReader)
+    arrow_table = arrow_batch_reader.read_all()
+    assert len(arrow_table) == 2
 
 
 @pytest.mark.integration
@@ -351,6 +393,90 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
 
     # Testing the slicing of indices
     arrow_table = test_positional_mor_double_deletes.scan(limit=8).to_arrow()
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
+    # number, letter
+    #  (1, 'a'),
+    #  (2, 'b'),
+    #  (3, 'c'),
+    #  (4, 'd'),
+    #  (5, 'e'),
+    #  (6, 'f'),
+    #  (7, 'g'),
+    #  (8, 'h'),
+    #  (9, 'i'), <- deleted
+    #  (10, 'j'),
+    #  (11, 'k'),
+    #  (12, 'l')
+    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+    arrow_table = test_positional_mor_deletes.scan().to_arrow_batch_reader().read_all()
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
+
+    # Checking the filter
+    arrow_table = (
+        test_positional_mor_deletes.scan(row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k")))
+        .to_arrow_batch_reader()
+        .read_all()
+    )
+    assert arrow_table["number"].to_pylist() == [5, 6, 7, 8, 10]
+
+    # Testing the combination of a filter and a limit
+    arrow_table = (
+        test_positional_mor_deletes.scan(row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k")), limit=1)
+        .to_arrow_batch_reader()
+        .read_all()
+    )
+    assert arrow_table["number"].to_pylist() == [5]
+
+    # Testing the slicing of indices
+    arrow_table = test_positional_mor_deletes.scan(limit=3).to_arrow_batch_reader().read_all()
+    assert arrow_table["number"].to_pylist() == [1, 2, 3]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_batches_deletes_double(catalog: Catalog) -> None:
+    # number, letter
+    #  (1, 'a'),
+    #  (2, 'b'),
+    #  (3, 'c'),
+    #  (4, 'd'),
+    #  (5, 'e'),
+    #  (6, 'f'), <- second delete
+    #  (7, 'g'),
+    #  (8, 'h'),
+    #  (9, 'i'), <- first delete
+    #  (10, 'j'),
+    #  (11, 'k'),
+    #  (12, 'l')
+    test_positional_mor_double_deletes = catalog.load_table("default.test_positional_mor_double_deletes")
+    arrow_table = test_positional_mor_double_deletes.scan().to_arrow_batch_reader().read_all()
+    assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
+
+    # Checking the filter
+    arrow_table = (
+        test_positional_mor_double_deletes.scan(row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k")))
+        .to_arrow_batch_reader()
+        .read_all()
+    )
+    assert arrow_table["number"].to_pylist() == [5, 7, 8, 10]
+
+    # Testing the combination of a filter and a limit
+    arrow_table = (
+        test_positional_mor_double_deletes.scan(
+            row_filter=And(GreaterThanOrEqual("letter", "e"), LessThan("letter", "k")), limit=1
+        )
+        .to_arrow_batch_reader()
+        .read_all()
+    )
+    assert arrow_table["number"].to_pylist() == [5]
+
+    # Testing the slicing of indices
+    arrow_table = test_positional_mor_double_deletes.scan(limit=8).to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10]
 
 

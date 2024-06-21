@@ -146,6 +146,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -377,6 +378,88 @@ class Transaction:
         updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
 
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
+    )
+    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
+        """Add a new snapshot to the table.
+
+        Returns:
+            The transaction with the add-snapshot staged.
+        """
+        updates = (AddSnapshotUpdate(snapshot=snapshot),)
+
+        return self._apply(updates, ())
+
+    @deprecated(
+        deprecated_in="0.7.0",
+        removed_in="0.8.0",
+        help_message="Please use one of the functions in ManageSnapshots instead",
+    )
+    def set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> Transaction:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The transaction with the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
+        return self._apply(updates, requirements)
+
+    def _set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> UpdatesAndRequirements:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The updates and requirements for the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
+                ref=ref_name,
+            ),
+        )
+
+        return updates, requirements
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -418,10 +501,11 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        supported_transforms = {IdentityTransform}
-        if not all(type(field.transform) in supported_transforms for field in self.table_metadata.spec().fields):
+        if unsupported_partitions := [
+            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
+        ]:
             raise ValueError(
-                f"All transforms are not supported, expected: {supported_transforms}, but get: {[str(field) for field in self.table_metadata.spec().fields if field.transform not in supported_transforms]}."
+                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
@@ -606,6 +690,7 @@ class Transaction:
             The table with the updates applied.
         """
         if len(self._updates) > 0:
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
             self._table._do_commit(  # pylint: disable=W0212
                 updates=self._updates,
                 requirements=self._requirements,
@@ -660,7 +745,11 @@ class CreateTableTransaction(Transaction):
             The table with the updates applied.
         """
         self._requirements = (AssertCreate(),)
-        return super().commit_transaction()
+        self._table._do_commit(  # pylint: disable=W0212
+            updates=self._updates,
+            requirements=self._requirements,
+        )
+        return self._table
 
 
 class AssignUUIDUpdate(IcebergBaseModel):
@@ -1400,9 +1489,36 @@ class Table:
             return self.snapshot_by_id(ref.snapshot_id)
         return None
 
+    def snapshot_as_of_timestamp(self, timestamp_ms: int, inclusive: bool = True) -> Optional[Snapshot]:
+        """Get the snapshot that was current as of or right before the given timestamp, or None if there is no matching snapshot.
+
+        Args:
+            timestamp_ms: Find snapshot that was current at/before this timestamp
+            inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
+        """
+        for log_entry in reversed(self.history()):
+            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
+                return self.snapshot_by_id(log_entry.snapshot_id)
+        return None
+
     def history(self) -> List[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
         return self.metadata.snapshot_log
+
+    def manage_snapshots(self) -> ManageSnapshots:
+        """
+        Shorthand to run snapshot management operations like create branch, create tag, etc.
+
+        Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+        Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example,
+
+        with table.manage_snapshots() as ms:
+           ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+        """
+        return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -1877,6 +1993,24 @@ class DataScan(TableScan):
             limit=self.limit,
         )
 
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
+
+        return pa.RecordBatchReader.from_batches(
+            schema_to_pyarrow(self.projection()),
+            project_batches(
+                self.plan_files(),
+                self.table_metadata,
+                self.io,
+                self.row_filter,
+                self.projection(),
+                case_sensitive=self.case_sensitive,
+                limit=self.limit,
+            ),
+        )
+
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         return self.to_arrow().to_pandas(**kwargs)
 
@@ -1930,6 +2064,84 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def __enter__(self) -> U:
         """Update the table."""
         return self  # type: ignore
+
+
+class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
+    """
+    Run snapshot management operations using APIs.
+
+    APIs include create branch, create tag, etc.
+
+    Use table.manage_snapshots().<operation>().commit() to run a specific operation.
+    Use table.manage_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+    Pending changes are applied on commit.
+
+    We can also use context managers to make more changes. For example,
+
+    with table.manage_snapshots() as ms:
+       ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
+    """
+
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """Apply the pending changes and commit."""
+        return self._updates, self._requirements
+
+    def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
+        """
+        Create a new tag pointing to the given snapshot id.
+
+        Args:
+            snapshot_id (int): snapshot id of the existing snapshot to tag
+            tag_name (str): name of the tag
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+
+        Returns:
+            This for method chaining
+        """
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=tag_name,
+            type="tag",
+            max_ref_age_ms=max_ref_age_ms,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
+
+    def create_branch(
+        self,
+        snapshot_id: int,
+        branch_name: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> ManageSnapshots:
+        """
+        Create a new branch pointing to the given snapshot id.
+
+        Args:
+            snapshot_id (int): snapshot id of existing snapshot at which the branch is created.
+            branch_name (str): name of the new branch
+            max_ref_age_ms (Optional[int]): max ref age in milliseconds
+            max_snapshot_age_ms (Optional[int]): max age of snapshots to keep in milliseconds
+            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep in milliseconds
+        Returns:
+            This for method chaining
+        """
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=branch_name,
+            type="branch",
+            max_ref_age_ms=max_ref_age_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
@@ -2996,10 +3208,7 @@ class _MergingSnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                     snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
                 ),
             ),
-            (
-                AssertTableUUID(uuid=self._transaction.table_metadata.table_uuid),
-                AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),
-            ),
+            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
         )
 
 
@@ -3922,33 +4131,6 @@ class TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _get_partition_sort_order(partition_columns: list[str], reverse: bool = False) -> dict[str, Any]:
-    order = "ascending" if not reverse else "descending"
-    null_placement = "at_start" if reverse else "at_end"
-    return {"sort_keys": [(column_name, order) for column_name in partition_columns], "null_placement": null_placement}
-
-
-def group_by_partition_scheme(arrow_table: pa.Table, partition_columns: list[str]) -> pa.Table:
-    """Given a table, sort it by current partition scheme."""
-    # only works for identity for now
-    sort_options = _get_partition_sort_order(partition_columns, reverse=False)
-    sorted_arrow_table = arrow_table.sort_by(sorting=sort_options["sort_keys"], null_placement=sort_options["null_placement"])
-    return sorted_arrow_table
-
-
-def get_partition_columns(
-    spec: PartitionSpec,
-    schema: Schema,
-) -> list[str]:
-    partition_cols = []
-    for partition_field in spec.fields:
-        column_name = schema.find_column_name(partition_field.source_id)
-        if not column_name:
-            raise ValueError(f"{partition_field=} could not be found in {schema}.")
-        partition_cols.append(column_name)
-    return partition_cols
-
-
 def _get_table_partitions(
     arrow_table: pa.Table,
     partition_spec: PartitionSpec,
@@ -4003,13 +4185,30 @@ def determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Ta
     """
     import pyarrow as pa
 
-    partition_columns = get_partition_columns(spec=spec, schema=schema)
-    arrow_table = group_by_partition_scheme(arrow_table, partition_columns)
+    partition_columns: List[Tuple[PartitionField, NestedField]] = [
+        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
+    ]
+    partition_values_table = pa.table({
+        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        for partition, field in partition_columns
+    })
 
-    reversing_sort_order_options = _get_partition_sort_order(partition_columns, reverse=True)
-    reversed_indices = pa.compute.sort_indices(arrow_table, **reversing_sort_order_options).to_pylist()
+    # Sort by partitions
+    sort_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
+        null_placement="at_end",
+    ).to_pylist()
+    arrow_table = arrow_table.take(sort_indices)
 
-    slice_instructions: list[dict[str, Any]] = []
+    # Get slice_instructions to group by partitions
+    partition_values_table = partition_values_table.take(sort_indices)
+    reversed_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
+        null_placement="at_start",
+    ).to_pylist()
+    slice_instructions: List[Dict[str, Any]] = []
     last = len(reversed_indices)
     reversed_indices_size = len(reversed_indices)
     ptr = 0
@@ -4020,6 +4219,6 @@ def determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Ta
         last = reversed_indices[ptr]
         ptr = ptr + group_size
 
-    table_partitions: list[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+    table_partitions: List[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
 
     return table_partitions

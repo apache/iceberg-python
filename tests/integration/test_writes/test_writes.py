@@ -34,6 +34,7 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.hive import HiveCatalog
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
@@ -356,6 +357,60 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_with_small_and_large_types_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_with_small_and_large_types_spark_reads"
+    TEST_DATA = {
+        "foo": ["a", None, "z"],
+        "id": [1, 2, 3],
+        "name": ["AB", "CD", "EF"],
+        "address": [
+            {"street": "123", "city": "SFO", "zip": 12345, "bar": "a"},
+            {"street": "456", "city": "SW", "zip": 67890, "bar": "b"},
+            {"street": "789", "city": "Random", "zip": 10112, "bar": "c"},
+        ],
+    }
+    pa_schema = pa.schema([
+        pa.field("foo", pa.large_string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.string()),
+        pa.field(
+            "address",
+            pa.struct([
+                pa.field("street", pa.string()),
+                pa.field("city", pa.string()),
+                pa.field("zip", pa.int32()),
+                pa.field("bar", pa.large_string()),
+            ]),
+        ),
+    ])
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+    arrow_table_on_read = tbl.scan().to_arrow()
+    assert arrow_table_on_read.schema == pa.schema([
+        pa.field("foo", pa.large_string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.large_string()),
+        pa.field(
+            "address",
+            pa.struct([
+                pa.field("street", pa.large_string()),
+                pa.field("city", pa.large_string()),
+                pa.field("zip", pa.int32()),
+                pa.field("bar", pa.large_string()),
+            ]),
+        ),
+    ])
+
+
+@pytest.mark.integration
 def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.write_bin_pack_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
@@ -662,17 +717,18 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [2])
-def test_create_table_transaction(session_catalog: Catalog, format_version: int) -> None:
-    if format_version == 1:
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
+    if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
             "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
         )
 
-    identifier = f"default.arrow_create_table_transaction{format_version}"
+    identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
 
     try:
-        session_catalog.drop_table(identifier=identifier)
+        catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
@@ -694,7 +750,7 @@ def test_create_table_transaction(session_catalog: Catalog, format_version: int)
         ]),
     )
 
-    with session_catalog.create_table_transaction(
+    with catalog.create_table_transaction(
         identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)}
     ) as txn:
         with txn.update_snapshot().fast_append() as snapshot_update:
@@ -710,7 +766,7 @@ def test_create_table_transaction(session_catalog: Catalog, format_version: int)
             ):
                 snapshot_update.append_data_file(data_file)
 
-    tbl = session_catalog.load_table(identifier=identifier)
+    tbl = catalog.load_table(identifier=identifier)
     assert tbl.format_version == format_version
     assert len(tbl.scan().to_arrow()) == 6
 

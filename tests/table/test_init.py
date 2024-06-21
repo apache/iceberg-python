@@ -76,6 +76,7 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
     Summary,
+    ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -201,6 +202,57 @@ def test_snapshot_by_id(table_v2: Table) -> None:
         manifest_list="s3://a/b/2.avro",
         summary=Summary(operation=Operation.APPEND),
         schema_id=1,
+    )
+
+
+def test_snapshot_by_timestamp(table_v2: Table) -> None:
+    assert table_v2.snapshot_as_of_timestamp(1515100955770) == Snapshot(
+        snapshot_id=3051729675574597004,
+        parent_snapshot_id=None,
+        sequence_number=0,
+        timestamp_ms=1515100955770,
+        manifest_list="s3://a/b/1.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=None,
+    )
+    assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
+
+
+def test_ancestors_of(table_v2: Table) -> None:
+    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
+        Snapshot(
+            snapshot_id=3055729675574597004,
+            parent_snapshot_id=3051729675574597004,
+            sequence_number=1,
+            timestamp_ms=1555100955770,
+            manifest_list="s3://a/b/2.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=1,
+        ),
+        Snapshot(
+            snapshot_id=3051729675574597004,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            timestamp_ms=1515100955770,
+            manifest_list="s3://a/b/1.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=None,
+        ),
+    ]
+
+
+def test_ancestors_of_recursive_error(table_v2_with_extensive_snapshots: Table) -> None:
+    # Test RecursionError: maximum recursion depth exceeded
+    assert (
+        len(
+            list(
+                ancestors_of(
+                    table_v2_with_extensive_snapshots.current_snapshot(),
+                    table_v2_with_extensive_snapshots.metadata,
+                )
+            )
+        )
+        == 2000
     )
 
 
@@ -650,6 +702,30 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
     assert new_metadata.snapshots[-1] == new_snapshot
     assert new_metadata.last_sequence_number == new_snapshot.sequence_number
     assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
+
+
+def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
+    update, _ = table_v2.transaction()._set_ref_snapshot(
+        snapshot_id=3051729675574597004,
+        ref_name="main",
+        type="branch",
+        max_ref_age_ms=123123123,
+        max_snapshot_age_ms=12312312312,
+        min_snapshots_to_keep=1,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, update)
+    assert len(new_metadata.snapshot_log) == 3
+    assert new_metadata.snapshot_log[2].snapshot_id == 3051729675574597004
+    assert new_metadata.current_snapshot_id == 3051729675574597004
+    assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
+    assert new_metadata.refs["main"] == SnapshotRef(
+        snapshot_id=3051729675574597004,
+        snapshot_ref_type="branch",
+        min_snapshots_to_keep=1,
+        max_snapshot_age_ms=12312312312,
+        max_ref_age_ms=123123123,
+    )
 
 
 def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:

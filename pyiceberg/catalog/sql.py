@@ -60,7 +60,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table, update_table_metadata
+from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -402,59 +402,83 @@ class SqlCatalog(MetastoreCatalog):
         identifier_tuple = self.identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
-        current_table = self.load_table(identifier_tuple)
         namespace_tuple = Catalog.namespace_from(identifier_tuple)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier_tuple)
-        base_metadata = current_table.metadata
-        for requirement in table_request.requirements:
-            requirement.validate(base_metadata)
 
-        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
-        if updated_metadata == base_metadata:
+        current_table: Optional[Table]
+        try:
+            current_table = self.load_table(identifier_tuple)
+        except NoSuchTableError:
+            current_table = None
+
+        updated_staged_table = self._update_and_stage_table(current_table, table_request)
+        if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
-            return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
-
-        # write new metadata
-        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1
-        new_metadata_location = self._get_metadata_location(current_table.metadata.location, new_metadata_version)
-        self._write_metadata(updated_metadata, current_table.io, new_metadata_location)
+            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+        self._write_metadata(
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
+        )
 
         with Session(self.engine) as session:
-            if self.engine.dialect.supports_sane_rowcount:
-                stmt = (
-                    update(IcebergTables)
-                    .where(
-                        IcebergTables.catalog_name == self.name,
-                        IcebergTables.table_namespace == namespace,
-                        IcebergTables.table_name == table_name,
-                        IcebergTables.metadata_location == current_table.metadata_location,
-                    )
-                    .values(metadata_location=new_metadata_location, previous_metadata_location=current_table.metadata_location)
-                )
-                result = session.execute(stmt)
-                if result.rowcount < 1:
-                    raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}")
-            else:
-                try:
-                    tbl = (
-                        session.query(IcebergTables)
-                        .with_for_update(of=IcebergTables)
-                        .filter(
+            if current_table:
+                # table exists, update it
+                if self.engine.dialect.supports_sane_rowcount:
+                    stmt = (
+                        update(IcebergTables)
+                        .where(
                             IcebergTables.catalog_name == self.name,
                             IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
                             IcebergTables.metadata_location == current_table.metadata_location,
                         )
-                        .one()
+                        .values(
+                            metadata_location=updated_staged_table.metadata_location,
+                            previous_metadata_location=current_table.metadata_location,
+                        )
                     )
-                    tbl.metadata_location = new_metadata_location
-                    tbl.previous_metadata_location = current_table.metadata_location
-                except NoResultFound as e:
-                    raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}") from e
-            session.commit()
+                    result = session.execute(stmt)
+                    if result.rowcount < 1:
+                        raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}")
+                else:
+                    try:
+                        tbl = (
+                            session.query(IcebergTables)
+                            .with_for_update(of=IcebergTables)
+                            .filter(
+                                IcebergTables.catalog_name == self.name,
+                                IcebergTables.table_namespace == namespace,
+                                IcebergTables.table_name == table_name,
+                                IcebergTables.metadata_location == current_table.metadata_location,
+                            )
+                            .one()
+                        )
+                        tbl.metadata_location = updated_staged_table.metadata_location
+                        tbl.previous_metadata_location = current_table.metadata_location
+                    except NoResultFound as e:
+                        raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}") from e
+                session.commit()
+            else:
+                # table does not exist, create it
+                try:
+                    session.add(
+                        IcebergTables(
+                            catalog_name=self.name,
+                            table_namespace=namespace,
+                            table_name=table_name,
+                            metadata_location=updated_staged_table.metadata_location,
+                            previous_metadata_location=None,
+                        )
+                    )
+                    session.commit()
+                except IntegrityError as e:
+                    raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
 
-        return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)

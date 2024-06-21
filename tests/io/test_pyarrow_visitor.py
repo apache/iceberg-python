@@ -25,6 +25,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
     _HasIds,
+    _pyarrow_schema_ensure_large_types,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -209,7 +210,7 @@ def test_pyarrow_timestamp_tz_invalid_tz() -> None:
 
 
 def test_pyarrow_string_to_iceberg() -> None:
-    pyarrow_type = pa.string()
+    pyarrow_type = pa.large_string()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == StringType()
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
@@ -543,3 +544,39 @@ def test_pyarrow_schema_to_schema_fresh_ids_nested_schema(
     pyarrow_schema_nested_without_ids: pa.Schema, iceberg_schema_nested_no_ids: Schema
 ) -> None:
     assert visit_pyarrow(pyarrow_schema_nested_without_ids, _ConvertToIcebergWithoutIDs()) == iceberg_schema_nested_no_ids
+
+
+def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
+    expected_schema = pa.schema([
+        pa.field("foo", pa.large_string(), nullable=False),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+        pa.field("qux", pa.large_list(pa.large_string()), nullable=False),
+        pa.field(
+            "quux",
+            pa.map_(
+                pa.large_string(),
+                pa.map_(pa.large_string(), pa.int32()),
+            ),
+            nullable=False,
+        ),
+        pa.field(
+            "location",
+            pa.large_list(
+                pa.struct([
+                    pa.field("latitude", pa.float32(), nullable=False),
+                    pa.field("longitude", pa.float32(), nullable=False),
+                ]),
+            ),
+            nullable=False,
+        ),
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("name", pa.large_string(), nullable=True),
+                pa.field("age", pa.int32(), nullable=False),
+            ]),
+            nullable=True,
+        ),
+    ])
+    assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema

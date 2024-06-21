@@ -14,10 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import time
 from collections import defaultdict
 from enum import Enum
-from typing import Any, DefaultDict, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
 from pydantic import Field, PrivateAttr, model_serializer
 
@@ -25,6 +27,9 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
+
+if TYPE_CHECKING:
+    from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
 ADDED_DATA_FILES = "added-data-files"
@@ -412,3 +417,13 @@ def update_snapshot_summaries(
 def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
     if num > 0:
         properties[property_name] = str(num)
+
+
+def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given snapshot."""
+    snapshot = current_snapshot
+    while snapshot is not None:
+        yield snapshot
+        if snapshot.parent_snapshot_id is None:
+            break
+        snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)

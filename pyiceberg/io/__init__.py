@@ -53,6 +53,7 @@ S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
+S3_SIGNER_URI = "s3.signer.uri"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -284,6 +285,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "gs": [ARROW_FILE_IO],
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
+    "viewfs": [ARROW_FILE_IO],
     "abfs": [FSSPEC_FILE_IO],
     "abfss": [FSSPEC_FILE_IO],
 }
