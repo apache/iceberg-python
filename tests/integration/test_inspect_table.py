@@ -568,3 +568,72 @@ def test_inspect_metadata_log_entries(
             if column == "timestamp":
                 continue
             assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_history"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES (1, "a")
+    """
+    )
+
+    table = session_catalog.load_table(identifier)
+    first_snapshot = table.current_snapshot()
+    snapshot_id = None if not first_snapshot else first_snapshot.snapshot_id
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES (2, "b")
+    """
+    )
+
+    spark.sql(
+        f"""
+        CALL integration.system.rollback_to_snapshot('{identifier}', {snapshot_id})
+    """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {identifier} VALUES (3, "c")
+    """
+    )
+
+    table.refresh()
+
+    df = table.inspect.history()
+
+    assert df.column_names == [
+        "made_current_at",
+        "snapshot_id",
+        "parent_id",
+        "is_current_ancestor",
+    ]
+
+    lhs = spark.table(f"{identifier}.history").toPandas()
+    rhs = df.to_pandas()
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
+            assert left == right, f"Difference in column {column}: {left} != {right}"
