@@ -1003,6 +1003,15 @@ tpep_dropoff_datetime: [[2021-04-01 00:47:59.000000,...,2021-05-01 00:14:47.0000
 
 This will only pull in the files that that might contain matching rows.
 
+One can also return a PyArrow RecordBatchReader, if reading one record batch at a time is preferred:
+
+```python
+table.scan(
+    row_filter=GreaterThanOrEqual("trip_distance", 10.0),
+    selected_fields=("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime"),
+).to_arrow_batch_reader()
+```
+
 ### Pandas
 
 <!-- prettier-ignore-start -->

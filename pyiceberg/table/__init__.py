@@ -1878,6 +1878,24 @@ class DataScan(TableScan):
             limit=self.limit,
         )
 
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
+
+        return pa.RecordBatchReader.from_batches(
+            schema_to_pyarrow(self.projection()),
+            project_batches(
+                self.plan_files(),
+                self.table_metadata,
+                self.io,
+                self.row_filter,
+                self.projection(),
+                case_sensitive=self.case_sensitive,
+                limit=self.limit,
+            ),
+        )
+
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         return self.to_arrow().to_pandas(**kwargs)
 
