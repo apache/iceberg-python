@@ -21,15 +21,7 @@ from abc import ABC, abstractmethod
 from copy import copy
 from enum import Enum
 from types import TracebackType
-from typing import (
-    Any,
-    Dict,
-    Iterator,
-    List,
-    Literal,
-    Optional,
-    Type,
-)
+from typing import Any, Dict, Generator, Iterator, List, Literal, Optional, Type
 
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
@@ -116,7 +108,11 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
         ),
         NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
         NestedField(
-            field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"
+            field_id=104,
+            name="file_size_in_bytes",
+            field_type=LongType(),
+            required=True,
+            doc="Total file size in bytes",
         ),
         NestedField(
             field_id=105,
@@ -169,7 +165,11 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="Map of column id to upper bound",
         ),
         NestedField(
-            field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"
+            field_id=131,
+            name="key_metadata",
+            field_type=BinaryType(),
+            required=False,
+            doc="Encryption key metadata blob",
         ),
         NestedField(
             field_id=132,
@@ -206,7 +206,11 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
         ),
         NestedField(field_id=103, name="record_count", field_type=LongType(), required=True, doc="Number of records in the file"),
         NestedField(
-            field_id=104, name="file_size_in_bytes", field_type=LongType(), required=True, doc="Total file size in bytes"
+            field_id=104,
+            name="file_size_in_bytes",
+            field_type=LongType(),
+            required=True,
+            doc="Total file size in bytes",
         ),
         NestedField(
             field_id=108,
@@ -251,7 +255,11 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="Map of column id to upper bound",
         ),
         NestedField(
-            field_id=131, name="key_metadata", field_type=BinaryType(), required=False, doc="Encryption key metadata blob"
+            field_id=131,
+            name="key_metadata",
+            field_type=BinaryType(),
+            required=False,
+            doc="Encryption key metadata blob",
         ),
         NestedField(
             field_id=132,
@@ -290,15 +298,17 @@ def data_file_with_partition(partition_type: StructType, format_version: TableVe
     ])
 
     return StructType(*[
-        NestedField(
-            field_id=102,
-            name="partition",
-            field_type=data_file_partition_type,
-            required=True,
-            doc="Partition data tuple, schema based on the partition spec",
+        (
+            NestedField(
+                field_id=102,
+                name="partition",
+                field_type=data_file_partition_type,
+                required=True,
+                doc="Partition data tuple, schema based on the partition spec",
+            )
+            if field.field_id == 102
+            else field
         )
-        if field.field_id == 102
-        else field
         for field in DATA_FILE_TYPE[format_version].fields
     ])
 
@@ -656,7 +666,12 @@ class ManifestWriter(ABC):
     _partitions: List[Record]
 
     def __init__(
-        self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str] = EMPTY_DICT
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        meta: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         self.closed = False
         self._spec = spec
@@ -761,6 +776,85 @@ class ManifestWriter(ABC):
             self._min_data_sequence_number = entry.data_sequence_number
 
         self._writer.write_block([self.prepare_entry(entry)])
+        return self
+
+    def __len__(self) -> int:
+        """Return the total number number of bytes written."""
+        return len(self._writer)
+
+
+class RollingManifestWriter:
+    closed: bool
+    _supplier: Generator[ManifestWriter, None, None]
+    _manifest_files: list[ManifestFile]
+    _target_file_size_in_bytes: int
+    _target_number_of_rows: int
+    _current_writer: Optional[ManifestWriter]
+    _current_file_rows: int
+
+    def __init__(
+        self, supplier: Generator[ManifestWriter, None, None], target_file_size_in_bytes: int, target_number_of_rows: int
+    ) -> None:
+        self._closed = False
+        self._manifest_files = []
+        self._supplier = supplier
+        self._target_file_size_in_bytes = target_file_size_in_bytes
+        self._target_number_of_rows = target_number_of_rows
+        self._current_writer = None
+        self._current_file_rows = 0
+
+    def __enter__(self) -> RollingManifestWriter:
+        """Open the writer."""
+        self._get_current_writer().__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        """Close the writer."""
+        self.closed = True
+        if self._current_writer:
+            self._current_writer.__exit__(exc_type, exc_value, traceback)
+
+    def _get_current_writer(self) -> ManifestWriter:
+        if not self._current_writer:
+            self._current_writer = next(self._supplier)
+            self._current_writer.__enter__()
+            return self._current_writer
+        if self._should_roll_to_new_file():
+            self._close_current_writer()
+            return self._get_current_writer()
+        return self._current_writer
+
+    def _should_roll_to_new_file(self) -> bool:
+        if not self._current_writer:
+            return False
+        return (
+            self._current_file_rows >= self._target_number_of_rows or len(self._current_writer) >= self._target_file_size_in_bytes
+        )
+
+    def _close_current_writer(self) -> None:
+        if self._current_writer:
+            self._current_writer.__exit__(None, None, None)
+            current_file = self._current_writer.to_manifest_file()
+            self._manifest_files.append(current_file)
+            self._current_writer = None
+            self._current_file_rows = 0
+
+    def to_manifest_files(self) -> list[ManifestFile]:
+        self._close_current_writer()
+        self._closed = True
+        return self._manifest_files
+
+    def add_entry(self, entry: ManifestEntry) -> RollingManifestWriter:
+        if self._closed:
+            raise RuntimeError("Cannot add entry to closed manifest writer")
+        self._get_current_writer().add_entry(entry)
+        self._current_file_rows += entry.data_file.record_count
+
         return self
 
 
@@ -882,7 +976,11 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             format_version=1,
             output_file=output_file,
-            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
+            meta={
+                "snapshot-id": str(snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id),
+                "format-version": "1",
+            },
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
