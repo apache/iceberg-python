@@ -18,7 +18,7 @@
 import math
 import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -916,7 +916,7 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.table_append_subset_of_schema"
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
@@ -927,8 +927,9 @@ def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_write_all_timestamp_precision(session_catalog: Catalog, format_version: int) -> None:
+def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: Catalog, format_version: int) -> None:
     identifier = "default.table_all_timestamp_precision"
     arrow_table_schema_with_all_timestamp_precisions = pa.schema([
         ("timestamp_s", pa.timestamp(unit="s")),
@@ -966,6 +967,28 @@ def test_write_all_timestamp_precision(session_catalog: Catalog, format_version:
             datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
         ],
     }
-    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_schema_with_all_timestamp_precisions])
-    test_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
-    tbl.overwrite(test_arrow_table)
+    input_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_ON_WRITE": "True"})
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version},
+        data=[input_arrow_table],
+        schema=arrow_table_schema_with_all_timestamp_precisions,
+    )
+    tbl.overwrite(input_arrow_table)
+    written_arrow_table = tbl.scan().to_arrow()
+
+    expected_schema_in_all_us = pa.schema([
+        ("timestamp_s", pa.timestamp(unit="us")),
+        ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ms", pa.timestamp(unit="us")),
+        ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_us", pa.timestamp(unit="us")),
+        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ns", pa.timestamp(unit="us")),
+        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
+    ])
+    assert written_arrow_table.schema == expected_schema_in_all_us
+    assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us)
