@@ -158,7 +158,7 @@ _JAVA_LONG_MAX = 9223372036854775807
 
 def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") -> None:
     """
-    Check if the `table_schema` is compatible with `other_schema`.
+    Check if the `table_schema` is compatible with `other_schema` in terms of the Iceberg Schema representation.
 
     The schemas are compatible if:
     - All fields in `other_schema` are present in `table_schema`. (other_schema <= table_schema)
