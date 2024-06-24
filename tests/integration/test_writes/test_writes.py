@@ -963,6 +963,7 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     assert len(tbl.scan().to_arrow()) == 22
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.test_table_write_subset_of_schema"
@@ -975,6 +976,7 @@ def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.test_table_write_out_of_order_schema"
