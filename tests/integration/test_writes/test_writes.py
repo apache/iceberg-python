@@ -341,6 +341,60 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_python_writes_with_small_and_large_types_spark_reads(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = "default.python_writes_with_small_and_large_types_spark_reads"
+    TEST_DATA = {
+        "foo": ["a", None, "z"],
+        "id": [1, 2, 3],
+        "name": ["AB", "CD", "EF"],
+        "address": [
+            {"street": "123", "city": "SFO", "zip": 12345, "bar": "a"},
+            {"street": "456", "city": "SW", "zip": 67890, "bar": "b"},
+            {"street": "789", "city": "Random", "zip": 10112, "bar": "c"},
+        ],
+    }
+    pa_schema = pa.schema([
+        pa.field("foo", pa.large_string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.string()),
+        pa.field(
+            "address",
+            pa.struct([
+                pa.field("street", pa.string()),
+                pa.field("city", pa.string()),
+                pa.field("zip", pa.int32()),
+                pa.field("bar", pa.large_string()),
+            ]),
+        ),
+    ])
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
+
+    tbl.overwrite(arrow_table)
+    spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
+    pyiceberg_df = tbl.scan().to_pandas()
+    assert spark_df.equals(pyiceberg_df)
+    arrow_table_on_read = tbl.scan().to_arrow()
+    assert arrow_table_on_read.schema == pa.schema([
+        pa.field("foo", pa.large_string()),
+        pa.field("id", pa.int32()),
+        pa.field("name", pa.large_string()),
+        pa.field(
+            "address",
+            pa.struct([
+                pa.field("street", pa.large_string()),
+                pa.field("city", pa.large_string()),
+                pa.field("zip", pa.int32()),
+                pa.field("bar", pa.large_string()),
+            ]),
+        ),
+    ])
+
+
+@pytest.mark.integration
 def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.write_bin_pack_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
