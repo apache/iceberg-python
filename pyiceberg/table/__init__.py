@@ -179,10 +179,10 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
 
-    missing_table_schema_fields = {field for field in other_schema.fields if field not in table_schema.fields}
-    required_table_schema_fields = {field for field in table_schema.fields if field.required}
-    missing_required_fields = {field for field in required_table_schema_fields if field not in other_schema.fields}
-    if missing_table_schema_fields or missing_required_fields:
+    fields_missing_from_table = {field for field in other_schema.fields if field not in table_schema.fields}
+    required_fields_in_table = {field for field in table_schema.fields if field.required}
+    missing_required_fields_in_other = {field for field in required_fields_in_table if field not in other_schema.fields}
+    if fields_missing_from_table or missing_required_fields_in_other:
         from rich.console import Console
         from rich.table import Table as RichTable
 
