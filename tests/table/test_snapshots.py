@@ -73,7 +73,7 @@ def test_serialize_snapshot(snapshot: Snapshot) -> None:
     )
 
 
-def test_serialize_snapshot_without_sequence_number() -> None:
+def test_serialize_snapshot_with_default_sequence_number() -> None:
     snapshot = Snapshot(
         snapshot_id=25,
         parent_snapshot_id=19,
@@ -83,7 +83,7 @@ def test_serialize_snapshot_without_sequence_number() -> None:
         schema_id=3,
     )
     actual = snapshot.model_dump_json()
-    expected = """{"snapshot-id":25,"parent-snapshot-id":19,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}"""
+    expected = """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":0,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3}"""
     assert actual == expected
 
 
