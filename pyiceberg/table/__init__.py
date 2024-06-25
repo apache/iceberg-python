@@ -113,6 +113,8 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestor_right_before_timestamp,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -1974,6 +1976,10 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _commit_if_ref_updates_exist(self) -> None:
+        self.commit()
+        self._updates, self._requirements = (), ()
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -2026,6 +2032,84 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         )
         self._updates += update
         self._requirements += requirement
+        return self
+
+    def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
+        """Rollback the table to the given snapshot id.
+
+         The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (int): rollback to this snapshot_id that used to be current.
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+        if self._transaction._table.snapshot_by_id(snapshot_id) is None:
+            raise ValidationError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
+        if snapshot_id not in {
+            ancestor.snapshot_id
+            for ancestor in ancestors_of(self._transaction._table.current_snapshot(), self._transaction.table_metadata)
+        }:
+            raise ValidationError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
+
+        update, requirement = self._transaction._set_ref_snapshot(snapshot_id=snapshot_id, ref_name="main", type="branch")
+        self._updates += update
+        self._requirements += requirement
+        return self
+
+    def rollback_to_timestamp(self, timestamp: int) -> ManageSnapshots:
+        """Rollback the table to the snapshot right before the given timestamp.
+
+        The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            timestamp (int): rollback to the snapshot that used to be current right before this timestamp.
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+        if (
+            snapshot := ancestor_right_before_timestamp(
+                self._transaction._table.current_snapshot(), self._transaction.table_metadata, timestamp
+            )
+        ) is None:
+            raise ValidationError(f"Cannot roll back, no valid snapshot older than: {timestamp}")
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot.snapshot_id, ref_name="main", type="branch"
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
+
+    def set_current_snapshot(self, snapshot_id: Optional[int] = None, ref_name: Optional[str] = None) -> ManageSnapshots:
+        """Set the table to a specific snapshot identified either by its id or the branch/tag its on, not both.
+
+        The snapshot is not required to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (Optional[int]): id of the snapshot to be set as current
+            ref_name (Optional[str]): branch/tag where the snapshot to be set as current exists.
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+        if (not snapshot_id or ref_name) and (snapshot_id or not ref_name):
+            raise ValidationError("Either snapshot_id or ref must be provided")
+        else:
+            if snapshot_id is None:
+                target_snapshot_id = self._transaction.table_metadata.refs[ref_name].snapshot_id  # type:ignore
+            else:
+                target_snapshot_id = snapshot_id
+            if (snapshot := self._transaction._table.snapshot_by_id(target_snapshot_id)) is None:
+                raise ValidationError(f"Cannot set snapshot current with snapshot id: {snapshot_id} or ref_name: {ref_name}")
+
+            update, requirement = self._transaction._set_ref_snapshot(
+                snapshot_id=snapshot.snapshot_id, ref_name="main", type="branch"
+            )
+            self._updates += update
+            self._requirements += requirement
         return self
 
 
