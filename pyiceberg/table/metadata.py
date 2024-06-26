@@ -311,6 +311,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
             return -1
         return current_snapshot_id
 
+    @field_serializer("snapshots")
+    def serialize_snapshots(self, snapshots: List[Snapshot]) -> List[Snapshot]:
+        # Snapshot field `sequence-number` should not be written for v1 metadata
+        if self.format_version == 1:
+            return [snapshot.model_copy(update={"sequence_number": None}) for snapshot in snapshots]
+        return snapshots
+
 
 def _generate_snapshot_id() -> int:
     """Generate a new Snapshot ID from a UUID.
