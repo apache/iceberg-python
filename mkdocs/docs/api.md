@@ -679,6 +679,27 @@ latest_schema_id: [[null,0,0,0]]
 latest_sequence_number: [[null,0,0,0]]
 ```
 
+### History
+
+To show a table's history:
+
+```python
+table.inspect.history()
+```
+
+```
+pyarrow.Table
+made_current_at: timestamp[ms] not null
+snapshot_id: int64 not null
+parent_id: int64
+is_current_ancestor: bool not null
+----
+made_current_at: [[2024-06-18 16:17:48.768,2024-06-18 16:17:49.240,2024-06-18 16:17:49.343,2024-06-18 16:17:49.511]]
+snapshot_id: [[4358109269873137077,3380769165026943338,4358109269873137077,3089420140651211776]]
+parent_id: [[null,4358109269873137077,null,4358109269873137077]]
+is_current_ancestor: [[true,false,true,true]]
+```
+
 ## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
