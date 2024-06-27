@@ -704,7 +704,7 @@ def test_inspect_files(
             "file_size_in_bytes",
             "split_offsets",
             "equality_ids",
-            "sort_order_id"
+            "sort_order_id",
         ]
     ]
     rhs_subset = rhs[
@@ -717,7 +717,7 @@ def test_inspect_files(
             "file_size_in_bytes",
             "split_offsets",
             "equality_ids",
-            "sort_order_id"
+            "sort_order_id",
         ]
     ]
 
