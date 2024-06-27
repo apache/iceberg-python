@@ -644,6 +644,8 @@ def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_v
 def test_inspect_files(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
+    from pandas.testing import assert_frame_equal
+
     identifier = "default.table_metadata_files"
 
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
@@ -691,6 +693,36 @@ def test_inspect_files(
 
     lhs = df.to_pandas()
     rhs = spark.table(f"{identifier}.files").toPandas()
+
+    lhs_subset = lhs[
+        [
+            "content",
+            "file_path",
+            "file_format",
+            "spec_id",
+            "record_count",
+            "file_size_in_bytes",
+            "split_offsets",
+            "equality_ids",
+            "sort_order_id"
+        ]
+    ]
+    rhs_subset = rhs[
+        [
+            "content",
+            "file_path",
+            "file_format",
+            "spec_id",
+            "record_count",
+            "file_size_in_bytes",
+            "split_offsets",
+            "equality_ids",
+            "sort_order_id"
+        ]
+    ]
+
+    assert_frame_equal(lhs_subset, rhs_subset, check_dtype=False, check_categorical=False)
+
     for column in df.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
