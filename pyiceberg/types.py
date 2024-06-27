@@ -160,7 +160,7 @@ class IcebergType(IcebergBaseModel):
         return isinstance(self, StructType)
 
 
-class PrimitiveType(IcebergRootModel[str], IcebergType, Singleton):
+class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
     """Base class for all Iceberg Primitive Types."""
 
     root: Any = Field()
