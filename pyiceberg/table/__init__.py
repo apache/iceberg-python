@@ -3760,6 +3760,7 @@ class InspectTable:
 
     def manifests(self) -> "pa.Table":
         import pyarrow as pa
+
         from pyiceberg.conversions import from_bytes
 
         partition_summary_schema = pa.struct([
@@ -3905,8 +3906,8 @@ class InspectTable:
             })
 
         return pa.Table.from_pylist(history, schema=history_schema)
-      
-      def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+
+    def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -3931,27 +3932,32 @@ class InspectTable:
             )
 
         files_schema = pa.schema([
-            pa.field('content', pa.int8(), nullable=False),
-            pa.field('file_path', pa.string(), nullable=False),
-            pa.field('file_format', pa.dictionary(pa.int32(), pa.string()), nullable=False),
-            pa.field('spec_id', pa.int32(), nullable=False),
-            pa.field('record_count', pa.int64(), nullable=False),
-            pa.field('file_size_in_bytes', pa.int64(), nullable=False),
-            pa.field('column_sizes', pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field('value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field('null_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field('nan_value_counts', pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field('lower_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
-            pa.field('upper_bounds', pa.map_(pa.int32(), pa.binary()), nullable=True),
-            pa.field('key_metadata', pa.binary(), nullable=True),
-            pa.field('split_offsets', pa.list_(pa.int64()), nullable=True),
-            pa.field('equality_ids', pa.list_(pa.int32()), nullable=True),
-            pa.field('sort_order_id', pa.int32(), nullable=True),
-            pa.field('readable_metrics', pa.struct(readable_metrics_struct), nullable=True),
+            pa.field("content", pa.int8(), nullable=False),
+            pa.field("file_path", pa.string(), nullable=False),
+            pa.field("file_format", pa.dictionary(pa.int32(), pa.string()), nullable=False),
+            pa.field("spec_id", pa.int32(), nullable=False),
+            pa.field("record_count", pa.int64(), nullable=False),
+            pa.field("file_size_in_bytes", pa.int64(), nullable=False),
+            pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+            pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+            pa.field("key_metadata", pa.binary(), nullable=True),
+            pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
+            pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
+            pa.field("sort_order_id", pa.int32(), nullable=True),
+            pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
         ])
 
-        files = []
+        files: list[dict[str, Any]] = []
 
+        if not snapshot_id and not self.tbl.metadata.current_snapshot():
+            return pa.Table.from_pylist(
+                files,
+                schema=files_schema,
+            )
         snapshot = self._get_snapshot(snapshot_id)
 
         io = self.tbl.io
@@ -3980,23 +3986,23 @@ class InspectTable:
                     for field in self.tbl.metadata.schema().fields
                 }
                 files.append({
-                    'content': data_file.content,
-                    'file_path': data_file.file_path,
-                    'file_format': data_file.file_format,
-                    'spec_id': data_file.spec_id,
-                    'record_count': data_file.record_count,
-                    'file_size_in_bytes': data_file.file_size_in_bytes,
-                    'column_sizes': dict(data_file.column_sizes),
-                    'value_counts': dict(data_file.value_counts),
-                    'null_value_counts': dict(data_file.null_value_counts),
-                    'nan_value_counts': dict(data_file.nan_value_counts),
-                    'lower_bounds': dict(data_file.lower_bounds),
-                    'upper_bounds': dict(data_file.upper_bounds),
-                    'key_metadata': data_file.key_metadata,
-                    'split_offsets': data_file.split_offsets,
-                    'equality_ids': data_file.equality_ids,
-                    'sort_order_id': data_file.sort_order_id,
-                    'readable_metrics': readable_metrics,
+                    "content": data_file.content,
+                    "file_path": data_file.file_path,
+                    "file_format": data_file.file_format,
+                    "spec_id": data_file.spec_id,
+                    "record_count": data_file.record_count,
+                    "file_size_in_bytes": data_file.file_size_in_bytes,
+                    "column_sizes": dict(data_file.column_sizes),
+                    "value_counts": dict(data_file.value_counts),
+                    "null_value_counts": dict(data_file.null_value_counts),
+                    "nan_value_counts": dict(data_file.nan_value_counts),
+                    "lower_bounds": dict(data_file.lower_bounds),
+                    "upper_bounds": dict(data_file.upper_bounds),
+                    "key_metadata": data_file.key_metadata,
+                    "split_offsets": data_file.split_offsets,
+                    "equality_ids": data_file.equality_ids,
+                    "sort_order_id": data_file.sort_order_id,
+                    "readable_metrics": readable_metrics,
                 })
 
         return pa.Table.from_pylist(
