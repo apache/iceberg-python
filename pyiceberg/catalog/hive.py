@@ -278,7 +278,7 @@ class HiveCatalog(MetastoreCatalog):
         for idx, uri in enumerate(uris):
             try:
                 return _HiveClient(uri, properties.get("ugi"))
-            except Exception as e:
+            except BaseException as e:
                 if idx + 1 == len(uris):
                     raise e
                 else:
