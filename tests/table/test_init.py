@@ -76,6 +76,7 @@ from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
     Summary,
+    ancestors_of,
 )
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -92,7 +93,9 @@ from pyiceberg.types import (
     BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
+    FixedType,
     FloatType,
     IntegerType,
     ListType,
@@ -201,6 +204,57 @@ def test_snapshot_by_id(table_v2: Table) -> None:
         manifest_list="s3://a/b/2.avro",
         summary=Summary(operation=Operation.APPEND),
         schema_id=1,
+    )
+
+
+def test_snapshot_by_timestamp(table_v2: Table) -> None:
+    assert table_v2.snapshot_as_of_timestamp(1515100955770) == Snapshot(
+        snapshot_id=3051729675574597004,
+        parent_snapshot_id=None,
+        sequence_number=0,
+        timestamp_ms=1515100955770,
+        manifest_list="s3://a/b/1.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=None,
+    )
+    assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
+
+
+def test_ancestors_of(table_v2: Table) -> None:
+    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
+        Snapshot(
+            snapshot_id=3055729675574597004,
+            parent_snapshot_id=3051729675574597004,
+            sequence_number=1,
+            timestamp_ms=1555100955770,
+            manifest_list="s3://a/b/2.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=1,
+        ),
+        Snapshot(
+            snapshot_id=3051729675574597004,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            timestamp_ms=1515100955770,
+            manifest_list="s3://a/b/1.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=None,
+        ),
+    ]
+
+
+def test_ancestors_of_recursive_error(table_v2_with_extensive_snapshots: Table) -> None:
+    # Test RecursionError: maximum recursion depth exceeded
+    assert (
+        len(
+            list(
+                ancestors_of(
+                    table_v2_with_extensive_snapshots.current_snapshot(),
+                    table_v2_with_extensive_snapshots.metadata,
+                )
+            )
+        )
+        == 2000
     )
 
 
@@ -652,6 +706,30 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
     assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
 
 
+def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
+    update, _ = table_v2.transaction()._set_ref_snapshot(
+        snapshot_id=3051729675574597004,
+        ref_name="main",
+        type="branch",
+        max_ref_age_ms=123123123,
+        max_snapshot_age_ms=12312312312,
+        min_snapshots_to_keep=1,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, update)
+    assert len(new_metadata.snapshot_log) == 3
+    assert new_metadata.snapshot_log[2].snapshot_id == 3051729675574597004
+    assert new_metadata.current_snapshot_id == 3051729675574597004
+    assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
+    assert new_metadata.refs["main"] == SnapshotRef(
+        snapshot_id=3051729675574597004,
+        snapshot_ref_type="branch",
+        min_snapshots_to_keep=1,
+        max_snapshot_age_ms=12312312312,
+        max_ref_age_ms=123123123,
+    )
+
+
 def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
     update = SetSnapshotRefUpdate(
         ref_name="main",
@@ -767,6 +845,32 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
 
     # Set/RemovePropertiesUpdate
     assert new_metadata.properties == {"owner": "test", "test_a": "test_a1"}
+
+
+def test_update_metadata_schema_immutability(
+    table_v2_with_fixed_and_decimal_types: TableMetadataV2,
+) -> None:
+    update = SetSnapshotRefUpdate(
+        ref_name="main",
+        type="branch",
+        snapshot_id=3051729675574597004,
+        max_ref_age_ms=123123123,
+        max_snapshot_age_ms=12312312312,
+        min_snapshots_to_keep=1,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_fixed_and_decimal_types.metadata,
+        (update,),
+    )
+
+    assert new_metadata.schemas[0].fields == (
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="a", field_type=DecimalType(precision=16, scale=2), required=True),
+        NestedField(field_id=5, name="b", field_type=DecimalType(precision=16, scale=8), required=True),
+        NestedField(field_id=6, name="c", field_type=FixedType(length=16), required=True),
+        NestedField(field_id=7, name="d", field_type=FixedType(length=18), required=True),
+    )
 
 
 def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
@@ -995,9 +1099,9 @@ def test_correct_schema() -> None:
     # Should use the current schema, instead the one from the snapshot
     projection_schema = t.scan().projection()
     assert projection_schema == Schema(
-        NestedField(field_id=1, name='x', field_type=LongType(), required=True),
-        NestedField(field_id=2, name='y', field_type=LongType(), required=True),
-        NestedField(field_id=3, name='z', field_type=LongType(), required=True),
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True),
+        NestedField(field_id=3, name="z", field_type=LongType(), required=True),
         identifier_field_ids=[1, 2],
     )
     assert projection_schema.schema_id == 1
@@ -1005,7 +1109,7 @@ def test_correct_schema() -> None:
     # When we explicitly filter on the commit, we want to have the schema that's linked to the snapshot
     projection_schema = t.scan(snapshot_id=123).projection()
     assert projection_schema == Schema(
-        NestedField(field_id=1, name='x', field_type=LongType(), required=True),
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         identifier_field_ids=[],
     )
     assert projection_schema.schema_id == 0
@@ -1138,8 +1242,8 @@ def test_table_properties_raise_for_none_value(example_table_metadata_v2: Dict[s
 
 def test_serialize_commit_table_request() -> None:
     request = CommitTableRequest(
-        requirements=(AssertTableUUID(uuid='4bfd18a3-74c6-478e-98b1-71c4c32f4163'),),
-        identifier=TableIdentifier(namespace=['a'], name='b'),
+        requirements=(AssertTableUUID(uuid="4bfd18a3-74c6-478e-98b1-71c4c32f4163"),),
+        identifier=TableIdentifier(namespace=["a"], name="b"),
     )
 
     deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
@@ -1149,17 +1253,17 @@ def test_serialize_commit_table_request() -> None:
 def test_partition_for_demo() -> None:
     import pyarrow as pa
 
-    test_pa_schema = pa.schema([('year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
-        NestedField(field_id=1, name='year', field_type=StringType(), required=False),
-        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        NestedField(field_id=1, name="year", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="n_legs", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="animal", field_type=StringType(), required=False),
         schema_id=1,
     )
     test_data = {
-        'year': [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
-        'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
-        'animal': ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
+        "year": [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
+        "n_legs": [2, 2, 2, 4, 4, 4, 4, 5, 100],
+        "animal": ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
     }
     arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
     partition_spec = PartitionSpec(
@@ -1183,11 +1287,11 @@ def test_partition_for_demo() -> None:
 def test_identity_partition_on_multi_columns() -> None:
     import pyarrow as pa
 
-    test_pa_schema = pa.schema([('born_year', pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
+    test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
-        NestedField(field_id=1, name='born_year', field_type=StringType(), required=False),
-        NestedField(field_id=2, name='n_legs', field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name='animal', field_type=StringType(), required=False),
+        NestedField(field_id=1, name="born_year", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="n_legs", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="animal", field_type=StringType(), required=False),
         schema_id=1,
     )
     # 5 partitions, 6 unique row values, 12 rows
@@ -1210,9 +1314,9 @@ def test_identity_partition_on_multi_columns() -> None:
     for _ in range(1000):
         random.shuffle(test_rows)
         test_data = {
-            'born_year': [row[0] for row in test_rows],
-            'n_legs': [row[1] for row in test_rows],
-            'animal': [row[2] for row in test_rows],
+            "born_year": [row[0] for row in test_rows],
+            "n_legs": [row[1] for row in test_rows],
+            "animal": [row[2] for row in test_rows],
         }
         arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
 
@@ -1222,7 +1326,7 @@ def test_identity_partition_on_multi_columns() -> None:
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
         assert concatenated_arrow_table.num_rows == arrow_table.num_rows
         assert concatenated_arrow_table.sort_by([
-            ('born_year', 'ascending'),
-            ('n_legs', 'ascending'),
-            ('animal', 'ascending'),
-        ]) == arrow_table.sort_by([('born_year', 'ascending'), ('n_legs', 'ascending'), ('animal', 'ascending')])
+            ("born_year", "ascending"),
+            ("n_legs", "ascending"),
+            ("animal", "ascending"),
+        ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])

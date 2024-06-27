@@ -222,7 +222,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     current-snapshot-id even if the refs map is null."""
 
     # validators
-    @field_validator('properties', mode='before')
+    @field_validator("properties", mode="before")
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
         return transform_dict_value_to_str(properties)
 
@@ -305,11 +305,18 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the sort order by sort_order_id."""
         return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
 
-    @field_serializer('current_snapshot_id')
+    @field_serializer("current_snapshot_id")
     def serialize_current_snapshot_id(self, current_snapshot_id: Optional[int]) -> Optional[int]:
         if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
             return -1
         return current_snapshot_id
+
+    @field_serializer("snapshots")
+    def serialize_snapshots(self, snapshots: List[Snapshot]) -> List[Snapshot]:
+        # Snapshot field `sequence-number` should not be written for v1 metadata
+        if self.format_version == 1:
+            return [snapshot.model_copy(update={"sequence_number": None}) for snapshot in snapshots]
+        return snapshots
 
 
 def _generate_snapshot_id() -> int:
@@ -319,7 +326,7 @@ def _generate_snapshot_id() -> int:
     """
     rnd_uuid = uuid.uuid4()
     snapshot_id = int.from_bytes(
-        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder="little", signed=True
     )
     snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 

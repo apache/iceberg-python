@@ -14,10 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import time
 from collections import defaultdict
 from enum import Enum
-from typing import Any, DefaultDict, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
 from pydantic import Field, PrivateAttr, model_serializer
 
@@ -25,33 +27,38 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
+
+if TYPE_CHECKING:
+    from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
-ADDED_DATA_FILES = 'added-data-files'
-ADDED_DELETE_FILES = 'added-delete-files'
-ADDED_EQUALITY_DELETES = 'added-equality-deletes'
-ADDED_FILE_SIZE = 'added-files-size'
-ADDED_POSITION_DELETES = 'added-position-deletes'
-ADDED_POSITION_DELETE_FILES = 'added-position-delete-files'
-ADDED_RECORDS = 'added-records'
-DELETED_DATA_FILES = 'deleted-data-files'
-DELETED_RECORDS = 'deleted-records'
-ADDED_EQUALITY_DELETE_FILES = 'added-equality-delete-files'
-REMOVED_DELETE_FILES = 'removed-delete-files'
-REMOVED_EQUALITY_DELETES = 'removed-equality-deletes'
-REMOVED_EQUALITY_DELETE_FILES = 'removed-equality-delete-files'
-REMOVED_FILE_SIZE = 'removed-files-size'
-REMOVED_POSITION_DELETES = 'removed-position-deletes'
-REMOVED_POSITION_DELETE_FILES = 'removed-position-delete-files'
-TOTAL_EQUALITY_DELETES = 'total-equality-deletes'
-TOTAL_POSITION_DELETES = 'total-position-deletes'
-TOTAL_DATA_FILES = 'total-data-files'
-TOTAL_DELETE_FILES = 'total-delete-files'
-TOTAL_RECORDS = 'total-records'
-TOTAL_FILE_SIZE = 'total-files-size'
-CHANGED_PARTITION_COUNT_PROP = 'changed-partition-count'
+ADDED_DATA_FILES = "added-data-files"
+ADDED_DELETE_FILES = "added-delete-files"
+ADDED_EQUALITY_DELETES = "added-equality-deletes"
+ADDED_FILE_SIZE = "added-files-size"
+ADDED_POSITION_DELETES = "added-position-deletes"
+ADDED_POSITION_DELETE_FILES = "added-position-delete-files"
+ADDED_RECORDS = "added-records"
+DELETED_DATA_FILES = "deleted-data-files"
+DELETED_RECORDS = "deleted-records"
+ADDED_EQUALITY_DELETE_FILES = "added-equality-delete-files"
+REMOVED_DELETE_FILES = "removed-delete-files"
+REMOVED_EQUALITY_DELETES = "removed-equality-deletes"
+REMOVED_EQUALITY_DELETE_FILES = "removed-equality-delete-files"
+REMOVED_FILE_SIZE = "removed-files-size"
+REMOVED_POSITION_DELETES = "removed-position-deletes"
+REMOVED_POSITION_DELETE_FILES = "removed-position-delete-files"
+TOTAL_EQUALITY_DELETES = "total-equality-deletes"
+TOTAL_POSITION_DELETES = "total-position-deletes"
+TOTAL_DATA_FILES = "total-data-files"
+TOTAL_DELETE_FILES = "total-delete-files"
+TOTAL_RECORDS = "total-records"
+TOTAL_FILE_SIZE = "total-files-size"
+CHANGED_PARTITION_COUNT_PROP = "changed-partition-count"
 CHANGED_PARTITION_PREFIX = "partitions."
 OPERATION = "operation"
+
+INITIAL_SEQUENCE_NUMBER = 0
 
 
 class Operation(Enum):
@@ -181,14 +188,14 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
     def __getitem__(self, __key: str) -> Optional[Any]:  # type: ignore
         """Return a key as it is a map."""
-        if __key.lower() == 'operation':
+        if __key.lower() == "operation":
             return self.operation
         else:
             return self._additional_properties.get(__key)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set a key as it is a map."""
-        if key.lower() == 'operation':
+        if key.lower() == "operation":
             self.operation = value
         else:
             self._additional_properties[key] = value
@@ -226,7 +233,7 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
-    sequence_number: Optional[int] = Field(alias="sequence-number", default=None)
+    sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
     manifest_list: Optional[str] = Field(
         alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
@@ -274,14 +281,14 @@ class SnapshotSummaryCollector:
 
     def add_file(self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC) -> None:
         self.metrics.add_file(data_file)
-        if len(data_file.partition.record_fields()) != 0:
+        if len(data_file.partition) > 0:
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=True, schema=schema)
 
     def remove_file(
         self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC
     ) -> None:
         self.metrics.remove_file(data_file)
-        if len(data_file.partition.record_fields()) != 0:
+        if len(data_file.partition) > 0:
             self.update_partition_metrics(partition_spec=partition_spec, file=data_file, is_add_file=False, schema=schema)
 
     def update_partition_metrics(self, partition_spec: PartitionSpec, file: DataFile, is_add_file: bool, schema: Schema) -> None:
@@ -317,10 +324,10 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
         TOTAL_POSITION_DELETES,
         TOTAL_EQUALITY_DELETES,
     }:
-        summary[prop] = '0'
+        summary[prop] = "0"
 
     def get_prop(prop: str) -> int:
-        value = previous_summary.get(prop) or '0'
+        value = previous_summary.get(prop) or "0"
         try:
             return int(value)
         except ValueError as e:
@@ -353,12 +360,12 @@ def update_snapshot_summaries(
 
     if not previous_summary:
         previous_summary = {
-            TOTAL_DATA_FILES: '0',
-            TOTAL_DELETE_FILES: '0',
-            TOTAL_RECORDS: '0',
-            TOTAL_FILE_SIZE: '0',
-            TOTAL_POSITION_DELETES: '0',
-            TOTAL_EQUALITY_DELETES: '0',
+            TOTAL_DATA_FILES: "0",
+            TOTAL_DELETE_FILES: "0",
+            TOTAL_RECORDS: "0",
+            TOTAL_FILE_SIZE: "0",
+            TOTAL_POSITION_DELETES: "0",
+            TOTAL_EQUALITY_DELETES: "0",
         }
 
     def _update_totals(total_property: str, added_property: str, removed_property: str) -> None:
@@ -412,3 +419,13 @@ def update_snapshot_summaries(
 def set_when_positive(properties: Dict[str, str], num: int, property_name: str) -> None:
     if num > 0:
         properties[property_name] = str(num)
+
+
+def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given snapshot."""
+    snapshot = current_snapshot
+    while snapshot is not None:
+        yield snapshot
+        if snapshot.parent_snapshot_id is None:
+            break
+        snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)

@@ -44,7 +44,7 @@ def test_legacy_current_snapshot_id(
     ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
     with PyArrowFileIO().new_input(location=metadata_location).open() as input_stream:
         metadata_json_bytes = input_stream.read()
-    assert json.loads(metadata_json_bytes)['current-snapshot-id'] == -1
+    assert json.loads(metadata_json_bytes)["current-snapshot-id"] == -1
     backwards_compatible_static_table = StaticTable.from_metadata(metadata_location)
     assert backwards_compatible_static_table.metadata.current_snapshot_id is None
     assert backwards_compatible_static_table.metadata == static_table.metadata
