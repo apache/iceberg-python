@@ -113,6 +113,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -1876,6 +1877,24 @@ class DataScan(TableScan):
             self.projection(),
             case_sensitive=self.case_sensitive,
             limit=self.limit,
+        )
+
+    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
+
+        return pa.RecordBatchReader.from_batches(
+            schema_to_pyarrow(self.projection()),
+            project_batches(
+                self.plan_files(),
+                self.table_metadata,
+                self.io,
+                self.row_filter,
+                self.projection(),
+                case_sensitive=self.case_sensitive,
+                limit=self.limit,
+            ),
         )
 
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
@@ -3826,6 +3845,67 @@ class InspectTable:
             manifests,
             schema=manifest_schema,
         )
+
+    def metadata_log_entries(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.table.snapshots import MetadataLogEntry
+
+        table_schema = pa.schema([
+            pa.field("timestamp", pa.timestamp(unit="ms"), nullable=False),
+            pa.field("file", pa.string(), nullable=False),
+            pa.field("latest_snapshot_id", pa.int64(), nullable=True),
+            pa.field("latest_schema_id", pa.int32(), nullable=True),
+            pa.field("latest_sequence_number", pa.int64(), nullable=True),
+        ])
+
+        def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
+            latest_snapshot = self.tbl.snapshot_as_of_timestamp(metadata_entry.timestamp_ms)
+            return {
+                "timestamp": metadata_entry.timestamp_ms,
+                "file": metadata_entry.metadata_file,
+                "latest_snapshot_id": latest_snapshot.snapshot_id if latest_snapshot else None,
+                "latest_schema_id": latest_snapshot.schema_id if latest_snapshot else None,
+                "latest_sequence_number": latest_snapshot.sequence_number if latest_snapshot else None,
+            }
+
+        # similar to MetadataLogEntriesTable in Java
+        # https://github.com/apache/iceberg/blob/8a70fe0ff5f241aec8856f8091c77fdce35ad256/core/src/main/java/org/apache/iceberg/MetadataLogEntriesTable.java#L62-L66
+        metadata_log_entries = self.tbl.metadata.metadata_log + [
+            MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)
+        ]
+
+        return pa.Table.from_pylist(
+            [metadata_log_entry_to_row(entry) for entry in metadata_log_entries],
+            schema=table_schema,
+        )
+
+    def history(self) -> "pa.Table":
+        import pyarrow as pa
+
+        history_schema = pa.schema([
+            pa.field("made_current_at", pa.timestamp(unit="ms"), nullable=False),
+            pa.field("snapshot_id", pa.int64(), nullable=False),
+            pa.field("parent_id", pa.int64(), nullable=True),
+            pa.field("is_current_ancestor", pa.bool_(), nullable=False),
+        ])
+
+        ancestors_ids = {snapshot.snapshot_id for snapshot in ancestors_of(self.tbl.current_snapshot(), self.tbl.metadata)}
+
+        history = []
+        metadata = self.tbl.metadata
+
+        for snapshot_entry in metadata.snapshot_log:
+            snapshot = metadata.snapshot_by_id(snapshot_entry.snapshot_id)
+
+            history.append({
+                "made_current_at": datetime.utcfromtimestamp(snapshot_entry.timestamp_ms / 1000.0),
+                "snapshot_id": snapshot_entry.snapshot_id,
+                "parent_id": snapshot.parent_snapshot_id if snapshot else None,
+                "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
+            })
+
+        return pa.Table.from_pylist(history, schema=history_schema)
 
 
 @dataclass(frozen=True)

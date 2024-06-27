@@ -348,8 +348,8 @@ def test_write_manifest(
 
         expected_metadata = {
             "schema": test_schema.model_dump_json(),
-            "partition-spec": test_spec.model_dump_json(),
-            "partition-spec-id": str(test_spec.spec_id),
+            "partition-spec": """[{"source-id":1,"field-id":1,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":2,"transform":"identity","name":"tpep_pickup_datetime"}]""",
+            "partition-spec-id": str(demo_manifest_file.partition_spec_id),
             "format-version": str(format_version),
         }
         _verify_metadata_with_fastavro(
