@@ -400,6 +400,52 @@ def test_list_tables_404(rest_mock: Mocker) -> None:
     assert "Namespace does not exist" in str(e.value)
 
 
+def test_list_views_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
+
+
+def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_views(namespace) == [
+        ("examples", "fooshare")
+    ]
+    assert rest_mock.called
+
+
+def test_list_views_404(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "error": {
+                "message": "Namespace does not exist: personal in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    with pytest.raises(NoSuchNamespaceError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert "Namespace does not exist" in str(e.value)
+
+
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces",

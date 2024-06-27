@@ -538,6 +538,22 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        """List views under the given namespace in the catalog.
+
+        If namespace not provided, will list all views in the catalog.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier to search.
+
+        Returns:
+            List[Identifier]: list of table identifiers.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist.
+        """
+
+    @abstractmethod
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
 
