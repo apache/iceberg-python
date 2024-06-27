@@ -139,15 +139,11 @@ class _HiveClient:
     _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None, auth_mechanism: Optional[str] = None):
+    def __init__(self, uri: str, ugi: Optional[str] = None):
         url_parts = urlparse(uri)
         transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        if auth_mechanism == "GSSAPI":
-            self._transport = TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service='hive', mechanism='GSSAPI')
-            protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
-        else:
-            self._transport = TTransport.TBufferedTransport(transport)
-            protocol = TBinaryProtocol.TBinaryProtocol(transport)
+        self._transport = TTransport.TBufferedTransport(transport)
+        protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
         self._client = Client(protocol)
         self._ugi = ugi.split(':') if ugi else None
@@ -281,7 +277,7 @@ class HiveCatalog(MetastoreCatalog):
         uris = properties["uri"].split(",")
         for idx, uri in enumerate(uris):
             try:
-                return _HiveClient(uri, properties.get("ugi"), properties.get("auth_mechanism"))
+                return _HiveClient(uri, properties.get("ugi"))
             except Exception as e:
                 if idx + 1 == len(uris):
                     raise e
