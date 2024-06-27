@@ -358,16 +358,16 @@ def test_revert_changes(simple_table: Table, table_schema_simple: Schema) -> Non
 
     assert simple_table.schemas() == {
         0: Schema(
-            NestedField(field_id=1, name='foo', field_type=StringType(), required=False),
-            NestedField(field_id=2, name='bar', field_type=IntegerType(), required=True),
-            NestedField(field_id=3, name='baz', field_type=BooleanType(), required=False),
+            NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+            NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+            NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
             identifier_field_ids=[2],
         ),
         1: Schema(
-            NestedField(field_id=1, name='foo', field_type=StringType(), required=False),
-            NestedField(field_id=2, name='bar', field_type=IntegerType(), required=True),
-            NestedField(field_id=3, name='baz', field_type=BooleanType(), required=False),
-            NestedField(field_id=4, name='data', field_type=IntegerType(), required=False),
+            NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+            NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+            NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+            NestedField(field_id=4, name="data", field_type=IntegerType(), required=False),
             identifier_field_ids=[2],
         ),
     }
@@ -685,9 +685,9 @@ def test_rename_simple(simple_table: Table) -> None:
 
     # Check that the name mapping gets updated
     assert simple_table.name_mapping() == NameMapping([
-        MappedField(field_id=1, names=['foo', 'vo']),
-        MappedField(field_id=2, names=['bar', 'var']),
-        MappedField(field_id=3, names=['baz']),
+        MappedField(field_id=1, names=["foo", "vo"]),
+        MappedField(field_id=2, names=["bar", "var"]),
+        MappedField(field_id=3, names=["baz"]),
     ])
 
 
@@ -719,7 +719,7 @@ def test_rename_simple_nested(catalog: Catalog) -> None:
 
     # Check that the name mapping gets updated
     assert tbl.name_mapping() == NameMapping([
-        MappedField(field_id=1, names=['foo'], fields=[MappedField(field_id=2, names=['bar', 'vo'])]),
+        MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=2, names=["bar", "vo"])]),
     ])
 
 

@@ -152,7 +152,7 @@ class CreateTableRequest(IcebergBaseModel):
     properties: Dict[str, str] = Field(default_factory=dict)
 
     # validators
-    @field_validator('properties', mode='before')
+    @field_validator("properties", mode="before")
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
         return transform_dict_value_to_str(properties)
 
@@ -790,4 +790,4 @@ class RestCatalog(Catalog):
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
-        return response.status_code == 200
+        return response.status_code in (200, 204)

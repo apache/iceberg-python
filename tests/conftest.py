@@ -29,10 +29,11 @@ import os
 import re
 import socket
 import string
+import time
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
-from random import choice
+from random import choice, randint
 from tempfile import TemporaryDirectory
 from typing import (
     TYPE_CHECKING,
@@ -324,9 +325,9 @@ def pyarrow_schema_simple_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
     return pa.schema([
-        pa.field('foo', pa.string(), nullable=True),
-        pa.field('bar', pa.int32(), nullable=False),
-        pa.field('baz', pa.bool_(), nullable=True),
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
     ])
 
 
@@ -335,12 +336,12 @@ def pyarrow_schema_nested_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
     return pa.schema([
-        pa.field('foo', pa.string(), nullable=False),
-        pa.field('bar', pa.int32(), nullable=False),
-        pa.field('baz', pa.bool_(), nullable=True),
-        pa.field('qux', pa.list_(pa.string()), nullable=False),
+        pa.field("foo", pa.string(), nullable=False),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=True),
+        pa.field("qux", pa.list_(pa.string()), nullable=False),
         pa.field(
-            'quux',
+            "quux",
             pa.map_(
                 pa.string(),
                 pa.map_(pa.string(), pa.int32()),
@@ -348,20 +349,20 @@ def pyarrow_schema_nested_without_ids() -> "pa.Schema":
             nullable=False,
         ),
         pa.field(
-            'location',
+            "location",
             pa.list_(
                 pa.struct([
-                    pa.field('latitude', pa.float32(), nullable=False),
-                    pa.field('longitude', pa.float32(), nullable=False),
+                    pa.field("latitude", pa.float32(), nullable=False),
+                    pa.field("longitude", pa.float32(), nullable=False),
                 ]),
             ),
             nullable=False,
         ),
         pa.field(
-            'person',
+            "person",
             pa.struct([
-                pa.field('name', pa.string(), nullable=True),
-                pa.field('age', pa.int32(), nullable=False),
+                pa.field("name", pa.string(), nullable=True),
+                pa.field("age", pa.int32(), nullable=False),
             ]),
             nullable=True,
         ),
@@ -729,6 +730,77 @@ EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
 @pytest.fixture
 def example_table_metadata_no_snapshot_v1() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1
+
+
+@pytest.fixture
+def example_table_metadata_v2_with_extensive_snapshots() -> Dict[str, Any]:
+    def generate_snapshot(
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int] = None,
+        timestamp_ms: Optional[int] = None,
+        sequence_number: int = 0,
+    ) -> Dict[str, Any]:
+        return {
+            "snapshot-id": snapshot_id,
+            "parent-snapshot-id": parent_snapshot_id,
+            "timestamp-ms": timestamp_ms or int(time.time() * 1000),
+            "sequence-number": sequence_number,
+            "summary": {"operation": "append"},
+            "manifest-list": f"s3://a/b/{snapshot_id}.avro",
+        }
+
+    snapshots = []
+    snapshot_log = []
+    initial_snapshot_id = 3051729675574597004
+
+    for i in range(2000):
+        snapshot_id = initial_snapshot_id + i
+        parent_snapshot_id = snapshot_id - 1 if i > 0 else None
+        timestamp_ms = int(time.time() * 1000) - randint(0, 1000000)
+        snapshots.append(generate_snapshot(snapshot_id, parent_snapshot_id, timestamp_ms, i))
+        snapshot_log.append({"snapshot-id": snapshot_id, "timestamp-ms": timestamp_ms})
+
+    return {
+        "format-version": 2,
+        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+        "location": "s3://bucket/test/location",
+        "last-sequence-number": 34,
+        "last-updated-ms": 1602638573590,
+        "last-column-id": 3,
+        "current-schema-id": 1,
+        "schemas": [
+            {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+            {
+                "type": "struct",
+                "schema-id": 1,
+                "identifier-field-ids": [1, 2],
+                "fields": [
+                    {"id": 1, "name": "x", "required": True, "type": "long"},
+                    {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+                    {"id": 3, "name": "z", "required": True, "type": "long"},
+                ],
+            },
+        ],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
+        "last-partition-id": 1000,
+        "default-sort-order-id": 3,
+        "sort-orders": [
+            {
+                "order-id": 3,
+                "fields": [
+                    {"transform": "identity", "source-id": 2, "direction": "asc", "null-order": "nulls-first"},
+                    {"transform": "bucket[4]", "source-id": 3, "direction": "desc", "null-order": "nulls-last"},
+                ],
+            }
+        ],
+        "properties": {"read.split.target.size": "134217728"},
+        "current-snapshot-id": initial_snapshot_id + 1999,
+        "snapshots": snapshots,
+        "snapshot-log": snapshot_log,
+        "metadata-log": [{"metadata-file": "s3://bucket/.../v1.json", "timestamp-ms": 1515100}],
+        "refs": {"test": {"snapshot-id": initial_snapshot_id, "type": "tag", "max-ref-age-ms": 10000000}},
+    }
 
 
 EXAMPLE_TABLE_METADATA_V2 = {
@@ -1878,6 +1950,19 @@ def database_list(database_name: str) -> List[str]:
     return [f"{database_name}_{idx}" for idx in range(NUM_TABLES)]
 
 
+@pytest.fixture()
+def hierarchical_namespace_name() -> str:
+    prefix = "my_iceberg_ns-"
+    random_tag1 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    random_tag2 = "".join(choice(string.ascii_letters) for _ in range(RANDOM_LENGTH))
+    return ".".join([prefix + random_tag1, prefix + random_tag2]).lower()
+
+
+@pytest.fixture()
+def hierarchical_namespace_list(hierarchical_namespace_name: str) -> List[str]:
+    return [f"{hierarchical_namespace_name}_{idx}" for idx in range(NUM_TABLES)]
+
+
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
     r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
@@ -1980,6 +2065,18 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
+def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV2(**example_table_metadata_v2_with_extensive_snapshots)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
 def bound_reference_str() -> BoundReference[str]:
     return BoundReference(field=NestedField(1, "field", StringType(), required=False), accessor=Accessor(position=0, inner=None))
 
@@ -2068,31 +2165,31 @@ def spark() -> "SparkSession":
 
 
 TEST_DATA_WITH_NULL = {
-    'bool': [False, None, True],
-    'string': ['a', None, 'z'],
+    "bool": [False, None, True],
+    "string": ["a", None, "z"],
     # Go over the 16 bytes to kick in truncation
-    'string_long': ['a' * 22, None, 'z' * 22],
-    'int': [1, None, 9],
-    'long': [1, None, 9],
-    'float': [0.0, None, 0.9],
-    'double': [0.0, None, 0.9],
+    "string_long": ["a" * 22, None, "z" * 22],
+    "int": [1, None, 9],
+    "long": [1, None, 9],
+    "float": [0.0, None, 0.9],
+    "double": [0.0, None, 0.9],
     # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
-    'timestamp': [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-    'timestamptz': [
+    "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+    "timestamptz": [
         datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
         None,
         datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
     ],
-    'date': [date(2023, 1, 1), None, date(2023, 3, 1)],
+    "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
     # Not supported by Spark
     # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
     # Not natively supported by Arrow
     # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
-    'binary': [b'\01', None, b'\22'],
-    'fixed': [
-        uuid.UUID('00000000-0000-0000-0000-000000000000').bytes,
+    "binary": [b"\01", None, b"\22"],
+    "fixed": [
+        uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
         None,
-        uuid.UUID('11111111-1111-1111-1111-111111111111').bytes,
+        uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
     ],
 }
 
@@ -2103,8 +2200,8 @@ def pa_schema() -> "pa.Schema":
 
     return pa.schema([
         ("bool", pa.bool_()),
-        ("string", pa.string()),
-        ("string_long", pa.string()),
+        ("string", pa.large_string()),
+        ("string_long", pa.large_string()),
         ("int", pa.int32()),
         ("long", pa.int64()),
         ("float", pa.float32()),
@@ -2145,3 +2242,46 @@ def arrow_table_with_only_nulls(pa_schema: "pa.Schema") -> "pa.Table":
     import pyarrow as pa
 
     return pa.Table.from_pylist([{}, {}], schema=pa_schema)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_date_timestamps() -> "pa.Table":
+    """Pyarrow table with only date, timestamp and timestamptz values."""
+    import pyarrow as pa
+
+    return pa.Table.from_pydict(
+        {
+            "date": [date(2023, 12, 31), date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1), date(2024, 2, 1), None],
+            "timestamp": [
+                datetime(2023, 12, 31, 0, 0, 0),
+                datetime(2024, 1, 1, 0, 0, 0),
+                datetime(2024, 1, 31, 0, 0, 0),
+                datetime(2024, 2, 1, 0, 0, 0),
+                datetime(2024, 2, 1, 6, 0, 0),
+                None,
+            ],
+            "timestamptz": [
+                datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
+                None,
+            ],
+        },
+        schema=pa.schema([
+            ("date", pa.date32()),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+        ]),
+    )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_date_timestamps_schema() -> Schema:
+    """Pyarrow table Schema with only date, timestamp and timestamptz values."""
+    return Schema(
+        NestedField(field_id=1, name="date", field_type=DateType(), required=False),
+        NestedField(field_id=2, name="timestamp", field_type=TimestampType(), required=False),
+        NestedField(field_id=3, name="timestamptz", field_type=TimestamptzType(), required=False),
+    )

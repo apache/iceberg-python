@@ -77,6 +77,7 @@ def test_serialize_snapshot_without_sequence_number() -> None:
     snapshot = Snapshot(
         snapshot_id=25,
         parent_snapshot_id=19,
+        sequence_number=None,
         timestamp_ms=1602638573590,
         manifest_list="s3:/a/b/c.avro",
         summary=Summary(Operation.APPEND),
@@ -156,9 +157,9 @@ def test_snapshot_summary_collector(table_schema_simple: Schema) -> None:
     ssc.add_file(data_file, schema=table_schema_simple)
 
     assert ssc.build() == {
-        'added-data-files': '1',
-        'added-files-size': '1234',
-        'added-records': '100',
+        "added-data-files": "1",
+        "added-files-size": "1234",
+        "added-records": "100",
     }
 
 
@@ -174,7 +175,7 @@ def test_snapshot_summary_collector_with_partition() -> None:
         NestedField(field_id=2, name="string_field", field_type=StringType(), required=False),
         NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
     )
-    spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name='int_field'))
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name="int_field"))
     data_file_1 = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
     data_file_2 = DataFile(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(int_field=2))
     # When
@@ -184,13 +185,13 @@ def test_snapshot_summary_collector_with_partition() -> None:
 
     # Then
     assert ssc.build() == {
-        'added-files-size': '1234',
-        'removed-files-size': '5555',
-        'added-data-files': '1',
-        'deleted-data-files': '2',
-        'added-records': '100',
-        'deleted-records': '300',
-        'changed-partition-count': '2',
+        "added-files-size": "1234",
+        "removed-files-size": "5555",
+        "added-data-files": "1",
+        "deleted-data-files": "2",
+        "added-records": "100",
+        "deleted-records": "300",
+        "changed-partition-count": "2",
     }
 
     # When
@@ -198,15 +199,15 @@ def test_snapshot_summary_collector_with_partition() -> None:
 
     # Then
     assert ssc.build() == {
-        'added-files-size': '1234',
-        'removed-files-size': '5555',
-        'added-data-files': '1',
-        'deleted-data-files': '2',
-        'added-records': '100',
-        'deleted-records': '300',
-        'changed-partition-count': '2',
-        'partitions.int_field=1': 'added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100',
-        'partitions.int_field=2': 'removed-files-size=4321,deleted-data-files=1,deleted-records=200',
+        "added-files-size": "1234",
+        "removed-files-size": "5555",
+        "added-data-files": "1",
+        "deleted-data-files": "2",
+        "added-records": "100",
+        "deleted-records": "300",
+        "changed-partition-count": "2",
+        "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
+        "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
     }
 
 
@@ -214,12 +215,12 @@ def test_merge_snapshot_summaries_empty() -> None:
     assert update_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
         operation=Operation.APPEND,
         **{
-            'total-data-files': '0',
-            'total-delete-files': '0',
-            'total-records': '0',
-            'total-files-size': '0',
-            'total-position-deletes': '0',
-            'total-equality-deletes': '0',
+            "total-data-files": "0",
+            "total-delete-files": "0",
+            "total-records": "0",
+            "total-files-size": "0",
+            "total-position-deletes": "0",
+            "total-equality-deletes": "0",
         },
     )
 
@@ -229,12 +230,12 @@ def test_merge_snapshot_summaries_new_summary() -> None:
         summary=Summary(
             operation=Operation.APPEND,
             **{
-                'added-data-files': '1',
-                'added-delete-files': '2',
-                'added-equality-deletes': '3',
-                'added-files-size': '4',
-                'added-position-deletes': '5',
-                'added-records': '6',
+                "added-data-files": "1",
+                "added-delete-files": "2",
+                "added-equality-deletes": "3",
+                "added-files-size": "4",
+                "added-position-deletes": "5",
+                "added-records": "6",
             },
         )
     )
@@ -242,18 +243,18 @@ def test_merge_snapshot_summaries_new_summary() -> None:
     expected = Summary(
         operation=Operation.APPEND,
         **{
-            'added-data-files': '1',
-            'added-delete-files': '2',
-            'added-equality-deletes': '3',
-            'added-files-size': '4',
-            'added-position-deletes': '5',
-            'added-records': '6',
-            'total-data-files': '1',
-            'total-delete-files': '2',
-            'total-records': '6',
-            'total-files-size': '4',
-            'total-position-deletes': '5',
-            'total-equality-deletes': '3',
+            "added-data-files": "1",
+            "added-delete-files": "2",
+            "added-equality-deletes": "3",
+            "added-files-size": "4",
+            "added-position-deletes": "5",
+            "added-records": "6",
+            "total-data-files": "1",
+            "total-delete-files": "2",
+            "total-records": "6",
+            "total-files-size": "4",
+            "total-position-deletes": "5",
+            "total-equality-deletes": "3",
         },
     )
 
@@ -265,44 +266,44 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
         summary=Summary(
             operation=Operation.OVERWRITE,
             **{
-                'added-data-files': '1',
-                'added-delete-files': '2',
-                'added-equality-deletes': '3',
-                'added-files-size': '4',
-                'added-position-deletes': '5',
-                'added-records': '6',
+                "added-data-files": "1",
+                "added-delete-files": "2",
+                "added-equality-deletes": "3",
+                "added-files-size": "4",
+                "added-position-deletes": "5",
+                "added-records": "6",
             },
         ),
         previous_summary={
-            'total-data-files': '1',
-            'total-delete-files': '1',
-            'total-equality-deletes': '1',
-            'total-files-size': '1',
-            'total-position-deletes': '1',
-            'total-records': '1',
+            "total-data-files": "1",
+            "total-delete-files": "1",
+            "total-equality-deletes": "1",
+            "total-files-size": "1",
+            "total-position-deletes": "1",
+            "total-records": "1",
         },
         truncate_full_table=True,
     )
 
     expected = {
-        'added-data-files': '1',
-        'added-delete-files': '2',
-        'added-equality-deletes': '3',
-        'added-files-size': '4',
-        'added-position-deletes': '5',
-        'added-records': '6',
-        'total-data-files': '1',
-        'total-records': '6',
-        'total-delete-files': '2',
-        'total-equality-deletes': '3',
-        'total-files-size': '4',
-        'total-position-deletes': '5',
-        'deleted-data-files': '1',
-        'removed-delete-files': '1',
-        'deleted-records': '1',
-        'removed-files-size': '1',
-        'removed-position-deletes': '1',
-        'removed-equality-deletes': '1',
+        "added-data-files": "1",
+        "added-delete-files": "2",
+        "added-equality-deletes": "3",
+        "added-files-size": "4",
+        "added-position-deletes": "5",
+        "added-records": "6",
+        "total-data-files": "1",
+        "total-records": "6",
+        "total-delete-files": "2",
+        "total-equality-deletes": "3",
+        "total-files-size": "4",
+        "total-position-deletes": "5",
+        "deleted-data-files": "1",
+        "removed-delete-files": "1",
+        "deleted-records": "1",
+        "removed-files-size": "1",
+        "removed-position-deletes": "1",
+        "removed-equality-deletes": "1",
     }
 
     assert actual.additional_properties == expected
@@ -324,15 +325,15 @@ def test_invalid_type() -> None:
             summary=Summary(
                 operation=Operation.OVERWRITE,
                 **{
-                    'added-data-files': '1',
-                    'added-delete-files': '2',
-                    'added-equality-deletes': '3',
-                    'added-files-size': '4',
-                    'added-position-deletes': '5',
-                    'added-records': '6',
+                    "added-data-files": "1",
+                    "added-delete-files": "2",
+                    "added-equality-deletes": "3",
+                    "added-files-size": "4",
+                    "added-position-deletes": "5",
+                    "added-records": "6",
                 },
             ),
-            previous_summary={'total-data-files': 'abc'},  # should be a number
+            previous_summary={"total-data-files": "abc"},  # should be a number
             truncate_full_table=True,
         )
 

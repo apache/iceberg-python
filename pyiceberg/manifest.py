@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
@@ -30,13 +31,15 @@ from typing import (
     Type,
 )
 
+from pydantic_core import to_json
+
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import EMPTY_DICT, Record, TableVersion
+from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -644,7 +647,6 @@ class ManifestWriter(ABC):
     _output_file: OutputFile
     _writer: AvroOutputFile[ManifestEntry]
     _snapshot_id: int
-    _meta: Dict[str, str]
     _added_files: int
     _added_rows: int
     _existing_files: int
@@ -654,15 +656,12 @@ class ManifestWriter(ABC):
     _min_data_sequence_number: Optional[int]
     _partitions: List[Record]
 
-    def __init__(
-        self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str] = EMPTY_DICT
-    ) -> None:
+    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int) -> None:
         self.closed = False
         self._spec = spec
         self._schema = schema
         self._output_file = output_file
         self._snapshot_id = snapshot_id
-        self._meta = meta
 
         self._added_files = 0
         self._added_rows = 0
@@ -695,6 +694,15 @@ class ManifestWriter(ABC):
     @property
     @abstractmethod
     def version(self) -> TableVersion: ...
+
+    @property
+    def _meta(self) -> Dict[str, str]:
+        return {
+            "schema": self._schema.model_dump_json(),
+            "partition-spec": to_json(self._spec.fields).decode("utf-8"),
+            "partition-spec-id": str(self._spec.spec_id),
+            "format-version": str(self.version),
+        }
 
     def _with_partition(self, format_version: TableVersion) -> Schema:
         data_file_type = data_file_with_partition(
@@ -770,12 +778,6 @@ class ManifestWriterV1(ManifestWriter):
             schema,
             output_file,
             snapshot_id,
-            {
-                "schema": schema.model_dump_json(),
-                "partition-spec": spec.model_dump_json(),
-                "partition-spec-id": str(spec.spec_id),
-                "format-version": "1",
-            },
         )
 
     def content(self) -> ManifestContent:
@@ -791,19 +793,7 @@ class ManifestWriterV1(ManifestWriter):
 
 class ManifestWriterV2(ManifestWriter):
     def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
-        super().__init__(
-            spec,
-            schema,
-            output_file,
-            snapshot_id,
-            meta={
-                "schema": schema.model_dump_json(),
-                "partition-spec": spec.model_dump_json(),
-                "partition-spec-id": str(spec.spec_id),
-                "format-version": "2",
-                "content": "data",
-            },
-        )
+        super().__init__(spec, schema, output_file, snapshot_id)
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
@@ -811,6 +801,13 @@ class ManifestWriterV2(ManifestWriter):
     @property
     def version(self) -> TableVersion:
         return 2
+
+    @property
+    def _meta(self) -> Dict[str, str]:
+        return {
+            **super()._meta,
+            "content": "data",
+        }
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
         if entry.data_sequence_number is None:
@@ -909,7 +906,7 @@ class ManifestListWriterV2(ManifestListWriter):
         self._sequence_number = sequence_number
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
-        wrapped_manifest_file = ManifestFile(*manifest_file.record_fields())
+        wrapped_manifest_file = copy(manifest_file)
 
         if wrapped_manifest_file.sequence_number == UNASSIGNED_SEQ:
             # if the sequence number is being assigned here, then the manifest must be created by the current operation.

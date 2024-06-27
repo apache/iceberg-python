@@ -16,6 +16,10 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+
+from datetime import date
+from typing import Any, Set
+
 import pyarrow as pa
 import pytest
 from pyspark.sql import SparkSession
@@ -23,12 +27,14 @@ from pyspark.sql import SparkSession
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
     HourTransform,
     IdentityTransform,
     MonthTransform,
+    Transform,
     TruncateTransform,
     YearTransform,
 )
@@ -38,7 +44,7 @@ from utils import TABLE_SCHEMA, _create_table
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz', 'binary']
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_filter_null_partitioned(
@@ -71,7 +77,7 @@ def test_query_filter_null_partitioned(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz', 'binary']
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_filter_without_data_partitioned(
@@ -103,7 +109,7 @@ def test_query_filter_without_data_partitioned(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", 'timestamp', 'timestamptz', 'binary']
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_filter_only_nulls_partitioned(
@@ -135,7 +141,7 @@ def test_query_filter_only_nulls_partitioned(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_filter_appended_null_partitioned(
@@ -174,7 +180,7 @@ def test_query_filter_appended_null_partitioned(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "part_col", ['int', 'bool', 'string', "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
 def test_query_filter_v1_v2_append_null(
     session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str
@@ -225,7 +231,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         identifier=identifier,
         schema=TABLE_SCHEMA,
         partition_spec=PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="int")),
-        properties={'format-version': '2'},
+        properties={"format-version": "2"},
     )
 
     tbl.append(arrow_table_with_null)
@@ -240,33 +246,33 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ['append', 'append']
+    assert operations == ["append", "append"]
 
     summaries = [row.summary for row in rows]
     assert summaries[0] == {
-        'changed-partition-count': '3',
-        'added-data-files': '3',
-        'added-files-size': '15029',
-        'added-records': '3',
-        'total-data-files': '3',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '15029',
-        'total-position-deletes': '0',
-        'total-records': '3',
+        "changed-partition-count": "3",
+        "added-data-files": "3",
+        "added-files-size": "15029",
+        "added-records": "3",
+        "total-data-files": "3",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "15029",
+        "total-position-deletes": "0",
+        "total-records": "3",
     }
 
     assert summaries[1] == {
-        'changed-partition-count': '3',
-        'added-data-files': '3',
-        'added-files-size': '15029',
-        'added-records': '3',
-        'total-data-files': '6',
-        'total-delete-files': '0',
-        'total-equality-deletes': '0',
-        'total-files-size': '30058',
-        'total-position-deletes': '0',
-        'total-records': '6',
+        "changed-partition-count": "3",
+        "added-data-files": "3",
+        "added-files-size": "15029",
+        "added-records": "3",
+        "total-data-files": "6",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "30058",
+        "total-position-deletes": "0",
+        "total-records": "6",
     }
 
 
@@ -284,7 +290,7 @@ def test_data_files_with_table_partitioned_with_null(
         identifier=identifier,
         schema=TABLE_SCHEMA,
         partition_spec=PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="int")),
-        properties={'format-version': '1'},
+        properties={"format-version": "1"},
     )
 
     tbl.append(arrow_table_with_null)
@@ -320,7 +326,7 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog) -> Non
         identifier=identifier,
         schema=TABLE_SCHEMA,
         partition_spec=PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="int")),
-        properties={'format-version': '1'},
+        properties={"format-version": "1"},
     )
 
     with pytest.raises(ValueError, match="Expected PyArrow table, got: not a df"):
@@ -351,18 +357,6 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog) -> Non
         (PartitionSpec(PartitionField(source_id=5, field_id=1001, transform=TruncateTransform(2), name="long_trunc"))),
         (PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(2), name="string_trunc"))),
         (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(2), name="binary_trunc"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=YearTransform(), name="timestamp_year"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=YearTransform(), name="timestamptz_year"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=YearTransform(), name="date_year"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=MonthTransform(), name="timestamp_month"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=MonthTransform(), name="timestamptz_month"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=MonthTransform(), name="date_month"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=DayTransform(), name="timestamp_day"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=DayTransform(), name="timestamptz_day"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=DayTransform(), name="date_day"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=HourTransform(), name="timestamp_hour"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=HourTransform(), name="timestamptz_hour"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=HourTransform(), name="date_hour"))),
     ],
 )
 def test_unsupported_transform(
@@ -379,8 +373,189 @@ def test_unsupported_transform(
         identifier=identifier,
         schema=TABLE_SCHEMA,
         partition_spec=spec,
-        properties={'format-version': '1'},
+        properties={"format-version": "1"},
     )
 
-    with pytest.raises(ValueError, match="All transforms are not supported.*"):
+    with pytest.raises(
+        ValueError,
+        match="Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: *",
+    ):
         tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "transform,expected_rows",
+    [
+        pytest.param(YearTransform(), 2, id="year_transform"),
+        pytest.param(MonthTransform(), 3, id="month_transform"),
+        pytest.param(DayTransform(), 3, id="day_transform"),
+    ],
+)
+@pytest.mark.parametrize("part_col", ["date", "timestamp", "timestamptz"])
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_ymd_transform_partitioned(
+    session_catalog: Catalog,
+    spark: SparkSession,
+    arrow_table_with_null: pa.Table,
+    transform: Transform[Any, Any],
+    expected_rows: int,
+    part_col: str,
+    format_version: int,
+) -> None:
+    # Given
+    identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_partition_on_col_{part_col}"
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col)
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_with_null],
+        partition_spec=partition_spec,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    assert df.count() == 3, f"Expected 3 total rows for {identifier}"
+    for col in TEST_DATA_WITH_NULL.keys():
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    assert tbl.inspect.partitions().num_rows == expected_rows
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == expected_rows
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "transform,expected_partitions",
+    [
+        pytest.param(YearTransform(), {53, 54, None}, id="year_transform"),
+        pytest.param(MonthTransform(), {647, 648, 649, None}, id="month_transform"),
+        pytest.param(
+            DayTransform(), {date(2023, 12, 31), date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1), None}, id="day_transform"
+        ),
+        pytest.param(HourTransform(), {473328, 473352, 474072, 474096, 474102, None}, id="hour_transform"),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_transform_partition_verify_partitions_count(
+    session_catalog: Catalog,
+    spark: SparkSession,
+    arrow_table_date_timestamps: pa.Table,
+    arrow_table_date_timestamps_schema: Schema,
+    transform: Transform[Any, Any],
+    expected_partitions: Set[Any],
+    format_version: int,
+) -> None:
+    # Given
+    part_col = "timestamptz"
+    identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_transform_partitioned_on_col_{part_col}"
+    nested_field = arrow_table_date_timestamps_schema.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col),
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_date_timestamps],
+        partition_spec=partition_spec,
+        schema=arrow_table_date_timestamps_schema,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    assert df.count() == 6, f"Expected 6 total rows for {identifier}"
+    for col in arrow_table_date_timestamps.column_names:
+        assert df.where(f"{col} is not null").count() == 5, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    partitions_table = tbl.inspect.partitions()
+    assert partitions_table.num_rows == len(expected_partitions)
+    assert {part[part_col] for part in partitions_table["partition"].to_pylist()} == expected_partitions
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == len(expected_partitions)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_multiple_partitions(
+    session_catalog: Catalog,
+    spark: SparkSession,
+    arrow_table_date_timestamps: pa.Table,
+    arrow_table_date_timestamps_schema: Schema,
+    format_version: int,
+) -> None:
+    # Given
+    identifier = f"default.arrow_table_v{format_version}_with_multiple_partitions"
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=arrow_table_date_timestamps_schema.find_field("date").field_id,
+            field_id=1001,
+            transform=YearTransform(),
+            name="date_year",
+        ),
+        PartitionField(
+            source_id=arrow_table_date_timestamps_schema.find_field("timestamptz").field_id,
+            field_id=1000,
+            transform=HourTransform(),
+            name="timestamptz_hour",
+        ),
+    )
+
+    # When
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_date_timestamps],
+        partition_spec=partition_spec,
+        schema=arrow_table_date_timestamps_schema,
+    )
+
+    # Then
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    assert df.count() == 6, f"Expected 6 total rows for {identifier}"
+    for col in arrow_table_date_timestamps.column_names:
+        assert df.where(f"{col} is not null").count() == 5, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    partitions_table = tbl.inspect.partitions()
+    assert partitions_table.num_rows == 6
+    partitions = partitions_table["partition"].to_pylist()
+    assert {(part["date_year"], part["timestamptz_hour"]) for part in partitions} == {
+        (53, 473328),
+        (54, 473352),
+        (54, 474072),
+        (54, 474096),
+        (54, 474102),
+        (None, None),
+    }
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == 6

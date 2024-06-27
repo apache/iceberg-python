@@ -1152,11 +1152,11 @@ def test_above_long_bounds_greater_than_or_equal(
 
 
 def test_eq_bound_expression(bound_reference_str: BoundReference[str]) -> None:
-    assert BoundEqualTo(term=bound_reference_str, literal=literal('a')) != BoundGreaterThanOrEqual(
-        term=bound_reference_str, literal=literal('a')
+    assert BoundEqualTo(term=bound_reference_str, literal=literal("a")) != BoundGreaterThanOrEqual(
+        term=bound_reference_str, literal=literal("a")
     )
-    assert BoundEqualTo(term=bound_reference_str, literal=literal('a')) == BoundEqualTo(
-        term=bound_reference_str, literal=literal('a')
+    assert BoundEqualTo(term=bound_reference_str, literal=literal("a")) == BoundEqualTo(
+        term=bound_reference_str, literal=literal("a")
     )
 
 
