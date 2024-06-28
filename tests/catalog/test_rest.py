@@ -28,6 +28,7 @@ from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
+    NamespaceNotEmptyError,
     NoSuchNamespaceError,
     NoSuchTableError,
     OAuthError,
@@ -554,6 +555,25 @@ def test_drop_namespace_404(rest_mock: Mocker) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_namespace(namespace)
     assert "Namespace does not exist" in str(e.value)
+
+
+def test_drop_namespace_409(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={
+            "error": {
+                "message": "Namespace is not empty: leden in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NamespaceNotEmptyError",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+    with pytest.raises(NamespaceNotEmptyError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_namespace(namespace)
+    assert "Namespace is not empty" in str(e.value)
 
 
 def test_load_namespace_properties_200(rest_mock: Mocker) -> None:
