@@ -1100,6 +1100,18 @@ def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_
         lazy_fixture("catalog_sqlite"),
     ],
 )
+def test_drop_non_existing_namespaces(catalog: SqlCatalog) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.drop_namespace("does_not_exist")
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
 def test_load_namespace_properties(catalog: SqlCatalog, namespace: str) -> None:
     warehouse_location = "/test/location"
