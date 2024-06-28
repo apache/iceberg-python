@@ -115,7 +115,7 @@ from pyiceberg.table.snapshots import (
     Summary,
     update_snapshot_summaries,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -139,6 +139,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.singleton import _convert_to_hashable_type
+from pyiceberg.utils.sorting import PyArrowSortOptions
 
 if TYPE_CHECKING:
     import daft
@@ -2721,9 +2722,25 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
+    sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
 
     if len(table_metadata.spec().fields) > 0:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+
+        write_partitions = (
+            [
+                TablePartition(
+                    partition_key=partition.partition_key,
+                    arrow_table_partition=_sort_table_by_sort_order(
+                        arrow_table=partition.arrow_table_partition, schema=table_metadata.schema(), sort_order=sort_order
+                    ),
+                )
+                for partition in partitions
+            ]
+            if sort_order and not sort_order.is_unsorted
+            else partitions
+        )
+
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -2734,18 +2751,31 @@ def _dataframe_to_data_files(
                     record_batches=batches,
                     partition_key=partition.partition_key,
                     schema=table_metadata.schema(),
+                    sort_order_id=sort_order.order_id if sort_order else None,
                 )
-                for partition in partitions
+                for partition in write_partitions
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
             ]),
         )
     else:
+        write_df = (
+            _sort_table_by_sort_order(arrow_table=df, schema=table_metadata.schema(), sort_order=sort_order)
+            if sort_order and not sort_order.is_unsorted
+            else df
+        )
+
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
-                for batches in bin_pack_arrow_table(df, target_file_size)
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    schema=table_metadata.schema(),
+                    sort_order_id=sort_order.order_id if sort_order else None,
+                )
+                for batches in bin_pack_arrow_table(write_df, target_file_size)
             ]),
         )
 
@@ -3747,3 +3777,29 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     table_partitions: List[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
 
     return table_partitions
+
+
+def _sort_table_by_sort_order(arrow_table: pa.Table, schema: Schema, sort_order: SortOrder) -> pa.Table:
+    import pyarrow as pa
+
+    from pyiceberg.utils.sorting import convert_sort_field_to_pyarrow_sort_options, get_sort_indices_arrow_table
+
+    sort_columns: List[Tuple[SortField, NestedField]] = [
+        (sort_field, schema.find_field(sort_field.source_id)) for sort_field in sort_order.fields
+    ]
+
+    sort_values_generated = pa.table({
+        str(sort_spec.source_id): sort_spec.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        for sort_spec, field in sort_columns
+    })
+
+    arrow_sort_options: list[Tuple[str, PyArrowSortOptions]] = [
+        (
+            str(sort_field.source_id),
+            convert_sort_field_to_pyarrow_sort_options(sort_field),
+        )
+        for sort_field in sort_order.fields
+    ]
+
+    sort_indices = get_sort_indices_arrow_table(tbl=sort_values_generated, sort_seq=arrow_sort_options).to_pylist()
+    return arrow_table.take(sort_indices)
