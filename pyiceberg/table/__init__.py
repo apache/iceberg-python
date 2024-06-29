@@ -3784,6 +3784,11 @@ def _sort_table_by_sort_order(arrow_table: pa.Table, schema: Schema, sort_order:
 
     from pyiceberg.utils.arrow_sorting import convert_sort_field_to_pyarrow_sort_options, get_sort_indices_arrow_table
 
+    if unsupported_sort_transforms := [field for field in sort_order.fields if not field.transform.supports_pyarrow_transform]:
+        raise ValueError(
+            f"Not all sort transforms are supported for writes. Following sort orders cannot be written using pyarrow: {unsupported_sort_transforms}."
+        )
+
     sort_columns: List[Tuple[SortField, NestedField]] = [
         (sort_field, schema.find_field(sort_field.source_id)) for sort_field in sort_order.fields
     ]
