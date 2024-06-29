@@ -93,7 +93,7 @@ def test_query_null_sort(
     "sort_col_tuple_3", [("int", "bool", "string"), ("long", "float", "double"), ("date", "timestamp", "timestamptz")]
 )
 @pytest.mark.parametrize("sort_direction_tuple_3", [(SortDirection.ASC, SortDirection.DESC, SortDirection.DESC)])
-@pytest.mark.parametrize("sort_null_ordering_tuple_3", [(NullOrder.NULLS_FIRST, NullOrder.NULLS_FIRST, NullOrder.NULLS_LAST)])
+@pytest.mark.parametrize("sort_null_ordering_tuple_3", [(NullOrder.NULLS_FIRST, NullOrder.NULLS_FIRST, NullOrder.NULLS_LAST),(NullOrder.NULLS_FIRST, NullOrder.NULLS_FIRST, NullOrder.NULLS_FIRST)])
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_query_null_multi_sort(
     session_catalog: Catalog,

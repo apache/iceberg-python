@@ -136,10 +136,10 @@ from pyiceberg.types import (
     StructType,
     transform_dict_value_to_str,
 )
+from pyiceberg.utils.arrow_sorting import PyArrowSortOptions
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.singleton import _convert_to_hashable_type
-from pyiceberg.utils.sorting import PyArrowSortOptions
 
 if TYPE_CHECKING:
     import daft
@@ -3782,7 +3782,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 def _sort_table_by_sort_order(arrow_table: pa.Table, schema: Schema, sort_order: SortOrder) -> pa.Table:
     import pyarrow as pa
 
-    from pyiceberg.utils.sorting import convert_sort_field_to_pyarrow_sort_options, get_sort_indices_arrow_table
+    from pyiceberg.utils.arrow_sorting import convert_sort_field_to_pyarrow_sort_options, get_sort_indices_arrow_table
 
     sort_columns: List[Tuple[SortField, NestedField]] = [
         (sort_field, schema.find_field(sort_field.source_id)) for sort_field in sort_order.fields
@@ -3801,5 +3801,5 @@ def _sort_table_by_sort_order(arrow_table: pa.Table, schema: Schema, sort_order:
         for sort_field in sort_order.fields
     ]
 
-    sort_indices = get_sort_indices_arrow_table(tbl=sort_values_generated, sort_seq=arrow_sort_options).to_pylist()
+    sort_indices = get_sort_indices_arrow_table(tbl=sort_values_generated, sort_seq=arrow_sort_options)
     return arrow_table.take(sort_indices)
