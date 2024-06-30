@@ -37,6 +37,12 @@ class PyArrowSortOptions:
 
 
 def convert_sort_field_to_pyarrow_sort_options(sort_field: SortField) -> PyArrowSortOptions:
+    """
+    Convert an Iceberg Table Sort Field to Arrow Sort Options
+
+    @param sort_field: Source Iceberg Sort Field to be converted
+    @return: Returns SortField as PyArrow Sort Options
+    """
     pyarrow_sort_direction = {SortDirection.ASC: "ascending", SortDirection.DESC: "descending"}
     pyarrow_null_ordering = {NullOrder.NULLS_LAST: "at_end", NullOrder.NULLS_FIRST: "at_start"}
     return PyArrowSortOptions(
@@ -45,16 +51,23 @@ def convert_sort_field_to_pyarrow_sort_options(sort_field: SortField) -> PyArrow
     )
 
 
-def get_sort_indices_arrow_table(tbl: pa.Table, sort_seq: List[Tuple[str, PyArrowSortOptions]]) -> List[int]:
+def get_sort_indices_arrow_table(arrow_table: pa.Table, sort_seq: List[Tuple[str, PyArrowSortOptions]]) -> List[int]:
+    """
+    Sorts a Pyarrow Table with a given sort sequence.
+
+    @param arrow_table: Input table to be sorted
+    @param sort_seq: Seq of PyArrowOptions to apply sorting.
+    @return: Sorted Arrow Table
+    """
     import pyarrow as pa
 
     index_column_name = "__idx__pyarrow_sort__"
-    cols = set(tbl.column_names)
+    cols = set(arrow_table.column_names)
 
     while index_column_name in cols:
         index_column_name = f"{index_column_name}_1"
 
-    table: pa.Table = tbl.add_column(0, index_column_name, [list(range(len(tbl)))])
+    sorted_table: pa.Table = arrow_table.add_column(0, index_column_name, [list(range(len(arrow_table)))])
 
     for col_name, _ in sort_seq:
         if col_name not in cols:
@@ -63,10 +76,10 @@ def get_sort_indices_arrow_table(tbl: pa.Table, sort_seq: List[Tuple[str, PyArro
             )
 
     for col_name, sort_options in sort_seq[::-1]:
-        table = table.take(
+        sorted_table = sorted_table.take(
             pa.compute.sort_indices(
-                table, sort_keys=[(col_name, sort_options.sort_direction)], null_placement=sort_options.null_order
+                sorted_table, sort_keys=[(col_name, sort_options.sort_direction)], null_placement=sort_options.null_order
             )
         )
 
-    return table[index_column_name].to_pylist()
+    return sorted_table[index_column_name].to_pylist()

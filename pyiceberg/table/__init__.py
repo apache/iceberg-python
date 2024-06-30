@@ -3780,6 +3780,15 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
 
 def _sort_table_by_sort_order(arrow_table: pa.Table, schema: Schema, sort_order: SortOrder) -> pa.Table:
+    """
+    Sorts an Arrow Table using Iceberg Sort Order.
+    The sort implementation is stable.
+
+    @param arrow_table: Arrow Table that needs to be sorted
+    @param schema: Schema of the Iceberg Table
+    @param sort_order: Sort Order of the Iceberg Table
+    @return: Sorted Arrow Table
+    """
     import pyarrow as pa
 
     from pyiceberg.utils.arrow_sorting import convert_sort_field_to_pyarrow_sort_options, get_sort_indices_arrow_table
@@ -3806,5 +3815,5 @@ def _sort_table_by_sort_order(arrow_table: pa.Table, schema: Schema, sort_order:
         for sort_field in sort_order.fields
     ]
 
-    sort_indices = get_sort_indices_arrow_table(tbl=sort_values_generated, sort_seq=arrow_sort_options)
+    sort_indices = get_sort_indices_arrow_table(arrow_table=sort_values_generated, sort_seq=arrow_sort_options)
     return arrow_table.take(sort_indices)
