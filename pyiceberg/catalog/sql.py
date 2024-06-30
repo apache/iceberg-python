@@ -675,10 +675,10 @@ class SqlCatalog(MetastoreCatalog):
                 session.execute(delete_stmt)
                 insert_stmt_values = [
                     {
-                        "catalog_name": self.name,
-                        "namespace": namespace_str,
-                        "property_key": property_key,
-                        "property_value": property_value,
+                        IcebergNamespaceProperties.catalog_name: self.name,
+                        IcebergNamespaceProperties.namespace: namespace_str,
+                        IcebergNamespaceProperties.property_key: property_key,
+                        IcebergNamespaceProperties.property_value: property_value,
                     }
                     for property_key, property_value in updates.items()
                 ]
