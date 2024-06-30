@@ -567,6 +567,17 @@ class Catalog(ABC):
             ValueError: If removals and updates have overlapping keys.
         """
 
+    @abstractmethod
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        """Drop a view.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Raises:
+            NoSuchViewError: If a view with the given name does not exist.
+        """
+
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
 
