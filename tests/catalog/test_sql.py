@@ -1165,16 +1165,19 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
     updates = {"test_property4": "4", "test_property5": "5", "comment": "updated test description"}
     catalog.create_namespace(namespace, test_properties)
     update_report = catalog.update_namespace_properties(namespace, removals, updates)
-    updated_properties = catalog.load_namespace_properties(namespace)
-    for k, v in updates.items():
+    for k in updates.keys():
         assert k in update_report.updated
-        assert k in updated_properties
-        assert v == updated_properties[k]
     for k in removals:
         if k == "should_not_removed":
             assert k in update_report.missing
         else:
             assert k in update_report.removed
+    assert catalog.load_namespace_properties(namespace) == {
+        "comment": "updated test description",
+        "test_property4": "4",
+        "test_property5": "5",
+        "location": f"{warehouse_location}/{namespace}.db",
+    }
 
 
 @pytest.mark.parametrize(
