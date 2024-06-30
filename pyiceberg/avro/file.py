@@ -228,6 +228,7 @@ class AvroOutputFile(Generic[D]):
     encoder: BinaryEncoder
     sync_bytes: bytes
     writer: Writer
+    records_written: int
 
     def __init__(
         self,
@@ -247,6 +248,7 @@ class AvroOutputFile(Generic[D]):
             else resolve_writer(record_schema=record_schema, file_schema=self.file_schema)
         )
         self.metadata = metadata
+        self.records_written = 0
 
     def __enter__(self) -> AvroOutputFile[D]:
         """
@@ -266,6 +268,12 @@ class AvroOutputFile(Generic[D]):
         self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
     ) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
+        if self.records_written == 0:
+            # This is very opinionated, as for Iceberg we should not write empty metadata.
+            # The `write_block` method should be called at least once to make sure that we
+            # write the number of blocks and more.
+            raise ValueError("No records have been written for this Avro file.")
+
         self.output_stream.close()
 
     def _write_header(self) -> None:
@@ -277,8 +285,16 @@ class AvroOutputFile(Generic[D]):
     def write_block(self, objects: List[D]) -> None:
         in_memory = io.BytesIO()
         block_content_encoder = BinaryEncoder(output_stream=in_memory)
+
+        records_written_in_block = 0
         for obj in objects:
             self.writer.write(block_content_encoder, obj)
+            records_written_in_block += 1
+
+        if records_written_in_block == 0:
+            raise ValueError("No records have been written in this block.")
+
+        self.records_written += records_written_in_block
         block_content = in_memory.getvalue()
 
         self.encoder.write_int(len(objects))
