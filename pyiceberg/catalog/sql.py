@@ -673,11 +673,16 @@ class SqlCatalog(MetastoreCatalog):
                     IcebergNamespaceProperties.property_key.in_(set(updates.keys())),
                 )
                 session.execute(delete_stmt)
-                insert_stmt = insert(IcebergNamespaceProperties)
-                for property_key, property_value in updates.items():
-                    insert_stmt = insert_stmt.values(
-                        catalog_name=self.name, namespace=namespace_str, property_key=property_key, property_value=property_value
-                    )
+                insert_stmt_values = [
+                    {
+                        "catalog_name": self.name,
+                        "namespace": namespace_str,
+                        "property_key": property_key,
+                        "property_value": property_value,
+                    }
+                    for property_key, property_value in updates.items()
+                ]
+                insert_stmt = insert(IcebergNamespaceProperties).values(insert_stmt_values)
                 session.execute(insert_stmt)
             session.commit()
         return properties_update_summary

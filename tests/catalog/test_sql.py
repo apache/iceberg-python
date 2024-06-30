@@ -1173,6 +1173,8 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
         else:
             assert k in update_report.removed
     assert "updated test description" == catalog.load_namespace_properties(namespace)["comment"]
+    assert "5" == catalog.load_namespace_properties(namespace)["test_property5"]
+    assert "4" == catalog.load_namespace_properties(namespace)["test_property4"]
 
 
 @pytest.mark.parametrize(
