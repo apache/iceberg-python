@@ -543,19 +543,21 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             NamespaceNotEmptyError: If the namespace is not empty.
         """
-        if self._namespace_exists(namespace):
-            namespace_str = Catalog.namespace_to_string(namespace)
-            if tables := self.list_tables(namespace):
-                raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(tables)} tables exist.")
+        if not self._namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
-            with Session(self.engine) as session:
-                session.execute(
-                    delete(IcebergNamespaceProperties).where(
-                        IcebergNamespaceProperties.catalog_name == self.name,
-                        IcebergNamespaceProperties.namespace == namespace_str,
-                    )
+        namespace_str = Catalog.namespace_to_string(namespace)
+        if tables := self.list_tables(namespace):
+            raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(tables)} tables exist.")
+
+        with Session(self.engine) as session:
+            session.execute(
+                delete(IcebergNamespaceProperties).where(
+                    IcebergNamespaceProperties.catalog_name == self.name,
+                    IcebergNamespaceProperties.namespace == namespace_str,
                 )
-                session.commit()
+            )
+            session.commit()
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
