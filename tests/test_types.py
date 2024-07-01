@@ -637,12 +637,12 @@ def test_strtobool() -> None:
     # Values that should return True
     true_values = ["y", "yes", "t", "true", "on", "1"]
     for val in true_values:
-        assert strtobool(val) == 1, f"Expected True for value: {val}"
+        assert strtobool(val) is True, f"Expected True for value: {val}"
 
     # Values that should return False
     false_values = ["n", "no", "f", "false", "off", "0"]
     for val in false_values:
-        assert strtobool(val) == 0, f"Expected False for value: {val}"
+        assert strtobool(val) is False, f"Expected False for value: {val}"
 
     # Values that should raise ValueError
     invalid_values = ["maybe", "2", "trueish", "falseish", "", " "]
