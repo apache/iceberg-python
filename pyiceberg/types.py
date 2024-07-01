@@ -105,7 +105,7 @@ def strtobool(val: str) -> bool:
     elif val in ("n", "no", "f", "false", "off", "0"):
         return False
     else:
-        raise ValueError(f"invalid truth value {val!r}")
+        raise ValueError(f"Invalid truth value: {val!r}")
 
 
 class IcebergType(IcebergBaseModel):
