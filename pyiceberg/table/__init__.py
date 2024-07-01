@@ -3081,14 +3081,11 @@ class _SnapshotProducer(UpdateTableMetadata["_SnapshotProducer"]):
     def _manifests(self) -> List[ManifestFile]:
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
-                output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
-                )
                 with write_manifest(
                     format_version=self._transaction.table_metadata.format_version,
                     spec=self._transaction.table_metadata.spec(),
                     schema=self._transaction.table_metadata.schema(),
-                    output_file=self._io.new_output(output_file_location),
+                    output_file=self.new_manifest_output(),
                     snapshot_id=self._snapshot_id,
                 ) as writer:
                     for data_file in self._added_data_files:
@@ -3109,15 +3106,11 @@ class _SnapshotProducer(UpdateTableMetadata["_SnapshotProducer"]):
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
-                output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=1, commit_uuid=self.commit_uuid
-                )
-
                 with write_manifest(
                     format_version=self._transaction.table_metadata.format_version,
                     spec=self._transaction.table_metadata.spec(),
                     schema=self._transaction.table_metadata.schema(),
-                    output_file=self._io.new_output(output_file_location),
+                    output_file=self.new_manifest_output(),
                     snapshot_id=self._snapshot_id,
                 ) as writer:
                     for delete_entry in deleted_entries:
