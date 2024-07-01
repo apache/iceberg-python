@@ -159,9 +159,11 @@ _JAVA_LONG_MAX = 9223372036854775807
 
 def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") -> None:
     """
-    Check if the `table_schema` is compatible with `other_schema`.
+    Check if the `table_schema` is compatible with `other_schema` in terms of the Iceberg Schema representation.
 
-    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+    The schemas are compatible if:
+    - All fields in `other_schema` are present in `table_schema`. (other_schema <= table_schema)
+    - All required fields in `table_schema` are present in `other_schema`.
 
     Raises:
         ValueError: If the schemas are not compatible.
@@ -170,7 +172,7 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
 
     name_mapping = table_schema.name_mapping
     try:
-        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
+        other_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
     except ValueError as e:
         other_schema = _pyarrow_to_schema_without_ids(other_schema)
         additional_names = set(other_schema.column_names) - set(table_schema.column_names)
@@ -178,7 +180,10 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
 
-    if table_schema.as_struct() != task_schema.as_struct():
+    fields_missing_from_table = {field for field in other_schema.fields if field not in table_schema.fields}
+    required_fields_in_table = {field for field in table_schema.fields if field.required}
+    missing_required_fields_in_other = {field for field in required_fields_in_table if field not in other_schema.fields}
+    if fields_missing_from_table or missing_required_fields_in_other:
         from rich.console import Console
         from rich.table import Table as RichTable
 
@@ -191,7 +196,7 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
 
         for lhs in table_schema.fields:
             try:
-                rhs = task_schema.find_field(lhs.field_id)
+                rhs = other_schema.find_field(lhs.field_id)
                 rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
             except ValueError:
                 rich_table.add_row("❌", str(lhs), "Missing")
@@ -484,10 +489,6 @@ class Transaction:
             )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -525,10 +526,6 @@ class Transaction:
             raise ValueError("Cannot write to partitioned tables")
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -2912,7 +2909,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
+    from pyiceberg.io.pyarrow import bin_pack_arrow_table, pyarrow_to_schema, write_file
 
     counter = itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
@@ -2921,6 +2918,9 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
+
+    # projects schema to match the pyarrow table
+    write_schema = pyarrow_to_schema(df.schema, name_mapping=table_metadata.schema().name_mapping)
 
     if len(table_metadata.spec().fields) > 0:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
@@ -2933,7 +2933,7 @@ def _dataframe_to_data_files(
                     task_id=next(counter),
                     record_batches=batches,
                     partition_key=partition.partition_key,
-                    schema=table_metadata.schema(),
+                    schema=write_schema,
                 )
                 for partition in partitions
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
@@ -2944,7 +2944,7 @@ def _dataframe_to_data_files(
             io=io,
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=write_schema)
                 for batches in bin_pack_arrow_table(df, target_file_size)
             ]),
         )
