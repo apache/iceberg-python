@@ -619,3 +619,14 @@ def test_types_singleton() -> None:
     assert id(BooleanType()) == id(BooleanType())
     assert id(FixedType(22)) == id(FixedType(22))
     assert id(FixedType(19)) != id(FixedType(25))
+
+
+def test_deepcopy_of_singleton_fixed_type() -> None:
+    """FixedType is a singleton, so deepcopy should return the same instance"""
+    from copy import deepcopy
+
+    list_of_fixed_types = [FixedType(22), FixedType(19)]
+    copied_list = deepcopy(list_of_fixed_types)
+
+    for lhs, rhs in zip(list_of_fixed_types, copied_list):
+        assert id(lhs) == id(rhs)

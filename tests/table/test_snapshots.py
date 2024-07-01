@@ -77,6 +77,7 @@ def test_serialize_snapshot_without_sequence_number() -> None:
     snapshot = Snapshot(
         snapshot_id=25,
         parent_snapshot_id=19,
+        sequence_number=None,
         timestamp_ms=1602638573590,
         manifest_list="s3:/a/b/c.avro",
         summary=Summary(Operation.APPEND),
