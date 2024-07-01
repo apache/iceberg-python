@@ -38,10 +38,13 @@ class PyArrowSortOptions:
 
 def convert_sort_field_to_pyarrow_sort_options(sort_field: SortField) -> PyArrowSortOptions:
     """
-    Convert an Iceberg Table Sort Field to Arrow Sort Options
+    Convert an Iceberg Table Sort Field to Arrow Sort Options.
 
-    @param sort_field: Source Iceberg Sort Field to be converted
-    @return: Returns SortField as PyArrow Sort Options
+    Args:
+        sort_field (SortField): Source Iceberg Sort Field to be converted
+
+    Returns:
+        PyArrowOptions: PyArrowOptions format for the input Sort Field
     """
     pyarrow_sort_direction = {SortDirection.ASC: "ascending", SortDirection.DESC: "descending"}
     pyarrow_null_ordering = {NullOrder.NULLS_LAST: "at_end", NullOrder.NULLS_FIRST: "at_start"}
@@ -55,9 +58,12 @@ def get_sort_indices_arrow_table(arrow_table: pa.Table, sort_seq: List[Tuple[str
     """
     Sorts a Pyarrow Table with a given sort sequence.
 
-    @param arrow_table: Input table to be sorted
-    @param sort_seq: Seq of PyArrowOptions to apply sorting.
-    @return: Sorted Arrow Table
+    Args:
+        arrow_table (pa.Table):  Input table to be sorted
+        sort_seq: Seq of PyArrowOptions to apply sorting
+
+    Returns:
+        List[int]: Indices of the arrow table for sorting
     """
     import pyarrow as pa
 
