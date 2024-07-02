@@ -257,7 +257,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
+        self._client = self._create_hive_client(properties)
 
         self._lock_check_min_wait_time = PropertyUtil.property_as_float(
             properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME
@@ -271,6 +271,18 @@ class HiveCatalog(MetastoreCatalog):
             DEFAULT_LOCK_CHECK_RETRIES,
         )
 
+    @staticmethod
+    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+        uris = properties["uri"].split(",")
+        for idx, uri in enumerate(uris):
+            try:
+                return _HiveClient(uri, properties.get("ugi"))
+            except BaseException as e:
+                if idx + 1 == len(uris):
+                    raise e
+                else:
+                    continue
+    
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
         if TABLE_TYPE not in properties:
