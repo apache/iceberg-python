@@ -16,12 +16,12 @@
 # under the License.
 import logging
 import os
-from distutils.util import strtobool
 from typing import List, Optional
 
 import strictyaml
 
 from pyiceberg.typedef import UTF8, FrozenDict, RecursiveDict
+from pyiceberg.types import strtobool
 
 PYICEBERG = "pyiceberg_"
 DEFAULT = "default"
