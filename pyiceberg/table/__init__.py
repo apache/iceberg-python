@@ -408,39 +408,6 @@ class Transaction:
         requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
         return self._apply(updates, requirements)
 
-    def _set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        ref_name: str,
-        type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
-    ) -> UpdatesAndRequirements:
-        """Update a ref to a snapshot.
-
-        Returns:
-            The updates and requirements for the set-snapshot-ref staged
-        """
-        updates = (
-            SetSnapshotRefUpdate(
-                snapshot_id=snapshot_id,
-                ref_name=ref_name,
-                type=type,
-                max_ref_age_ms=max_ref_age_ms,
-                max_snapshot_age_ms=max_snapshot_age_ms,
-                min_snapshots_to_keep=min_snapshots_to_keep,
-            ),
-        )
-        requirements = (
-            AssertRefSnapshotId(
-                snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
-                ref=ref_name,
-            ),
-        )
-
-        return updates, requirements
-
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -1986,11 +1953,46 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates, self._requirements = (), ()
 
     def _stage_main_branch_snapshot_ref(self, snapshot_id: int) -> None:
-        update, requirement = self._transaction._set_ref_snapshot(
+        update, requirement = self._set_ref_snapshot(
             snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH)
         )
         self._updates += update
         self._requirements += requirement
+
+    def _set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> UpdatesAndRequirements:
+        """Update a ref to a snapshot.
+
+        Returns:
+            The updates and requirements for the set-snapshot-ref staged
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self._transaction.table_metadata.refs[ref_name].snapshot_id
+                if ref_name in self._transaction.table_metadata.refs
+                else None,
+                ref=ref_name,
+            ),
+        )
+
+        return updates, requirements
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
@@ -2004,7 +2006,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._transaction._set_ref_snapshot(
+        update, requirement = self._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
             type="tag",
@@ -2034,7 +2036,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._transaction._set_ref_snapshot(
+        update, requirement = self._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
             type="branch",
