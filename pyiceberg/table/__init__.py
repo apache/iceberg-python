@@ -1994,6 +1994,8 @@ class BaseIncrementalScan(TableScan):
         Returns:
             this for method chaining
         """
+        if to_snapshot_id is None:
+            return self
         return self.update(to_snapshot_id=to_snapshot_id)
 
     def from_snapshot_exclusive(self: S, from_snapshot_id: int) -> S:
