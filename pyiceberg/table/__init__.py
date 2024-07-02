@@ -503,57 +503,22 @@ class Transaction:
         if table_arrow_schema != df.schema:
             df = df.cast(table_arrow_schema)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+        manifest_merge_enabled = PropertyUtil.property_as_bool(
+            self.table_metadata.properties,
+            TableProperties.MANIFEST_MERGE_ENABLED,
+            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+        )
+        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
+        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+
+        with append_method() as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self._table.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self._table.metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
-                    update_snapshot.append_data_file(data_file)
-
-    def merge_append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
-        """
-        Shorthand API for appending a PyArrow table to a table transaction and merging manifests on write.
-
-        The manifest merge behavior is controlled by table properties:
-        - commit.manifest.target-size-bytes
-        - commit.manifest.min-count-to-merge
-        - commit.manifest-merge.enabled
-
-        Args:
-            df: The Arrow dataframe that will be appended to overwrite the table
-            snapshot_properties: Custom properties to be added to the snapshot summary
-        """
-        try:
-            import pyarrow as pa
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
-
-        if not isinstance(df, pa.Table):
-            raise ValueError(f"Expected PyArrow table, got: {df}")
-
-        if unsupported_partitions := [
-            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
-        ]:
-            raise ValueError(
-                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
-            )
-
-        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
-
-        with self.update_snapshot(snapshot_properties=snapshot_properties).merge_append() as update_snapshot:
-            # skip writing data files if the dataframe is empty
-            if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(
-                    table_metadata=self._table.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
-                )
-                for data_file in data_files:
-                    update_snapshot.append_data_file(data_file)
+                    append_files.append_data_file(data_file)
 
     def overwrite(
         self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
@@ -1510,22 +1475,6 @@ class Table:
         """
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties)
-
-    def merge_append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
-        """
-        Shorthand API for appending a PyArrow table to a table transaction and merging manifests on write.
-
-        The manifest merge behavior is controlled by table properties:
-        - commit.manifest.target-size-bytes
-        - commit.manifest.min-count-to-merge
-        - commit.manifest-merge.enabled
-
-        Args:
-            df: The Arrow dataframe that will be appended to overwrite the table
-            snapshot_properties: Custom properties to be added to the snapshot summary
-        """
-        with self.transaction() as tx:
-            tx.merge_append(df=df, snapshot_properties=snapshot_properties)
 
     def overwrite(
         self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
@@ -3264,8 +3213,9 @@ class MergeAppendFiles(FastAppendFiles):
         transaction: Transaction,
         io: FileIO,
         commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
-        super().__init__(operation, transaction, io, commit_uuid)
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
         self._target_size_bytes = PropertyUtil.property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
@@ -3360,7 +3310,9 @@ class UpdateSnapshot:
         )
 
     def merge_append(self) -> MergeAppendFiles:
-        return MergeAppendFiles(operation=Operation.APPEND, transaction=self._transaction, io=self._io)
+        return MergeAppendFiles(
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+        )
 
     def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(

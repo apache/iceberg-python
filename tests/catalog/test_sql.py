@@ -1514,6 +1514,6 @@ def test_merge_manifests_file_integrity(catalog: SqlCatalog, arrow_table_with_nu
     )
 
     for _ in range(5):
-        tbl.merge_append(arrow_table_with_null)
+        tbl.append(arrow_table_with_null)
 
     assert len(tbl.scan().to_arrow()) == 5 * len(arrow_table_with_null)

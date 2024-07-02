@@ -950,19 +950,19 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     )
 
     # tbl_a should merge all manifests into 1
-    tbl_a.merge_append(arrow_table_with_null)
-    tbl_a.merge_append(arrow_table_with_null)
-    tbl_a.merge_append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
 
     # tbl_b should not merge any manifests because the target size is too small
-    tbl_b.merge_append(arrow_table_with_null)
-    tbl_b.merge_append(arrow_table_with_null)
-    tbl_b.merge_append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
 
     # tbl_c should not merge any manifests because merging is disabled
-    tbl_c.merge_append(arrow_table_with_null)
-    tbl_c.merge_append(arrow_table_with_null)
-    tbl_c.merge_append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
 
     assert len(tbl_a.current_snapshot().manifests(tbl_a.io)) == 1  # type: ignore
     assert len(tbl_b.current_snapshot().manifests(tbl_b.io)) == 3  # type: ignore
