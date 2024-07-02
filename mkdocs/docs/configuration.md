@@ -63,16 +63,16 @@ Iceberg tables support table properties to configure table behavior.
 
 ## Table behavior options
 
-| Key                                  | Options             | Default | Description                                                 |
-| ------------------------------------ | ------------------- | ------- | ----------------------------------------------------------- |
-| `commit.manifest.target-size-bytes`  | Size in bytes       | 8MB     | Target size when merging manifest files                     |
-| `commit.manifest.min-count-to-merge` | Number of manifests | 100     | Target size when merging manifest files                     |
-| `commit.manifest-merge.enabled`      | Boolean             | True    | Controls whether to automatically merge manifests on writes |
+| Key                                  | Options             | Default       | Description                                                 |
+| ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
+| `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
+| `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
+| `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
 
 <!-- prettier-ignore-start -->
 
 !!! note "Fast append"
-    PyIceberg default to the [fast append](https://iceberg.apache.org/spec/#snapshots) which ignores `commit.manifest*` and does not merge manifests on writes. To make table merge manifests on writes and respect `commit.manifest*`, use [`merge_append`](api.md#write-support) instead.
+    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-support) and thus `commit.manifest-merge.enabled` is set to `False` by default.
 
 <!-- prettier-ignore-end -->
 

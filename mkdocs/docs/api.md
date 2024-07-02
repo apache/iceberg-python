@@ -273,10 +273,6 @@ tbl.append(df)
 
 # or
 
-tbl.merge_append(df)
-
-# or
-
 tbl.overwrite(df)
 ```
 
