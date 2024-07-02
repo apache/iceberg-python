@@ -154,6 +154,7 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -918,11 +919,24 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return TimeType()
         elif pa.types.is_timestamp(primitive):
             primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit == "us":
-                if primitive.tz == "UTC" or primitive.tz == "+00:00":
-                    return TimestamptzType()
-                elif primitive.tz is None:
-                    return TimestampType()
+            if primitive.unit in ("s", "ms", "us"):
+                # Supported types, will be upcast automatically to 'us'
+                pass
+            elif primitive.unit == "ns":
+                if Config().get_bool("downcast-ns-timestamp-on-write"):
+                    logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
+                else:
+                    raise TypeError(
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                    )
+            else:
+                raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
+
+            if primitive.tz == "UTC" or primitive.tz == "+00:00":
+                return TimestamptzType()
+            elif primitive.tz is None:
+                return TimestampType()
+
         elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
