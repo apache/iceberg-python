@@ -168,6 +168,30 @@ def test_creation_with_unsupported_uri(catalog_name: str) -> None:
         SqlCatalog(catalog_name, uri="unsupported:xxx")
 
 
+@pytest.mark.parametrize("echo_param, expected_echo_value", [("debug", "debug"), ("true", True), ("false", False)])
+def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path, echo_param: str, expected_echo_value: Any) -> None:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+        "echo": echo_param,
+    }
+    catalog = SqlCatalog(catalog_name, **props)
+    assert catalog.engine._echo == expected_echo_value
+
+
+@pytest.mark.parametrize("pre_ping_param, expected_pre_ping_value", [("true", True), ("false", False)])
+def test_creation_with_pool_pre_ping_parameter(
+    catalog_name: str, warehouse: Path, pre_ping_param: str, expected_pre_ping_value: Any
+) -> None:
+    props = {
+        "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+        "warehouse": f"file://{warehouse}",
+        "pool_pre_ping": pre_ping_param,
+    }
+    catalog = SqlCatalog(catalog_name, **props)
+    assert catalog.engine.pool._pre_ping == expected_pre_ping_value
+
+
 @pytest.mark.parametrize(
     "catalog",
     [
