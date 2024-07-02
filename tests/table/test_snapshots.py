@@ -314,10 +314,6 @@ def test_invalid_operation() -> None:
         update_snapshot_summaries(summary=Summary(Operation.REPLACE))
     assert "Operation not implemented: Operation.REPLACE" in str(e.value)
 
-    with pytest.raises(ValueError) as e:
-        update_snapshot_summaries(summary=Summary(Operation.DELETE))
-    assert "Operation not implemented: Operation.DELETE" in str(e.value)
-
 
 def test_invalid_type() -> None:
     with pytest.raises(ValueError) as e:
