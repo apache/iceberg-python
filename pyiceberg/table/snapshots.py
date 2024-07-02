@@ -429,3 +429,28 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         if snapshot.parent_snapshot_id is None:
             break
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
+
+
+def ancestors_between(to_snapshot: int, from_snapshot: Optional[int], table_metadata: TableMetadata) -> Iterable[Snapshot]:
+    if from_snapshot is not None:
+        for snapshot in ancestors_of(table_metadata.snapshot_by_id(to_snapshot), table_metadata):  # type: ignore
+            if snapshot.snapshot_id == from_snapshot:
+                break
+            yield snapshot
+    else:
+        yield from ancestors_of(table_metadata.snapshot_by_id(to_snapshot), table_metadata)  # type: ignore
+
+
+def is_parent_ancestor_of(snapshot_id: int, ancestor_parent_snapshot_id: int, table_metadata: TableMetadata) -> bool:
+    for snapshot in ancestors_of(table_metadata.snapshot_by_id(snapshot_id), table_metadata):  # type: ignore
+        if snapshot.parent_snapshot_id and snapshot.parent_snapshot_id == ancestor_parent_snapshot_id:
+            return True
+    return False
+
+
+def oldest_ancestor_of(snapshot_id: int, table_metadata: TableMetadata) -> Optional[int]:
+    last_snapshot = None
+    for snapshot in ancestors_of(table_metadata.snapshot_by_id(snapshot_id), table_metadata):  # type: ignore
+        last_snapshot = snapshot.snapshot_id
+    return last_snapshot
+
