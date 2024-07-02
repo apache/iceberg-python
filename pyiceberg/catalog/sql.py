@@ -110,8 +110,30 @@ class SqlCatalog(MetastoreCatalog):
 
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
-        echo = bool(self.properties.get("echo", False))
-        self.engine = create_engine(uri_prop, echo=echo)
+
+        echo: Union[str, bool]
+        echo_str = str(self.properties.get("echo", "false")).lower()
+        if echo_str == "debug":
+            echo = "debug"
+        elif echo_str == "true":
+            echo = True
+        elif echo_str == "false":
+            echo = False
+        else:
+            raise ValueError(f"Invalid value for echo parameter: {echo_str}")
+
+        pool_pre_ping: Union[str, bool]
+        pool_pre_ping_str = str(self.properties.get("pool_pre_ping", "false")).lower()
+        if pool_pre_ping_str == "true":
+            pool_pre_ping = True
+        elif pool_pre_ping_str == "false":
+            pool_pre_ping = False
+        else:
+            raise ValueError(f"Invalid value for pool_pre_ping parameter: {pool_pre_ping_str}")
+
+        print(f"echo = {echo}")
+        print(f"pool_pre_ping = {pool_pre_ping}")
+        self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
         self._ensure_tables_exist()
 
