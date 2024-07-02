@@ -71,3 +71,14 @@ test-coverage:
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
 	poetry run coverage xml
+
+
+clean:
+	@echo "Cleaning up Cython and Python cached files"
+	@rm -rf build dist *.egg-info
+	@find . -name "*.so" -exec echo Deleting {} \; -delete
+	@find . -name "*.pyc" -exec echo Deleting {} \; -delete
+	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
+	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
+	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
+	@echo "Cleanup complete"
