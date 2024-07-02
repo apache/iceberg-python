@@ -254,7 +254,7 @@ class TableProperties:
     MANIFEST_MIN_MERGE_COUNT_DEFAULT = 100
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
-    MANIFEST_MERGE_ENABLED_DEFAULT = True
+    MANIFEST_MERGE_ENABLED_DEFAULT = False
 
 
 class PropertyUtil:

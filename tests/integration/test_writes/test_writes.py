@@ -933,19 +933,24 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     tbl_a = _create_table(
         session_catalog,
         "default.merge_manifest_a",
-        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
         [],
     )
     tbl_b = _create_table(
         session_catalog,
         "default.merge_manifest_b",
-        {"commit.manifest.min-count-to-merge": "1", "commit.manifest.target-size-bytes": "1", "format-version": format_version},
+        {
+            "commit.manifest-merge.enabled": "true",
+            "commit.manifest.min-count-to-merge": "1",
+            "commit.manifest.target-size-bytes": "1",
+            "format-version": format_version,
+        },
         [],
     )
     tbl_c = _create_table(
         session_catalog,
         "default.merge_manifest_c",
-        {"commit.manifest-merge.enabled": "false", "format-version": format_version},
+        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
         [],
     )
 
