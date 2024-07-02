@@ -131,8 +131,6 @@ class SqlCatalog(MetastoreCatalog):
         else:
             raise ValueError(f"Invalid value for pool_pre_ping parameter: {pool_pre_ping_str}")
 
-        print(f"echo = {echo}")
-        print(f"pool_pre_ping = {pool_pre_ping}")
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
         self._ensure_tables_exist()
