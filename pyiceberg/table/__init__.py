@@ -300,7 +300,12 @@ class Transaction:
         """Close and commit the transaction."""
         self.commit_transaction()
 
-    def _apply(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...] = ()) -> Transaction:
+    def _apply(
+        self,
+        updates: Tuple[TableUpdate, ...],
+        requirements: Tuple[TableRequirement, ...] = (),
+        commit_transaction_now: bool = True,
+    ) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
         for requirement in requirements:
             requirement.validate(self.table_metadata)
@@ -310,7 +315,7 @@ class Transaction:
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
-        if self._autocommit:
+        if self._autocommit and commit_transaction_now:
             self.commit_transaction()
             self._updates = ()
             self._requirements = ()
@@ -1977,12 +1982,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self._updates, self._requirements
 
     def _commit_if_ref_updates_exist(self) -> None:
-        self.commit()
+        self._transaction._apply(*self._commit(), commit_transaction_now=False)
         self._updates, self._requirements = (), ()
 
     def _stage_main_branch_snapshot_ref(self, snapshot_id: int) -> None:
         update, requirement = self._transaction._set_ref_snapshot(
-            snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=SnapshotRefType.BRANCH
+            snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH)
         )
         self._updates += update
         self._requirements += requirement
