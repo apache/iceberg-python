@@ -24,6 +24,7 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
     BinaryType,
@@ -66,13 +67,16 @@ def _create_table(
     data: Optional[List[pa.Table]] = None,
     partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
     schema: Union[Schema, "pa.Schema"] = TABLE_SCHEMA,
+    sort_order: SortOrder = UNSORTED_SORT_ORDER,
 ) -> Table:
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(identifier=identifier, schema=schema, properties=properties, partition_spec=partition_spec)
+    tbl = session_catalog.create_table(
+        identifier=identifier, schema=schema, properties=properties, partition_spec=partition_spec, sort_order=sort_order
+    )
 
     if data is not None:
         for d in data:
