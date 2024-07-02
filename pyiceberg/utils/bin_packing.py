@@ -104,3 +104,29 @@ class PackingIterator(Generic[T]):
             return bin_
         else:
             return self.bins.pop(0)
+
+
+class ListPacker(Generic[T]):
+    _target_weight: int
+    _lookback: int
+    _largest_bin_first: bool
+
+    def __init__(self, target_weight: int, lookback: int, largest_bin_first: bool) -> None:
+        self._target_weight = target_weight
+        self._lookback = lookback
+        self._largest_bin_first = largest_bin_first
+
+    def pack(self, items: List[T], weight_func: Callable[[T], int]) -> List[List[T]]:
+        return list(
+            PackingIterator(
+                items=items,
+                target_weight=self._target_weight,
+                lookback=self._lookback,
+                weight_func=weight_func,
+                largest_bin_first=self._largest_bin_first,
+            )
+        )
+
+    def pack_end(self, items: List[T], weight_func: Callable[[T], int]) -> List[List[T]]:
+        packed = self.pack(items=list(reversed(items)), weight_func=weight_func)
+        return [list(reversed(bin_items)) for bin_items in reversed(packed)]
