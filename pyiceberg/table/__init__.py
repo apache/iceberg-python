@@ -106,7 +106,7 @@ from pyiceberg.table.name_mapping import (
     NameMapping,
     update_mapping,
 )
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -1980,6 +1980,13 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self.commit()
         self._updates, self._requirements = (), ()
 
+    def _stage_main_branch_snapshot_ref(self, snapshot_id: int) -> None:
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=SnapshotRefType.BRANCH
+        )
+        self._updates += update
+        self._requirements += requirement
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -2052,10 +2059,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             for ancestor in ancestors_of(self._transaction._table.current_snapshot(), self._transaction.table_metadata)
         }:
             raise ValidationError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
-
-        update, requirement = self._transaction._set_ref_snapshot(snapshot_id=snapshot_id, ref_name="main", type="branch")
-        self._updates += update
-        self._requirements += requirement
+        self._stage_main_branch_snapshot_ref(snapshot_id=snapshot_id)
         return self
 
     def rollback_to_timestamp(self, timestamp: int) -> ManageSnapshots:
@@ -2075,12 +2079,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             )
         ) is None:
             raise ValidationError(f"Cannot roll back, no valid snapshot older than: {timestamp}")
-
-        update, requirement = self._transaction._set_ref_snapshot(
-            snapshot_id=snapshot.snapshot_id, ref_name="main", type="branch"
-        )
-        self._updates += update
-        self._requirements += requirement
+        self._stage_main_branch_snapshot_ref(snapshot_id=snapshot.snapshot_id)
         return self
 
     def set_current_snapshot(self, snapshot_id: Optional[int] = None, ref_name: Optional[str] = None) -> ManageSnapshots:
@@ -2099,17 +2098,15 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             raise ValidationError("Either snapshot_id or ref must be provided")
         else:
             if snapshot_id is None:
-                target_snapshot_id = self._transaction.table_metadata.refs[ref_name].snapshot_id  # type:ignore
+                if ref_name not in self._transaction.table_metadata.refs:
+                    raise ValidationError(f"Cannot set snapshot current to unknown ref {ref_name}")
+                target_snapshot_id = self._transaction.table_metadata.refs[ref_name].snapshot_id
             else:
                 target_snapshot_id = snapshot_id
             if (snapshot := self._transaction._table.snapshot_by_id(target_snapshot_id)) is None:
                 raise ValidationError(f"Cannot set snapshot current with snapshot id: {snapshot_id} or ref_name: {ref_name}")
 
-            update, requirement = self._transaction._set_ref_snapshot(
-                snapshot_id=snapshot.snapshot_id, ref_name="main", type="branch"
-            )
-            self._updates += update
-            self._requirements += requirement
+            self._stage_main_branch_snapshot_ref(snapshot_id=snapshot.snapshot_id)
         return self
 
 
