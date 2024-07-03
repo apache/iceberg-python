@@ -47,8 +47,10 @@ from pyiceberg.exceptions import (
     CommitStateUnknownException,
     ForbiddenError,
     NamespaceAlreadyExistsError,
+    NoSuchIdentifierError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    NoSuchViewError,
     OAuthError,
     RESTError,
     ServerError,
@@ -93,6 +95,7 @@ class Endpoints:
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
+    drop_view: str = "namespaces/{namespace}/views/{view}"
 
 
 AUTHORIZATION_HEADER = "Authorization"
@@ -348,14 +351,15 @@ class RestCatalog(Catalog):
     def _identifier_to_validated_tuple(self, identifier: Union[str, Identifier]) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
-            raise NoSuchTableError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
+            raise NoSuchIdentifierError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
         return identifier_tuple
 
-    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
+    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier], kind: str = "table") -> Properties:
         if isinstance(identifier, TableIdentifier):
             return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
-        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), "table": identifier_tuple[-1]}
+
+        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind: identifier_tuple[-1]}
 
     def _split_identifier_for_json(self, identifier: Union[str, Identifier]) -> Dict[str, Union[Identifier, str]]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
@@ -791,3 +795,14 @@ class RestCatalog(Catalog):
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
         return response.status_code in (200, 204)
+
+    @retry(**_RETRY_ARGS)
+    def drop_view(self, identifier: Union[str]) -> None:
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        response = self._session.delete(
+            self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier_tuple, kind="view")),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {404: NoSuchViewError})

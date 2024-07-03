@@ -260,6 +260,9 @@ class InMemoryCatalog(MetastoreCatalog):
             removed=list(removed or []), updated=list(updates.keys() if updates else []), missing=list(expected_to_change)
         )
 
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
 
 @pytest.fixture
 def catalog(tmp_path: PosixPath) -> InMemoryCatalog:

@@ -708,3 +708,6 @@ class HiveCatalog(MetastoreCatalog):
         expected_to_change = (removals or set()).difference(removed)
 
         return PropertiesUpdateSummary(removed=list(removed or []), updated=list(updated or []), missing=list(expected_to_change))
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
