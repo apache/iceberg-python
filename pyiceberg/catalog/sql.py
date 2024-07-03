@@ -70,7 +70,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 DEFAULT_ECHO_VALUE = "false"
-DEFAULT_PRE_PING_VALUE = "false"
+DEFAULT_POOL_PRE_PING_VALUE = "false"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -117,7 +117,7 @@ class SqlCatalog(MetastoreCatalog):
 
         echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
         echo = strtobool(echo_str) if echo_str != "debug" else "debug"
-        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_PRE_PING_VALUE))
+        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
 
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
