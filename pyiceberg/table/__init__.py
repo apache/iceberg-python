@@ -1866,7 +1866,7 @@ class DataScan(TableScan):
             for data_entry in data_entries
         ]
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, with_large_types: bool = True) -> pa.Table:
         from pyiceberg.io.pyarrow import project_table
 
         return project_table(
@@ -1877,15 +1877,16 @@ class DataScan(TableScan):
             self.projection(),
             case_sensitive=self.case_sensitive,
             limit=self.limit,
+            with_large_types=with_large_types,
         )
 
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
+    def to_arrow_batch_reader(self, with_large_types: bool = True) -> pa.RecordBatchReader:
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
 
         return pa.RecordBatchReader.from_batches(
-            schema_to_pyarrow(self.projection()),
+            schema_to_pyarrow(self.projection(), include_field_ids=False, with_large_types=with_large_types),
             project_batches(
                 self.plan_files(),
                 self.table_metadata,
@@ -1894,6 +1895,7 @@ class DataScan(TableScan):
                 self.projection(),
                 case_sensitive=self.case_sensitive,
                 limit=self.limit,
+                with_large_types=with_large_types,
             ),
         )
 

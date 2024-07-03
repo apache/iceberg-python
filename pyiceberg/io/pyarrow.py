@@ -1015,6 +1015,7 @@ def _task_to_record_batches(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
+    with_large_types: bool = True,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
@@ -1060,7 +1061,7 @@ def _task_to_record_batches(
                     arrow_table = pa.Table.from_batches([batch])
                     arrow_table = arrow_table.filter(pyarrow_filter)
                     batch = arrow_table.to_batches()[0]
-            yield to_requested_schema(projected_schema, file_project_schema, batch)
+            yield to_requested_schema(projected_schema, file_project_schema, batch, with_large_types=with_large_types)
             current_index += len(batch)
 
 
@@ -1073,11 +1074,22 @@ def _task_to_table(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
+    with_large_types: bool = True,
 ) -> pa.Table:
     batches = _task_to_record_batches(
-        fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+        fs,
+        task,
+        bound_row_filter,
+        projected_schema,
+        projected_field_ids,
+        positional_deletes,
+        case_sensitive,
+        name_mapping,
+        with_large_types,
     )
-    return pa.Table.from_batches(batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
+    return pa.Table.from_batches(
+        batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False, with_large_types=with_large_types)
+    )
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1106,6 +1118,7 @@ def project_table(
     projected_schema: Schema,
     case_sensitive: bool = True,
     limit: Optional[int] = None,
+    with_large_types: bool = True,
 ) -> pa.Table:
     """Resolve the right columns based on the identifier.
 
@@ -1179,7 +1192,9 @@ def project_table(
     tables = [f.result() for f in completed_futures if f.result()]
 
     if len(tables) < 1:
-        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
+        return pa.Table.from_batches(
+            [], schema=schema_to_pyarrow(projected_schema, include_field_ids=False, with_large_types=with_large_types)
+        )
 
     result = pa.concat_tables(tables)
 
@@ -1197,6 +1212,7 @@ def project_batches(
     projected_schema: Schema,
     case_sensitive: bool = True,
     limit: Optional[int] = None,
+    with_large_types: bool = True,
 ) -> Iterator[pa.RecordBatch]:
     """Resolve the right columns based on the identifier.
 
@@ -1249,6 +1265,7 @@ def project_batches(
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
             table_metadata.name_mapping(),
+            with_large_types,
         )
         for batch in batches:
             if limit is not None:
