@@ -213,14 +213,14 @@ def test_pyarrow_string_to_iceberg() -> None:
     pyarrow_type = pa.large_string()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == StringType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.string()
 
 
 def test_pyarrow_variable_binary_to_iceberg() -> None:
     pyarrow_type = pa.large_binary()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == BinaryType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.binary()
 
 
 def test_pyarrow_struct_to_iceberg() -> None:

@@ -486,17 +486,17 @@ def test_timestamptz_type_to_pyarrow() -> None:
 
 def test_string_type_to_pyarrow() -> None:
     iceberg_type = StringType()
-    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_string()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.string()
 
 
 def test_binary_type_to_pyarrow() -> None:
     iceberg_type = BinaryType()
-    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+    assert visit(iceberg_type, _ConvertToArrowSchema()) == pa.binary()
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
     expected = pa.struct([
-        pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
+        pa.field("foo", pa.string(), nullable=True, metadata={"field_id": "1"}),
         pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
         pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
     ])
@@ -513,7 +513,7 @@ def test_map_type_to_pyarrow() -> None:
     )
     assert visit(iceberg_map, _ConvertToArrowSchema()) == pa.map_(
         pa.field("key", pa.int32(), nullable=False, metadata={"field_id": "1"}),
-        pa.field("value", pa.large_string(), nullable=False, metadata={"field_id": "2"}),
+        pa.field("value", pa.string(), nullable=False, metadata={"field_id": "2"}),
     )
 
 
@@ -523,7 +523,7 @@ def test_list_type_to_pyarrow() -> None:
         element_type=IntegerType(),
         element_required=True,
     )
-    assert visit(iceberg_map, _ConvertToArrowSchema()) == pa.large_list(
+    assert visit(iceberg_map, _ConvertToArrowSchema()) == pa.list_(
         pa.field("element", pa.int32(), nullable=False, metadata={"field_id": "1"})
     )
 

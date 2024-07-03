@@ -470,9 +470,16 @@ class PyArrowFileIO(FileIO):
 
 
 def schema_to_pyarrow(
-    schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True
+    schema: Union[Schema, IcebergType],
+    metadata: Dict[bytes, bytes] = EMPTY_DICT,
+    include_field_ids: bool = True,
+    with_large_types: bool = True,
 ) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
+    pyarrow_schema = visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
+    if with_large_types:
+        return _pyarrow_schema_ensure_large_types(pyarrow_schema)
+    else:
+        return pyarrow_schema
 
 
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
@@ -504,7 +511,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
         element_field = self.field(list_type.element_field, element_result)
-        return pa.large_list(value_type=element_field)
+        return pa.list_(value_type=element_field)
 
     def map(self, map_type: MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
         key_field = self.field(map_type.key_field, key_result)
@@ -548,13 +555,13 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.timestamp(unit="us", tz="UTC")
 
     def visit_string(self, _: StringType) -> pa.DataType:
-        return pa.large_string()
+        return pa.string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
         return pa.binary(16)
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
-        return pa.large_binary()
+        return pa.binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
@@ -958,19 +965,23 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
 class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
     def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
-        return pa.schema(struct_result)
+        return pa.schema(list(struct_result))
 
     def struct(self, struct: pa.StructType, field_results: List[pa.Field]) -> pa.StructType:
         return pa.struct(field_results)
 
     def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
-        return field.with_type(field_result)
+        new_field = field.with_type(field_result)
+        return new_field
 
     def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
-        return pa.large_list(element_result)
+        element_field = self.field(list_type.value_field, element_result)
+        return pa.large_list(element_field)
 
     def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
-        return pa.map_(key_result, value_result)
+        key_field = self.field(map_type.key_field, key_result)
+        value_field = self.field(map_type.item_field, value_result)
+        return pa.map_(key_type=key_field, item_type=value_field)
 
     def primitive(self, primitive: pa.DataType) -> pa.DataType:
         if primitive == pa.string():
@@ -1248,8 +1259,12 @@ def project_batches(
             total_row_count += len(batch)
 
 
-def to_requested_schema(requested_schema: Schema, file_schema: Schema, batch: pa.RecordBatch) -> pa.RecordBatch:
-    struct_array = visit_with_partner(requested_schema, batch, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
+def to_requested_schema(
+    requested_schema: Schema, file_schema: Schema, batch: pa.RecordBatch, with_large_types: bool = True
+) -> pa.RecordBatch:
+    struct_array = visit_with_partner(
+        requested_schema, batch, ArrowProjectionVisitor(file_schema, with_large_types), ArrowAccessor(file_schema)
+    )
 
     arrays = []
     fields = []
@@ -1263,15 +1278,26 @@ def to_requested_schema(requested_schema: Schema, file_schema: Schema, batch: pa
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
     file_schema: Schema
 
-    def __init__(self, file_schema: Schema):
+    def __init__(self, file_schema: Schema, with_large_types: bool = True):
         self.file_schema = file_schema
+        self.with_large_types = with_large_types
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
         if field.field_type.is_primitive:
             if field.field_type != file_field.field_type:
-                return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
-            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=False)) != values.type:
+                return values.cast(
+                    schema_to_pyarrow(
+                        promote(file_field.field_type, field.field_type),
+                        include_field_ids=False,
+                        with_large_types=self.with_large_types,
+                    )
+                )
+            elif (
+                target_type := schema_to_pyarrow(
+                    field.field_type, include_field_ids=False, with_large_types=self.with_large_types
+                )
+            ) != values.type:
                 # if file_field and field_type  (e.g. String) are the same
                 # but the pyarrow type of the array is different from the expected type
                 # (e.g. string vs larger_string), we want to cast the array to the larger type
@@ -1302,7 +1328,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional:
-                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False, with_large_types=self.with_large_types)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 fields.append(self._construct_field(field, arrow_type))
             else:
@@ -1320,7 +1346,10 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 # https://github.com/apache/arrow/issues/38809
                 list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
 
-            arrow_field = pa.large_list(self._construct_field(list_type.element_field, value_array.type))
+            if self.with_large_types:
+                arrow_field = pa.large_list(self._construct_field(list_type.element_field, value_array.type))
+            else:
+                arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
         else:
             return None
@@ -1913,14 +1942,14 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_schema = table_schema
 
         batches = [
-            to_requested_schema(requested_schema=file_schema, file_schema=table_schema, batch=batch)
+            to_requested_schema(requested_schema=file_schema, file_schema=table_schema, batch=batch, with_large_types=False)
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=file_schema.as_arrow(), **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(fos, schema=file_schema.as_arrow(with_large_types=False), **parquet_writer_kwargs) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
