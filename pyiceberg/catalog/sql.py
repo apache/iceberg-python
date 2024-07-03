@@ -64,9 +64,13 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.types import strtobool
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+DEFAULT_ECHO_VALUE = "false"
+DEFAULT_PRE_PING_VALUE = "false"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -112,24 +116,12 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchPropertyException("SQL connection URI is required")
 
         echo: Union[str, bool]
-        echo_str = str(self.properties.get("echo", "false")).lower()
+        echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
         if echo_str == "debug":
             echo = "debug"
-        elif echo_str == "true":
-            echo = True
-        elif echo_str == "false":
-            echo = False
         else:
-            raise ValueError(f"Invalid value for echo parameter: {echo_str}")
-
-        pool_pre_ping: Union[str, bool]
-        pool_pre_ping_str = str(self.properties.get("pool_pre_ping", "false")).lower()
-        if pool_pre_ping_str == "true":
-            pool_pre_ping = True
-        elif pool_pre_ping_str == "false":
-            pool_pre_ping = False
-        else:
-            raise ValueError(f"Invalid value for pool_pre_ping parameter: {pool_pre_ping_str}")
+            echo = strtobool(echo_str)
+        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_PRE_PING_VALUE))
 
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 

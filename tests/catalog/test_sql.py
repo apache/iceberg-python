@@ -28,7 +28,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 from pyiceberg.catalog import (
     Catalog,
 )
-from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_PRE_PING_VALUE, SqlCatalog
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceAlreadyExistsError,
@@ -52,7 +52,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import IntegerType
+from pyiceberg.types import IntegerType, strtobool
 
 
 @pytest.fixture(scope="module")
@@ -168,26 +168,35 @@ def test_creation_with_unsupported_uri(catalog_name: str) -> None:
         SqlCatalog(catalog_name, uri="unsupported:xxx")
 
 
-@pytest.mark.parametrize("echo_param, expected_echo_value", [("debug", "debug"), ("true", True), ("false", False)])
+@pytest.mark.parametrize(
+    "echo_param, expected_echo_value",
+    [(None, strtobool(DEFAULT_ECHO_VALUE)), ("debug", "debug"), ("true", True), ("false", False)],
+)
 def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path, echo_param: str, expected_echo_value: Any) -> None:
     props = {
         "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
-        "echo": echo_param,
     }
+    # None is for default value
+    if echo_param is not None:
+        props["echo"] = echo_param
     catalog = SqlCatalog(catalog_name, **props)
     assert catalog.engine._echo == expected_echo_value
 
 
-@pytest.mark.parametrize("pre_ping_param, expected_pre_ping_value", [("true", True), ("false", False)])
+@pytest.mark.parametrize(
+    "pre_ping_param, expected_pre_ping_value", [(None, strtobool(DEFAULT_PRE_PING_VALUE)), ("true", True), ("false", False)]
+)
 def test_creation_with_pool_pre_ping_parameter(
     catalog_name: str, warehouse: Path, pre_ping_param: str, expected_pre_ping_value: Any
 ) -> None:
     props = {
         "uri": f"sqlite:////{warehouse}/sql-catalog.db",
         "warehouse": f"file://{warehouse}",
-        "pool_pre_ping": pre_ping_param,
     }
+    # None is for default value
+    if pre_ping_param is not None:
+        props["pool_pre_ping"] = pre_ping_param
     catalog = SqlCatalog(catalog_name, **props)
     assert catalog.engine.pool._pre_ping == expected_pre_ping_value
 
