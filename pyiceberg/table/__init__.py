@@ -304,7 +304,7 @@ class Transaction:
         self,
         updates: Tuple[TableUpdate, ...],
         requirements: Tuple[TableRequirement, ...] = (),
-        commit_transaction_now: bool = True,
+        commit_transaction_if_autocommit: bool = True,
     ) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
         for requirement in requirements:
@@ -315,7 +315,7 @@ class Transaction:
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
-        if self._autocommit and commit_transaction_now:
+        if self._autocommit and commit_transaction_if_autocommit:
             self.commit_transaction()
             self._updates = ()
             self._requirements = ()
@@ -1949,15 +1949,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self._updates, self._requirements
 
     def _commit_if_ref_updates_exist(self) -> None:
-        self._transaction._apply(*self._commit(), commit_transaction_now=False)
+        self._transaction._apply(*self._commit(), commit_transaction_if_autocommit=False)
         self._updates, self._requirements = (), ()
-
-    def _stage_main_branch_snapshot_ref(self, snapshot_id: int) -> None:
-        update, requirement = self._set_ref_snapshot(
-            snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH)
-        )
-        self._updates += update
-        self._requirements += requirement
 
     def _set_ref_snapshot(
         self,
@@ -1967,7 +1960,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         max_ref_age_ms: Optional[int] = None,
         max_snapshot_age_ms: Optional[int] = None,
         min_snapshots_to_keep: Optional[int] = None,
-    ) -> UpdatesAndRequirements:
+    ) -> ManageSnapshots:
         """Update a ref to a snapshot.
 
         Returns:
@@ -1991,8 +1984,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
                 ref=ref_name,
             ),
         )
-
-        return updates, requirements
+        self._updates += updates
+        self._requirements += requirements
+        return self
 
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
@@ -2006,14 +2000,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._set_ref_snapshot(
+        self._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
             type="tag",
             max_ref_age_ms=max_ref_age_ms,
         )
-        self._updates += update
-        self._requirements += requirement
         return self
 
     def create_branch(
@@ -2036,7 +2028,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._set_ref_snapshot(
+        self._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
             type="branch",
@@ -2044,8 +2036,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             max_snapshot_age_ms=max_snapshot_age_ms,
             min_snapshots_to_keep=min_snapshots_to_keep,
         )
-        self._updates += update
-        self._requirements += requirement
         return self
 
     def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
@@ -2066,7 +2056,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             for ancestor in ancestors_of(self._transaction._table.current_snapshot(), self._transaction.table_metadata)
         }:
             raise ValidationError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
-        self._stage_main_branch_snapshot_ref(snapshot_id=snapshot_id)
+        self._set_ref_snapshot(snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH))
         return self
 
     def rollback_to_timestamp(self, timestamp: int) -> ManageSnapshots:
@@ -2086,7 +2076,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             )
         ) is None:
             raise ValidationError(f"Cannot roll back, no valid snapshot older than: {timestamp}")
-        self._stage_main_branch_snapshot_ref(snapshot_id=snapshot.snapshot_id)
+        self._set_ref_snapshot(snapshot_id=snapshot.snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH))
         return self
 
     def set_current_snapshot(self, snapshot_id: Optional[int] = None, ref_name: Optional[str] = None) -> ManageSnapshots:
@@ -2113,7 +2103,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             if (snapshot := self._transaction._table.snapshot_by_id(target_snapshot_id)) is None:
                 raise ValidationError(f"Cannot set snapshot current with snapshot id: {snapshot_id} or ref_name: {ref_name}")
 
-            self._stage_main_branch_snapshot_ref(snapshot_id=snapshot.snapshot_id)
+            self._set_ref_snapshot(snapshot_id=snapshot.snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH))
         return self
 
 
