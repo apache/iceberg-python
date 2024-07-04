@@ -28,7 +28,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 from pyiceberg.catalog import (
     Catalog,
 )
-from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceAlreadyExistsError,
@@ -52,7 +52,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import IntegerType
+from pyiceberg.types import IntegerType, strtobool
 
 
 @pytest.fixture(scope="module")
@@ -166,6 +166,49 @@ def test_creation_with_no_uri(catalog_name: str) -> None:
 def test_creation_with_unsupported_uri(catalog_name: str) -> None:
     with pytest.raises(ArgumentError):
         SqlCatalog(catalog_name, uri="unsupported:xxx")
+
+
+def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path) -> None:
+    # echo_param, expected_echo_value
+    test_cases = [(None, strtobool(DEFAULT_ECHO_VALUE)), ("debug", "debug"), ("true", True), ("false", False)]
+
+    for echo_param, expected_echo_value in test_cases:
+        props = {
+            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "warehouse": f"file://{warehouse}",
+        }
+        # None is for default value
+        if echo_param is not None:
+            props["echo"] = echo_param
+        catalog = SqlCatalog(catalog_name, **props)
+        assert catalog.engine._echo == expected_echo_value, (
+            f"Assertion failed: expected echo value {expected_echo_value}, "
+            f"but got {catalog.engine._echo}. For echo_param={echo_param}"
+        )
+
+
+def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Path) -> None:
+    # pool_pre_ping_param, expected_pool_pre_ping_value
+    test_cases = [
+        (None, strtobool(DEFAULT_POOL_PRE_PING_VALUE)),
+        ("true", True),
+        ("false", False),
+    ]
+
+    for pool_pre_ping_param, expected_pool_pre_ping_value in test_cases:
+        props = {
+            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "warehouse": f"file://{warehouse}",
+        }
+        # None is for default value
+        if pool_pre_ping_param is not None:
+            props["pool_pre_ping"] = pool_pre_ping_param
+
+        catalog = SqlCatalog(catalog_name, **props)
+        assert catalog.engine.pool._pre_ping == expected_pool_pre_ping_value, (
+            f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
+            f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -1100,6 +1143,18 @@ def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_
         lazy_fixture("catalog_sqlite"),
     ],
 )
+def test_drop_non_existing_namespaces(catalog: SqlCatalog) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.drop_namespace("does_not_exist")
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
 def test_load_namespace_properties(catalog: SqlCatalog, namespace: str) -> None:
     warehouse_location = "/test/location"
@@ -1172,7 +1227,12 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
             assert k in update_report.missing
         else:
             assert k in update_report.removed
-    assert "updated test description" == catalog.load_namespace_properties(namespace)["comment"]
+    assert catalog.load_namespace_properties(namespace) == {
+        "comment": "updated test description",
+        "test_property4": "4",
+        "test_property5": "5",
+        "location": f"{warehouse_location}/{namespace}.db",
+    }
 
 
 @pytest.mark.parametrize(

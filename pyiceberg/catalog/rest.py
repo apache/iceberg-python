@@ -47,6 +47,7 @@ from pyiceberg.exceptions import (
     CommitStateUnknownException,
     ForbiddenError,
     NamespaceAlreadyExistsError,
+    NamespaceNotEmptyError,
     NoSuchNamespaceError,
     NoSuchTableError,
     OAuthError,
@@ -725,7 +726,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
+            self._handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
     @retry(**_RETRY_ARGS)
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
