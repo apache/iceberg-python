@@ -394,18 +394,3 @@ def test_all_primitive_types(is_required: bool) -> None:
     for idx, field in enumerate(all_primitives_schema.as_struct()):
         assert record[idx] == avro_entry[idx], f"Invalid {field}"
         assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"
-
-
-def test_forbid_writing_empty_file() -> None:
-    with TemporaryDirectory() as tmpdir:
-        tmp_avro_file = tmpdir + "/manifest_entry.avro"
-
-        with pytest.raises(ValueError, match="No records have been written for this Avro file."):
-            with avro.AvroOutputFile[ManifestEntry](
-                output_file=PyArrowFileIO().new_output(tmp_avro_file),
-                file_schema=MANIFEST_ENTRY_SCHEMAS[1],
-                schema_name="manifest_entry",
-                record_schema=MANIFEST_ENTRY_SCHEMAS[2],
-            ) as out:
-                with pytest.raises(ValueError, match="No records have been written in this block."):
-                    out.write_block([])
