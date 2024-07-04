@@ -39,7 +39,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
-from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.io.pyarrow import _pyarrow_schema_ensure_large_types, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
 from pyiceberg.table import _dataframe_to_data_files
@@ -1490,3 +1490,152 @@ def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_id
 
     # Act and Assert for a non-existing table
     assert catalog.table_exists(("non", "exist")) is False
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
+def test_read_arrow_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
+    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(table_identifier, table_schema_simple)
+
+    df = pa.Table.from_pydict(
+        {
+            "foo": ["a"],
+            "bar": [1],
+            "baz": [True],
+        },
+        schema=schema_to_pyarrow(table_schema_simple, with_large_types=False),
+    )
+
+    table.append(df)
+
+    # read back the data
+    assert df == table.scan().to_arrow(with_large_types=False)
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
+def test_read_arrow_table_large_types(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
+    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(table_identifier, table_schema_simple)
+
+    df = pa.Table.from_pydict(
+        {
+            "foo": ["a"],
+            "bar": [1],
+            "baz": [True],
+        },
+        schema=schema_to_pyarrow(table_schema_simple, with_large_types=False),
+    )
+
+    table.append(df)
+
+    # read back the data
+    assert df.cast(_pyarrow_schema_ensure_large_types(df.schema)) == table.scan().to_arrow(with_large_types=True)
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
+def test_read_arrow_batch_reader(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
+    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(table_identifier, table_schema_simple)
+
+    df = pa.Table.from_pydict(
+        {
+            "foo": ["a"],
+            "bar": [1],
+            "baz": [True],
+        },
+        schema=schema_to_pyarrow(table_schema_simple, with_large_types=False),
+    )
+
+    table.append(df)
+
+    # read back the data
+    assert df == table.scan().to_arrow_batch_reader(with_large_types=False).read_all()
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
+def test_read_arrow_batch_reader_large_types(
+    catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier
+) -> None:
+    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(table_identifier, table_schema_simple)
+
+    df = pa.Table.from_pydict(
+        {
+            "foo": ["a"],
+            "bar": [1],
+            "baz": [True],
+        },
+        schema=schema_to_pyarrow(table_schema_simple, with_large_types=False),
+    )
+
+    table.append(df)
+
+    # read back the data
+    assert (
+        df.cast(_pyarrow_schema_ensure_large_types(df.schema))
+        == table.scan().to_arrow_batch_reader(with_large_types=True).read_all()
+    )

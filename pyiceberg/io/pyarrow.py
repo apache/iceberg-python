@@ -1170,6 +1170,7 @@ def project_table(
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
             table_metadata.name_mapping(),
+            with_large_types,
         )
         for task in tasks
     ]
