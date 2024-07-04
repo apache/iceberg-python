@@ -212,7 +212,6 @@ def test_query_null_append_partitioned_multi_sort(
         SortOrder(SortField(source_id=5, transform=BucketTransform(2))),
         SortOrder(SortField(source_id=8, transform=BucketTransform(2))),
         SortOrder(SortField(source_id=9, transform=BucketTransform(2))),
-        SortOrder(SortField(source_id=10, transform=BucketTransform(2))),
         SortOrder(SortField(source_id=4, transform=TruncateTransform(2))),
         SortOrder(SortField(source_id=5, transform=TruncateTransform(2))),
     ],
@@ -220,9 +219,9 @@ def test_query_null_append_partitioned_multi_sort(
 def test_invalid_sort_transform(
     session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, sort_order: SortOrder
 ) -> None:
-    table_identifier = (
-        f"default.arrow_table_invalid_sort_transform_{','.join([str(field).replace('', '_') for field in sort_order.fields])}"
-    )
+    import re
+
+    table_identifier = f"""default.arrow_table_invalid_sort_transform_{'_'.join([f"__{re.sub(r'[^A-Za-z0-9_]', '', str(field.transform))}_{field.source_id}_{field.direction}_{str(field.null_order)}__".replace(' ', '') for field in sort_order.fields])}"""
 
     tbl = _create_table(
         session_catalog=session_catalog,
@@ -232,11 +231,73 @@ def test_invalid_sort_transform(
         sort_order=sort_order,
     )
 
-    with pytest.raises(
-        ValueError,
+    with pytest.warns(
+        UserWarning,
         match="Not all sort transforms are supported for writes. Following sort orders cannot be written using pyarrow: *",
     ):
         tbl.append(arrow_table_with_null)
+
+    files_df = spark.sql(
+        f"""
+                    SELECT *
+                    FROM {table_identifier}.files
+                """
+    )
+
+    assert [row.sort_order_id for row in files_df.select("sort_order_id").distinct().collect()] == [
+        0
+    ], "Expected Sort Order Id to be set as 0 (Unsorted) in the manifest file"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "sort_order",
+    [
+        SortOrder(*[
+            SortField(source_id=1, transform=IdentityTransform()),
+            SortField(source_id=4, transform=BucketTransform(2)),
+        ]),
+        SortOrder(SortField(source_id=5, transform=BucketTransform(2))),
+        SortOrder(SortField(source_id=8, transform=BucketTransform(2))),
+        SortOrder(SortField(source_id=9, transform=BucketTransform(2))),
+        SortOrder(SortField(source_id=4, transform=TruncateTransform(2))),
+        SortOrder(SortField(source_id=5, transform=TruncateTransform(2))),
+    ],
+)
+def test_invalid_sort_transform_partitioned(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, sort_order: SortOrder
+) -> None:
+    import re
+
+    table_identifier = f"""default.arrow_table_invalid_sort_transform_partitioned_{'_'.join([f"__{re.sub(r'[^A-Za-z0-9_]', '', str(field.transform))}_{field.source_id}_{field.direction}_{str(field.null_order)}__".replace(' ', '') for field in sort_order.fields])}"""
+
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=table_identifier,
+        properties={"format-version": "1"},
+        schema=TABLE_SCHEMA,
+        sort_order=sort_order,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=10, field_id=1001, transform=IdentityTransform(), name="identity_date")
+        ),
+    )
+
+    with pytest.warns(
+        UserWarning,
+        match="Not all sort transforms are supported for writes. Following sort orders cannot be written using pyarrow: *",
+    ):
+        tbl.append(arrow_table_with_null)
+
+    files_df = spark.sql(
+        f"""
+                    SELECT *
+                    FROM {table_identifier}.files
+                """
+    )
+
+    assert [row.sort_order_id for row in files_df.select("sort_order_id").distinct().collect()] == [
+        0
+    ], "Expected Sort Order Id to be set as 0 (Unsorted) in the manifest file"
 
 
 @pytest.mark.integration

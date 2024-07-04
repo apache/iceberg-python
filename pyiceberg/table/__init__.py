@@ -2727,19 +2727,23 @@ def _dataframe_to_data_files(
     if len(table_metadata.spec().fields) > 0:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
 
-        write_partitions = (
-            [
-                TablePartition(
-                    partition_key=partition.partition_key,
-                    arrow_table_partition=_sort_table_by_sort_order(
-                        arrow_table=partition.arrow_table_partition, schema=table_metadata.schema(), sort_order=sort_order
-                    ),
-                )
-                for partition in partitions
-            ]
-            if sort_order and not sort_order.is_unsorted
-            else partitions
-        )
+        if sort_order and not sort_order.is_unsorted:
+            try:
+                write_partitions = [
+                    TablePartition(
+                        partition_key=partition.partition_key,
+                        arrow_table_partition=_sort_table_by_sort_order(
+                            arrow_table=partition.arrow_table_partition, schema=table_metadata.schema(), sort_order=sort_order
+                        ),
+                    )
+                    for partition in partitions
+                ]
+            except Exception as exc:
+                warnings.warn(f"Failed to sort table with error: {exc}")
+                sort_order = UNSORTED_SORT_ORDER
+                write_partitions = partitions
+        else:
+            write_partitions = partitions
 
         yield from write_file(
             io=io,
@@ -2758,11 +2762,15 @@ def _dataframe_to_data_files(
             ]),
         )
     else:
-        write_df = (
-            _sort_table_by_sort_order(arrow_table=df, schema=table_metadata.schema(), sort_order=sort_order)
-            if sort_order and not sort_order.is_unsorted
-            else df
-        )
+        if sort_order and not sort_order.is_unsorted:
+            try:
+                write_df = _sort_table_by_sort_order(arrow_table=df, schema=table_metadata.schema(), sort_order=sort_order)
+            except Exception as exc:
+                warnings.warn(f"Failed to sort table with error: {exc}")
+                sort_order = UNSORTED_SORT_ORDER
+                write_df = df
+        else:
+            write_df = df
 
         yield from write_file(
             io=io,
