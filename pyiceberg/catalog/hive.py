@@ -273,15 +273,16 @@ class HiveCatalog(MetastoreCatalog):
 
     @staticmethod
     def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
-        uris = properties["uri"].split(",")
-        for idx, uri in enumerate(uris):
+        last_exception = None
+        for uri in properties["uri"].split(","):
             try:
                 return _HiveClient(uri, properties.get("ugi"))
             except BaseException as e:
-                if idx + 1 == len(uris):
-                    raise e
-                else:
-                    continue
+                last_exception = e
+        if last_exception not None:
+            raise e
+        else:
+            raise ValueError(f"Unable to connect to hive using uri: {properties["uri"]}")
     
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
