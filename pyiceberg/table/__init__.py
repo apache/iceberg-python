@@ -1025,7 +1025,7 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 
 @_apply_table_update.register(RemoveSnapshotRefUpdate)
 def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if (existing_ref := base_metadata.refs.get(update.ref_name)) is None:
+    if (existing_ref := base_metadata.refs.get(update.ref_name, None)) is None:
         return base_metadata
 
     if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
