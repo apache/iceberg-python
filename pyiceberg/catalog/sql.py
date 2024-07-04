@@ -64,9 +64,13 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.types import strtobool
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+DEFAULT_ECHO_VALUE = "false"
+DEFAULT_POOL_PRE_PING_VALUE = "false"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -110,8 +114,12 @@ class SqlCatalog(MetastoreCatalog):
 
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
-        echo = bool(self.properties.get("echo", False))
-        self.engine = create_engine(uri_prop, echo=echo)
+
+        echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
+        echo = strtobool(echo_str) if echo_str != "debug" else "debug"
+        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+
+        self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
         self._ensure_tables_exist()
 

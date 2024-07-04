@@ -28,7 +28,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 from pyiceberg.catalog import (
     Catalog,
 )
-from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceAlreadyExistsError,
@@ -52,7 +52,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import IntegerType
+from pyiceberg.types import IntegerType, strtobool
 
 
 @pytest.fixture(scope="module")
@@ -166,6 +166,49 @@ def test_creation_with_no_uri(catalog_name: str) -> None:
 def test_creation_with_unsupported_uri(catalog_name: str) -> None:
     with pytest.raises(ArgumentError):
         SqlCatalog(catalog_name, uri="unsupported:xxx")
+
+
+def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path) -> None:
+    # echo_param, expected_echo_value
+    test_cases = [(None, strtobool(DEFAULT_ECHO_VALUE)), ("debug", "debug"), ("true", True), ("false", False)]
+
+    for echo_param, expected_echo_value in test_cases:
+        props = {
+            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "warehouse": f"file://{warehouse}",
+        }
+        # None is for default value
+        if echo_param is not None:
+            props["echo"] = echo_param
+        catalog = SqlCatalog(catalog_name, **props)
+        assert catalog.engine._echo == expected_echo_value, (
+            f"Assertion failed: expected echo value {expected_echo_value}, "
+            f"but got {catalog.engine._echo}. For echo_param={echo_param}"
+        )
+
+
+def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Path) -> None:
+    # pool_pre_ping_param, expected_pool_pre_ping_value
+    test_cases = [
+        (None, strtobool(DEFAULT_POOL_PRE_PING_VALUE)),
+        ("true", True),
+        ("false", False),
+    ]
+
+    for pool_pre_ping_param, expected_pool_pre_ping_value in test_cases:
+        props = {
+            "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+            "warehouse": f"file://{warehouse}",
+        }
+        # None is for default value
+        if pool_pre_ping_param is not None:
+            props["pool_pre_ping"] = pool_pre_ping_param
+
+        catalog = SqlCatalog(catalog_name, **props)
+        assert catalog.engine.pool._pre_ping == expected_pool_pre_ping_value, (
+            f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
+            f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
+        )
 
 
 @pytest.mark.parametrize(
