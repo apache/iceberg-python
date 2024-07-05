@@ -35,6 +35,11 @@ from pyiceberg.transforms import (
 )
 from utils import TABLE_SCHEMA, _create_table
 
+########################################################################################################################
+# Spark engine works here because the read is stable for one file.
+# For these tests to run, it is necessary that only 1 file is generated per partition during writes for sorted queries.
+########################################################################################################################
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize(

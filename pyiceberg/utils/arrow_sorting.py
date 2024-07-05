@@ -56,7 +56,24 @@ def convert_sort_field_to_pyarrow_sort_options(sort_field: SortField) -> PyArrow
 
 def get_sort_indices_arrow_table(arrow_table: pa.Table, sort_seq: List[Tuple[str, PyArrowSortOptions]]) -> List[int]:
     """
-    Sorts a Pyarrow Table with a given sort sequence.
+    Return the indices that would sort the input arrow table.
+
+    This function computes an array of indices that define a stable sort of the input arrow_table
+
+    Currently, pyarrow sort_indices function doesn't accept different null ordering across multiple keys
+    To make sure, we are able to sort null orders across multiple keys:
+        1. Utilize a stable sort algo (e.g. pyarrow sort indices)
+        2. Sort on the last key first and reverse iterate sort to the first key.
+
+    For instance:
+        If the sorting is defined on age asc and then name desc, the sorting can be decomposed into single key stable
+        sorts in the following way:
+            - first sort by name desc
+            - then sort by age asc
+
+        Using a stable sort, we can guarantee that the output would be same across different order keys.
+
+    Pyarrow sort_indices function is stable as mentioned in the doc: https://arrow.apache.org/docs/python/generated/pyarrow.compute.sort_indices.html
 
     Args:
         arrow_table (pa.Table):  Input table to be sorted
@@ -83,6 +100,8 @@ def get_sort_indices_arrow_table(arrow_table: pa.Table, sort_seq: List[Tuple[str
 
     for col_name, sort_options in sort_seq[::-1]:
         sorted_table = sorted_table.take(
+            # This function works because pyarrow sort_indices function is stable.
+            # As mentioned in the docs: https://arrow.apache.org/docs/python/generated/pyarrow.compute.sort_indices.html
             pa.compute.sort_indices(
                 sorted_table, sort_keys=[(col_name, sort_options.sort_direction)], null_placement=sort_options.null_order
             )
