@@ -968,7 +968,7 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ],
     }
     input_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
-    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_ON_WRITE": "True"})
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
 
     tbl = _create_table(
         session_catalog,

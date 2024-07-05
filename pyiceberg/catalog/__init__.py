@@ -675,8 +675,9 @@ class Catalog(ABC):
 
             from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
 
+            downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write")
             if isinstance(schema, pa.Schema):
-                schema: Schema = visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())  # type: ignore
+                schema: Schema = visit_pyarrow(schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))  # type: ignore
                 return schema
         except ModuleNotFoundError:
             pass

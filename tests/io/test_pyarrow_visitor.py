@@ -15,12 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
-import os
 import re
 
 import pyarrow as pa
 import pytest
-from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
@@ -164,11 +162,9 @@ def test_pyarrow_time64_ns_to_iceberg() -> None:
 
 
 @pytest.mark.parametrize("precision", ["s", "ms", "us", "ns"])
-def test_pyarrow_timestamp_to_iceberg(mocker: MockerFixture, precision: str) -> None:
-    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_ON_WRITE": "True"})
-
+def test_pyarrow_timestamp_to_iceberg(precision: str) -> None:
     pyarrow_type = pa.timestamp(unit=precision)
-    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg(downcast_ns_timestamp_to_us=True))
     assert converted_iceberg_type == TimestampType()
     # all timestamp types are converted to 'us' precision
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.timestamp(unit="us")
@@ -179,7 +175,7 @@ def test_pyarrow_timestamp_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
@@ -201,7 +197,7 @@ def test_pyarrow_timestamp_tz_invalid_units() -> None:
     with pytest.raises(
         TypeError,
         match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
         ),
     ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
