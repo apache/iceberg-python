@@ -121,6 +121,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestors_of,
     update_snapshot_summaries,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -4122,6 +4123,170 @@ class InspectTable:
         return pa.Table.from_pylist(
             manifests,
             schema=manifest_schema,
+        )
+
+    def metadata_log_entries(self) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.table.snapshots import MetadataLogEntry
+
+        table_schema = pa.schema([
+            pa.field("timestamp", pa.timestamp(unit="ms"), nullable=False),
+            pa.field("file", pa.string(), nullable=False),
+            pa.field("latest_snapshot_id", pa.int64(), nullable=True),
+            pa.field("latest_schema_id", pa.int32(), nullable=True),
+            pa.field("latest_sequence_number", pa.int64(), nullable=True),
+        ])
+
+        def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
+            latest_snapshot = self.tbl.snapshot_as_of_timestamp(metadata_entry.timestamp_ms)
+            return {
+                "timestamp": metadata_entry.timestamp_ms,
+                "file": metadata_entry.metadata_file,
+                "latest_snapshot_id": latest_snapshot.snapshot_id if latest_snapshot else None,
+                "latest_schema_id": latest_snapshot.schema_id if latest_snapshot else None,
+                "latest_sequence_number": latest_snapshot.sequence_number if latest_snapshot else None,
+            }
+
+        # similar to MetadataLogEntriesTable in Java
+        # https://github.com/apache/iceberg/blob/8a70fe0ff5f241aec8856f8091c77fdce35ad256/core/src/main/java/org/apache/iceberg/MetadataLogEntriesTable.java#L62-L66
+        metadata_log_entries = self.tbl.metadata.metadata_log + [
+            MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)
+        ]
+
+        return pa.Table.from_pylist(
+            [metadata_log_entry_to_row(entry) for entry in metadata_log_entries],
+            schema=table_schema,
+        )
+
+    def history(self) -> "pa.Table":
+        import pyarrow as pa
+
+        history_schema = pa.schema([
+            pa.field("made_current_at", pa.timestamp(unit="ms"), nullable=False),
+            pa.field("snapshot_id", pa.int64(), nullable=False),
+            pa.field("parent_id", pa.int64(), nullable=True),
+            pa.field("is_current_ancestor", pa.bool_(), nullable=False),
+        ])
+
+        ancestors_ids = {snapshot.snapshot_id for snapshot in ancestors_of(self.tbl.current_snapshot(), self.tbl.metadata)}
+
+        history = []
+        metadata = self.tbl.metadata
+
+        for snapshot_entry in metadata.snapshot_log:
+            snapshot = metadata.snapshot_by_id(snapshot_entry.snapshot_id)
+
+            history.append({
+                "made_current_at": datetime.utcfromtimestamp(snapshot_entry.timestamp_ms / 1000.0),
+                "snapshot_id": snapshot_entry.snapshot_id,
+                "parent_id": snapshot.parent_snapshot_id if snapshot else None,
+                "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
+            })
+
+        return pa.Table.from_pylist(history, schema=history_schema)
+
+    def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        schema = self.tbl.metadata.schema()
+        readable_metrics_struct = []
+
+        def _readable_metrics_struct(bound_type: PrimitiveType) -> pa.StructType:
+            pa_bound_type = schema_to_pyarrow(bound_type)
+            return pa.struct([
+                pa.field("column_size", pa.int64(), nullable=True),
+                pa.field("value_count", pa.int64(), nullable=True),
+                pa.field("null_value_count", pa.int64(), nullable=True),
+                pa.field("nan_value_count", pa.int64(), nullable=True),
+                pa.field("lower_bound", pa_bound_type, nullable=True),
+                pa.field("upper_bound", pa_bound_type, nullable=True),
+            ])
+
+        for field in self.tbl.metadata.schema().fields:
+            readable_metrics_struct.append(
+                pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
+            )
+
+        files_schema = pa.schema([
+            pa.field("content", pa.int8(), nullable=False),
+            pa.field("file_path", pa.string(), nullable=False),
+            pa.field("file_format", pa.dictionary(pa.int32(), pa.string()), nullable=False),
+            pa.field("spec_id", pa.int32(), nullable=False),
+            pa.field("record_count", pa.int64(), nullable=False),
+            pa.field("file_size_in_bytes", pa.int64(), nullable=False),
+            pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+            pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+            pa.field("key_metadata", pa.binary(), nullable=True),
+            pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
+            pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
+            pa.field("sort_order_id", pa.int32(), nullable=True),
+            pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
+        ])
+
+        files: list[dict[str, Any]] = []
+
+        if not snapshot_id and not self.tbl.metadata.current_snapshot():
+            return pa.Table.from_pylist(
+                files,
+                schema=files_schema,
+            )
+        snapshot = self._get_snapshot(snapshot_id)
+
+        io = self.tbl.io
+        for manifest_list in snapshot.manifests(io):
+            for manifest_entry in manifest_list.fetch_manifest_entry(io):
+                data_file = manifest_entry.data_file
+                column_sizes = data_file.column_sizes or {}
+                value_counts = data_file.value_counts or {}
+                null_value_counts = data_file.null_value_counts or {}
+                nan_value_counts = data_file.nan_value_counts or {}
+                lower_bounds = data_file.lower_bounds or {}
+                upper_bounds = data_file.upper_bounds or {}
+                readable_metrics = {
+                    schema.find_column_name(field.field_id): {
+                        "column_size": column_sizes.get(field.field_id),
+                        "value_count": value_counts.get(field.field_id),
+                        "null_value_count": null_value_counts.get(field.field_id),
+                        "nan_value_count": nan_value_counts.get(field.field_id),
+                        "lower_bound": from_bytes(field.field_type, lower_bound)
+                        if (lower_bound := lower_bounds.get(field.field_id))
+                        else None,
+                        "upper_bound": from_bytes(field.field_type, upper_bound)
+                        if (upper_bound := upper_bounds.get(field.field_id))
+                        else None,
+                    }
+                    for field in self.tbl.metadata.schema().fields
+                }
+                files.append({
+                    "content": data_file.content,
+                    "file_path": data_file.file_path,
+                    "file_format": data_file.file_format,
+                    "spec_id": data_file.spec_id,
+                    "record_count": data_file.record_count,
+                    "file_size_in_bytes": data_file.file_size_in_bytes,
+                    "column_sizes": dict(data_file.column_sizes),
+                    "value_counts": dict(data_file.value_counts),
+                    "null_value_counts": dict(data_file.null_value_counts),
+                    "nan_value_counts": dict(data_file.nan_value_counts),
+                    "lower_bounds": dict(data_file.lower_bounds),
+                    "upper_bounds": dict(data_file.upper_bounds),
+                    "key_metadata": data_file.key_metadata,
+                    "split_offsets": data_file.split_offsets,
+                    "equality_ids": data_file.equality_ids,
+                    "sort_order_id": data_file.sort_order_id,
+                    "readable_metrics": readable_metrics,
+                })
+
+        return pa.Table.from_pylist(
+            files,
+            schema=files_schema,
         )
 
 

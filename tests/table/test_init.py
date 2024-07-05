@@ -93,7 +93,9 @@ from pyiceberg.types import (
     BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
+    FixedType,
     FloatType,
     IntegerType,
     ListType,
@@ -843,6 +845,32 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
 
     # Set/RemovePropertiesUpdate
     assert new_metadata.properties == {"owner": "test", "test_a": "test_a1"}
+
+
+def test_update_metadata_schema_immutability(
+    table_v2_with_fixed_and_decimal_types: TableMetadataV2,
+) -> None:
+    update = SetSnapshotRefUpdate(
+        ref_name="main",
+        type="branch",
+        snapshot_id=3051729675574597004,
+        max_ref_age_ms=123123123,
+        max_snapshot_age_ms=12312312312,
+        min_snapshots_to_keep=1,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_fixed_and_decimal_types.metadata,
+        (update,),
+    )
+
+    assert new_metadata.schemas[0].fields == (
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="a", field_type=DecimalType(precision=16, scale=2), required=True),
+        NestedField(field_id=5, name="b", field_type=DecimalType(precision=16, scale=8), required=True),
+        NestedField(field_id=6, name="c", field_type=FixedType(length=16), required=True),
+        NestedField(field_id=7, name="d", field_type=FixedType(length=18), required=True),
+    )
 
 
 def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:

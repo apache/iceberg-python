@@ -669,6 +669,181 @@ partition_summaries: [[    -- is_valid: all not null
 ["test"]]]
 ```
 
+### Metadata Log Entries
+
+To show table metadata log entries:
+
+```python
+table.inspect.metadata_log_entries()
+```
+
+```
+pyarrow.Table
+timestamp: timestamp[ms] not null
+file: string not null
+latest_snapshot_id: int64
+latest_schema_id: int32
+latest_sequence_number: int64
+----
+timestamp: [[2024-04-28 17:03:00.214,2024-04-28 17:03:00.352,2024-04-28 17:03:00.445,2024-04-28 17:03:00.498]]
+file: [["s3://warehouse/default/table_metadata_log_entries/metadata/00000-0b3b643b-0f3a-4787-83ad-601ba57b7319.metadata.json","s3://warehouse/default/table_metadata_log_entries/metadata/00001-f74e4b2c-0f89-4f55-822d-23d099fd7d54.metadata.json","s3://warehouse/default/table_metadata_log_entries/metadata/00002-97e31507-e4d9-4438-aff1-3c0c5304d271.metadata.json","s3://warehouse/default/table_metadata_log_entries/metadata/00003-6c8b7033-6ad8-4fe4-b64d-d70381aeaddc.metadata.json"]]
+latest_snapshot_id: [[null,3958871664825505738,1289234307021405706,7640277914614648349]]
+latest_schema_id: [[null,0,0,0]]
+latest_sequence_number: [[null,0,0,0]]
+```
+
+### History
+
+To show a table's history:
+
+```python
+table.inspect.history()
+```
+
+```
+pyarrow.Table
+made_current_at: timestamp[ms] not null
+snapshot_id: int64 not null
+parent_id: int64
+is_current_ancestor: bool not null
+----
+made_current_at: [[2024-06-18 16:17:48.768,2024-06-18 16:17:49.240,2024-06-18 16:17:49.343,2024-06-18 16:17:49.511]]
+snapshot_id: [[4358109269873137077,3380769165026943338,4358109269873137077,3089420140651211776]]
+parent_id: [[null,4358109269873137077,null,4358109269873137077]]
+is_current_ancestor: [[true,false,true,true]]
+```
+
+### Files
+
+Inspect the data files in the current snapshot of the table:
+
+```python
+table.inspect.files()
+```
+
+```
+pyarrow.Table
+content: int8 not null
+file_path: string not null
+file_format: dictionary<values=string, indices=int32, ordered=0> not null
+spec_id: int32 not null
+record_count: int64 not null
+file_size_in_bytes: int64 not null
+column_sizes: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+value_counts: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+null_value_counts: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+nan_value_counts: map<int32, int64>
+  child 0, entries: struct<key: int32 not null, value: int64> not null
+      child 0, key: int32 not null
+      child 1, value: int64
+lower_bounds: map<int32, binary>
+  child 0, entries: struct<key: int32 not null, value: binary> not null
+      child 0, key: int32 not null
+      child 1, value: binary
+upper_bounds: map<int32, binary>
+  child 0, entries: struct<key: int32 not null, value: binary> not null
+      child 0, key: int32 not null
+      child 1, value: binary
+key_metadata: binary
+split_offsets: list<item: int64>
+  child 0, item: int64
+equality_ids: list<item: int32>
+  child 0, item: int32
+sort_order_id: int32
+readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
+  child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: large_string
+      child 5, upper_bound: large_string
+  child 1, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: double
+      child 5, upper_bound: double
+  child 2, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: double
+      child 5, upper_bound: double
+----
+content: [[0,0]]
+file_path: [["s3://warehouse/default/table_metadata_files/data/00000-0-9ea7d222-6457-467f-bad5-6fb125c9aa5f.parquet","s3://warehouse/default/table_metadata_files/data/00000-0-afa8893c-de71-4710-97c9-6b01590d0c44.parquet"]]
+file_format: [["PARQUET","PARQUET"]]
+spec_id: [[0,0]]
+record_count: [[3,3]]
+file_size_in_bytes: [[5459,5459]]
+column_sizes: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[49,78,128,94,118,...,118,118,94,78,109],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[49,78,128,94,118,...,118,118,94,78,109]]]
+value_counts: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[3,3,3,3,3,...,3,3,3,3,3],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[3,3,3,3,3,...,3,3,3,3,3]]]
+null_value_counts: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[1,1,1,1,1,...,1,1,1,1,1],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[1,1,1,1,1,...,1,1,1,1,1]]]
+nan_value_counts: [[keys:[]values:[],keys:[]values:[]]]
+lower_bounds: [[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000]]]
+upper_bounds:[[keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000],keys:[1,2,3,4,5,...,8,9,10,11,12]values:[00,61,61616161616161616161616161616161,01000000,0100000000000000,...,009B6ACA38F10500,009B6ACA38F10500,9E4B0000,01,00000000000000000000000000000000]]]
+key_metadata: [[0100,0100]]
+split_offsets:[[[],[]]]
+equality_ids:[[[],[]]]
+sort_order_id:[[[],[]]]
+readable_metrics: [
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[140]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: large_string
+["Amsterdam"]
+    -- child 5 type: large_string
+["San Francisco"]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[135]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: double
+[37.773972]
+    -- child 5 type: double
+[53.11254]
+  -- child 2 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[135]
+    -- child 1 type: int64
+[4]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: double
+[-122.431297]
+    -- child 5 type: double
+[6.0989]]
+```
+
 ## Add Files
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.

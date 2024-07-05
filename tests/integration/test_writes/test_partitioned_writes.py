@@ -174,7 +174,6 @@ def test_query_filter_appended_null_partitioned(
     assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in arrow_table_with_null.column_names:
-        df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 6, f"Expected 6 non-null rows for {col}"
         assert df.where(f"{col} is null").count() == 3, f"Expected 3 null rows for {col}"
     # expecting 6 files: first append with [A], [B], [C],  second append with [A, A], [B, B], [C, C]
