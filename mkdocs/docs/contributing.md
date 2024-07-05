@@ -96,7 +96,7 @@ Removal of old cached files generated during the Cython build process:
 make clean
 ```
 
-Helps prevent build failures and unexpected behavior by removing outdated files, ensuring that only up-to-date sources are used & build environment is always clean.
+Helps prevent build failures and unexpected behavior by removing outdated files, ensuring that only up-to-date sources are used & the build environment is always clean.
 
 ## Testing
 
