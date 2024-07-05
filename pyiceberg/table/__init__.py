@@ -169,10 +169,12 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
     """
     from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
 
-    downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write")
+    downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write") or False
     name_mapping = table_schema.name_mapping
     try:
-        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        task_schema = pyarrow_to_schema(
+            other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
     except ValueError as e:
         other_schema = _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
         additional_names = set(other_schema.column_names) - set(table_schema.column_names)

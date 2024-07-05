@@ -666,7 +666,9 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
     return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
 
 
-def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False) -> Schema:
+def pyarrow_to_schema(
+    schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False
+) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
         visitor = _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
@@ -1900,8 +1902,8 @@ def data_file_statistics_from_parquet_metadata(
                             stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
                         )
 
-                    col_aggs[field_id].update_min(statistics.min)
-                    col_aggs[field_id].update_max(statistics.max)
+                    col_aggs[field_id].update_min(statistics.min_raw)
+                    col_aggs[field_id].update_max(statistics.max_raw)
 
                 except pyarrow.lib.ArrowNotImplementedError as e:
                     invalidate_col.add(field_id)
@@ -1945,10 +1947,13 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         else:
             file_schema = table_schema
 
-        downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write")
+        downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write") or False
         batches = [
             to_requested_schema(
-                requested_schema=file_schema, file_schema=table_schema, batch=batch, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+                requested_schema=file_schema,
+                file_schema=table_schema,
+                batch=batch,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             )
             for batch in task.record_batches
         ]
