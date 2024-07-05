@@ -64,9 +64,9 @@ from pyiceberg.table import (
     UpdateSchema,
     _apply_table_update,
     _check_schema_compatible,
+    _determine_partitions,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
-    determine_partitions,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
@@ -1270,7 +1270,7 @@ def test_partition_for_demo() -> None:
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
     )
-    result = determine_partitions(partition_spec, test_schema, arrow_table)
+    result = _determine_partitions(partition_spec, test_schema, arrow_table)
     assert {table_partition.partition_key.partition for table_partition in result} == {
         Record(n_legs_identity=2, year_identity=2020),
         Record(n_legs_identity=100, year_identity=2021),
@@ -1320,7 +1320,7 @@ def test_identity_partition_on_multi_columns() -> None:
         }
         arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
 
-        result = determine_partitions(partition_spec, test_schema, arrow_table)
+        result = _determine_partitions(partition_spec, test_schema, arrow_table)
 
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])

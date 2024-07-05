@@ -137,7 +137,7 @@ def test_partitioned_table_no_match(spark: SparkSession, session_catalog: RestCa
 
 
 @pytest.mark.integration
-def test_partitioned_table_positional_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
+def test_delete_partitioned_table_positional_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
     identifier = "default.table_partitioned_delete"
 
     run_spark_commands(
@@ -175,13 +175,64 @@ def test_partitioned_table_positional_deletes(spark: SparkSession, session_catal
     assert len(files) == 1
     assert len(files[0].delete_files) == 1
 
-    # Will rewrite a data file with a positional delete
+    # Will rewrite a data file without the positional delete
     tbl.delete(EqualTo("number", 40))
 
     # One positional delete has been added, but an OVERWRITE status is set
     # https://github.com/apache/iceberg/issues/10122
     assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "overwrite", "overwrite"]
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10], "number": [20]}
+
+
+@pytest.mark.integration
+def test_overwrite_partitioned_table(spark: SparkSession, session_catalog: RestCatalog) -> None:
+    identifier = "default.table_partitioned_delete"
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES(
+                'format-version' = 2,
+                'write.delete.mode'='merge-on-read',
+                'write.update.mode'='merge-on-read',
+                'write.merge.mode'='merge-on-read'
+            )
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (10, 1), (10, 2), (20, 3)
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+
+    files = list(tbl.scan().plan_files())
+    assert len(files) == 2
+
+    arrow_schema = pa.schema([pa.field("number_partitioned", pa.int32()), pa.field("number", pa.int32())])
+    arrow_tbl = pa.Table.from_pylist(
+        [
+            {"number_partitioned": 10, "number": 4},
+            {"number_partitioned": 10, "number": 5},
+        ],
+        schema=arrow_schema,
+    )
+
+    # Will rewrite a data file without the positional delete
+    tbl.overwrite(arrow_tbl, "number_partitioned == 10")
+
+    # One positional delete has been added, but an OVERWRITE status is set
+    # https://github.com/apache/iceberg/issues/10122
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "append"]
+    assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10, 10, 20], "number": [4, 5, 3]}
 
 
 @pytest.mark.integration
@@ -225,7 +276,7 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     files = list(tbl.scan().plan_files())
     assert len(files) == 2
 
-    # Will rewrite a data file with a positional delete
+    # Will rewrite a data file without a positional delete
     tbl.delete(EqualTo("number", 201))
 
     # One positional delete has been added, but an OVERWRITE status is set

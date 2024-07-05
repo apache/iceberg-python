@@ -2084,9 +2084,9 @@ def _dataframe_to_data_files(
             ]),
         )
     else:
-        from pyiceberg.table import determine_partitions
+        from pyiceberg.table import _determine_partitions
 
-        partitions = determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,

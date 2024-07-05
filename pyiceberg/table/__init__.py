@@ -249,6 +249,7 @@ class TableProperties:
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
     DELETE_MODE_MERGE_ON_READ = "merge-on-read"
+    DELETE_MODE_DEFAULT = DELETE_MODE_COPY_ON_WRITE
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
@@ -533,6 +534,12 @@ class Transaction:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
 
+        An overwrite may produce zero or more snapshots based on the operation:
+
+            - DELETE: In case existing Parquet files can be dropped completely.
+            - REPLACE: In case existing Parquet files need to be rewritten.
+            - APPEND: In case new data is being inserted into the table.
+
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
@@ -547,8 +554,12 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if len(self._table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
+        if unsupported_partitions := [
+            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
+        ]:
+            raise ValueError(
+                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
+            )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
@@ -568,8 +579,15 @@ class Transaction:
                     update_snapshot.append_data_file(data_file)
 
     def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """
+        Shorthand for deleting record from a table.
+
+        Args:
+            delete_filter: A boolean expression to delete rows from a table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
         if (
-            self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_COPY_ON_WRITE)
+            self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
         ):
             warnings.warn("Merge on read is not yet supported, falling back to copy-on-write")
@@ -1561,6 +1579,12 @@ class Table:
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
+
+        An overwrite may produce zero or more snapshots based on the operation:
+
+            - DELETE: In case existing Parquet files can be dropped completely.
+            - REPLACE: In case existing Parquet files need to be rewritten.
+            - APPEND: In case new data is being inserted into the table.
 
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
@@ -4326,7 +4350,7 @@ def _get_table_partitions(
     return table_partitions
 
 
-def determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
     """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
 
     Example:
