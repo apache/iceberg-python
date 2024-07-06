@@ -1997,7 +1997,7 @@ class DataScan(TableScan):
         min_data_sequence_number = _min_data_file_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.data_sequence_number or INITIAL_SEQUENCE_NUMBER)
+        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(
@@ -3150,7 +3150,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                             ManifestEntry(
                                 status=ManifestEntryStatus.ADDED,
                                 snapshot_id=self._snapshot_id,
-                                data_sequence_number=None,
+                                sequence_number=None,
                                 file_sequence_number=None,
                                 data_file=data_file,
                             )
@@ -3568,7 +3568,7 @@ class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
                     ManifestEntry(
                         status=ManifestEntryStatus.DELETED,
                         snapshot_id=entry.snapshot_id,
-                        data_sequence_number=entry.data_sequence_number,
+                        sequence_number=entry.sequence_number,
                         file_sequence_number=entry.file_sequence_number,
                         data_file=entry.data_file,
                     )
@@ -4016,7 +4016,7 @@ class InspectTable:
                 entries.append({
                     "status": entry.status.value,
                     "snapshot_id": entry.snapshot_id,
-                    "sequence_number": entry.data_sequence_number,
+                    "sequence_number": entry.sequence_number,
                     "file_sequence_number": entry.file_sequence_number,
                     "data_file": {
                         "content": entry.data_file.content,
