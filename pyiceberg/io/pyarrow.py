@@ -1902,8 +1902,8 @@ def data_file_statistics_from_parquet_metadata(
                             stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
                         )
 
-                    col_aggs[field_id].update_min(statistics.min_raw)
-                    col_aggs[field_id].update_max(statistics.max_raw)
+                    col_aggs[field_id].update_min(statistics.min)
+                    col_aggs[field_id].update_max(statistics.max)
 
                 except pyarrow.lib.ArrowNotImplementedError as e:
                     invalidate_col.add(field_id)
