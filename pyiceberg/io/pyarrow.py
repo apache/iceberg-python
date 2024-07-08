@@ -1059,11 +1059,17 @@ def _task_to_table(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
-) -> pa.Table:
-    batches = _task_to_record_batches(
-        fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+) -> Optional[pa.Table]:
+    batches = list(
+        _task_to_record_batches(
+            fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+        )
     )
-    return pa.Table.from_batches(batches)
+
+    if len(batches) > 0:
+        return pa.Table.from_batches(batches)
+    else:
+        return None
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
