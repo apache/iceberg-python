@@ -695,7 +695,7 @@ class ManifestWriter(ABC):
     _existing_rows: int
     _deleted_files: int
     _deleted_rows: int
-    _min_data_sequence_number: Optional[int]
+    _min_sequence_number: Optional[int]
     _partitions: List[Record]
     _reused_entry_wrapper: ManifestEntry
 
