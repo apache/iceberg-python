@@ -712,7 +712,7 @@ class ManifestWriter(ABC):
         self._existing_rows = 0
         self._deleted_files = 0
         self._deleted_rows = 0
-        self._min_data_sequence_number = None
+        self._min_sequence_number = None
         self._partitions = []
         self._reused_entry_wrapper = ManifestEntry()
 
@@ -774,7 +774,7 @@ class ManifestWriter(ABC):
         """Return the manifest file."""
         # once the manifest file is generated, no more entries can be added
         self.closed = True
-        min_sequence_number = self._min_data_sequence_number or UNASSIGNED_SEQ
+        min_sequence_number = self._min_sequence_number or UNASSIGNED_SEQ
         return ManifestFile(
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
@@ -813,9 +813,9 @@ class ManifestWriter(ABC):
         if (
             (entry.status == ManifestEntryStatus.ADDED or entry.status == ManifestEntryStatus.EXISTING)
             and entry.sequence_number is not None
-            and (self._min_data_sequence_number is None or entry.sequence_number < self._min_data_sequence_number)
+            and (self._min_sequence_number is None or entry.sequence_number < self._min_sequence_number)
         ):
-            self._min_data_sequence_number = entry.sequence_number
+            self._min_sequence_number = entry.sequence_number
 
         self._writer.write_block([self.prepare_entry(entry)])
         return self
