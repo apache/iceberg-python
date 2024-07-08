@@ -1949,11 +1949,11 @@ class DataScan(TableScan):
         # shared instance across multiple threads.
         return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
-    def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
+    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:
-            min_data_sequence_number (int): The minimal sequence number.
+            min_sequence_number (int): The minimal sequence number.
             manifest (ManifestFile): A ManifestFile that can be either data or deletes.
 
         Returns:
@@ -1962,7 +1962,7 @@ class DataScan(TableScan):
         return manifest.content == ManifestContent.DATA or (
             # Not interested in deletes that are older than the data
             manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
+            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
     def plan_files(self) -> Iterable[FileScanTask]:
@@ -1994,7 +1994,7 @@ class DataScan(TableScan):
             self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
-        min_data_sequence_number = _min_data_file_sequence_number(manifests)
+        min_sequence_number = _min_data_file_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
@@ -2011,7 +2011,7 @@ class DataScan(TableScan):
                         metrics_evaluator,
                     )
                     for manifest in manifests
-                    if self._check_sequence_number(min_data_sequence_number, manifest)
+                    if self._check_sequence_number(min_sequence_number, manifest)
                 ],
             )
         ):
