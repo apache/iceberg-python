@@ -3437,27 +3437,28 @@ class OverwriteFiles(_MergingSnapshotProducer["OverwriteFiles"]):
                         num=next(self._manifest_counter),
                         commit_uuid=self.commit_uuid,
                     )
-                    with write_manifest(
-                        format_version=self._transaction.table_metadata.format_version,
-                        spec=self._transaction.table_metadata.spec(),
-                        schema=self._transaction.table_metadata.schema(),
-                        output_file=self._io.new_output(output_file_location),
-                        snapshot_id=self._snapshot_id,
-                    ) as writer:
-                        [
-                            writer.add_entry(
-                                ManifestEntry(
-                                    status=ManifestEntryStatus.EXISTING,
-                                    snapshot_id=entry.snapshot_id,
-                                    data_sequence_number=entry.data_sequence_number,
-                                    file_sequence_number=entry.file_sequence_number,
-                                    data_file=entry.data_file,
+                    if any(entry.data_file not in found_deleted_data_files for entry in entries):
+                        with write_manifest(
+                            format_version=self._transaction.table_metadata.format_version,
+                            spec=self._transaction.table_metadata.spec(),
+                            schema=self._transaction.table_metadata.schema(),
+                            output_file=self._io.new_output(output_file_location),
+                            snapshot_id=self._snapshot_id,
+                        ) as writer:
+                            [
+                                writer.add_entry(
+                                    ManifestEntry(
+                                        status=ManifestEntryStatus.EXISTING,
+                                        snapshot_id=entry.snapshot_id,
+                                        data_sequence_number=entry.data_sequence_number,
+                                        file_sequence_number=entry.file_sequence_number,
+                                        data_file=entry.data_file,
+                                    )
                                 )
-                            )
-                            for entry in entries
-                            if entry.data_file not in found_deleted_data_files
-                        ]
-                    existing_files.append(writer.to_manifest_file())
+                                for entry in entries
+                                if entry.data_file not in found_deleted_data_files
+                            ]
+                        existing_files.append(writer.to_manifest_file())
         return existing_files
 
     def _deleted_entries(self) -> List[ManifestEntry]:
