@@ -1933,10 +1933,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_format=FileFormat.PARQUET,
             partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
+            sort_order_id=task.sort_order_id,
             # Just copy these from the table for now
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
