@@ -50,19 +50,27 @@ import pyiceberg.expressions.parser as parser
 from pyiceberg.conversions import from_bytes
 from pyiceberg.exceptions import CommitFailedException, ResolveError, ValidationError
 from pyiceberg.expressions import (
+    AlwaysFalse,
     AlwaysTrue,
     And,
     BooleanExpression,
     EqualTo,
+    Not,
+    Or,
     Reference,
 )
 from pyiceberg.expressions.visitors import (
+    ROWS_CANNOT_MATCH,
+    ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
+    _StrictMetricsEvaluator,
+    bind,
     expression_evaluator,
     inclusive_projection,
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
+from pyiceberg.io.pyarrow import _dataframe_to_data_files, expression_to_pyarrow, project_table
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -238,6 +246,11 @@ class TableProperties:
     WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
 
+    DELETE_MODE = "write.delete.mode"
+    DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
+    DELETE_MODE_MERGE_ON_READ = "merge-on-read"
+    DELETE_MODE_DEFAULT = DELETE_MODE_COPY_ON_WRITE
+
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION = 2
@@ -305,7 +318,13 @@ class Transaction:
             requirement.validate(self.table_metadata)
 
         self._updates += updates
-        self._requirements += requirements
+
+        # For the requirements, it does not make sense to add a requirement more than once
+        # For example, you cannot assert that the current schema has two different IDs
+        existing_requirements = {type(requirement) for requirement in self._requirements}
+        for new_requirement in requirements:
+            if type(new_requirement) not in existing_requirements:
+                self._requirements = self._requirements + requirements
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
@@ -315,6 +334,14 @@ class Transaction:
             self._requirements = ()
 
         return self
+
+    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE) -> DataScan:
+        """Minimal data scan the table with the current state of the transaction."""
+        return DataScan(
+            table_metadata=self.table_metadata,
+            io=self._table.io,
+            row_filter=row_filter,
+        )
 
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
         """Set the table to a certain version.
@@ -499,10 +526,19 @@ class Transaction:
                     update_snapshot.append_data_file(data_file)
 
     def overwrite(
-        self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        df: pa.Table,
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
+
+        An overwrite may produce zero or more snapshots based on the operation:
+
+            - DELETE: In case existing Parquet files can be dropped completely.
+            - REPLACE: In case existing Parquet files need to be rewritten.
+            - APPEND: In case new data is being inserted into the table.
 
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
@@ -518,11 +554,12 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if overwrite_filter != AlwaysTrue():
-            raise NotImplementedError("Cannot overwrite a subset of a table")
-
-        if len(self._table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned tables")
+        if unsupported_partitions := [
+            field for field in self.table_metadata.spec().fields if not field.transform.supports_pyarrow_transform
+        ]:
+            raise ValueError(
+                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
+            )
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
         # cast if the two schemas are compatible but not equal
@@ -530,7 +567,9 @@ class Transaction:
         if table_arrow_schema != df.schema:
             df = df.cast(table_arrow_schema)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as update_snapshot:
+        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
@@ -538,6 +577,86 @@ class Transaction:
                 )
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
+
+    def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """
+        Shorthand for deleting record from a table.
+
+        An deletee may produce zero or more snapshots based on the operation:
+
+            - DELETE: In case existing Parquet files can be dropped completely.
+            - REPLACE: In case existing Parquet files need to be rewritten
+
+        Args:
+            delete_filter: A boolean expression to delete rows from a table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
+        if (
+            self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
+            == TableProperties.DELETE_MODE_MERGE_ON_READ
+        ):
+            warnings.warn("Merge on read is not yet supported, falling back to copy-on-write")
+
+        if isinstance(delete_filter, str):
+            delete_filter = _parse_row_filter(delete_filter)
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
+            delete_snapshot.delete_by_predicate(delete_filter)
+
+        # Check if there are any files that require an actual rewrite of a data file
+        if delete_snapshot.rewrites_needed is True:
+            bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
+            preserve_row_filter = expression_to_pyarrow(Not(bound_delete_filter))
+
+            files = self._scan(row_filter=delete_filter).plan_files()
+
+            commit_uuid = uuid.uuid4()
+            counter = itertools.count(0)
+
+            replaced_files: List[Tuple[DataFile, List[DataFile]]] = []
+            # This will load the Parquet file into memory, including:
+            #   - Filter out the rows based on the delete filter
+            #   - Projecting it to the current schema
+            #   - Applying the positional deletes if they are there
+            # When writing
+            #   - Apply the latest partition-spec
+            #   - And sort order when added
+            for original_file in files:
+                df = project_table(
+                    tasks=[original_file],
+                    table_metadata=self._table.metadata,
+                    io=self._table.io,
+                    row_filter=AlwaysTrue(),
+                    projected_schema=self.table_metadata.schema(),
+                )
+                filtered_df = df.filter(preserve_row_filter)
+
+                # Only rewrite if there are records being deleted
+                if len(df) != len(filtered_df):
+                    replaced_files.append((
+                        original_file.file,
+                        list(
+                            _dataframe_to_data_files(
+                                io=self._table.io,
+                                df=filtered_df,
+                                table_metadata=self._table.metadata,
+                                write_uuid=commit_uuid,
+                                counter=counter,
+                            )
+                        ),
+                    ))
+
+            if len(replaced_files) > 0:
+                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite(
+                    commit_uuid=commit_uuid
+                ) as overwrite_snapshot:
+                    for original_data_file, replaced_data_files in replaced_files:
+                        overwrite_snapshot.delete_data_file(original_data_file)
+                        for replaced_data_file in replaced_data_files:
+                            overwrite_snapshot.append_data_file(replaced_data_file)
+
+        if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
+            warnings.warn("Delete operation did not match any records")
 
     def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -1381,6 +1500,9 @@ class Table:
             return self.snapshot_by_id(self.metadata.current_snapshot_id)
         return None
 
+    def snapshots(self) -> List[Snapshot]:
+        return self.metadata.snapshots
+
     def snapshot_by_id(self, snapshot_id: int) -> Optional[Snapshot]:
         """Get the snapshot of this table with the given id, or None if there is no matching snapshot."""
         return self.metadata.snapshot_by_id(snapshot_id)
@@ -1455,10 +1577,19 @@ class Table:
             tx.append(df=df, snapshot_properties=snapshot_properties)
 
     def overwrite(
-        self, df: pa.Table, overwrite_filter: BooleanExpression = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        df: pa.Table,
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
+
+        An overwrite may produce zero or more snapshots based on the operation:
+
+            - DELETE: In case existing Parquet files can be dropped completely.
+            - REPLACE: In case existing Parquet files need to be rewritten.
+            - APPEND: In case new data is being inserted into the table.
 
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
@@ -1468,6 +1599,19 @@ class Table:
         """
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+
+    def delete(
+        self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+    ) -> None:
+        """
+        Shorthand for deleting rows from the table.
+
+        Args:
+            delete_filter: The predicate that used to remove rows
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
+        with self.transaction() as tx:
+            tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
     def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -2904,52 +3048,6 @@ def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, 
     return f"{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
-def _dataframe_to_data_files(
-    table_metadata: TableMetadata, df: pa.Table, io: FileIO, write_uuid: Optional[uuid.UUID] = None
-) -> Iterable[DataFile]:
-    """Convert a PyArrow table into a DataFile.
-
-    Returns:
-        An iterable that supplies datafiles that represent the table.
-    """
-    from pyiceberg.io.pyarrow import bin_pack_arrow_table, write_file
-
-    counter = itertools.count(0)
-    write_uuid = write_uuid or uuid.uuid4()
-    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
-        properties=table_metadata.properties,
-        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
-        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
-    )
-
-    if len(table_metadata.spec().fields) > 0:
-        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
-        yield from write_file(
-            io=io,
-            table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(
-                    write_uuid=write_uuid,
-                    task_id=next(counter),
-                    record_batches=batches,
-                    partition_key=partition.partition_key,
-                    schema=table_metadata.schema(),
-                )
-                for partition in partitions
-                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
-            ]),
-        )
-    else:
-        yield from write_file(
-            io=io,
-            table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
-                for batches in bin_pack_arrow_table(df, target_file_size)
-            ]),
-        )
-
-
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
@@ -2961,12 +3059,14 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
 
 
-class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
+class _MergingSnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     commit_uuid: uuid.UUID
     _operation: Operation
     _snapshot_id: int
     _parent_snapshot_id: Optional[int]
     _added_data_files: List[DataFile]
+    _deleted_data_files: Set[DataFile]
+    _manifest_counter: itertools.count[int]
 
     def __init__(
         self,
@@ -2986,10 +3086,16 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
         self._added_data_files = []
+        self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
+        self._manifest_counter = itertools.count(0)
 
-    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer:
+    def append_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer[U]:
         self._added_data_files.append(data_file)
+        return self
+
+    def delete_data_file(self, data_file: DataFile) -> _MergingSnapshotProducer[U]:
+        self._deleted_data_files.add(data_file)
         return self
 
     @abstractmethod
@@ -3002,7 +3108,9 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
                 output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=0, commit_uuid=self.commit_uuid
+                    location=self._transaction.table_metadata.location,
+                    num=next(self._manifest_counter),
+                    commit_uuid=self.commit_uuid,
                 )
                 with write_manifest(
                     format_version=self._transaction.table_metadata.format_version,
@@ -3030,7 +3138,9 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
                 output_file_location = _new_manifest_path(
-                    location=self._transaction.table_metadata.location, num=1, commit_uuid=self.commit_uuid
+                    location=self._transaction.table_metadata.location,
+                    num=next(self._manifest_counter),
+                    commit_uuid=self.commit_uuid,
                 )
 
                 with write_manifest(
@@ -3069,6 +3179,15 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                 partition_spec=self._transaction.table_metadata.spec(),
                 schema=self._transaction.table_metadata.schema(),
             )
+
+        if len(self._deleted_data_files) > 0:
+            specs = self._transaction.table_metadata.specs()
+            for data_file in self._deleted_data_files:
+                ssc.remove_file(
+                    data_file=data_file,
+                    partition_spec=specs[data_file.spec_id],
+                    schema=self._transaction.table_metadata.schema(),
+                )
 
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
@@ -3119,11 +3238,153 @@ class _MergingSnapshotProducer(UpdateTableMetadata["_MergingSnapshotProducer"]):
                     snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
                 ),
             ),
-            (AssertRefSnapshotId(snapshot_id=self._parent_snapshot_id, ref="main"),),
+            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
         )
 
 
-class FastAppendFiles(_MergingSnapshotProducer):
+class DeleteFiles(_MergingSnapshotProducer["DeleteFiles"]):
+    """Will delete manifest entries from the current snapshot based on the predicate.
+
+    This will produce a DELETE snapshot:
+        Data files were removed and their contents logically deleted and/or delete
+        files were added to delete rows.
+
+    From the specification
+    """
+
+    _predicate: BooleanExpression
+
+    def __init__(
+        self,
+        operation: Operation,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ):
+        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        self._predicate = AlwaysFalse()
+
+    def _commit(self) -> UpdatesAndRequirements:
+        # Only produce a commit when there is something to delete
+        if self.files_affected:
+            return super()._commit()
+        else:
+            return (), ()
+
+    def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
+        schema = self._transaction.table_metadata.schema()
+        spec = self._transaction.table_metadata.specs()[spec_id]
+        project = inclusive_projection(schema, spec)
+        return project(self._predicate)
+
+    @cached_property
+    def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
+        return KeyDefaultDict(self._build_partition_projection)
+
+    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
+        schema = self._transaction.table_metadata.schema()
+        spec = self._transaction.table_metadata.specs()[spec_id]
+        return manifest_evaluator(spec, schema, self.partition_filters[spec_id], case_sensitive=True)
+
+    def delete_by_predicate(self, predicate: BooleanExpression) -> None:
+        self._predicate = Or(self._predicate, predicate)
+
+    @cached_property
+    def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry], bool]:
+        """Computes all the delete operation and cache it when nothing changes.
+
+        Returns:
+            - List of existing manifests that are not affected by the delete operation.
+            - The manifest-entries that are deleted based on the metadata.
+            - Flag indicating that rewrites of data-files are needed.
+        """
+        schema = self._transaction.table_metadata.schema()
+
+        def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
+            return ManifestEntry(
+                status=status,
+                snapshot_id=entry.snapshot_id,
+                data_sequence_number=entry.data_sequence_number,
+                file_sequence_number=entry.file_sequence_number,
+                data_file=entry.data_file,
+            )
+
+        manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+        inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+
+        existing_manifests = []
+        total_deleted_entries = []
+        partial_rewrites_needed = False
+        self._deleted_data_files = set()
+        if snapshot := self._transaction.table_metadata.current_snapshot():
+            for manifest_file in snapshot.manifests(io=self._io):
+                if manifest_file.content == ManifestContent.DATA:
+                    if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                        # If the manifest isn't relevant, we can just keep it in the manifest-list
+                        existing_manifests.append(manifest_file)
+                    else:
+                        # It is relevant, let's check out the content
+                        deleted_entries = []
+                        existing_entries = []
+                        for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                            if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
+                                self._deleted_data_files.add(entry.data_file)
+                            elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
+                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                            else:
+                                # Based on the metadata, it is unsure to say if the file can be deleted
+                                partial_rewrites_needed = True
+
+                        if len(deleted_entries) > 0:
+                            total_deleted_entries += deleted_entries
+
+                            # Rewrite the manifest
+                            if len(existing_entries) > 0:
+                                output_file_location = _new_manifest_path(
+                                    location=self._transaction.table_metadata.location,
+                                    num=next(self._manifest_counter),
+                                    commit_uuid=self.commit_uuid,
+                                )
+                                with write_manifest(
+                                    format_version=self._transaction.table_metadata.format_version,
+                                    spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                    schema=self._transaction.table_metadata.schema(),
+                                    output_file=self._io.new_output(output_file_location),
+                                    snapshot_id=self._snapshot_id,
+                                ) as writer:
+                                    for existing_entry in existing_entries:
+                                        writer.add_entry(existing_entry)
+                                existing_manifests.append(writer.to_manifest_file())
+                            # else:
+                            # deleted_manifests.append()
+                        else:
+                            existing_manifests.append(manifest_file)
+                else:
+                    existing_manifests.append(manifest_file)
+
+        return existing_manifests, total_deleted_entries, partial_rewrites_needed
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        return self._compute_deletes[0]
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        return self._compute_deletes[1]
+
+    @property
+    def rewrites_needed(self) -> bool:
+        """Indicate if data files need to be rewritten."""
+        return self._compute_deletes[2]
+
+    @property
+    def files_affected(self) -> bool:
+        """Indicate if any manifest-entries can be dropped."""
+        return len(self._deleted_entries()) > 0
+
+
+class FastAppendFiles(_MergingSnapshotProducer["FastAppendFiles"]):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
 
@@ -3152,14 +3413,53 @@ class FastAppendFiles(_MergingSnapshotProducer):
         return []
 
 
-class OverwriteFiles(_MergingSnapshotProducer):
-    def _existing_manifests(self) -> List[ManifestFile]:
-        """To determine if there are any existing manifest files.
+class OverwriteFiles(_MergingSnapshotProducer["OverwriteFiles"]):
+    """Overwrites data from the table. This will produce an OVERWRITE snapshot.
 
-        In the of a full overwrite, all the previous manifests are
-        considered deleted.
-        """
-        return []
+    Data and delete files were added and removed in a logical overwrite operation.
+    """
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """Determine if there are any existing manifest files."""
+        existing_files = []
+
+        if snapshot := self._transaction.table_metadata.current_snapshot():
+            for manifest_file in snapshot.manifests(io=self._io):
+                entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
+                found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
+
+                if len(found_deleted_data_files) == 0:
+                    existing_files.append(manifest_file)
+                else:
+                    # We have to rewrite the
+                    output_file_location = _new_manifest_path(
+                        location=self._transaction.table_metadata.location,
+                        num=next(self._manifest_counter),
+                        commit_uuid=self.commit_uuid,
+                    )
+                    if any(entry.data_file not in found_deleted_data_files for entry in entries):
+                        with write_manifest(
+                            format_version=self._transaction.table_metadata.format_version,
+                            spec=self._transaction.table_metadata.spec(),
+                            schema=self._transaction.table_metadata.schema(),
+                            output_file=self._io.new_output(output_file_location),
+                            snapshot_id=self._snapshot_id,
+                        ) as writer:
+                            [
+                                writer.add_entry(
+                                    ManifestEntry(
+                                        status=ManifestEntryStatus.EXISTING,
+                                        snapshot_id=entry.snapshot_id,
+                                        data_sequence_number=entry.data_sequence_number,
+                                        file_sequence_number=entry.file_sequence_number,
+                                        data_file=entry.data_file,
+                                    )
+                                )
+                                for entry in entries
+                                if entry.data_file not in found_deleted_data_files
+                            ]
+                        existing_files.append(writer.to_manifest_file())
+        return existing_files
 
     def _deleted_entries(self) -> List[ManifestEntry]:
         """To determine if we need to record any deleted entries.
@@ -3186,7 +3486,7 @@ class OverwriteFiles(_MergingSnapshotProducer):
                         data_file=entry.data_file,
                     )
                     for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True)
-                    if entry.data_file.content == DataFileContent.DATA
+                    if entry.data_file.content == DataFileContent.DATA and entry.data_file in self._deleted_data_files
                 ]
 
             list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
@@ -3200,7 +3500,7 @@ class UpdateSnapshot:
     _io: FileIO
     _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str]) -> None:
+    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
@@ -3210,11 +3510,20 @@ class UpdateSnapshot:
             operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
         )
 
-    def overwrite(self) -> OverwriteFiles:
+    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> OverwriteFiles:
         return OverwriteFiles(
+            commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
             if self._transaction.table_metadata.current_snapshot() is not None
             else Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            snapshot_properties=self._snapshot_properties,
+        )
+
+    def delete(self) -> DeleteFiles:
+        return DeleteFiles(
+            operation=Operation.DELETE,
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
@@ -4056,7 +4365,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
      'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
      'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
-    The algrithm:
+    The algorithm:
     Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
     and null_placement of "at_end".
     This gives the same table as raw input.
