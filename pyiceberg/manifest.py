@@ -876,7 +876,7 @@ class RollingManifestWriter:
         traceback: Optional[TracebackType],
     ) -> None:
         self._close_current_writer()
-        self.closed = True
+        self._closed = True
 
     def _get_current_writer(self) -> ManifestWriter:
         if self._should_roll_to_new_file():
@@ -903,8 +903,8 @@ class RollingManifestWriter:
             self._current_file_rows = 0
 
     def to_manifest_files(self) -> list[ManifestFile]:
-        self._close_current_writer()
-        self._closed = True
+        if not self._closed:
+            raise RuntimeError("Cannot create manifest files from unclosed writer")
         return self._manifest_files
 
     def add_entry(self, entry: ManifestEntry) -> RollingManifestWriter:

@@ -556,11 +556,12 @@ def test_rolling_manifest_writer(
         ) as writer:
             for entry in manifest_entries:
                 writer.add_entry(entry)
-            manifest_files = writer.to_manifest_files()
-            assert len(manifest_files) == expected_number_of_files
-            with pytest.raises(RuntimeError):
-                # It is already closed
-                writer.add_entry(manifest_entries[0])
+
+        manifest_files = writer.to_manifest_files()
+        assert len(manifest_files) == expected_number_of_files
+        with pytest.raises(RuntimeError):
+            # It is already closed
+            writer.add_entry(manifest_entries[0])
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -630,3 +631,5 @@ def test_write_manifest_list(
         assert entry.file_sequence_number == 0 if format_version == 1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
+
+
