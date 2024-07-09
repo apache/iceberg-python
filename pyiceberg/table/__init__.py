@@ -70,7 +70,7 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import _dataframe_to_data_files, expression_to_pyarrow, project_table
+from pyiceberg.io.pyarrow import _check_schema_compatible, _dataframe_to_data_files, expression_to_pyarrow, project_table
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -163,49 +163,6 @@ ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
 
 _JAVA_LONG_MAX = 9223372036854775807
-
-
-def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") -> None:
-    """
-    Check if the `table_schema` is compatible with `other_schema`.
-
-    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
-
-    Raises:
-        ValueError: If the schemas are not compatible.
-    """
-    from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
-
-    name_mapping = table_schema.name_mapping
-    try:
-        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
-    except ValueError as e:
-        other_schema = _pyarrow_to_schema_without_ids(other_schema)
-        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
-        raise ValueError(
-            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
-        ) from e
-
-    if table_schema.as_struct() != task_schema.as_struct():
-        from rich.console import Console
-        from rich.table import Table as RichTable
-
-        console = Console(record=True)
-
-        rich_table = RichTable(show_header=True, header_style="bold")
-        rich_table.add_column("")
-        rich_table.add_column("Table field")
-        rich_table.add_column("Dataframe field")
-
-        for lhs in table_schema.fields:
-            try:
-                rhs = task_schema.find_field(lhs.field_id)
-                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
-            except ValueError:
-                rich_table.add_row("❌", str(lhs), "Missing")
-
-        console.print(rich_table)
-        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
 
 
 class TableProperties:

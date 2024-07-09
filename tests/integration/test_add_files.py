@@ -448,3 +448,54 @@ def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Cat
 
     assert "snapshot_prop_a" in summary
     assert summary["snapshot_prop_a"] == "test_prop_a"
+
+
+@pytest.mark.integration
+def test_add_files_fails_on_schema_mismatch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.table_schema_mismatch_fails_v{format_version}"
+
+    tbl = _create_table(session_catalog, identifier, format_version)
+    WRONG_SCHEMA = pa.schema([
+        ("foo", pa.bool_()),
+        ("bar", pa.string()),
+        ("baz", pa.string()),  # should be integer
+        ("qux", pa.date32()),
+    ])
+    file_path = f"s3://warehouse/default/table_schema_mismatch_fails/v{format_version}/test.parquet"
+    # write parquet files
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=WRONG_SCHEMA) as writer:
+            writer.write_table(
+                pa.Table.from_pylist(
+                    [
+                        {
+                            "foo": True,
+                            "bar": "bar_string",
+                            "baz": "123",
+                            "qux": date(2024, 3, 7),
+                        },
+                        {
+                            "foo": True,
+                            "bar": "bar_string",
+                            "baz": "124",
+                            "qux": date(2024, 3, 7),
+                        },
+                    ],
+                    schema=WRONG_SCHEMA,
+                )
+            )
+
+    expected = """Mismatch in fields:
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field              ┃ Dataframe field          ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional boolean │ 1: foo: optional boolean │
+| ✅ │ 2: bar: optional string  │ 2: bar: optional string  │
+│ ❌ │ 3: baz: optional int     │ 3: baz: optional string  │
+│ ✅ │ 4: qux: optional date    │ 4: qux: optional date    │
+└────┴──────────────────────────┴──────────────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        tbl.add_files(file_paths=[file_path])
