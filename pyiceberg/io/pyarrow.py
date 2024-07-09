@@ -126,7 +126,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
@@ -1947,7 +1947,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         else:
             file_schema = table_schema
 
-        downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write") or False
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         batches = [
             to_requested_schema(
                 requested_schema=file_schema,

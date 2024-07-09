@@ -154,7 +154,7 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
-
+DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 _JAVA_LONG_MAX = 9223372036854775807
 
 
@@ -169,7 +169,7 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
     """
     from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
 
-    downcast_ns_timestamp_to_us = Config().get_bool("downcast-ns-timestamp-to-us-on-write") or False
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     name_mapping = table_schema.name_mapping
     try:
         task_schema = pyarrow_to_schema(
