@@ -875,9 +875,8 @@ class RollingManifestWriter:
         exc_value: Optional[BaseException],
         traceback: Optional[TracebackType],
     ) -> None:
+        self._close_current_writer()
         self.closed = True
-        if self._current_writer:
-            self._current_writer.__exit__(exc_type, exc_value, traceback)
 
     def _get_current_writer(self) -> ManifestWriter:
         if self._should_roll_to_new_file():
