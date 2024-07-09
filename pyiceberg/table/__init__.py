@@ -582,6 +582,11 @@ class Transaction:
         """
         Shorthand for deleting record from a table.
 
+        An deletee may produce zero or more snapshots based on the operation:
+
+            - DELETE: In case existing Parquet files can be dropped completely.
+            - REPLACE: In case existing Parquet files need to be rewritten
+
         Args:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
