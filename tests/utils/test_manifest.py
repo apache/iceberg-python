@@ -35,7 +35,7 @@ from pyiceberg.manifest import (
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
@@ -304,6 +304,23 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
     assert entry.file_sequence_number == 3
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
+
+
+def test_write_empty_manifest() -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/test_write_manifest.avro"
+
+        with pytest.raises(ValueError, match="An empty manifest file has been written"):
+            with write_manifest(
+                format_version=1,
+                spec=UNPARTITIONED_PARTITION_SPEC,
+                schema=test_schema,
+                output_file=io.new_output(tmp_avro_file),
+                snapshot_id=8744736658442914487,
+            ) as _:
+                pass
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
