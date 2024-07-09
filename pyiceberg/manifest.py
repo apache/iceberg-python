@@ -665,8 +665,8 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
     if entry.snapshot_id is None:
         entry.snapshot_id = manifest.added_snapshot_id
 
-    # in v1 tables, the data sequence number is not persisted and can be safely defaulted to 0
-    # in v2 tables, the data sequence number should be inherited iff the entry status is ADDED
+    # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
+    # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
     if entry.sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
         entry.sequence_number = manifest.sequence_number
 

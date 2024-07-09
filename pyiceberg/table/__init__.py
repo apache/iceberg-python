@@ -1888,7 +1888,7 @@ def _open_manifest(
     ]
 
 
-def _min_data_file_sequence_number(manifests: List[ManifestFile]) -> int:
+def _min_sequence_number(manifests: List[ManifestFile]) -> int:
     try:
         return min(
             manifest.min_sequence_number or INITIAL_SEQUENCE_NUMBER
@@ -1994,7 +1994,7 @@ class DataScan(TableScan):
             self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
-        min_sequence_number = _min_data_file_sequence_number(manifests)
+        min_sequence_number = _min_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
