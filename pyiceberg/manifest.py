@@ -551,6 +551,14 @@ class ManifestFile(Record):
     def __init__(self, *data: Any, **named_data: Any) -> None:
         super().__init__(*data, **{"struct": MANIFEST_LIST_FILE_STRUCTS[DEFAULT_READ_VERSION], **named_data})
 
+    def __eq__(self, other: Any) -> bool:
+        """Return the equality of two instances of the ManifestFile class."""
+        return self.manifest_path == other.manifest_path if isinstance(other, ManifestFile) else False
+
+    def __hash__(self) -> int:
+        """Return the hash of manifest_path."""
+        return hash(self.manifest_path)
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 

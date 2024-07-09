@@ -550,6 +550,58 @@ def test_scan_branch(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_incremental_append_scan(catalog: Catalog) -> None:
+    print(catalog.list_tables("default"))
+    test_table = catalog.load_table("default.test_table_read_from_snapshots")
+
+    scan = test_table.incremental_append_scan().from_snapshot_exclusive(test_table.history()[0].snapshot_id)
+    assert len(list(scan.plan_files())) == 3
+
+    scan = test_table.incremental_append_scan().to_snapshot(test_table.history()[1].snapshot_id)
+    assert len(list(scan.plan_files())) == 2
+
+    scan = (
+        test_table.incremental_append_scan()
+        .from_snapshot_exclusive(test_table.history()[0].snapshot_id)
+        .to_snapshot(test_table.history()[2].snapshot_id)
+    )
+    assert len(list(scan.plan_files())) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_incremental_append_scan_from_snapshot_is_not_parent_ancestor_of_to_snapshot_should_fail(catalog: Catalog) -> None:
+    print(catalog.list_tables("default"))
+    test_table = catalog.load_table("default.test_table_read_from_snapshots")
+
+    with pytest.raises(ValueError) as e:
+        (
+            test_table.incremental_append_scan()
+            .from_snapshot_exclusive(test_table.history()[2].snapshot_id)
+            .to_snapshot(test_table.history()[1].snapshot_id)
+            .plan_files()
+        )
+    assert "is not a parent ancestor of end snapshot" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('catalog', [pytest.lazy_fixture('session_catalog_hive'), pytest.lazy_fixture('session_catalog')])
+def test_incremental_append_scan_invalid_to_snapshot_should_fail(catalog: Catalog) -> None:
+    print(catalog.list_tables("default"))
+    test_table = catalog.load_table("default.test_table_read_from_snapshots")
+
+    with pytest.raises(ValueError) as e:
+        (
+            test_table.incremental_append_scan()
+            .from_snapshot_exclusive(test_table.history()[2].snapshot_id)
+            .to_snapshot(123)
+            .plan_files()
+        )
+    assert "End snapshot not found: 123" in str(e.value)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_filter_on_new_column(catalog: Catalog) -> None:
     test_table_add_column = catalog.load_table("default.test_table_add_column")
