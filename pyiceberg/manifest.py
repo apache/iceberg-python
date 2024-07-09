@@ -341,7 +341,7 @@ class DataFile(Record):
     split_offsets: Optional[List[int]]
     equality_ids: Optional[List[int]]
     sort_order_id: Optional[int]
-    spec_id: Optional[int]
+    spec_id: int
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""
@@ -685,6 +685,10 @@ class ManifestWriter(ABC):
         traceback: Optional[TracebackType],
     ) -> None:
         """Close the writer."""
+        if (self._added_files + self._existing_files + self._deleted_files) == 0:
+            # This is just a guard to ensure that we don't write empty manifest files
+            raise ValueError("An empty manifest file has been written")
+
         self.closed = True
         self._writer.__exit__(exc_type, exc_value, traceback)
 
@@ -757,6 +761,8 @@ class ManifestWriter(ABC):
         elif entry.status == ManifestEntryStatus.DELETED:
             self._deleted_files += 1
             self._deleted_rows += entry.data_file.record_count
+        else:
+            raise ValueError(f"Unknown entry: {entry.status}")
 
         self._partitions.append(entry.data_file.partition)
 

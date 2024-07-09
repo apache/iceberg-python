@@ -37,12 +37,12 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField
-from tests.conftest import TEST_DATA_WITH_NULL
 from utils import _create_table
 
 
@@ -124,52 +124,55 @@ def test_query_count(spark: SparkSession, format_version: int) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_null(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_without_data(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_without_data(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_without_data"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_only_nulls(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_only_nulls(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_appended_null(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_appended_null(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
+def test_query_filter_v1_v2_append_null(
+    spark: SparkSession,
+    arrow_table_with_null: pa.Table,
+) -> None:
     identifier = "default.arrow_table_v1_v2_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
@@ -187,10 +190,11 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ["append", "append", "overwrite"]
+    assert operations == ["append", "append", "delete", "append"]
 
     summaries = [row.summary for row in rows]
 
+    # Append
     assert summaries[0] == {
         "added-data-files": "1",
         "added-files-size": "5459",
@@ -203,6 +207,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-records": "3",
     }
 
+    # Append
     assert summaries[1] == {
         "added-data-files": "1",
         "added-files-size": "5459",
@@ -215,13 +220,24 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-records": "6",
     }
 
+    # Delete
     assert summaries[2] == {
-        "added-data-files": "1",
-        "added-files-size": "5459",
-        "added-records": "3",
         "deleted-data-files": "2",
         "deleted-records": "6",
         "removed-files-size": "10918",
+        "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
+        "total-records": "0",
+    }
+
+    # Overwrite
+    assert summaries[3] == {
+        "added-data-files": "1",
+        "added-files-size": "5459",
+        "added-records": "3",
         "total-data-files": "1",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
@@ -249,9 +265,9 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     """
     ).collect()
 
-    assert [row.added_data_files_count for row in rows] == [1, 1, 0, 1, 1]
+    assert [row.added_data_files_count for row in rows] == [1, 0, 1, 1, 1]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 1, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 1, 0, 0, 0]
 
 
 @pytest.mark.integration
@@ -556,7 +572,7 @@ def test_summaries_with_only_nulls(
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ["append", "append", "overwrite"]
+    assert operations == ["append", "append", "delete", "append"]
 
     summaries = [row.summary for row in rows]
 
@@ -582,14 +598,23 @@ def test_summaries_with_only_nulls(
     }
 
     assert summaries[2] == {
-        "removed-files-size": "4239",
-        "total-equality-deletes": "0",
-        "total-position-deletes": "0",
         "deleted-data-files": "1",
-        "total-delete-files": "0",
-        "total-files-size": "0",
         "deleted-records": "2",
+        "removed-files-size": "4239",
         "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
+        "total-records": "0",
+    }
+
+    assert summaries[3] == {
+        "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
         "total-records": "0",
     }
 
@@ -812,13 +837,14 @@ def test_inspect_snapshots(
         assert isinstance(snapshot_id.as_py(), int)
 
     assert df["parent_id"][0].as_py() is None
-    assert df["parent_id"][1:] == df["snapshot_id"][:2]
+    assert df["parent_id"][1:].to_pylist() == df["snapshot_id"][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df["operation"]] == ["append", "overwrite", "append"]
+    assert [operation.as_py() for operation in df["operation"]] == ["append", "delete", "append", "append"]
 
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
+    # Append
     assert df["summary"][0].as_py() == [
         ("added-files-size", "5459"),
         ("added-data-files", "1"),
@@ -827,6 +853,19 @@ def test_inspect_snapshots(
         ("total-delete-files", "0"),
         ("total-records", "3"),
         ("total-files-size", "5459"),
+        ("total-position-deletes", "0"),
+        ("total-equality-deletes", "0"),
+    ]
+
+    # Delete
+    assert df["summary"][1].as_py() == [
+        ("removed-files-size", "5459"),
+        ("deleted-data-files", "1"),
+        ("deleted-records", "3"),
+        ("total-data-files", "0"),
+        ("total-delete-files", "0"),
+        ("total-records", "0"),
+        ("total-files-size", "0"),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
     ]

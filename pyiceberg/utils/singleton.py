@@ -47,3 +47,16 @@ class Singleton:
         if key not in cls._instances:
             cls._instances[key] = super().__new__(cls)
         return cls._instances[key]
+
+    def __deepcopy__(self, memo: Dict[int, Any]) -> Any:
+        """
+        Prevent deep copy operations for singletons.
+
+        The IcebergRootModel inherits from Pydantic RootModel,
+        which has its own implementation of deepcopy. When deepcopy
+        runs, it calls the RootModel __deepcopy__ method and ignores
+        that it's a Singleton. To handle this, the order of inheritance
+        is adjusted and a __deepcopy__ method is implemented for
+        singletons that simply returns itself.
+        """
+        return self

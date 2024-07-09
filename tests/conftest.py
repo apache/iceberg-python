@@ -865,10 +865,68 @@ EXAMPLE_TABLE_METADATA_V2 = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
+TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES = {
+    "format-version": 2,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://bucket/test/location",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 7,
+    "current-schema-id": 1,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 1,
+            "identifier-field-ids": [1],
+            "fields": [
+                {"id": 1, "name": "x", "required": True, "type": "long"},
+                {"id": 4, "name": "a", "required": True, "type": "decimal(16, 2)"},
+                {"id": 5, "name": "b", "required": True, "type": "decimal(16, 8)"},
+                {"id": 6, "name": "c", "required": True, "type": "fixed[16]"},
+                {"id": 7, "name": "d", "required": True, "type": "fixed[18]"},
+            ],
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
+    "last-partition-id": 1000,
+    "properties": {"read.split.target.size": "134217728"},
+    "current-snapshot-id": 3055729675574597004,
+    "snapshots": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1515100955770,
+            "sequence-number": 0,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/1.avro",
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "parent-snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1555100955770,
+            "sequence-number": 1,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/2.avro",
+            "schema-id": 1,
+        },
+    ],
+    "snapshot-log": [
+        {"snapshot-id": 3051729675574597004, "timestamp-ms": 1515100955770},
+        {"snapshot-id": 3055729675574597004, "timestamp-ms": 1555100955770},
+    ],
+    "metadata-log": [{"metadata-file": "s3://bucket/.../v1.json", "timestamp-ms": 1515100}],
+    "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
+}
+
 
 @pytest.fixture
 def example_table_metadata_v2() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V2
+
+
+@pytest.fixture
+def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
+    return TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES
 
 
 @pytest.fixture(scope="session")
@@ -2065,6 +2123,22 @@ def table_v2(example_table_metadata_v2: Dict[str, Any]) -> Table:
 
 
 @pytest.fixture
+def table_v2_with_fixed_and_decimal_types(
+    table_metadata_v2_with_fixed_and_decimal_types: Dict[str, Any],
+) -> Table:
+    table_metadata = TableMetadataV2(
+        **table_metadata_v2_with_fixed_and_decimal_types,
+    )
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
 def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2_with_extensive_snapshots)
     return Table(
@@ -2225,7 +2299,37 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
     """Pyarrow table with all kinds of columns."""
     import pyarrow as pa
 
-    return pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=pa_schema)
+    return pa.Table.from_pydict(
+        {
+            "bool": [False, None, True],
+            "string": ["a", None, "z"],
+            # Go over the 16 bytes to kick in truncation
+            "string_long": ["a" * 22, None, "z" * 22],
+            "int": [1, None, 9],
+            "long": [1, None, 9],
+            "float": [0.0, None, 0.9],
+            "double": [0.0, None, 0.9],
+            # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
+            "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
+            # Not supported by Spark
+            # 'time': [time(1, 22, 0), None, time(19, 25, 0)],
+            # Not natively supported by Arrow
+            # 'uuid': [uuid.UUID('00000000-0000-0000-0000-000000000000').bytes, None, uuid.UUID('11111111-1111-1111-1111-111111111111').bytes],
+            "binary": [b"\01", None, b"\22"],
+            "fixed": [
+                uuid.UUID("00000000-0000-0000-0000-000000000000").bytes,
+                None,
+                uuid.UUID("11111111-1111-1111-1111-111111111111").bytes,
+            ],
+        },
+        schema=pa_schema,
+    )
 
 
 @pytest.fixture(scope="session")

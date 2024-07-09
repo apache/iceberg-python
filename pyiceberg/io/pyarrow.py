@@ -31,6 +31,7 @@ import itertools
 import logging
 import os
 import re
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from copy import copy
@@ -126,7 +127,6 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
@@ -160,7 +160,7 @@ from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
 if TYPE_CHECKING:
-    from pyiceberg.table import FileScanTask
+    from pyiceberg.table import FileScanTask, WriteTask
 
 logger = logging.getLogger(__name__)
 
@@ -1598,6 +1598,8 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
     _default_mode: str
 
     def __init__(self, schema: Schema, properties: Dict[str, str]):
+        from pyiceberg.table import TableProperties
+
         self._schema = schema
         self._properties = properties
         self._default_mode = self._properties.get(
@@ -1633,6 +1635,8 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
         return k + v
 
     def primitive(self, primitive: PrimitiveType) -> List[StatisticsCollector]:
+        from pyiceberg.table import TableProperties
+
         column_name = self._schema.find_column_name(self._field_id)
         if column_name is None:
             return []
@@ -1930,6 +1934,8 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
+
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
@@ -2046,6 +2052,8 @@ PYARROW_UNCOMPRESSED_CODEC = "none"
 
 
 def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
+    from pyiceberg.table import PropertyUtil, TableProperties
+
     for key_pattern in [
         TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         TableProperties.PARQUET_PAGE_ROW_LIMIT,
@@ -2083,3 +2091,55 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
         ),
     }
+
+
+def _dataframe_to_data_files(
+    table_metadata: TableMetadata,
+    df: pa.Table,
+    io: FileIO,
+    write_uuid: Optional[uuid.UUID] = None,
+    counter: Optional[itertools.count[int]] = None,
+) -> Iterable[DataFile]:
+    """Convert a PyArrow table into a DataFile.
+
+    Returns:
+        An iterable that supplies datafiles that represent the table.
+    """
+    from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+
+    counter = counter or itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
+    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+
+    if table_metadata.spec().is_unpartitioned():
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                for batches in bin_pack_arrow_table(df, target_file_size)
+            ]),
+        )
+    else:
+        from pyiceberg.table import _determine_partitions
+
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=table_metadata.schema(),
+                )
+                for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+            ]),
+        )

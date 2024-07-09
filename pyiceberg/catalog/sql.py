@@ -64,9 +64,13 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.types import strtobool
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+DEFAULT_ECHO_VALUE = "false"
+DEFAULT_POOL_PRE_PING_VALUE = "false"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -110,8 +114,12 @@ class SqlCatalog(MetastoreCatalog):
 
         if not (uri_prop := self.properties.get("uri")):
             raise NoSuchPropertyException("SQL connection URI is required")
-        echo = bool(self.properties.get("echo", False))
-        self.engine = create_engine(uri_prop, echo=echo)
+
+        echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
+        echo = strtobool(echo_str) if echo_str != "debug" else "debug"
+        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+
+        self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
         self._ensure_tables_exist()
 
@@ -543,19 +551,21 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist.
             NamespaceNotEmptyError: If the namespace is not empty.
         """
-        if self._namespace_exists(namespace):
-            namespace_str = Catalog.namespace_to_string(namespace)
-            if tables := self.list_tables(namespace):
-                raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(tables)} tables exist.")
+        if not self._namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
-            with Session(self.engine) as session:
-                session.execute(
-                    delete(IcebergNamespaceProperties).where(
-                        IcebergNamespaceProperties.catalog_name == self.name,
-                        IcebergNamespaceProperties.namespace == namespace_str,
-                    )
+        namespace_str = Catalog.namespace_to_string(namespace)
+        if tables := self.list_tables(namespace):
+            raise NamespaceNotEmptyError(f"Namespace {namespace_str} is not empty. {len(tables)} tables exist.")
+
+        with Session(self.engine) as session:
+            session.execute(
+                delete(IcebergNamespaceProperties).where(
+                    IcebergNamespaceProperties.catalog_name == self.name,
+                    IcebergNamespaceProperties.namespace == namespace_str,
                 )
-                session.commit()
+            )
+            session.commit()
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
@@ -673,11 +683,16 @@ class SqlCatalog(MetastoreCatalog):
                     IcebergNamespaceProperties.property_key.in_(set(updates.keys())),
                 )
                 session.execute(delete_stmt)
-                insert_stmt = insert(IcebergNamespaceProperties)
-                for property_key, property_value in updates.items():
-                    insert_stmt = insert_stmt.values(
-                        catalog_name=self.name, namespace=namespace_str, property_key=property_key, property_value=property_value
-                    )
+                insert_stmt_values = [
+                    {
+                        IcebergNamespaceProperties.catalog_name: self.name,
+                        IcebergNamespaceProperties.namespace: namespace_str,
+                        IcebergNamespaceProperties.property_key: property_key,
+                        IcebergNamespaceProperties.property_value: property_value,
+                    }
+                    for property_key, property_value in updates.items()
+                ]
+                insert_stmt = insert(IcebergNamespaceProperties).values(insert_stmt_values)
                 session.execute(insert_stmt)
             session.commit()
         return properties_update_summary
