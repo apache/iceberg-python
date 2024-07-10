@@ -407,7 +407,7 @@ class ManifestEntry(Record):
     def _wrap(
         self,
         new_status: ManifestEntryStatus,
-        new_snapshot_id: int,
+        new_snapshot_id: Optional[int],
         new_data_sequence_number: Optional[int],
         new_file_sequence_number: Optional[int],
         new_file: DataFile,
@@ -419,12 +419,14 @@ class ManifestEntry(Record):
         self.data_file = new_file
         return self
 
-    def _wrap_append(self, new_snapshot_id: int, new_data_sequence_number: Optional[int], new_file: DataFile) -> ManifestEntry:
+    def _wrap_append(
+        self, new_snapshot_id: Optional[int], new_data_sequence_number: Optional[int], new_file: DataFile
+    ) -> ManifestEntry:
         return self._wrap(ManifestEntryStatus.ADDED, new_snapshot_id, new_data_sequence_number, None, new_file)
 
     def _wrap_delete(
         self,
-        new_snapshot_id: int,
+        new_snapshot_id: Optional[int],
         new_data_sequence_number: Optional[int],
         new_file_sequence_number: Optional[int],
         new_file: DataFile,
@@ -435,7 +437,7 @@ class ManifestEntry(Record):
 
     def _wrap_existing(
         self,
-        new_snapshot_id: int,
+        new_snapshot_id: Optional[int],
         new_data_sequence_number: Optional[int],
         new_file_sequence_number: Optional[int],
         new_file: DataFile,
@@ -838,7 +840,7 @@ class ManifestWriter(ABC):
     def existing(self, entry: ManifestEntry) -> ManifestWriter:
         self.add_entry(
             self._reused_entry_wrapper._wrap_existing(
-                self._snapshot_id, entry.data_sequence_number, entry.file_sequence_number, entry.data_file
+                entry.snapshot_id, entry.data_sequence_number, entry.file_sequence_number, entry.data_file
             )
         )
         return self

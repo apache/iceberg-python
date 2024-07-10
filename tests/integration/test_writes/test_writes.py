@@ -1084,6 +1084,29 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     # tbl_b and tbl_c should contain the same data
     assert tbl_b.scan().to_arrow().equals(tbl_c.scan().to_arrow())
 
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    tbl_a = _create_table(
+        session_catalog,
+        "default.merge_manifest_a",
+        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        [],
+    )
+
+    # tbl_a should merge all manifests into 1
+    tbl_a.append(arrow_table_with_null)
+
+    tbl_a_first_entries = tbl_a.inspect.entries().to_pydict()
+    first_snapshot_id = tbl_a_first_entries["snapshot_id"][0]
+    first_data_file_path = tbl_a_first_entries["data_file"][0]["file_path"]
+
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+
+    assert len(tbl_a.current_snapshot().manifests(tbl_a.io)) == 1  # type: ignore
+
     # verify the sequence number of tbl_a's only manifest file
     tbl_a_manifest = tbl_a.current_snapshot().manifests(tbl_a.io)[0]  # type: ignore
     assert tbl_a_manifest.sequence_number == (3 if format_version == 2 else 0)
@@ -1114,6 +1137,9 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
         assert tbl_a_data_file["equality_ids"] is None
         assert tbl_a_data_file["file_format"] == "PARQUET"
         assert tbl_a_data_file["file_path"].startswith("s3://warehouse/default/merge_manifest_a/data/")
+        if tbl_a_data_file["file_path"] == first_data_file_path:
+            # verify that the snapshot id recorded should be the one where the file was added
+            assert tbl_a_entries["snapshot_id"][i] == first_snapshot_id
         assert tbl_a_data_file["key_metadata"] is None
         assert tbl_a_data_file["lower_bounds"] == [
             (1, b"\x00"),
