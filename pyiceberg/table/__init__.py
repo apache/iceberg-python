@@ -2066,7 +2066,7 @@ class DataScan(TableScan):
                 case_sensitive=self.case_sensitive,
                 limit=self.limit,
             ),
-        ).cast(target_schema=target_schema)
+        )
 
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         return self.to_arrow().to_pandas(**kwargs)

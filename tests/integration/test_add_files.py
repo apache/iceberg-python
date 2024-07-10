@@ -495,7 +495,7 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     tbl.add_files([file_path])
 
     table_schema = tbl.scan().to_arrow().schema
-    assert table_schema == arrow_schema
+    assert table_schema == arrow_schema_large
 
     file_path_large = f"s3://warehouse/default/unpartitioned_with_large_types/v{format_version}/test-1.parquet"
     _write_parquet(

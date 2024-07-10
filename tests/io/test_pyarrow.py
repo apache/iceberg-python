@@ -1002,10 +1002,10 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
 
     assert (
         repr(result_table.schema)
-        == """properties: map<string, string>
-  child 0, entries: struct<key: string not null, value: string not null> not null
-      child 0, key: string not null
-      child 1, value: string not null"""
+        == """properties: map<large_string, large_string>
+  child 0, entries: struct<key: large_string not null, value: large_string not null> not null
+      child 0, key: large_string not null
+      child 1, value: large_string not null"""
     )
 
 
@@ -1279,9 +1279,9 @@ def test_projection_maps_of_structs(schema_map_of_structs: Schema, file_map_of_s
         assert actual.as_py() == expected
     assert (
         repr(result_table.schema)
-        == """locations: map<string, struct<latitude: double not null, longitude: double not null, altitude: double>>
-  child 0, entries: struct<key: string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
-      child 0, key: string not null
+        == """locations: map<large_string, struct<latitude: double not null, longitude: double not null, altitude: double>>
+  child 0, entries: struct<key: large_string not null, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null> not null
+      child 0, key: large_string not null
       child 1, value: struct<latitude: double not null, longitude: double not null, altitude: double> not null
           child 0, latitude: double not null
           child 1, longitude: double not null
