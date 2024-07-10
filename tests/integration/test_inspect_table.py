@@ -103,13 +103,14 @@ def test_inspect_snapshots(
         assert isinstance(snapshot_id.as_py(), int)
 
     assert df["parent_id"][0].as_py() is None
-    assert df["parent_id"][1:] == df["snapshot_id"][:2]
+    assert df["parent_id"][1:].to_pylist() == df["snapshot_id"][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df["operation"]] == ["append", "overwrite", "append"]
+    assert [operation.as_py() for operation in df["operation"]] == ["append", "delete", "append", "append"]
 
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
+    # Append
     assert df["summary"][0].as_py() == [
         ("added-files-size", "5459"),
         ("added-data-files", "1"),
@@ -118,6 +119,19 @@ def test_inspect_snapshots(
         ("total-delete-files", "0"),
         ("total-records", "3"),
         ("total-files-size", "5459"),
+        ("total-position-deletes", "0"),
+        ("total-equality-deletes", "0"),
+    ]
+
+    # Delete
+    assert df["summary"][1].as_py() == [
+        ("removed-files-size", "5459"),
+        ("deleted-data-files", "1"),
+        ("deleted-records", "3"),
+        ("total-data-files", "0"),
+        ("total-delete-files", "0"),
+        ("total-records", "0"),
+        ("total-files-size", "0"),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
     ]
@@ -637,3 +651,173 @@ def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_v
                 # NaN != NaN in Python
                 continue
             assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    from pandas.testing import assert_frame_equal
+
+    identifier = "default.table_metadata_files"
+
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    tbl.overwrite(arrow_table_with_null)
+
+    # append more data
+    tbl.append(arrow_table_with_null)
+
+    df = tbl.refresh().inspect.files()
+
+    assert df.column_names == [
+        "content",
+        "file_path",
+        "file_format",
+        "spec_id",
+        "record_count",
+        "file_size_in_bytes",
+        "column_sizes",
+        "value_counts",
+        "null_value_counts",
+        "nan_value_counts",
+        "lower_bounds",
+        "upper_bounds",
+        "key_metadata",
+        "split_offsets",
+        "equality_ids",
+        "sort_order_id",
+        "readable_metrics",
+    ]
+
+    # make sure the non-nullable fields are filled
+    for int_column in ["content", "spec_id", "record_count", "file_size_in_bytes"]:
+        for value in df[int_column]:
+            assert isinstance(value.as_py(), int)
+
+    for split_offsets in df["split_offsets"]:
+        assert isinstance(split_offsets.as_py(), list)
+
+    for file_format in df["file_format"]:
+        assert file_format.as_py() == "PARQUET"
+
+    for file_path in df["file_path"]:
+        assert file_path.as_py().startswith("s3://")
+
+    lhs = df.to_pandas()
+    rhs = spark.table(f"{identifier}.files").toPandas()
+
+    lhs_subset = lhs[
+        [
+            "content",
+            "file_path",
+            "file_format",
+            "spec_id",
+            "record_count",
+            "file_size_in_bytes",
+            "split_offsets",
+            "equality_ids",
+            "sort_order_id",
+        ]
+    ]
+    rhs_subset = rhs[
+        [
+            "content",
+            "file_path",
+            "file_format",
+            "spec_id",
+            "record_count",
+            "file_size_in_bytes",
+            "split_offsets",
+            "equality_ids",
+            "sort_order_id",
+        ]
+    ]
+
+    assert_frame_equal(lhs_subset, rhs_subset, check_dtype=False, check_categorical=False)
+
+    for column in df.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
+                # NaN != NaN in Python
+                continue
+            if column in [
+                "column_sizes",
+                "value_counts",
+                "null_value_counts",
+                "nan_value_counts",
+                "lower_bounds",
+                "upper_bounds",
+            ]:
+                if isinstance(right, dict):
+                    left = dict(left)
+                assert left == right, f"Difference in column {column}: {left} != {right}"
+
+            elif column == "readable_metrics":
+                assert list(left.keys()) == [
+                    "bool",
+                    "string",
+                    "string_long",
+                    "int",
+                    "long",
+                    "float",
+                    "double",
+                    "timestamp",
+                    "timestamptz",
+                    "date",
+                    "binary",
+                    "fixed",
+                ]
+                assert left.keys() == right.keys()
+
+                for rm_column in left.keys():
+                    rm_lhs = left[rm_column]
+                    rm_rhs = right[rm_column]
+
+                    assert rm_lhs["column_size"] == rm_rhs["column_size"]
+                    assert rm_lhs["value_count"] == rm_rhs["value_count"]
+                    assert rm_lhs["null_value_count"] == rm_rhs["null_value_count"]
+                    assert rm_lhs["nan_value_count"] == rm_rhs["nan_value_count"]
+
+                    if rm_column == "timestamptz":
+                        # PySpark does not correctly set the timstamptz
+                        rm_rhs["lower_bound"] = rm_rhs["lower_bound"].replace(tzinfo=pytz.utc)
+                        rm_rhs["upper_bound"] = rm_rhs["upper_bound"].replace(tzinfo=pytz.utc)
+
+                    assert rm_lhs["lower_bound"] == rm_rhs["lower_bound"]
+                    assert rm_lhs["upper_bound"] == rm_rhs["upper_bound"]
+            else:
+                assert left == right, f"Difference in column {column}: {left} != {right}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_metadata_files"
+
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    df = tbl.refresh().inspect.files()
+
+    assert df.column_names == [
+        "content",
+        "file_path",
+        "file_format",
+        "spec_id",
+        "record_count",
+        "file_size_in_bytes",
+        "column_sizes",
+        "value_counts",
+        "null_value_counts",
+        "nan_value_counts",
+        "lower_bounds",
+        "upper_bounds",
+        "key_metadata",
+        "split_offsets",
+        "equality_ids",
+        "sort_order_id",
+        "readable_metrics",
+    ]
+
+    assert df.to_pandas().empty is True

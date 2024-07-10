@@ -49,6 +49,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
+    DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
@@ -675,8 +676,11 @@ class Catalog(ABC):
 
             from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
 
+            downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
             if isinstance(schema, pa.Schema):
-                schema: Schema = visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())  # type: ignore
+                schema: Schema = visit_pyarrow(  # type: ignore
+                    schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+                )
                 return schema
         except ModuleNotFoundError:
             pass

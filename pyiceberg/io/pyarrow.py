@@ -31,6 +31,7 @@ import itertools
 import logging
 import os
 import re
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from copy import copy
@@ -126,7 +127,6 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
@@ -154,12 +154,13 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
 if TYPE_CHECKING:
-    from pyiceberg.table import FileScanTask
+    from pyiceberg.table import FileScanTask, WriteTask
 
 logger = logging.getLogger(__name__)
 
@@ -470,7 +471,9 @@ class PyArrowFileIO(FileIO):
 
 
 def schema_to_pyarrow(
-    schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True
+    schema: Union[Schema, IcebergType],
+    metadata: Dict[bytes, bytes] = EMPTY_DICT,
+    include_field_ids: bool = True,
 ) -> pa.schema:
     return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
 
@@ -663,12 +666,14 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
     return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
 
 
-def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = None) -> Schema:
+def pyarrow_to_schema(
+    schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False
+) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        visitor = _ConvertToIceberg()
+        visitor = _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
     elif name_mapping is not None:
-        visitor = _ConvertToIceberg(name_mapping=name_mapping)
+        visitor = _ConvertToIceberg(name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
     else:
         raise ValueError(
             "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
@@ -676,8 +681,8 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     return visit_pyarrow(schema, visitor)
 
 
-def _pyarrow_to_schema_without_ids(schema: pa.Schema) -> Schema:
-    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+def _pyarrow_to_schema_without_ids(schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> Schema:
+    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))
 
 
 def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
@@ -849,9 +854,10 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     _field_names: List[str]
     _name_mapping: Optional[NameMapping]
 
-    def __init__(self, name_mapping: Optional[NameMapping] = None) -> None:
+    def __init__(self, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False) -> None:
         self._field_names = []
         self._name_mapping = name_mapping
+        self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _field_id(self, field: pa.Field) -> int:
         if self._name_mapping:
@@ -918,11 +924,24 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return TimeType()
         elif pa.types.is_timestamp(primitive):
             primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit == "us":
-                if primitive.tz == "UTC" or primitive.tz == "+00:00":
-                    return TimestamptzType()
-                elif primitive.tz is None:
-                    return TimestampType()
+            if primitive.unit in ("s", "ms", "us"):
+                # Supported types, will be upcast automatically to 'us'
+                pass
+            elif primitive.unit == "ns":
+                if self._downcast_ns_timestamp_to_us:
+                    logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
+                else:
+                    raise TypeError(
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                    )
+            else:
+                raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
+
+            if primitive.tz == "UTC" or primitive.tz == "+00:00":
+                return TimestamptzType()
+            elif primitive.tz is None:
+                return TimestampType()
+
         elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
@@ -1010,8 +1029,11 @@ def _task_to_record_batches(
     with fs.open_input_file(path) as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
-        file_schema = pyarrow_to_schema(physical_schema, name_mapping)
-
+        # In V1 and V2 table formats, we only support Timestamp 'us' in Iceberg Schema
+        # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
+        # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
+        # the table format version.
+        file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
@@ -1049,7 +1071,7 @@ def _task_to_record_batches(
                     arrow_table = pa.Table.from_batches([batch])
                     arrow_table = arrow_table.filter(pyarrow_filter)
                     batch = arrow_table.to_batches()[0]
-            yield to_requested_schema(projected_schema, file_project_schema, batch)
+            yield to_requested_schema(projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True)
             current_index += len(batch)
 
 
@@ -1248,8 +1270,12 @@ def project_batches(
             total_row_count += len(batch)
 
 
-def to_requested_schema(requested_schema: Schema, file_schema: Schema, batch: pa.RecordBatch) -> pa.RecordBatch:
-    struct_array = visit_with_partner(requested_schema, batch, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
+def to_requested_schema(
+    requested_schema: Schema, file_schema: Schema, batch: pa.RecordBatch, downcast_ns_timestamp_to_us: bool = False
+) -> pa.RecordBatch:
+    struct_array = visit_with_partner(
+        requested_schema, batch, ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us), ArrowAccessor(file_schema)
+    )
 
     arrays = []
     fields = []
@@ -1263,8 +1289,9 @@ def to_requested_schema(requested_schema: Schema, file_schema: Schema, batch: pa
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
     file_schema: Schema
 
-    def __init__(self, file_schema: Schema):
+    def __init__(self, file_schema: Schema, downcast_ns_timestamp_to_us: bool = False):
         self.file_schema = file_schema
+        self.downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
@@ -1275,7 +1302,15 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 # if file_field and field_type  (e.g. String) are the same
                 # but the pyarrow type of the array is different from the expected type
                 # (e.g. string vs larger_string), we want to cast the array to the larger type
-                return values.cast(target_type)
+                safe = True
+                if (
+                    pa.types.is_timestamp(target_type)
+                    and target_type.unit == "us"
+                    and pa.types.is_timestamp(values.type)
+                    and values.type.unit == "ns"
+                ):
+                    safe = False
+                return values.cast(target_type, safe=safe)
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -1563,6 +1598,8 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
     _default_mode: str
 
     def __init__(self, schema: Schema, properties: Dict[str, str]):
+        from pyiceberg.table import TableProperties
+
         self._schema = schema
         self._properties = properties
         self._default_mode = self._properties.get(
@@ -1598,6 +1635,8 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
         return k + v
 
     def primitive(self, primitive: PrimitiveType) -> List[StatisticsCollector]:
+        from pyiceberg.table import TableProperties
+
         column_name = self._schema.find_column_name(self._field_id)
         if column_name is None:
             return []
@@ -1895,6 +1934,8 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
+
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
@@ -1912,8 +1953,14 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         else:
             file_schema = table_schema
 
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         batches = [
-            to_requested_schema(requested_schema=file_schema, file_schema=table_schema, batch=batch)
+            to_requested_schema(
+                requested_schema=file_schema,
+                file_schema=table_schema,
+                batch=batch,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            )
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
@@ -2005,6 +2052,8 @@ PYARROW_UNCOMPRESSED_CODEC = "none"
 
 
 def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
+    from pyiceberg.table import PropertyUtil, TableProperties
+
     for key_pattern in [
         TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         TableProperties.PARQUET_PAGE_ROW_LIMIT,
@@ -2042,3 +2091,55 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
         ),
     }
+
+
+def _dataframe_to_data_files(
+    table_metadata: TableMetadata,
+    df: pa.Table,
+    io: FileIO,
+    write_uuid: Optional[uuid.UUID] = None,
+    counter: Optional[itertools.count[int]] = None,
+) -> Iterable[DataFile]:
+    """Convert a PyArrow table into a DataFile.
+
+    Returns:
+        An iterable that supplies datafiles that represent the table.
+    """
+    from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+
+    counter = counter or itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
+    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+
+    if table_metadata.spec().is_unpartitioned():
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                for batches in bin_pack_arrow_table(df, target_file_size)
+            ]),
+        )
+    else:
+        from pyiceberg.table import _determine_partitions
+
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=table_metadata.schema(),
+                )
+                for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+            ]),
+        )

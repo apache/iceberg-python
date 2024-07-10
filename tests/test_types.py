@@ -43,6 +43,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    strtobool,
 )
 
 non_parameterized_types = [
@@ -630,3 +631,21 @@ def test_deepcopy_of_singleton_fixed_type() -> None:
 
     for lhs, rhs in zip(list_of_fixed_types, copied_list):
         assert id(lhs) == id(rhs)
+
+
+def test_strtobool() -> None:
+    # Values that should return True
+    true_values = ["y", "yes", "t", "true", "on", "1"]
+    for val in true_values:
+        assert strtobool(val) is True, f"Expected True for value: {val}"
+
+    # Values that should return False
+    false_values = ["n", "no", "f", "false", "off", "0"]
+    for val in false_values:
+        assert strtobool(val) is False, f"Expected False for value: {val}"
+
+    # Values that should raise ValueError
+    invalid_values = ["maybe", "2", "trueish", "falseish", "", " "]
+    for val in invalid_values:
+        with pytest.raises(ValueError, match=f"Invalid truth value: {val!r}"):
+            strtobool(val)

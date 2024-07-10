@@ -88,6 +88,16 @@ In contrast to the name suggest, it doesn't run the checks on the commit. If thi
 
 You can bump the integrations to the latest version using `pre-commit autoupdate`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
 
+## Cleaning
+
+Removal of old cached files generated during the Cython build process:
+
+```bash
+make clean
+```
+
+Helps prevent build failures and unexpected behavior by removing outdated files, ensuring that only up-to-date sources are used & the build environment is always clean.
+
 ## Testing
 
 For Python, `pytest` is used a testing framework in combination with `coverage` to enforce 90%+ code coverage.
