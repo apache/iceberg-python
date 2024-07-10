@@ -18,7 +18,7 @@
 import math
 import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -37,12 +37,12 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties, _dataframe_to_data_files
+from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField
-from tests.conftest import TEST_DATA_WITH_NULL
 from utils import _create_table
 
 
@@ -124,52 +124,55 @@ def test_query_count(spark: SparkSession, format_version: int) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_null(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_null(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_without_data(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_without_data(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_without_data"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_only_nulls(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_only_nulls(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
-    assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 2 rows for {col}"
+        assert df.where(f"{col} is not null").count() == 0, f"Expected 0 row for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_query_filter_appended_null(spark: SparkSession, col: str, format_version: int) -> None:
+def test_query_filter_appended_null(spark: SparkSession, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = f"default.arrow_table_v{format_version}_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("col", TEST_DATA_WITH_NULL.keys())
-def test_query_filter_v1_v2_append_null(spark: SparkSession, col: str) -> None:
+def test_query_filter_v1_v2_append_null(
+    spark: SparkSession,
+    arrow_table_with_null: pa.Table,
+) -> None:
     identifier = "default.arrow_table_v1_v2_appended_with_null"
     df = spark.table(identifier)
-    assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
-    assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is null").count() == 2, f"Expected 1 row for {col}"
+        assert df.where(f"{col} is not null").count() == 4, f"Expected 2 rows for {col}"
 
 
 @pytest.mark.integration
@@ -187,10 +190,11 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ["append", "append", "overwrite"]
+    assert operations == ["append", "append", "delete", "append"]
 
     summaries = [row.summary for row in rows]
 
+    # Append
     assert summaries[0] == {
         "added-data-files": "1",
         "added-files-size": "5459",
@@ -203,6 +207,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-records": "3",
     }
 
+    # Append
     assert summaries[1] == {
         "added-data-files": "1",
         "added-files-size": "5459",
@@ -215,13 +220,24 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-records": "6",
     }
 
+    # Delete
     assert summaries[2] == {
-        "added-data-files": "1",
-        "added-files-size": "5459",
-        "added-records": "3",
         "deleted-data-files": "2",
         "deleted-records": "6",
         "removed-files-size": "10918",
+        "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
+        "total-records": "0",
+    }
+
+    # Overwrite
+    assert summaries[3] == {
+        "added-data-files": "1",
+        "added-files-size": "5459",
+        "added-records": "3",
         "total-data-files": "1",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
@@ -249,9 +265,9 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     """
     ).collect()
 
-    assert [row.added_data_files_count for row in rows] == [1, 1, 0, 1, 1]
+    assert [row.added_data_files_count for row in rows] == [1, 0, 1, 1, 1]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 1, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 1, 0, 0, 0]
 
 
 @pytest.mark.integration
@@ -556,7 +572,7 @@ def test_summaries_with_only_nulls(
     ).collect()
 
     operations = [row.operation for row in rows]
-    assert operations == ["append", "append", "overwrite"]
+    assert operations == ["append", "append", "delete", "append"]
 
     summaries = [row.summary for row in rows]
 
@@ -582,14 +598,23 @@ def test_summaries_with_only_nulls(
     }
 
     assert summaries[2] == {
-        "removed-files-size": "4239",
-        "total-equality-deletes": "0",
-        "total-position-deletes": "0",
         "deleted-data-files": "1",
-        "total-delete-files": "0",
-        "total-files-size": "0",
         "deleted-records": "2",
+        "removed-files-size": "4239",
         "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
+        "total-records": "0",
+    }
+
+    assert summaries[3] == {
+        "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "0",
+        "total-position-deletes": "0",
         "total-records": "0",
     }
 
@@ -812,13 +837,14 @@ def test_inspect_snapshots(
         assert isinstance(snapshot_id.as_py(), int)
 
     assert df["parent_id"][0].as_py() is None
-    assert df["parent_id"][1:] == df["snapshot_id"][:2]
+    assert df["parent_id"][1:].to_pylist() == df["snapshot_id"][:-1].to_pylist()
 
-    assert [operation.as_py() for operation in df["operation"]] == ["append", "overwrite", "append"]
+    assert [operation.as_py() for operation in df["operation"]] == ["append", "delete", "append", "append"]
 
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
+    # Append
     assert df["summary"][0].as_py() == [
         ("added-files-size", "5459"),
         ("added-data-files", "1"),
@@ -827,6 +853,19 @@ def test_inspect_snapshots(
         ("total-delete-files", "0"),
         ("total-records", "3"),
         ("total-files-size", "5459"),
+        ("total-position-deletes", "0"),
+        ("total-equality-deletes", "0"),
+    ]
+
+    # Delete
+    assert df["summary"][1].as_py() == [
+        ("removed-files-size", "5459"),
+        ("deleted-data-files", "1"),
+        ("deleted-records", "3"),
+        ("total-data-files", "0"),
+        ("total-delete-files", "0"),
+        ("total-records", "0"),
+        ("total-files-size", "0"),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
     ]
@@ -925,3 +964,241 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
     tbl.append(arrow_table_without_some_columns)
     # overwrite and then append should produce twice the data
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_all_timestamp_precision"
+    arrow_table_schema_with_all_timestamp_precisions = pa.schema([
+        ("timestamp_s", pa.timestamp(unit="s")),
+        ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
+        ("timestamp_ms", pa.timestamp(unit="ms")),
+        ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
+        ("timestamp_us", pa.timestamp(unit="us")),
+        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ns", pa.timestamp(unit="ns")),
+        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+    ])
+    TEST_DATA_WITH_NULL = {
+        "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_s": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_ms": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_us": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_ns": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_ns": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+    }
+    input_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version},
+        data=[input_arrow_table],
+        schema=arrow_table_schema_with_all_timestamp_precisions,
+    )
+    tbl.overwrite(input_arrow_table)
+    written_arrow_table = tbl.scan().to_arrow()
+
+    expected_schema_in_all_us = pa.schema([
+        ("timestamp_s", pa.timestamp(unit="us")),
+        ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ms", pa.timestamp(unit="us")),
+        ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_us", pa.timestamp(unit="us")),
+        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ns", pa.timestamp(unit="us")),
+        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
+    ])
+    assert written_arrow_table.schema == expected_schema_in_all_us
+    assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    tbl_a = _create_table(
+        session_catalog,
+        "default.merge_manifest_a",
+        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        [],
+    )
+    tbl_b = _create_table(
+        session_catalog,
+        "default.merge_manifest_b",
+        {
+            "commit.manifest-merge.enabled": "true",
+            "commit.manifest.min-count-to-merge": "1",
+            "commit.manifest.target-size-bytes": "1",
+            "format-version": format_version,
+        },
+        [],
+    )
+    tbl_c = _create_table(
+        session_catalog,
+        "default.merge_manifest_c",
+        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        [],
+    )
+
+    # tbl_a should merge all manifests into 1
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+
+    # tbl_b should not merge any manifests because the target size is too small
+    tbl_b.append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
+    tbl_b.append(arrow_table_with_null)
+
+    # tbl_c should not merge any manifests because merging is disabled
+    tbl_c.append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
+    tbl_c.append(arrow_table_with_null)
+
+    assert len(tbl_a.current_snapshot().manifests(tbl_a.io)) == 1  # type: ignore
+    assert len(tbl_b.current_snapshot().manifests(tbl_b.io)) == 3  # type: ignore
+    assert len(tbl_c.current_snapshot().manifests(tbl_c.io)) == 3  # type: ignore
+
+    # tbl_a and tbl_c should contain the same data
+    assert tbl_a.scan().to_arrow().equals(tbl_c.scan().to_arrow())
+    # tbl_b and tbl_c should contain the same data
+    assert tbl_b.scan().to_arrow().equals(tbl_c.scan().to_arrow())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    tbl_a = _create_table(
+        session_catalog,
+        "default.merge_manifest_a",
+        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        [],
+    )
+
+    # tbl_a should merge all manifests into 1
+    tbl_a.append(arrow_table_with_null)
+
+    tbl_a_first_entries = tbl_a.inspect.entries().to_pydict()
+    first_snapshot_id = tbl_a_first_entries["snapshot_id"][0]
+    first_data_file_path = tbl_a_first_entries["data_file"][0]["file_path"]
+
+    tbl_a.append(arrow_table_with_null)
+    tbl_a.append(arrow_table_with_null)
+
+    assert len(tbl_a.current_snapshot().manifests(tbl_a.io)) == 1  # type: ignore
+
+    # verify the sequence number of tbl_a's only manifest file
+    tbl_a_manifest = tbl_a.current_snapshot().manifests(tbl_a.io)[0]  # type: ignore
+    assert tbl_a_manifest.sequence_number == (3 if format_version == 2 else 0)
+    assert tbl_a_manifest.min_sequence_number == (1 if format_version == 2 else 0)
+
+    # verify the manifest entries of tbl_a, in which the manifests are merged
+    tbl_a_entries = tbl_a.inspect.entries().to_pydict()
+    assert tbl_a_entries["status"] == [1, 0, 0]
+    assert tbl_a_entries["sequence_number"] == [3, 2, 1] if format_version == 2 else [0, 0, 0]
+    assert tbl_a_entries["file_sequence_number"] == [3, 2, 1] if format_version == 2 else [0, 0, 0]
+    for i in range(3):
+        tbl_a_data_file = tbl_a_entries["data_file"][i]
+        assert tbl_a_data_file["column_sizes"] == [
+            (1, 49),
+            (2, 78),
+            (3, 128),
+            (4, 94),
+            (5, 118),
+            (6, 94),
+            (7, 118),
+            (8, 118),
+            (9, 118),
+            (10, 94),
+            (11, 78),
+            (12, 109),
+        ]
+        assert tbl_a_data_file["content"] == 0
+        assert tbl_a_data_file["equality_ids"] is None
+        assert tbl_a_data_file["file_format"] == "PARQUET"
+        assert tbl_a_data_file["file_path"].startswith("s3://warehouse/default/merge_manifest_a/data/")
+        if tbl_a_data_file["file_path"] == first_data_file_path:
+            # verify that the snapshot id recorded should be the one where the file was added
+            assert tbl_a_entries["snapshot_id"][i] == first_snapshot_id
+        assert tbl_a_data_file["key_metadata"] is None
+        assert tbl_a_data_file["lower_bounds"] == [
+            (1, b"\x00"),
+            (2, b"a"),
+            (3, b"aaaaaaaaaaaaaaaa"),
+            (4, b"\x01\x00\x00\x00"),
+            (5, b"\x01\x00\x00\x00\x00\x00\x00\x00"),
+            (6, b"\x00\x00\x00\x80"),
+            (7, b"\x00\x00\x00\x00\x00\x00\x00\x80"),
+            (8, b"\x00\x9bj\xca8\xf1\x05\x00"),
+            (9, b"\x00\x9bj\xca8\xf1\x05\x00"),
+            (10, b"\x9eK\x00\x00"),
+            (11, b"\x01"),
+            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" b"\x00\x00\x00\x00"),
+        ]
+        assert tbl_a_data_file["nan_value_counts"] == []
+        assert tbl_a_data_file["null_value_counts"] == [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (5, 1),
+            (6, 1),
+            (7, 1),
+            (8, 1),
+            (9, 1),
+            (10, 1),
+            (11, 1),
+            (12, 1),
+        ]
+        assert tbl_a_data_file["partition"] == {}
+        assert tbl_a_data_file["record_count"] == 3
+        assert tbl_a_data_file["sort_order_id"] is None
+        assert tbl_a_data_file["split_offsets"] == [4]
+        assert tbl_a_data_file["upper_bounds"] == [
+            (1, b"\x01"),
+            (2, b"z"),
+            (3, b"zzzzzzzzzzzzzzz{"),
+            (4, b"\t\x00\x00\x00"),
+            (5, b"\t\x00\x00\x00\x00\x00\x00\x00"),
+            (6, b"fff?"),
+            (7, b"\xcd\xcc\xcc\xcc\xcc\xcc\xec?"),
+            (8, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
+            (9, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
+            (10, b"\xd9K\x00\x00"),
+            (11, b"\x12"),
+            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11" b"\x11\x11\x11\x11"),
+        ]
+        assert tbl_a_data_file["value_counts"] == [
+            (1, 3),
+            (2, 3),
+            (3, 3),
+            (4, 3),
+            (5, 3),
+            (6, 3),
+            (7, 3),
+            (8, 3),
+            (9, 3),
+            (10, 3),
+            (11, 3),
+            (12, 3),
+        ]

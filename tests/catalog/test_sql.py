@@ -39,10 +39,9 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
-from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
-from pyiceberg.table import _dataframe_to_data_files
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -1550,3 +1549,35 @@ def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_id
 
     # Act and Assert for a non-existing table
     assert catalog.table_exists(("non", "exist")) is False
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    # To catch manifest file name collision bug during merge:
+    # https://github.com/apache/iceberg-python/pull/363#discussion_r1660691918
+    catalog.create_namespace_if_not_exists("default")
+    try:
+        catalog.drop_table("default.test_merge_manifest")
+    except NoSuchTableError:
+        pass
+    tbl = catalog.create_table(
+        "default.test_merge_manifest",
+        arrow_table_with_null.schema,
+        properties={
+            "commit.manifest-merge.enabled": "true",
+            "commit.manifest.min-count-to-merge": "2",
+            "format-version": format_version,
+        },
+    )
+
+    for _ in range(5):
+        tbl.append(arrow_table_with_null)
+
+    assert len(tbl.scan().to_arrow()) == 5 * len(arrow_table_with_null)
