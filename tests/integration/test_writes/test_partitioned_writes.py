@@ -253,7 +253,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
 
     summaries = [row.summary for row in rows]
 
-    file_size = int(summaries[0]['added-files-size'])
+    file_size = int(summaries[0]["added-files-size"])
     assert file_size > 0
 
     assert summaries[0] == {
@@ -277,7 +277,7 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-data-files": "6",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": str(file_size*2),
+        "total-files-size": str(file_size * 2),
         "total-position-deletes": "0",
         "total-records": "6",
     }

@@ -194,7 +194,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
 
     summaries = [row.summary for row in rows]
 
-    file_size = int(summaries[0]['added-files-size'])
+    file_size = int(summaries[0]["added-files-size"])
     assert file_size > 0
 
     # Append
@@ -579,7 +579,7 @@ def test_summaries_with_only_nulls(
 
     summaries = [row.summary for row in rows]
 
-    file_size = int(summaries[1]['added-files-size'])
+    file_size = int(summaries[1]["added-files-size"])
     assert file_size > 0
 
     assert summaries[0] == {
@@ -850,7 +850,7 @@ def test_inspect_snapshots(
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
-    file_size = int(next(value for key, value in df["summary"][0].as_py() if key == 'added-files-size'))
+    file_size = int(next(value for key, value in df["summary"][0].as_py() if key == "added-files-size"))
     assert file_size > 0
 
     # Append

@@ -110,7 +110,7 @@ def test_inspect_snapshots(
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
-    file_size = int(next(value for key, value in df["summary"][0].as_py() if key == 'added-files-size'))
+    file_size = int(next(value for key, value in df["summary"][0].as_py() if key == "added-files-size"))
     assert file_size > 0
 
     # Append
