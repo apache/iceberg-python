@@ -1549,3 +1549,35 @@ def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_id
 
     # Act and Assert for a non-existing table
     assert catalog.table_exists(("non", "exist")) is False
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    # To catch manifest file name collision bug during merge:
+    # https://github.com/apache/iceberg-python/pull/363#discussion_r1660691918
+    catalog.create_namespace_if_not_exists("default")
+    try:
+        catalog.drop_table("default.test_merge_manifest")
+    except NoSuchTableError:
+        pass
+    tbl = catalog.create_table(
+        "default.test_merge_manifest",
+        arrow_table_with_null.schema,
+        properties={
+            "commit.manifest-merge.enabled": "true",
+            "commit.manifest.min-count-to-merge": "2",
+            "format-version": format_version,
+        },
+    )
+
+    for _ in range(5):
+        tbl.append(arrow_table_with_null)
+
+    assert len(tbl.scan().to_arrow()) == 5 * len(arrow_table_with_null)

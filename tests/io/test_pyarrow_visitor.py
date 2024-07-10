@@ -161,22 +161,23 @@ def test_pyarrow_time64_ns_to_iceberg() -> None:
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
-def test_pyarrow_timestamp_to_iceberg() -> None:
-    pyarrow_type = pa.timestamp(unit="us")
-    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+@pytest.mark.parametrize("precision", ["s", "ms", "us", "ns"])
+def test_pyarrow_timestamp_to_iceberg(precision: str) -> None:
+    pyarrow_type = pa.timestamp(unit=precision)
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg(downcast_ns_timestamp_to_us=True))
     assert converted_iceberg_type == TimestampType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
+    # all timestamp types are converted to 'us' precision
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.timestamp(unit="us")
 
 
 def test_pyarrow_timestamp_invalid_units() -> None:
-    pyarrow_type = pa.timestamp(unit="ms")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[ms]")):
-        visit_pyarrow(pyarrow_type, _ConvertToIceberg())
-    pyarrow_type = pa.timestamp(unit="s")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[s]")):
-        visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     pyarrow_type = pa.timestamp(unit="ns")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[ns]")):
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
@@ -192,14 +193,13 @@ def test_pyarrow_timestamp_tz_to_iceberg() -> None:
 
 
 def test_pyarrow_timestamp_tz_invalid_units() -> None:
-    pyarrow_type = pa.timestamp(unit="ms", tz="UTC")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[ms, tz=UTC]")):
-        visit_pyarrow(pyarrow_type, _ConvertToIceberg())
-    pyarrow_type = pa.timestamp(unit="s", tz="UTC")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[s, tz=UTC]")):
-        visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     pyarrow_type = pa.timestamp(unit="ns", tz="UTC")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[ns, tz=UTC]")):
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
