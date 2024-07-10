@@ -1723,8 +1723,6 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
 
 
 def test_partition_for_demo() -> None:
-    import pyarrow as pa
-
     test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
         NestedField(field_id=1, name="year", field_type=StringType(), required=False),
@@ -1757,8 +1755,6 @@ def test_partition_for_demo() -> None:
 
 
 def test_identity_partition_on_multi_columns() -> None:
-    import pyarrow as pa
-
     test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
         NestedField(field_id=1, name="born_year", field_type=StringType(), required=False),

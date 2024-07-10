@@ -2144,7 +2144,7 @@ def _dataframe_to_data_files(
 
 
 @dataclass(frozen=True)
-class TablePartition:
+class _TablePartition:
     partition_key: PartitionKey
     arrow_table_partition: pa.Table
 
@@ -2154,7 +2154,7 @@ def _get_table_partitions(
     partition_spec: PartitionSpec,
     schema: Schema,
     slice_instructions: list[dict[str, Any]],
-) -> list[TablePartition]:
+) -> list[_TablePartition]:
     sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
 
     partition_fields = partition_spec.fields
@@ -2175,11 +2175,11 @@ def _get_table_partitions(
             for partition_field in partition_fields
         ]
         partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
-        table_partitions.append(TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
+        table_partitions.append(_TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
     return table_partitions
 
 
-def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
     """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
 
     Example:
@@ -2235,6 +2235,6 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         last = reversed_indices[ptr]
         ptr = ptr + group_size
 
-    table_partitions: List[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+    table_partitions: List[_TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
 
     return table_partitions
