@@ -151,7 +151,6 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
-from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
