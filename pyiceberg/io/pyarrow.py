@@ -1860,6 +1860,7 @@ def data_file_statistics_from_parquet_metadata(
 
     col_aggs = {}
 
+    invalidate_col: Set[int] = set()
     for r in range(parquet_metadata.num_row_groups):
         # References:
         # https://github.com/apache/iceberg/blob/fc381a81a1fdb8f51a0637ca27cd30673bd7aad3/parquet/src/main/java/org/apache/iceberg/parquet/ParquetUtil.java#L232
@@ -1874,8 +1875,6 @@ def data_file_statistics_from_parquet_metadata(
             split_offsets.append(dictionary_offset)
         else:
             split_offsets.append(data_offset)
-
-        invalidate_col: Set[int] = set()
 
         for pos in range(parquet_metadata.num_columns):
             column = row_group.column(pos)
