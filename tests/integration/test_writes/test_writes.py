@@ -979,7 +979,6 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
         ("timestamp_ns", pa.timestamp(unit="ns")),
         ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
     ])
     TEST_DATA_WITH_NULL = {
         "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
@@ -1002,11 +1001,6 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ],
         "timestamp_ns": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
         "timestamptz_ns": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_us_etc_utc": [
             datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
             None,
             datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -1034,7 +1028,6 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
         ("timestamp_ns", pa.timestamp(unit="us")),
         ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
     ])
     assert written_arrow_table.schema == expected_schema_in_all_us
     assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us)

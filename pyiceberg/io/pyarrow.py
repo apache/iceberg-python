@@ -939,7 +939,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
 
-            if primitive.tz in ("UTC", "+00:00", "Etc/UTC"):
+            if primitive.tz == "UTC" or primitive.tz == "+00:00":
                 return TimestamptzType()
             elif primitive.tz is None:
                 return TimestampType()
