@@ -517,6 +517,7 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     table_schema = tbl.scan().to_arrow().schema
     assert table_schema == arrow_schema_large
 
+
 def test_timestamp_tz_ns_downcast_on_read(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 

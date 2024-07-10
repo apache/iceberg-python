@@ -1274,19 +1274,27 @@ def project_batches(
 
 
 def to_requested_schema(
-    requested_schema: Schema, file_schema: Schema, batch: pa.RecordBatch,  downcast_ns_timestamp_to_us: bool = False, include_field_ids: bool = False
+    requested_schema: Schema,
+    file_schema: Schema,
+    batch: pa.RecordBatch,
+    downcast_ns_timestamp_to_us: bool = False,
+    include_field_ids: bool = False,
 ) -> pa.RecordBatch:
     # We could re-use some of these visitors
     struct_array = visit_with_partner(
-        requested_schema, batch, ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids), ArrowAccessor(file_schema)
+        requested_schema,
+        batch,
+        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
+        ArrowAccessor(file_schema),
     )
     return pa.RecordBatch.from_struct_array(struct_array)
+
 
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
     file_schema: Schema
     _include_field_ids: bool
 
-    def __init__(self, file_schema: Schema,  downcast_ns_timestamp_to_us: bool = False, include_field_ids: bool = False) -> None:
+    def __init__(self, file_schema: Schema, downcast_ns_timestamp_to_us: bool = False, include_field_ids: bool = False) -> None:
         self.file_schema = file_schema
         self._include_field_ids = include_field_ids
         self.downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
@@ -1967,7 +1975,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 file_schema=table_schema,
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-                include_field_ids=True
+                include_field_ids=True,
             )
             for batch in task.record_batches
         ]
