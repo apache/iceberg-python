@@ -1307,7 +1307,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 return values.cast(
                     schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids)
                 )
-            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=True)) != values.type:
+            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 # Downcasting of nanoseconds to microseconds
                 if (
                     pa.types.is_timestamp(target_type)
