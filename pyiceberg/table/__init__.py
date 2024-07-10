@@ -166,7 +166,6 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
-DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 _JAVA_LONG_MAX = 9223372036854775807
 
 

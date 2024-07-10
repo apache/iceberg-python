@@ -49,7 +49,6 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
-    DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
@@ -674,7 +673,7 @@ class Catalog(ABC):
         try:
             import pyarrow as pa
 
-            from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
+            from pyiceberg.io.pyarrow import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, _ConvertToIcebergWithoutIDs, visit_pyarrow
 
             downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
             if isinstance(schema, pa.Schema):
