@@ -3353,7 +3353,7 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
             return ManifestEntry(
                 status=status,
                 snapshot_id=entry.snapshot_id,
-                data_sequence_number=entry.data_sequence_number,
+                sequence_number=entry.sequence_number,
                 file_sequence_number=entry.file_sequence_number,
                 data_file=entry.data_file,
             )
@@ -3537,7 +3537,7 @@ class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
                                     ManifestEntry(
                                         status=ManifestEntryStatus.EXISTING,
                                         snapshot_id=entry.snapshot_id,
-                                        data_sequence_number=entry.data_sequence_number,
+                                        sequence_number=entry.sequence_number,
                                         file_sequence_number=entry.file_sequence_number,
                                         data_file=entry.data_file,
                                     )
