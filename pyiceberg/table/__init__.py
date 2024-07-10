@@ -146,6 +146,7 @@ from pyiceberg.types import (
     transform_dict_value_to_str,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
@@ -161,7 +162,7 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
-
+DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 _JAVA_LONG_MAX = 9223372036854775807
 
 
@@ -176,11 +177,14 @@ def _check_schema_compatible(table_schema: Schema, other_schema: "pa.Schema") ->
     """
     from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids, pyarrow_to_schema
 
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     name_mapping = table_schema.name_mapping
     try:
-        task_schema = pyarrow_to_schema(other_schema, name_mapping=name_mapping)
+        task_schema = pyarrow_to_schema(
+            other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
     except ValueError as e:
-        other_schema = _pyarrow_to_schema_without_ids(other_schema)
+        other_schema = _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
         additional_names = set(other_schema.column_names) - set(table_schema.column_names)
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
