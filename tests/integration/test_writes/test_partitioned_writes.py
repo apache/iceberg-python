@@ -255,12 +255,12 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     assert summaries[0] == {
         "changed-partition-count": "3",
         "added-data-files": "3",
-        "added-files-size": "15029",
+        "added-files-size": "14969",
         "added-records": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "15029",
+        "total-files-size": "14969",
         "total-position-deletes": "0",
         "total-records": "3",
     }
@@ -268,12 +268,12 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     assert summaries[1] == {
         "changed-partition-count": "3",
         "added-data-files": "3",
-        "added-files-size": "15029",
+        "added-files-size": "14969",
         "added-records": "3",
         "total-data-files": "6",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "30058",
+        "total-files-size": "29938",
         "total-position-deletes": "0",
         "total-records": "6",
     }

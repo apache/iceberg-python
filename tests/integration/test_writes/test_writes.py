@@ -197,12 +197,12 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     # Append
     assert summaries[0] == {
         "added-data-files": "1",
-        "added-files-size": "5459",
+        "added-files-size": "5439",
         "added-records": "3",
         "total-data-files": "1",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "5459",
+        "total-files-size": "5439",
         "total-position-deletes": "0",
         "total-records": "3",
     }
@@ -210,12 +210,12 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     # Append
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "5459",
+        "added-files-size": "5439",
         "added-records": "3",
         "total-data-files": "2",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "10918",
+        "total-files-size": "10878",
         "total-position-deletes": "0",
         "total-records": "6",
     }
@@ -224,7 +224,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     assert summaries[2] == {
         "deleted-data-files": "2",
         "deleted-records": "6",
-        "removed-files-size": "10918",
+        "removed-files-size": "10878",
         "total-data-files": "0",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
@@ -236,12 +236,12 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     # Overwrite
     assert summaries[3] == {
         "added-data-files": "1",
-        "added-files-size": "5459",
+        "added-files-size": "5439",
         "added-records": "3",
         "total-data-files": "1",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "5459",
+        "total-files-size": "5439",
         "total-position-deletes": "0",
         "total-records": "3",
     }
@@ -587,12 +587,12 @@ def test_summaries_with_only_nulls(
 
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "4239",
+        "added-files-size": "4219",
         "added-records": "2",
         "total-data-files": "1",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "4239",
+        "total-files-size": "4219",
         "total-position-deletes": "0",
         "total-records": "2",
     }
@@ -600,7 +600,7 @@ def test_summaries_with_only_nulls(
     assert summaries[2] == {
         "deleted-data-files": "1",
         "deleted-records": "2",
-        "removed-files-size": "4239",
+        "removed-files-size": "4219",
         "total-data-files": "0",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
@@ -846,20 +846,20 @@ def test_inspect_snapshots(
 
     # Append
     assert df["summary"][0].as_py() == [
-        ("added-files-size", "5459"),
+        ("added-files-size", "5439"),
         ("added-data-files", "1"),
         ("added-records", "3"),
         ("total-data-files", "1"),
         ("total-delete-files", "0"),
         ("total-records", "3"),
-        ("total-files-size", "5459"),
+        ("total-files-size", "5439"),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
     ]
 
     # Delete
     assert df["summary"][1].as_py() == [
-        ("removed-files-size", "5459"),
+        ("removed-files-size", "5439"),
         ("deleted-data-files", "1"),
         ("deleted-records", "3"),
         ("total-data-files", "0"),
