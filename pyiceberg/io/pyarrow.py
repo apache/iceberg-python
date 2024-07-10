@@ -1307,19 +1307,15 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 return values.cast(
                     schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids)
                 )
-            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=False)) != values.type:
-                # if file_field and field_type  (e.g. String) are the same
-                # but the pyarrow type of the array is different from the expected type
-                # (e.g. string vs larger_string), we want to cast the array to the larger type
-                safe = True
+            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=True)) != values.type:
+                # Downcasting of nanoseconds to microseconds
                 if (
                     pa.types.is_timestamp(target_type)
                     and target_type.unit == "us"
                     and pa.types.is_timestamp(values.type)
                     and values.type.unit == "ns"
                 ):
-                    safe = False
-                return values.cast(target_type, safe=safe)
+                    return values.cast(target_type, safe=False)
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
