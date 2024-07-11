@@ -1047,8 +1047,10 @@ def _task_to_record_batches(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            # We always use large types in memory as it uses larger offsets
-            # That can chunk more row values into the buffers
+            # With PyArrow 16.0.0 there is an issue with casting record-batches:
+            # https://github.com/apache/arrow/issues/41884
+            # https://github.com/apache/arrow/issues/43183
+            # Would be good to remove this later on
             schema=_pyarrow_schema_ensure_large_types(physical_schema),
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
@@ -1084,11 +1086,17 @@ def _task_to_table(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
-) -> pa.Table:
-    batches = _task_to_record_batches(
-        fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+) -> Optional[pa.Table]:
+    batches = list(
+        _task_to_record_batches(
+            fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+        )
     )
-    return pa.Table.from_batches(batches, schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
+
+    if len(batches) > 0:
+        return pa.Table.from_batches(batches)
+    else:
+        return None
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1192,7 +1200,7 @@ def project_table(
     if len(tables) < 1:
         return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
-    result = pa.concat_tables(tables)
+    result = pa.concat_tables(tables, promote_options="permissive")
 
     if limit is not None:
         return result.slice(0, limit)
@@ -1271,54 +1279,62 @@ def project_batches(
 
 
 def to_requested_schema(
-    requested_schema: Schema, file_schema: Schema, batch: pa.RecordBatch, downcast_ns_timestamp_to_us: bool = False
+    requested_schema: Schema,
+    file_schema: Schema,
+    batch: pa.RecordBatch,
+    downcast_ns_timestamp_to_us: bool = False,
+    include_field_ids: bool = False,
 ) -> pa.RecordBatch:
+    # We could re-use some of these visitors
     struct_array = visit_with_partner(
-        requested_schema, batch, ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us), ArrowAccessor(file_schema)
+        requested_schema,
+        batch,
+        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
+        ArrowAccessor(file_schema),
     )
-
-    arrays = []
-    fields = []
-    for pos, field in enumerate(requested_schema.fields):
-        array = struct_array.field(pos)
-        arrays.append(array)
-        fields.append(pa.field(field.name, array.type, field.optional))
-    return pa.RecordBatch.from_arrays(arrays, schema=pa.schema(fields))
+    return pa.RecordBatch.from_struct_array(struct_array)
 
 
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
     file_schema: Schema
+    _include_field_ids: bool
 
-    def __init__(self, file_schema: Schema, downcast_ns_timestamp_to_us: bool = False):
+    def __init__(self, file_schema: Schema, downcast_ns_timestamp_to_us: bool = False, include_field_ids: bool = False) -> None:
         self.file_schema = file_schema
+        self._include_field_ids = include_field_ids
         self.downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
+
         if field.field_type.is_primitive:
             if field.field_type != file_field.field_type:
-                return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=False))
-            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=False)) != values.type:
-                # if file_field and field_type  (e.g. String) are the same
-                # but the pyarrow type of the array is different from the expected type
-                # (e.g. string vs larger_string), we want to cast the array to the larger type
-                safe = True
+                return values.cast(
+                    schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids)
+                )
+            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
+                # Downcasting of nanoseconds to microseconds
                 if (
                     pa.types.is_timestamp(target_type)
                     and target_type.unit == "us"
                     and pa.types.is_timestamp(values.type)
                     and values.type.unit == "ns"
                 ):
-                    safe = False
-                return values.cast(target_type, safe=safe)
+                    return values.cast(target_type, safe=False)
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
+        metadata = {}
+        if field.doc:
+            metadata[PYARROW_FIELD_DOC_KEY] = field.doc
+        if self._include_field_ids:
+            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+
         return pa.field(
             name=field.name,
             type=arrow_type,
             nullable=field.optional,
-            metadata={DOC: field.doc} if field.doc is not None else None,
+            metadata=metadata,
         )
 
     def schema(self, schema: Schema, schema_partner: Optional[pa.Array], struct_result: Optional[pa.Array]) -> Optional[pa.Array]:
@@ -1960,6 +1976,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 file_schema=table_schema,
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                include_field_ids=True,
             )
             for batch in task.record_batches
         ]
@@ -1967,7 +1984,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=file_schema.as_arrow(), **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,

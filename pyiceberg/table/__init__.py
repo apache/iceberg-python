@@ -2053,8 +2053,9 @@ class DataScan(TableScan):
 
         from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
 
+        target_schema = schema_to_pyarrow(self.projection())
         return pa.RecordBatchReader.from_batches(
-            schema_to_pyarrow(self.projection()),
+            target_schema,
             project_batches(
                 self.plan_files(),
                 self.table_metadata,

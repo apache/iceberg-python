@@ -110,22 +110,25 @@ def test_inspect_snapshots(
     for manifest_list in df["manifest_list"]:
         assert manifest_list.as_py().startswith("s3://")
 
+    file_size = int(next(value for key, value in df["summary"][0].as_py() if key == "added-files-size"))
+    assert file_size > 0
+
     # Append
     assert df["summary"][0].as_py() == [
-        ("added-files-size", "5459"),
+        ("added-files-size", str(file_size)),
         ("added-data-files", "1"),
         ("added-records", "3"),
         ("total-data-files", "1"),
         ("total-delete-files", "0"),
         ("total-records", "3"),
-        ("total-files-size", "5459"),
+        ("total-files-size", str(file_size)),
         ("total-position-deletes", "0"),
         ("total-equality-deletes", "0"),
     ]
 
     # Delete
     assert df["summary"][1].as_py() == [
-        ("removed-files-size", "5459"),
+        ("removed-files-size", str(file_size)),
         ("deleted-data-files", "1"),
         ("deleted-records", "3"),
         ("total-data-files", "0"),
