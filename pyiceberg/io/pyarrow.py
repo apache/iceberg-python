@@ -166,7 +166,6 @@ logger = logging.getLogger(__name__)
 
 ONE_MEGABYTE = 1024 * 1024
 BUFFER_SIZE = "buffer-size"
-
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
