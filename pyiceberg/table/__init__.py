@@ -2221,20 +2221,20 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     API for removing old snapshots from the table
     """
 
-    _remove_snapshots: RemoveSnapshotsUpdate
+    _ids_to_remove: List[int] = []
 
     def _commit(self) -> UpdatesAndRequirements:
-        return (self._remove_snapshots,), ()
+        return (RemoveSnapshotsUpdate(snapshot_ids=self._ids_to_remove),), ()
 
     def expire_snapshot_id(self, snapshot_id_to_expire: int) -> ExpireSnapshots:
-        if snapshot := self._transaction._table.snapshot_by_id(snapshot_id_to_expire):
-            self._remove_snapshots.snapshot_ids.append(snapshot_id_to_expire)
+        if self._transaction._table.snapshot_by_id(snapshot_id_to_expire):
+            self._ids_to_remove.append(snapshot_id_to_expire)
         return self
 
     def expire_older_than(self, timestamp_ms: int) -> ExpireSnapshots:
         for snapshot in self._transaction.table_metadata.snapshots:
             if snapshot.timestamp_ms < timestamp_ms:
-                self._remove_snapshots.snapshot_ids.append(snapshot.snapshot_id)
+                self._ids_to_remove.append(snapshot.snapshot_id)
         return self
 
 
