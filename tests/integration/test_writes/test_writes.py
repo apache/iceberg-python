@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -968,7 +969,9 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: Catalog, format_version: int) -> None:
+def test_write_all_timestamp_precision(
+    mocker: MockerFixture, spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
     identifier = "default.table_all_timestamp_precision"
     arrow_table_schema_with_all_timestamp_precisions = pa.schema([
         ("timestamp_s", pa.timestamp(unit="s")),
@@ -980,8 +983,9 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ("timestamp_ns", pa.timestamp(unit="ns")),
         ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
         ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
+        ("timestamptz_us_z", pa.timestamp(unit="us", tz="Z")),
     ])
-    TEST_DATA_WITH_NULL = {
+    TEST_DATA_WITH_NULL = pd.DataFrame({
         "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
         "timestamptz_s": [
             datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
@@ -1000,7 +1004,11 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
             None,
             datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
         ],
-        "timestamp_ns": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamp_ns": [
+            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
+            None,
+            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
+        ],
         "timestamptz_ns": [
             datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
             None,
@@ -1011,8 +1019,13 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
             None,
             datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
         ],
-    }
-    input_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
+        "timestamptz_us_z": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+    })
+    input_arrow_table = pa.Table.from_pandas(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
     mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
 
     tbl = _create_table(
@@ -1035,9 +1048,21 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ("timestamp_ns", pa.timestamp(unit="us")),
         ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
         ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamptz_us_z", pa.timestamp(unit="us", tz="UTC")),
     ])
     assert written_arrow_table.schema == expected_schema_in_all_us
-    assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us)
+    assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us, safe=False)
+    lhs = spark.table(f"{identifier}").toPandas()
+    rhs = written_arrow_table.to_pandas()
+
+    for column in written_arrow_table.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if pd.isnull(left):
+                assert pd.isnull(right)
+            else:
+                # Check only upto microsecond precision since Spark loaded dtype is timezone unaware
+                # and supports upto microsecond precision
+                assert left.timestamp() == right.timestamp(), f"Difference in column {column}: {left} != {right}"
 
 
 @pytest.mark.integration
