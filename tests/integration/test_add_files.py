@@ -18,7 +18,7 @@
 
 import os
 from datetime import date
-from typing import Iterator, Optional
+from typing import Iterator
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -28,7 +28,8 @@ from pytest_mock.plugin import MockerFixture
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.io import FileIO
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.transforms import BucketTransform, IdentityTransform, MonthTransform
@@ -107,22 +108,31 @@ ARROW_TABLE_UPDATED = pa.Table.from_pylist(
 )
 
 
+def _write_parquet(io: FileIO, file_path: str, arrow_schema: pa.Schema, arrow_table: pa.Table) -> None:
+    fo = io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=arrow_schema) as writer:
+            writer.write_table(arrow_table)
+
+
 def _create_table(
-    session_catalog: Catalog, identifier: str, format_version: int, partition_spec: Optional[PartitionSpec] = None
+    session_catalog: Catalog,
+    identifier: str,
+    format_version: int,
+    partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+    schema: Schema = TABLE_SCHEMA,
 ) -> Table:
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(
+    return session_catalog.create_table(
         identifier=identifier,
-        schema=TABLE_SCHEMA,
+        schema=schema,
         properties={"format-version": str(format_version)},
-        partition_spec=partition_spec if partition_spec else PartitionSpec(),
+        partition_spec=partition_spec,
     )
-
-    return tbl
 
 
 @pytest.fixture(name="format_version", params=[pytest.param(1, id="format_version=1"), pytest.param(2, id="format_version=2")])
@@ -454,6 +464,60 @@ def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Cat
 
 
 @pytest.mark.integration
+def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.unpartitioned_with_large_types{format_version}"
+
+    iceberg_schema = Schema(NestedField(1, "foo", StringType(), required=True))
+    arrow_schema = pa.schema([
+        pa.field("foo", pa.string(), nullable=False),
+    ])
+    arrow_schema_large = pa.schema([
+        pa.field("foo", pa.large_string(), nullable=False),
+    ])
+
+    tbl = _create_table(session_catalog, identifier, format_version, schema=iceberg_schema)
+
+    file_path = f"s3://warehouse/default/unpartitioned_with_large_types/v{format_version}/test-0.parquet"
+    _write_parquet(
+        tbl.io,
+        file_path,
+        arrow_schema,
+        pa.Table.from_pylist(
+            [
+                {
+                    "foo": "normal",
+                }
+            ],
+            schema=arrow_schema,
+        ),
+    )
+
+    tbl.add_files([file_path])
+
+    table_schema = tbl.scan().to_arrow().schema
+    assert table_schema == arrow_schema_large
+
+    file_path_large = f"s3://warehouse/default/unpartitioned_with_large_types/v{format_version}/test-1.parquet"
+    _write_parquet(
+        tbl.io,
+        file_path_large,
+        arrow_schema_large,
+        pa.Table.from_pylist(
+            [
+                {
+                    "foo": "normal",
+                }
+            ],
+            schema=arrow_schema_large,
+        ),
+    )
+
+    tbl.add_files([file_path_large])
+
+    table_schema = tbl.scan().to_arrow().schema
+    assert table_schema == arrow_schema_large
+
+
 def test_timestamp_tz_ns_downcast_on_read(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 

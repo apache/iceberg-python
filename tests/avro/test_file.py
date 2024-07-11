@@ -140,7 +140,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
-        data_sequence_number=0,
+        sequence_number=0,
         file_sequence_number=0,
         data_file=data_file,
     )
@@ -173,7 +173,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         v2_entry = todict(entry)
 
         # These are not written in V1
-        del v2_entry["data_sequence_number"]
+        del v2_entry["sequence_number"]
         del v2_entry["file_sequence_number"]
         del v2_entry["data_file"]["content"]
         del v2_entry["data_file"]["equality_ids"]
@@ -206,7 +206,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
-        data_sequence_number=0,
+        sequence_number=0,
         file_sequence_number=0,
         data_file=data_file,
     )
@@ -263,7 +263,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
     entry = ManifestEntry(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
-        data_sequence_number=0,
+        sequence_number=0,
         file_sequence_number=0,
         data_file=data_file,
     )
@@ -305,7 +305,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
                     status=ManifestEntryStatus.ADDED,
                     snapshot_id=8638475580105682862,
                     # Not part of v1
-                    data_sequence_number=None,
+                    sequence_number=None,
                     file_sequence_number=None,
                     data_file=v1_datafile,
                 )

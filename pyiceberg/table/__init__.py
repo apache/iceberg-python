@@ -92,7 +92,6 @@ from pyiceberg.partitioning import (
     PARTITION_FIELD_ID_START,
     UNPARTITIONED_PARTITION_SPEC,
     PartitionField,
-    PartitionFieldValue,
     PartitionKey,
     PartitionSpec,
     _PartitionNameGenerator,
@@ -1880,7 +1879,7 @@ def _open_manifest(
     ]
 
 
-def _min_data_file_sequence_number(manifests: List[ManifestFile]) -> int:
+def _min_sequence_number(manifests: List[ManifestFile]) -> int:
     try:
         return min(
             manifest.min_sequence_number or INITIAL_SEQUENCE_NUMBER
@@ -1941,11 +1940,11 @@ class DataScan(TableScan):
         # shared instance across multiple threads.
         return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
-    def _check_sequence_number(self, min_data_sequence_number: int, manifest: ManifestFile) -> bool:
+    def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
         Args:
-            min_data_sequence_number (int): The minimal sequence number.
+            min_sequence_number (int): The minimal sequence number.
             manifest (ManifestFile): A ManifestFile that can be either data or deletes.
 
         Returns:
@@ -1954,7 +1953,7 @@ class DataScan(TableScan):
         return manifest.content == ManifestContent.DATA or (
             # Not interested in deletes that are older than the data
             manifest.content == ManifestContent.DELETES
-            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_data_sequence_number
+            and (manifest.sequence_number or INITIAL_SEQUENCE_NUMBER) >= min_sequence_number
         )
 
     def plan_files(self) -> Iterable[FileScanTask]:
@@ -1986,10 +1985,10 @@ class DataScan(TableScan):
             self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
         ).eval
 
-        min_data_sequence_number = _min_data_file_sequence_number(manifests)
+        min_sequence_number = _min_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
-        positional_delete_entries = SortedList(key=lambda entry: entry.data_sequence_number or INITIAL_SEQUENCE_NUMBER)
+        positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
 
         executor = ExecutorFactory.get_or_create()
         for manifest_entry in chain(
@@ -2003,7 +2002,7 @@ class DataScan(TableScan):
                         metrics_evaluator,
                     )
                     for manifest in manifests
-                    if self._check_sequence_number(min_data_sequence_number, manifest)
+                    if self._check_sequence_number(min_sequence_number, manifest)
                 ],
             )
         ):
@@ -2046,8 +2045,9 @@ class DataScan(TableScan):
 
         from pyiceberg.io.pyarrow import project_batches, schema_to_pyarrow
 
+        target_schema = schema_to_pyarrow(self.projection())
         return pa.RecordBatchReader.from_batches(
-            schema_to_pyarrow(self.projection()),
+            target_schema,
             project_batches(
                 self.plan_files(),
                 self.table_metadata,
@@ -3142,7 +3142,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                             ManifestEntry(
                                 status=ManifestEntryStatus.ADDED,
                                 snapshot_id=self._snapshot_id,
-                                data_sequence_number=None,
+                                sequence_number=None,
                                 file_sequence_number=None,
                                 data_file=data_file,
                             )
@@ -3345,7 +3345,7 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
             return ManifestEntry(
                 status=status,
                 snapshot_id=entry.snapshot_id,
-                data_sequence_number=entry.data_sequence_number,
+                sequence_number=entry.sequence_number,
                 file_sequence_number=entry.file_sequence_number,
                 data_file=entry.data_file,
             )
@@ -3529,7 +3529,7 @@ class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
                                     ManifestEntry(
                                         status=ManifestEntryStatus.EXISTING,
                                         snapshot_id=entry.snapshot_id,
-                                        data_sequence_number=entry.data_sequence_number,
+                                        sequence_number=entry.sequence_number,
                                         file_sequence_number=entry.file_sequence_number,
                                         data_file=entry.data_file,
                                     )
@@ -3560,7 +3560,7 @@ class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
                     ManifestEntry(
                         status=ManifestEntryStatus.DELETED,
                         snapshot_id=entry.snapshot_id,
-                        data_sequence_number=entry.data_sequence_number,
+                        sequence_number=entry.sequence_number,
                         file_sequence_number=entry.file_sequence_number,
                         data_file=entry.data_file,
                     )
@@ -4008,7 +4008,7 @@ class InspectTable:
                 entries.append({
                     "status": entry.status.value,
                     "snapshot_id": entry.snapshot_id,
-                    "sequence_number": entry.data_sequence_number,
+                    "sequence_number": entry.sequence_number,
                     "file_sequence_number": entry.file_sequence_number,
                     "data_file": {
                         "content": entry.data_file.content,
@@ -4402,105 +4402,6 @@ class InspectTable:
             files,
             schema=files_schema,
         )
-
-
-@dataclass(frozen=True)
-class TablePartition:
-    partition_key: PartitionKey
-    arrow_table_partition: pa.Table
-
-
-def _get_table_partitions(
-    arrow_table: pa.Table,
-    partition_spec: PartitionSpec,
-    schema: Schema,
-    slice_instructions: list[dict[str, Any]],
-) -> list[TablePartition]:
-    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
-
-    partition_fields = partition_spec.fields
-
-    offsets = [inst["offset"] for inst in sorted_slice_instructions]
-    projected_and_filtered = {
-        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
-        .take(offsets)
-        .to_pylist()
-        for partition_field in partition_fields
-    }
-
-    table_partitions = []
-    for idx, inst in enumerate(sorted_slice_instructions):
-        partition_slice = arrow_table.slice(**inst)
-        fieldvalues = [
-            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
-            for partition_field in partition_fields
-        ]
-        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
-        table_partitions.append(TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
-    return table_partitions
-
-
-def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[TablePartition]:
-    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
-
-    Example:
-    Input:
-    An arrow table with partition key of ['n_legs', 'year'] and with data of
-    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
-     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
-     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
-    The algorithm:
-    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement of "at_end".
-    This gives the same table as raw input.
-    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement : "at_start".
-    This gives:
-    [8, 7, 4, 5, 6, 3, 1, 2, 0]
-    Based on this we get partition groups of indices:
-    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
-    We then retrieve the partition keys by offsets.
-    And slice the arrow table by offsets and lengths of each partition.
-    """
-    import pyarrow as pa
-
-    partition_columns: List[Tuple[PartitionField, NestedField]] = [
-        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
-    ]
-    partition_values_table = pa.table({
-        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
-        for partition, field in partition_columns
-    })
-
-    # Sort by partitions
-    sort_indices = pa.compute.sort_indices(
-        partition_values_table,
-        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
-        null_placement="at_end",
-    ).to_pylist()
-    arrow_table = arrow_table.take(sort_indices)
-
-    # Get slice_instructions to group by partitions
-    partition_values_table = partition_values_table.take(sort_indices)
-    reversed_indices = pa.compute.sort_indices(
-        partition_values_table,
-        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
-        null_placement="at_start",
-    ).to_pylist()
-    slice_instructions: List[Dict[str, Any]] = []
-    last = len(reversed_indices)
-    reversed_indices_size = len(reversed_indices)
-    ptr = 0
-    while ptr < reversed_indices_size:
-        group_size = last - reversed_indices[ptr]
-        offset = reversed_indices[ptr]
-        slice_instructions.append({"offset": offset, "length": group_size})
-        last = reversed_indices[ptr]
-        ptr = ptr + group_size
-
-    table_partitions: List[TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
-
-    return table_partitions
 
 
 class _ManifestMergeManager(Generic[U]):
