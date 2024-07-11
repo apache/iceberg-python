@@ -968,7 +968,7 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: Catalog, format_version: int) -> None:
+def test_write_all_timestamp_precision(mocker: MockerFixture, spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = "default.table_all_timestamp_precision"
     arrow_table_schema_with_all_timestamp_precisions = pa.schema([
         ("timestamp_s", pa.timestamp(unit="s")),
@@ -980,6 +980,8 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ("timestamp_ns", pa.timestamp(unit="ns")),
         ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
         ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
+        ("timestamptz_us_z", pa.timestamp(unit="us", tz="Z")),
+        
     ])
     TEST_DATA_WITH_NULL = {
         "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
@@ -1011,6 +1013,11 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
             None,
             datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
         ],
+        "timestamptz_us_z": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
     }
     input_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
     mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
@@ -1035,10 +1042,15 @@ def test_write_all_timestamp_precision(mocker: MockerFixture, session_catalog: C
         ("timestamp_ns", pa.timestamp(unit="us")),
         ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
         ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamptz_us_z", pa.timestamp(unit="us", tz="UTC")),
     ])
     assert written_arrow_table.schema == expected_schema_in_all_us
     assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us)
-
+    lhs = spark.table(f"{identifier}").toPandas()
+    print(lhs.dtypes)
+    rhs = written_arrow_table.to_pandas()
+    print(rhs.dtypes)
+    assert lhs.equals(rhs)
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
