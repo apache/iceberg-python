@@ -377,7 +377,7 @@ MANIFEST_ENTRY_SCHEMAS = {
     2: Schema(
         NestedField(0, "status", IntegerType(), required=True),
         NestedField(1, "snapshot_id", LongType(), required=False),
-        NestedField(3, "data_sequence_number", LongType(), required=False),
+        NestedField(3, "sequence_number", LongType(), required=False),
         NestedField(4, "file_sequence_number", LongType(), required=False),
         NestedField(2, "data_file", DATA_FILE_TYPE[2], required=True),
     ),
@@ -394,10 +394,10 @@ def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file
 
 
 class ManifestEntry(Record):
-    __slots__ = ("status", "snapshot_id", "data_sequence_number", "file_sequence_number", "data_file")
+    __slots__ = ("status", "snapshot_id", "sequence_number", "file_sequence_number", "data_file")
     status: ManifestEntryStatus
     snapshot_id: Optional[int]
-    data_sequence_number: Optional[int]
+    sequence_number: Optional[int]
     file_sequence_number: Optional[int]
     data_file: DataFile
 
@@ -408,43 +408,39 @@ class ManifestEntry(Record):
         self,
         new_status: ManifestEntryStatus,
         new_snapshot_id: Optional[int],
-        new_data_sequence_number: Optional[int],
+        new_sequence_number: Optional[int],
         new_file_sequence_number: Optional[int],
         new_file: DataFile,
     ) -> ManifestEntry:
         self.status = new_status
         self.snapshot_id = new_snapshot_id
-        self.data_sequence_number = new_data_sequence_number
+        self.sequence_number = new_sequence_number
         self.file_sequence_number = new_file_sequence_number
         self.data_file = new_file
         return self
 
     def _wrap_append(
-        self, new_snapshot_id: Optional[int], new_data_sequence_number: Optional[int], new_file: DataFile
+        self, new_snapshot_id: Optional[int], new_sequence_number: Optional[int], new_file: DataFile
     ) -> ManifestEntry:
-        return self._wrap(ManifestEntryStatus.ADDED, new_snapshot_id, new_data_sequence_number, None, new_file)
+        return self._wrap(ManifestEntryStatus.ADDED, new_snapshot_id, new_sequence_number, None, new_file)
 
     def _wrap_delete(
         self,
         new_snapshot_id: Optional[int],
-        new_data_sequence_number: Optional[int],
+        new_sequence_number: Optional[int],
         new_file_sequence_number: Optional[int],
         new_file: DataFile,
     ) -> ManifestEntry:
-        return self._wrap(
-            ManifestEntryStatus.DELETED, new_snapshot_id, new_data_sequence_number, new_file_sequence_number, new_file
-        )
+        return self._wrap(ManifestEntryStatus.DELETED, new_snapshot_id, new_sequence_number, new_file_sequence_number, new_file)
 
     def _wrap_existing(
         self,
         new_snapshot_id: Optional[int],
-        new_data_sequence_number: Optional[int],
+        new_sequence_number: Optional[int],
         new_file_sequence_number: Optional[int],
         new_file: DataFile,
     ) -> ManifestEntry:
-        return self._wrap(
-            ManifestEntryStatus.EXISTING, new_snapshot_id, new_data_sequence_number, new_file_sequence_number, new_file
-        )
+        return self._wrap(ManifestEntryStatus.EXISTING, new_snapshot_id, new_sequence_number, new_file_sequence_number, new_file)
 
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
@@ -665,10 +661,10 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
     if entry.snapshot_id is None:
         entry.snapshot_id = manifest.added_snapshot_id
 
-    # in v1 tables, the data sequence number is not persisted and can be safely defaulted to 0
-    # in v2 tables, the data sequence number should be inherited iff the entry status is ADDED
-    if entry.data_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
-        entry.data_sequence_number = manifest.sequence_number
+    # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
+    # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
+    if entry.sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+        entry.sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
@@ -695,7 +691,7 @@ class ManifestWriter(ABC):
     _existing_rows: int
     _deleted_files: int
     _deleted_rows: int
-    _min_data_sequence_number: Optional[int]
+    _min_sequence_number: Optional[int]
     _partitions: List[Record]
     _reused_entry_wrapper: ManifestEntry
 
@@ -712,7 +708,7 @@ class ManifestWriter(ABC):
         self._existing_rows = 0
         self._deleted_files = 0
         self._deleted_rows = 0
-        self._min_data_sequence_number = None
+        self._min_sequence_number = None
         self._partitions = []
         self._reused_entry_wrapper = ManifestEntry()
 
@@ -774,7 +770,7 @@ class ManifestWriter(ABC):
         """Return the manifest file."""
         # once the manifest file is generated, no more entries can be added
         self.closed = True
-        min_sequence_number = self._min_data_sequence_number or UNASSIGNED_SEQ
+        min_sequence_number = self._min_sequence_number or UNASSIGNED_SEQ
         return ManifestFile(
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
@@ -812,19 +808,17 @@ class ManifestWriter(ABC):
 
         if (
             (entry.status == ManifestEntryStatus.ADDED or entry.status == ManifestEntryStatus.EXISTING)
-            and entry.data_sequence_number is not None
-            and (self._min_data_sequence_number is None or entry.data_sequence_number < self._min_data_sequence_number)
+            and entry.sequence_number is not None
+            and (self._min_sequence_number is None or entry.sequence_number < self._min_sequence_number)
         ):
-            self._min_data_sequence_number = entry.data_sequence_number
+            self._min_sequence_number = entry.sequence_number
 
         self._writer.write_block([self.prepare_entry(entry)])
         return self
 
     def add(self, entry: ManifestEntry) -> ManifestWriter:
-        if entry.data_sequence_number is not None and entry.data_sequence_number >= 0:
-            self.add_entry(
-                self._reused_entry_wrapper._wrap_append(self._snapshot_id, entry.data_sequence_number, entry.data_file)
-            )
+        if entry.sequence_number is not None and entry.sequence_number >= 0:
+            self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, entry.sequence_number, entry.data_file))
         else:
             self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, None, entry.data_file))
         return self
@@ -832,7 +826,7 @@ class ManifestWriter(ABC):
     def delete(self, entry: ManifestEntry) -> ManifestWriter:
         self.add_entry(
             self._reused_entry_wrapper._wrap_delete(
-                self._snapshot_id, entry.data_sequence_number, entry.file_sequence_number, entry.data_file
+                self._snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
             )
         )
         return self
@@ -840,7 +834,7 @@ class ManifestWriter(ABC):
     def existing(self, entry: ManifestEntry) -> ManifestWriter:
         self.add_entry(
             self._reused_entry_wrapper._wrap_existing(
-                entry.snapshot_id, entry.data_sequence_number, entry.file_sequence_number, entry.data_file
+                entry.snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
             )
         )
         return self
@@ -885,7 +879,7 @@ class ManifestWriterV2(ManifestWriter):
         }
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
-        if entry.data_sequence_number is None:
+        if entry.sequence_number is None:
             if entry.snapshot_id is not None and entry.snapshot_id != self._snapshot_id:
                 raise ValueError(f"Found unassigned sequence number for an entry from snapshot: {entry.snapshot_id}")
             if entry.status != ManifestEntryStatus.ADDED:

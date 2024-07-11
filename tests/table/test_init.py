@@ -64,7 +64,6 @@ from pyiceberg.table import (
     UpdateSchema,
     _apply_table_update,
     _check_schema_compatible,
-    _determine_partitions,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -88,7 +87,6 @@ from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
 )
-from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1248,85 +1246,3 @@ def test_serialize_commit_table_request() -> None:
 
     deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
     assert request == deserialized_request
-
-
-def test_partition_for_demo() -> None:
-    import pyarrow as pa
-
-    test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
-    test_schema = Schema(
-        NestedField(field_id=1, name="year", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="n_legs", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="animal", field_type=StringType(), required=False),
-        schema_id=1,
-    )
-    test_data = {
-        "year": [2020, 2022, 2022, 2022, 2021, 2022, 2022, 2019, 2021],
-        "n_legs": [2, 2, 2, 4, 4, 4, 4, 5, 100],
-        "animal": ["Flamingo", "Parrot", "Parrot", "Horse", "Dog", "Horse", "Horse", "Brittle stars", "Centipede"],
-    }
-    arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
-    partition_spec = PartitionSpec(
-        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
-        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
-    )
-    result = _determine_partitions(partition_spec, test_schema, arrow_table)
-    assert {table_partition.partition_key.partition for table_partition in result} == {
-        Record(n_legs_identity=2, year_identity=2020),
-        Record(n_legs_identity=100, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2022),
-        Record(n_legs_identity=2, year_identity=2022),
-        Record(n_legs_identity=5, year_identity=2019),
-    }
-    assert (
-        pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
-    )
-
-
-def test_identity_partition_on_multi_columns() -> None:
-    import pyarrow as pa
-
-    test_pa_schema = pa.schema([("born_year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
-    test_schema = Schema(
-        NestedField(field_id=1, name="born_year", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="n_legs", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="animal", field_type=StringType(), required=False),
-        schema_id=1,
-    )
-    # 5 partitions, 6 unique row values, 12 rows
-    test_rows = [
-        (2021, 4, "Dog"),
-        (2022, 4, "Horse"),
-        (2022, 4, "Another Horse"),
-        (2021, 100, "Centipede"),
-        (None, 4, "Kirin"),
-        (2021, None, "Fish"),
-    ] * 2
-    expected = {Record(n_legs_identity=test_rows[i][1], year_identity=test_rows[i][0]) for i in range(len(test_rows))}
-    partition_spec = PartitionSpec(
-        PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
-        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),
-    )
-    import random
-
-    # there are 12! / ((2!)^6) = 7,484,400 permutations, too many to pick all
-    for _ in range(1000):
-        random.shuffle(test_rows)
-        test_data = {
-            "born_year": [row[0] for row in test_rows],
-            "n_legs": [row[1] for row in test_rows],
-            "animal": [row[2] for row in test_rows],
-        }
-        arrow_table = pa.Table.from_pydict(test_data, schema=test_pa_schema)
-
-        result = _determine_partitions(partition_spec, test_schema, arrow_table)
-
-        assert {table_partition.partition_key.partition for table_partition in result} == expected
-        concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
-        assert concatenated_arrow_table.num_rows == arrow_table.num_rows
-        assert concatenated_arrow_table.sort_by([
-            ("born_year", "ascending"),
-            ("n_legs", "ascending"),
-            ("animal", "ascending"),
-        ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])

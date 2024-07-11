@@ -113,7 +113,7 @@ from pyiceberg.manifest import (
     DataFileContent,
     FileFormat,
 )
-from pyiceberg.partitioning import PartitionField, PartitionSpec, partition_record_value
+from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
     PartnerAccessor,
     PreOrderSchemaVisitor,
@@ -2142,8 +2142,6 @@ def _dataframe_to_data_files(
             ]),
         )
     else:
-        from pyiceberg.table import _determine_partitions
-
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
@@ -2160,3 +2158,100 @@ def _dataframe_to_data_files(
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
             ]),
         )
+
+
+@dataclass(frozen=True)
+class _TablePartition:
+    partition_key: PartitionKey
+    arrow_table_partition: pa.Table
+
+
+def _get_table_partitions(
+    arrow_table: pa.Table,
+    partition_spec: PartitionSpec,
+    schema: Schema,
+    slice_instructions: list[dict[str, Any]],
+) -> list[_TablePartition]:
+    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
+
+    partition_fields = partition_spec.fields
+
+    offsets = [inst["offset"] for inst in sorted_slice_instructions]
+    projected_and_filtered = {
+        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
+        .take(offsets)
+        .to_pylist()
+        for partition_field in partition_fields
+    }
+
+    table_partitions = []
+    for idx, inst in enumerate(sorted_slice_instructions):
+        partition_slice = arrow_table.slice(**inst)
+        fieldvalues = [
+            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
+            for partition_field in partition_fields
+        ]
+        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
+        table_partitions.append(_TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
+    return table_partitions
+
+
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
+    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+
+    Example:
+    Input:
+    An arrow table with partition key of ['n_legs', 'year'] and with data of
+    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
+     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
+    The algorithm:
+    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement of "at_end".
+    This gives the same table as raw input.
+    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement : "at_start".
+    This gives:
+    [8, 7, 4, 5, 6, 3, 1, 2, 0]
+    Based on this we get partition groups of indices:
+    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
+    We then retrieve the partition keys by offsets.
+    And slice the arrow table by offsets and lengths of each partition.
+    """
+    partition_columns: List[Tuple[PartitionField, NestedField]] = [
+        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
+    ]
+    partition_values_table = pa.table({
+        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        for partition, field in partition_columns
+    })
+
+    # Sort by partitions
+    sort_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
+        null_placement="at_end",
+    ).to_pylist()
+    arrow_table = arrow_table.take(sort_indices)
+
+    # Get slice_instructions to group by partitions
+    partition_values_table = partition_values_table.take(sort_indices)
+    reversed_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
+        null_placement="at_start",
+    ).to_pylist()
+    slice_instructions: List[Dict[str, Any]] = []
+    last = len(reversed_indices)
+    reversed_indices_size = len(reversed_indices)
+    ptr = 0
+    while ptr < reversed_indices_size:
+        group_size = last - reversed_indices[ptr]
+        offset = reversed_indices[ptr]
+        slice_instructions.append({"offset": offset, "length": group_size})
+        last = reversed_indices[ptr]
+        ptr = ptr + group_size
+
+    table_partitions: List[_TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+
+    return table_partitions
