@@ -1321,7 +1321,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                     and pa.types.is_timestamp(values.type)
                     and values.type.unit == "ns"
                 ):
-                    if target_type.tz == "UTC" and values.type.tz in UTC_ALIASES or not target_type.tz and not values.type.tz:
+                    if (target_type.tz == "UTC" and values.type.tz in UTC_ALIASES) or (not target_type.tz and not values.type.tz):
                         return values.cast(target_type, safe=False)
                 if (
                     pa.types.is_timestamp(target_type)
@@ -1329,7 +1329,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                     and pa.types.is_timestamp(values.type)
                     and values.type.unit in {"s", "ms", "us"}
                 ):
-                    if target_type.tz == "UTC" and values.type.tz in UTC_ALIASES or not target_type.tz and not values.type.tz:
+                    if (target_type.tz == "UTC" and values.type.tz in UTC_ALIASES) or (not target_type.tz and not values.type.tz):
                         return values.cast(target_type)
         return values
 
