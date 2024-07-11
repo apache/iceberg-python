@@ -1811,6 +1811,8 @@ def test_schema_downcast(table_schema_simple: Schema) -> None:
         _check_schema_compatible(table_schema_simple, other_schema)
     except Exception:
         pytest.fail("Unexpected Exception raised when calling `_check_schema`")
+
+
 def test_partition_for_demo() -> None:
     test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(

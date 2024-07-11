@@ -62,8 +62,6 @@ from pyiceberg.table import (
     TableIdentifier,
     UpdateSchema,
     _apply_table_update,
-    _determine_partitions,
-    _check_schema_compatible,
     _match_deletes_to_data_file,
     _TableMetadataUpdateContext,
     update_table_metadata,
