@@ -2232,10 +2232,10 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         return self
 
     def expire_older_than(self, timestamp_ms: int) -> ExpireSnapshots:
-        pass
-
-    def retain_last(self, number_of_snapshots: int) -> ExpireSnapshots:
-        pass
+        for snapshot in self._transaction.table_metadata.snapshots:
+            if snapshot.timestamp_ms < timestamp_ms:
+                self._remove_snapshots.snapshot_ids.append(snapshot.snapshot_id)
+        return self
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
