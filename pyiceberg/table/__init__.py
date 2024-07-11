@@ -1023,6 +1023,23 @@ def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _Ta
     return base_metadata.model_copy(update={"properties": properties})
 
 
+@_apply_table_update.register(RemoveSnapshotsUpdate)
+def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(update.snapshot_ids) == 0 or len(base_metadata.snapshots) == 0:
+        return base_metadata
+
+    # TODO: check Java implementation internalApply()
+
+    retained_snapshots = []
+    ids_to_remove = set(update.snapshot_ids)
+    for snapshot in base_metadata.snapshots:
+        if snapshot.snapshot_id not in ids_to_remove:
+            retained_snapshots.append(snapshot)
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"snapshots": retained_snapshots})
+
+
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if update.last_column_id < base_metadata.last_column_id:
@@ -2207,7 +2224,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _remove_snapshots: RemoveSnapshotsUpdate
 
     def _commit(self) -> UpdatesAndRequirements:
-        return (self._remove_snapshots, ), ()
+        return (self._remove_snapshots,), ()
 
     def expire_snapshot_id(self, snapshot_id_to_expire: int) -> ExpireSnapshots:
         if snapshot := self._transaction._table.snapshot_by_id(snapshot_id_to_expire):
