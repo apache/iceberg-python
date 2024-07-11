@@ -174,6 +174,7 @@ LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
+UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
 
@@ -937,7 +938,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
 
-            if primitive.tz in {"UTC", "+00:00", "Etc/UTC", "Z"}:
+            if primitive.tz in UTC_ALIASES:
                 return TimestamptzType()
             elif primitive.tz is None:
                 return TimestampType()
@@ -1320,7 +1321,16 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                     and pa.types.is_timestamp(values.type)
                     and values.type.unit == "ns"
                 ):
-                    return values.cast(target_type, safe=False)
+                    if target_type.tz == "UTC" and values.type.tz in UTC_ALIASES or not target_type.tz and not values.type.tz:
+                        return values.cast(target_type, safe=False)
+                if (
+                    pa.types.is_timestamp(target_type)
+                    and target_type.unit == "us"
+                    and pa.types.is_timestamp(values.type)
+                    and values.type.unit in {"s", "ms", "us"}
+                ):
+                    if target_type.tz == "UTC" and values.type.tz in UTC_ALIASES or not target_type.tz and not values.type.tz:
+                        return values.cast(target_type)
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
