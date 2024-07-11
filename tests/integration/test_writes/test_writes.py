@@ -18,7 +18,7 @@
 import math
 import os
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -979,88 +979,31 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_all_timestamp_precision(
-    mocker: MockerFixture, spark: SparkSession, session_catalog: Catalog, format_version: int
+    mocker: MockerFixture,
+    spark: SparkSession,
+    session_catalog: Catalog,
+    format_version: int,
+    arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
+    arrow_table_with_all_timestamp_precisions: pa.Table,
+    arrow_table_schema_with_all_microseconds_timestamp_precisions: pa.Schema,
 ) -> None:
     identifier = "default.table_all_timestamp_precision"
-    arrow_table_schema_with_all_timestamp_precisions = pa.schema([
-        ("timestamp_s", pa.timestamp(unit="s")),
-        ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
-        ("timestamp_ms", pa.timestamp(unit="ms")),
-        ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
-        ("timestamp_us", pa.timestamp(unit="us")),
-        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ns", pa.timestamp(unit="ns")),
-        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
-        ("timestamptz_us_z", pa.timestamp(unit="us", tz="Z")),
-    ])
-    TEST_DATA_WITH_NULL = pd.DataFrame({
-        "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_s": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_ms": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_us": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_ns": [
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
-            None,
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
-        ],
-        "timestamptz_ns": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_us_etc_utc": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_us_z": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-    })
-    input_arrow_table = pa.Table.from_pandas(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_all_timestamp_precisions)
     mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
 
     tbl = _create_table(
         session_catalog,
         identifier,
         {"format-version": format_version},
-        data=[input_arrow_table],
+        data=[arrow_table_with_all_timestamp_precisions],
         schema=arrow_table_schema_with_all_timestamp_precisions,
     )
-    tbl.overwrite(input_arrow_table)
+    tbl.overwrite(arrow_table_with_all_timestamp_precisions)
     written_arrow_table = tbl.scan().to_arrow()
 
-    expected_schema_in_all_us = pa.schema([
-        ("timestamp_s", pa.timestamp(unit="us")),
-        ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ms", pa.timestamp(unit="us")),
-        ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_us", pa.timestamp(unit="us")),
-        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ns", pa.timestamp(unit="us")),
-        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_us_z", pa.timestamp(unit="us", tz="UTC")),
-    ])
-    assert written_arrow_table.schema == expected_schema_in_all_us
-    assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us, safe=False)
+    assert written_arrow_table.schema == arrow_table_schema_with_all_microseconds_timestamp_precisions
+    assert written_arrow_table == arrow_table_with_all_timestamp_precisions.cast(
+        arrow_table_schema_with_all_microseconds_timestamp_precisions, safe=False
+    )
     lhs = spark.table(f"{identifier}").toPandas()
     rhs = written_arrow_table.to_pandas()
 

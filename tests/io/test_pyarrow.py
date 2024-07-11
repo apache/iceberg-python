@@ -68,6 +68,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     project_table,
     schema_to_pyarrow,
+    to_requested_schema,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -1798,3 +1799,35 @@ def test_identity_partition_on_multi_columns() -> None:
             ("n_legs", "ascending"),
             ("animal", "ascending"),
         ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
+
+
+def test_to_requested_schema_timestamps(
+    arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
+    arrow_table_with_all_timestamp_precisions: pa.Table,
+    arrow_table_schema_with_all_microseconds_timestamp_precisions: pa.Schema,
+    table_schema_with_all_microseconds_timestamp_precision: Schema,
+) -> None:
+    requested_schema = table_schema_with_all_microseconds_timestamp_precision
+    file_schema = requested_schema
+    batch = arrow_table_with_all_timestamp_precisions.to_batches()[0]
+    result = to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, include_field_ids=False)
+
+    expected = arrow_table_with_all_timestamp_precisions.cast(
+        arrow_table_schema_with_all_microseconds_timestamp_precisions, safe=False
+    ).to_batches()[0]
+    assert result == expected
+
+
+def test_to_requested_schema_timestamps_without_downcast_raises_exception(
+    arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
+    arrow_table_with_all_timestamp_precisions: pa.Table,
+    arrow_table_schema_with_all_microseconds_timestamp_precisions: pa.Schema,
+    table_schema_with_all_microseconds_timestamp_precision: Schema,
+) -> None:
+    requested_schema = table_schema_with_all_microseconds_timestamp_precision
+    file_schema = requested_schema
+    batch = arrow_table_with_all_timestamp_precisions.to_batches()[0]
+    with pytest.raises(ValueError) as exc_info:
+        to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
+
+    assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
