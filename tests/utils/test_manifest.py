@@ -66,7 +66,7 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
 
     assert manifest_entry.status == ManifestEntryStatus.ADDED
     assert manifest_entry.snapshot_id == 8744736658442914487
-    assert manifest_entry.data_sequence_number == 0
+    assert manifest_entry.sequence_number == 0
     assert isinstance(manifest_entry.data_file, DataFile)
 
     data_file = manifest_entry.data_file
@@ -250,7 +250,7 @@ def test_read_manifest_v1(generated_manifest_file_file_v1: str) -> None:
 
     entry = entries[0]
 
-    assert entry.data_sequence_number == 0
+    assert entry.sequence_number == 0
     assert entry.file_sequence_number == 0
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
@@ -300,7 +300,7 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
     entry = entries[0]
 
-    assert entry.data_sequence_number == 3
+    assert entry.sequence_number == 3
     assert entry.file_sequence_number == 3
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
@@ -379,7 +379,7 @@ def test_write_manifest(
 
         assert manifest_entry.status == ManifestEntryStatus.ADDED
         assert manifest_entry.snapshot_id == 8744736658442914487
-        assert manifest_entry.data_sequence_number == -1 if format_version == 1 else 3
+        assert manifest_entry.sequence_number == -1 if format_version == 1 else 3
         assert isinstance(manifest_entry.data_file, DataFile)
 
         data_file = manifest_entry.data_file
@@ -556,7 +556,7 @@ def test_write_manifest_list(
 
         entry = entries[0]
 
-        assert entry.data_sequence_number == 0 if format_version == 1 else 3
+        assert entry.sequence_number == 0 if format_version == 1 else 3
         assert entry.file_sequence_number == 0 if format_version == 1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
