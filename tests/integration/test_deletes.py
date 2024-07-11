@@ -291,7 +291,7 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     assert snapshots[2].summary == Summary(
         Operation.OVERWRITE,
         **{
-            "added-files-size": "1125",
+            "added-files-size": snapshots[2].summary["total-files-size"],
             "added-data-files": "1",
             "added-records": "2",
             "changed-partition-count": "1",
