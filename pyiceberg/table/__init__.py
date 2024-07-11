@@ -150,6 +150,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import _convert_to_hashable_type
@@ -166,6 +167,7 @@ if TYPE_CHECKING:
 ALWAYS_TRUE = AlwaysTrue()
 TABLE_ROOT_ID = -1
 _JAVA_LONG_MAX = 9223372036854775807
+DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
 
 class TableProperties:
@@ -478,8 +480,10 @@ class Transaction:
             raise ValueError(
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
-
-        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_schema_compatible(
+            self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
         # cast if the two schemas are compatible but not equal
         table_arrow_schema = self._table.schema().as_arrow()
         if table_arrow_schema != df.schema:
@@ -537,8 +541,10 @@ class Transaction:
             raise ValueError(
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
-
-        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_schema_compatible(
+            self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
         # cast if the two schemas are compatible but not equal
         table_arrow_schema = self._table.schema().as_arrow()
         if table_arrow_schema != df.schema:

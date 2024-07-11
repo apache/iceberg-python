@@ -166,7 +166,6 @@ logger = logging.getLogger(__name__)
 
 ONE_MEGABYTE = 1024 * 1024
 BUFFER_SIZE = "buffer-size"
-DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
@@ -1952,7 +1951,7 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    from pyiceberg.table import PropertyUtil, TableProperties
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = PropertyUtil.property_as_int(
@@ -2034,7 +2033,7 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
     return bin_packed_record_batches
 
 
-def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema) -> None:
+def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> None:
     """
     Check if the `table_schema` is compatible with `other_schema`.
 
@@ -2044,7 +2043,6 @@ def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema) -> N
         ValueError: If the schemas are not compatible.
     """
     name_mapping = table_schema.name_mapping
-    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     try:
         task_schema = pyarrow_to_schema(
             other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us

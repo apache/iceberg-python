@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import os
+import re
 from datetime import date
 from typing import Iterator
 
@@ -569,7 +570,7 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     assert table_schema == arrow_schema_large
 
 
-def test_timestamp_tz_ns_downcast_on_read(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
+def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 
     nanoseconds_schema = pa.schema([
@@ -600,25 +601,18 @@ def test_timestamp_tz_ns_downcast_on_read(session_catalog: Catalog, format_versi
         partition_spec=PartitionSpec(),
     )
 
-    file_paths = [f"s3://warehouse/default/test_timestamp_tz/v{format_version}/test-{i}.parquet" for i in range(5)]
+    file_path = f"s3://warehouse/default/test_timestamp_tz/v{format_version}/test.parquet"
     # write parquet files
-    for file_path in file_paths:
-        fo = tbl.io.new_output(file_path)
-        with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=nanoseconds_schema) as writer:
-                writer.write_table(arrow_table)
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=nanoseconds_schema) as writer:
+            writer.write_table(arrow_table)
 
     # add the parquet files as data files
-    tbl.add_files(file_paths=file_paths)
-
-    assert tbl.scan().to_arrow() == pa.concat_tables(
-        [
-            arrow_table.cast(
-                pa.schema([
-                    ("quux", pa.timestamp("us", tz="UTC")),
-                ]),
-                safe=False,
-            )
-        ]
-        * 5
-    )
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ):
+        tbl.add_files(file_paths=[file_path])
