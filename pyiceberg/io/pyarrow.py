@@ -2051,6 +2051,49 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
     return bin_packed_record_batches
 
 
+def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> None:
+    """
+    Check if the `table_schema` is compatible with `other_schema`.
+
+    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+
+    Raises:
+        ValueError: If the schemas are not compatible.
+    """
+    name_mapping = table_schema.name_mapping
+    try:
+        task_schema = pyarrow_to_schema(
+            other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
+    except ValueError as e:
+        other_schema = _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
+        raise ValueError(
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+        ) from e
+
+    if table_schema.as_struct() != task_schema.as_struct():
+        from rich.console import Console
+        from rich.table import Table as RichTable
+
+        console = Console(record=True)
+
+        rich_table = RichTable(show_header=True, header_style="bold")
+        rich_table.add_column("")
+        rich_table.add_column("Table field")
+        rich_table.add_column("Dataframe field")
+
+        for lhs in table_schema.fields:
+            try:
+                rhs = task_schema.find_field(lhs.field_id)
+                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
+            except ValueError:
+                rich_table.add_row("❌", str(lhs), "Missing")
+
+        console.print(rich_table)
+        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+
+
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
     for file_path in file_paths:
         input_file = io.new_input(file_path)
@@ -2062,6 +2105,8 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
                 f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
             )
         schema = table_metadata.schema()
+        _check_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=parquet_metadata,
             stats_columns=compute_statistics_plan(schema, table_metadata.properties),
