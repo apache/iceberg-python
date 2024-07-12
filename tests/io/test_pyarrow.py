@@ -1832,20 +1832,6 @@ def test_schema_downcast(table_schema_simple: Schema) -> None:
         pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
 
 
-def test_schema_downcast(table_schema_simple: Schema) -> None:
-    # large_string type is compatible with string type
-    other_schema = pa.schema((
-        pa.field("foo", pa.large_string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
-
-    try:
-        _check_schema_compatible(table_schema_simple, other_schema)
-    except Exception:
-        pytest.fail("Unexpected Exception raised when calling `_check_schema`")
-
-
 def test_partition_for_demo() -> None:
     test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
