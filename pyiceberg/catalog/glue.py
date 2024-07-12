@@ -113,6 +113,13 @@ ICEBERG_FIELD_ID = "iceberg.field.id"
 ICEBERG_FIELD_OPTIONAL = "iceberg.field.optional"
 ICEBERG_FIELD_CURRENT = "iceberg.field.current"
 
+GLUE_PROFILE_NAME_PROPERTIES = ("glue.profile-name", "profile_name")
+GLUE_REGION_PROPERTIES = ("glue.region", "aws.region", "region_name")
+GLUE_BOTOCORE_SESSION_PROPERTIES = ("glue.botocore-session", "botocore_session")
+GLUE_ACCESS_KEY_ID_PROPERTIES = ("glue.access-key-id", "aws.access-key-id", "aws_access_key_id")
+GLUE_SECRET_ACCESS_KEY_PROPERTIES = ("glue.secret-access-key", "aws.secret-access-key", "aws_secret_access_key")
+GLUE_SESSION_TOKEN_PROPERTIES = ("glue.session-token", "aws.session-token", "aws_session_token")
+
 
 def _construct_parameters(
     metadata_location: str, glue_table: Optional[TableTypeDef] = None, prev_metadata_location: Optional[str] = None
@@ -282,12 +289,12 @@ class GlueCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=properties.get("profile_name"),
-            region_name=properties.get("region_name"),
-            botocore_session=properties.get("botocore_session"),
-            aws_access_key_id=properties.get("aws_access_key_id"),
-            aws_secret_access_key=properties.get("aws_secret_access_key"),
-            aws_session_token=properties.get("aws_session_token"),
+            profile_name=self._get_first_property_value(GLUE_PROFILE_NAME_PROPERTIES),
+            region_name=self._get_first_property_value(GLUE_REGION_PROPERTIES),
+            botocore_session=self._get_first_property_value(GLUE_BOTOCORE_SESSION_PROPERTIES),
+            aws_access_key_id=self._get_first_property_value(GLUE_ACCESS_KEY_ID_PROPERTIES),
+            aws_secret_access_key=self._get_first_property_value(GLUE_SECRET_ACCESS_KEY_PROPERTIES),
+            aws_session_token=self._get_first_property_value(GLUE_SESSION_TOKEN_PROPERTIES),
         )
         self.glue: GlueClient = session.client("glue")
 

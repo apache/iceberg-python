@@ -33,7 +33,7 @@ from typing import (
     Tuple,
     Type,
     Union,
-    cast,
+    cast, Any,
 )
 
 from pyiceberg.exceptions import (
@@ -838,6 +838,12 @@ class MetastoreCatalog(Catalog, ABC):
 
         raise ValueError("No default path is set, please specify a location when creating a table")
 
+    def _get_first_property_value(self, property_names: Tuple[str,...]) -> Optional[Any]:
+        for property_name in property_names:
+            if property_value := self.properties.get(property_name):
+                return property_value
+        return None
+
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
@@ -895,3 +901,5 @@ class MetastoreCatalog(Catalog, ABC):
             TableMetadata: An empty TableMetadata instance.
         """
         return TableMetadataV1(location="", last_column_id=-1, schema=Schema())
+
+
