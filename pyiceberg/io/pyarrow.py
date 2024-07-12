@@ -1074,7 +1074,7 @@ def _task_to_record_batches(
                     arrow_table = pa.Table.from_batches([batch])
                     arrow_table = arrow_table.filter(pyarrow_filter)
                     batch = arrow_table.to_batches()[0]
-            yield to_requested_schema(projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True)
+            yield _to_requested_schema(projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True)
             current_index += len(batch)
 
 
@@ -1279,7 +1279,7 @@ def project_batches(
             total_row_count += len(batch)
 
 
-def to_requested_schema(
+def _to_requested_schema(
     requested_schema: Schema,
     file_schema: Schema,
     batch: pa.RecordBatch,
@@ -1990,7 +1990,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         batches = [
-            to_requested_schema(
+            _to_requested_schema(
                 requested_schema=file_schema,
                 file_schema=table_schema,
                 batch=batch,
