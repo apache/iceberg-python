@@ -864,6 +864,7 @@ def test_register_table_with_given_location(
     assert test_catalog.table_exists(identifier) is True
 
 
+@mock_aws
 def test_glue_endpoint_override(moto_endpoint_url: str, database_name: str) -> None:
     catalog_name = "glue"
     test_catalog = GlueCatalog(
