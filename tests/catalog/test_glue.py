@@ -865,9 +865,10 @@ def test_register_table_with_given_location(
 
 
 @mock_aws
-def test_glue_endpoint_override(moto_endpoint_url: str, database_name: str) -> None:
+def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
     catalog_name = "glue"
+    test_endpoint = "https://test-endpoint"
     test_catalog = GlueCatalog(
-        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": moto_endpoint_url}
+        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
     )
-    assert test_catalog.glue.meta.endpoint_url == moto_endpoint_url
+    assert test_catalog.glue.meta.endpoint_url == test_endpoint
