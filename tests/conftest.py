@@ -2043,6 +2043,11 @@ def get_bucket_name() -> str:
     return bucket_name
 
 
+def get_glue_endpoint() -> Optional[str]:
+    """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
+    return os.getenv("AWS_TEST_GLUE_ENDPOINT")
+
+
 def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
     result_path = f"s3://{bucket_name}"
     if database_name is not None:

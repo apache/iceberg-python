@@ -288,6 +288,16 @@ catalog:
     region_name: <REGION_NAME>
 ```
 
+<!-- markdown-link-check-disable -->
+
+| Key               | Example                              | Description                                                                     |
+| ----------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| glue.id           | 111111111111                         | Configure the 12-digit ID of the Glue Catalog                                   |
+| glue.skip-archive | true                                 | Configure whether to skip the archival of older table versions. Default to true |
+| glue.endpoint     | https://glue.us-east-1.amazonaws.com | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
+
+<!-- markdown-link-check-enable-->
+
 ## DynamoDB Catalog
 
 If you want to use AWS DynamoDB as the catalog, you can use the last two ways to configure the pyiceberg and refer
