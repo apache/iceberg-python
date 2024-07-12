@@ -25,7 +25,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from pyiceberg.catalog import Catalog, MetastoreCatalog
-from pyiceberg.catalog.glue import GlueCatalog
+from pyiceberg.catalog.glue import GLUE_CATALOG_ENDPOINT, GlueCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -36,7 +36,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
-from tests.conftest import clean_up, get_bucket_name, get_s3_path
+from tests.conftest import clean_up, get_bucket_name, get_glue_endpoint, get_s3_path
 
 # The number of tables/databases used in list_table/namespace test
 LIST_TEST_NUMBER = 2
@@ -51,7 +51,9 @@ def fixture_glue_client() -> boto3.client:
 @pytest.fixture(name="test_catalog", scope="module")
 def fixture_test_catalog() -> Generator[Catalog, None, None]:
     """Configure the pre- and post-setting of aws integration test."""
-    test_catalog = GlueCatalog(CATALOG_NAME, warehouse=get_s3_path(get_bucket_name()))
+    test_catalog = GlueCatalog(
+        CATALOG_NAME, **{"warehouse": get_s3_path(get_bucket_name()), GLUE_CATALOG_ENDPOINT: get_glue_endpoint()}
+    )
     yield test_catalog
     clean_up(test_catalog)
 
