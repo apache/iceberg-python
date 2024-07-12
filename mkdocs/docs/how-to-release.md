@@ -23,6 +23,21 @@ The guide to release PyIceberg.
 
 The first step is to publish a release candidate (RC) and publish it to the public for testing and validation. Once the vote has passed on the RC, the RC turns into the new release.
 
+## Preparing for a release
+
+Before running the release candidate, we want to remove any APIs that were marked for removal under the @deprecated tag for this release.
+
+For example, the API with the following deprecation tag should be removed when preparing for the 0.2.0 release.
+
+```python
+
+@deprecated(
+    deprecated_in="0.1.0",
+    removed_in="0.2.0",
+    help_message="Please use load_something_else() instead",
+)
+```
+
 ## Running a release candidate
 
 Make sure that the version is correct in `pyproject.toml` and `pyiceberg/__init__.py`. Correct means that it reflects the version that you want to release.

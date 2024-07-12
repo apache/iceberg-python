@@ -156,6 +156,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
@@ -1279,6 +1280,23 @@ def project_batches(
             total_row_count += len(batch)
 
 
+@deprecated(
+    deprecated_in="0.7.0",
+    removed_in="0.8.0",
+    help_message="The public API for 'to_requested_schema' is deprecated and is replaced by '_to_requested_schema'",
+)
+def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:
+    struct_array = visit_with_partner(requested_schema, table, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
+
+    arrays = []
+    fields = []
+    for pos, field in enumerate(requested_schema.fields):
+        array = struct_array.field(pos)
+        arrays.append(array)
+        fields.append(pa.field(field.name, array.type, field.optional))
+    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+
+
 def _to_requested_schema(
     requested_schema: Schema,
     file_schema: Schema,
@@ -1434,6 +1452,8 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
 
             if isinstance(partner_struct, pa.StructArray):
                 return partner_struct.field(name)
+            elif isinstance(partner_struct, pa.Table):
+                return partner_struct.column(name).combine_chunks()
             elif isinstance(partner_struct, pa.RecordBatch):
                 return partner_struct.column(name)
             else:
