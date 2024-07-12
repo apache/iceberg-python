@@ -570,6 +570,7 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     assert table_schema == arrow_schema_large
 
 
+@pytest.mark.integration
 def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 

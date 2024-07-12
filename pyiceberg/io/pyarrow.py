@@ -175,6 +175,7 @@ LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
+UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
 
@@ -938,7 +939,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
 
-            if primitive.tz == "UTC" or primitive.tz == "+00:00":
+            if primitive.tz in UTC_ALIASES:
                 return TimestamptzType()
             elif primitive.tz is None:
                 return TimestampType()
@@ -1314,16 +1315,17 @@ def _to_requested_schema(
 
 
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
-    file_schema: Schema
+    _file_schema: Schema
     _include_field_ids: bool
+    _downcast_ns_timestamp_to_us: bool
 
     def __init__(self, file_schema: Schema, downcast_ns_timestamp_to_us: bool = False, include_field_ids: bool = False) -> None:
-        self.file_schema = file_schema
+        self._file_schema = file_schema
         self._include_field_ids = include_field_ids
-        self.downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
+        self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
-        file_field = self.file_schema.find_field(field.field_id)
+        file_field = self._file_schema.find_field(field.field_id)
 
         if field.field_type.is_primitive:
             if field.field_type != file_field.field_type:
@@ -1331,14 +1333,31 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                     schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids)
                 )
             elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
-                # Downcasting of nanoseconds to microseconds
-                if (
-                    pa.types.is_timestamp(target_type)
-                    and target_type.unit == "us"
-                    and pa.types.is_timestamp(values.type)
-                    and values.type.unit == "ns"
-                ):
-                    return values.cast(target_type, safe=False)
+                if field.field_type == TimestampType():
+                    # Downcasting of nanoseconds to microseconds
+                    if (
+                        pa.types.is_timestamp(target_type)
+                        and not target_type.tz
+                        and pa.types.is_timestamp(values.type)
+                        and not values.type.tz
+                    ):
+                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
+                            return values.cast(target_type, safe=False)
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms"}:
+                            return values.cast(target_type)
+                    raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+                elif field.field_type == TimestamptzType():
+                    if (
+                        pa.types.is_timestamp(target_type)
+                        and target_type.tz == "UTC"
+                        and pa.types.is_timestamp(values.type)
+                        and values.type.tz in UTC_ALIASES
+                    ):
+                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
+                            return values.cast(target_type, safe=False)
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
+                            return values.cast(target_type)
+                    raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
