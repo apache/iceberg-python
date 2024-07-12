@@ -970,8 +970,6 @@ def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with
     identifier = "default.test_table_write_subset_of_schema"
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
-    print(arrow_table_without_some_columns.schema)
-    print(arrow_table_with_null.schema)
     assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
     tbl.overwrite(arrow_table_without_some_columns)
     tbl.append(arrow_table_without_some_columns)
