@@ -120,6 +120,7 @@ from pyiceberg.schema import (
     Schema,
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
+    assign_fresh_schema_ids,
     pre_order_visit,
     promote,
     prune_columns,
@@ -1450,14 +1451,17 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
             except ValueError:
                 return None
 
-            if isinstance(partner_struct, pa.StructArray):
-                return partner_struct.field(name)
-            elif isinstance(partner_struct, pa.Table):
-                return partner_struct.column(name).combine_chunks()
-            elif isinstance(partner_struct, pa.RecordBatch):
-                return partner_struct.column(name)
-            else:
-                raise ValueError(f"Cannot find {name} in expected partner_struct type {type(partner_struct)}")
+            try:
+                if isinstance(partner_struct, pa.StructArray):
+                    return partner_struct.field(name)
+                elif isinstance(partner_struct, pa.Table):
+                    return partner_struct.column(name).combine_chunks()
+                elif isinstance(partner_struct, pa.RecordBatch):
+                    return partner_struct.column(name)
+                else:
+                    raise ValueError(f"Cannot find {name} in expected partner_struct type {type(partner_struct)}")
+            except KeyError:
+                return None
 
         return None
 
@@ -2079,36 +2083,63 @@ def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, down
     Raises:
         ValueError: If the schemas are not compatible.
     """
-    name_mapping = table_schema.name_mapping
-    try:
-        task_schema = pyarrow_to_schema(
-            other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
-        )
-    except ValueError as e:
-        other_schema = _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
-        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
-        raise ValueError(
-            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
-        ) from e
+    task_schema = assign_fresh_schema_ids(
+        _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+    )
 
-    if table_schema.as_struct() != task_schema.as_struct():
-        from rich.console import Console
-        from rich.table import Table as RichTable
+    extra_fields = task_schema.field_names - table_schema.field_names
+    missing_fields = table_schema.field_names - task_schema.field_names
+    fields_in_both = task_schema.field_names.intersection(table_schema.field_names)
 
-        console = Console(record=True)
+    from rich.console import Console
+    from rich.table import Table as RichTable
 
-        rich_table = RichTable(show_header=True, header_style="bold")
-        rich_table.add_column("")
-        rich_table.add_column("Table field")
-        rich_table.add_column("Dataframe field")
+    console = Console(record=True)
 
-        for lhs in table_schema.fields:
-            try:
-                rhs = task_schema.find_field(lhs.field_id)
-                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
-            except ValueError:
-                rich_table.add_row("❌", str(lhs), "Missing")
+    rich_table = RichTable(show_header=True, header_style="bold")
+    rich_table.add_column("Field Name")
+    rich_table.add_column("Category")
+    rich_table.add_column("Table field")
+    rich_table.add_column("Dataframe field")
 
+    def print_nullability(required: bool) -> str:
+        return "required" if required else "optional"
+
+    for field_name in fields_in_both:
+        lhs = table_schema.find_field(field_name)
+        rhs = task_schema.find_field(field_name)
+        # Check nullability
+        if lhs.required != rhs.required:
+            rich_table.add_row(
+                field_name,
+                "Nullability",
+                f"{print_nullability(lhs.required)} {str(lhs.field_type)}",
+                f"{print_nullability(rhs.required)} {str(rhs.field_type)}",
+            )
+        # Check if type is consistent
+        if any(
+            (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
+            for container_type in {StructType, MapType, ListType}
+        ):
+            continue
+        elif lhs.field_type != rhs.field_type:
+            rich_table.add_row(
+                field_name,
+                "Type",
+                f"{print_nullability(lhs.required)} {str(lhs.field_type)}",
+                f"{print_nullability(rhs.required)} {str(rhs.field_type)}",
+            )
+
+    for field_name in extra_fields:
+        rhs = task_schema.find_field(field_name)
+        rich_table.add_row(field_name, "Extra Fields", "", f"{print_nullability(rhs.required)} {str(rhs.field_type)}")
+
+    for field_name in missing_fields:
+        lhs = table_schema.find_field(field_name)
+        if lhs.required:
+            rich_table.add_row(field_name, "Missing Fields", f"{print_nullability(lhs.required)} {str(lhs.field_type)}", "")
+
+    if rich_table.row_count:
         console.print(rich_table)
         raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
 

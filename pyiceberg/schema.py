@@ -324,6 +324,11 @@ class Schema(IcebergBaseModel):
         """Return the IDs of the current schema."""
         return set(self._name_to_id.values())
 
+    @property
+    def field_names(self) -> Set[str]:
+        """Return the Names of the current schema."""
+        return set(self._name_to_id.keys())
+
     def _validate_identifier_field(self, field_id: int) -> None:
         """Validate that the field with the given ID is a valid identifier field.
 

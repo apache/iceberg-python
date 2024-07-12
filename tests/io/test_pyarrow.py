@@ -1732,13 +1732,11 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
     ))
 
     expected = r"""Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field              ┃ Dataframe field                 ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string  │ 1: foo: optional string         │
-│ ❌ │ 2: bar: required int     │ 2: bar: required decimal\(18, 6\) │
-│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean        │
-└────┴──────────────────────────┴─────────────────────────────────┘
+┏━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Field Name ┃ Category ┃ Table field  ┃ Dataframe field         ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ bar        │ Type     │ required int │ required decimal\(18, 6\) │
+└────────────┴──────────┴──────────────┴─────────────────────────┘
 """
 
     with pytest.raises(ValueError, match=expected):
@@ -1753,13 +1751,11 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
     ))
 
     expected = """Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field              ┃ Dataframe field          ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
-│ ❌ │ 2: bar: required int     │ 2: bar: optional int     │
-│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
-└────┴──────────────────────────┴──────────────────────────┘
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Field Name ┃ Category    ┃ Table field  ┃ Dataframe field ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ bar        │ Nullability │ required int │ optional int    │
+└────────────┴─────────────┴──────────────┴─────────────────┘
 """
 
     with pytest.raises(ValueError, match=expected):
@@ -1773,31 +1769,103 @@ def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
     ))
 
     expected = """Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field              ┃ Dataframe field          ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
-│ ❌ │ 2: bar: required int     │ Missing                  │
-│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
-└────┴──────────────────────────┴──────────────────────────┘
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Field Name ┃ Category       ┃ Table field  ┃ Dataframe field ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ bar        │ Missing Fields │ required int │                 │
+└────────────┴────────────────┴──────────────┴─────────────────┘
 """
 
     with pytest.raises(ValueError, match=expected):
         _check_schema_compatible(table_schema_simple, other_schema)
 
 
+def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Schema) -> None:
+    schema = table_schema_nested.as_arrow()
+    schema = schema.remove(6).insert(
+        6,
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("age", pa.int32(), nullable=False),
+            ]),
+            nullable=True,
+        ),
+    )
+    try:
+        _check_schema_compatible(table_schema_nested, schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
+
+
+def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Schema) -> None:
+    other_schema = table_schema_nested.as_arrow()
+    other_schema = other_schema.remove(6).insert(
+        6,
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("name", pa.string(), nullable=True),
+            ]),
+            nullable=True,
+        ),
+    )
+    expected = """Mismatch in fields:
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Field Name ┃ Category       ┃ Table field  ┃ Dataframe field ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ person.age │ Missing Fields │ required int │                 │
+└────────────┴────────────────┴──────────────┴─────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        _check_schema_compatible(table_schema_nested, other_schema)
+
+
+def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
+    try:
+        _check_schema_compatible(table_schema_nested, table_schema_nested.as_arrow())
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
+
+
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
     other_schema = pa.schema((
         pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
         pa.field("baz", pa.bool_(), nullable=True),
         pa.field("new_field", pa.date32(), nullable=True),
     ))
 
-    expected = r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
+    expected = """Mismatch in fields:
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Field Name ┃ Category     ┃ Table field ┃ Dataframe field ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ new_field  │ Extra Fields │             │ optional date   │
+└────────────┴──────────────┴─────────────┴─────────────────┘
+"""
 
     with pytest.raises(ValueError, match=expected):
         _check_schema_compatible(table_schema_simple, other_schema)
+
+
+def test_schema_compatible(table_schema_simple: Schema) -> None:
+    try:
+        _check_schema_compatible(table_schema_simple, table_schema_simple.as_arrow())
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
+
+
+def test_schema_projection(table_schema_simple: Schema) -> None:
+    # remove optional `baz` field from `table_schema_simple`
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+    ))
+    try:
+        _check_schema_compatible(table_schema_simple, other_schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
 
 
 def test_schema_downcast(table_schema_simple: Schema) -> None:
@@ -1811,7 +1879,7 @@ def test_schema_downcast(table_schema_simple: Schema) -> None:
     try:
         _check_schema_compatible(table_schema_simple, other_schema)
     except Exception:
-        pytest.fail("Unexpected Exception raised when calling `_check_schema`")
+        pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
 
 
 def test_partition_for_demo() -> None:
