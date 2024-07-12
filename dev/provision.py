@@ -342,3 +342,50 @@ for catalog_name, catalog in catalogs.items():
            (array(), map(), array(struct(1)))
     """
     )
+
+    spark.sql(
+        f"""
+        CREATE OR REPLACE TABLE {catalog_name}.default.test_table_snapshot_operations (
+            number integer
+        )
+        USING iceberg
+        TBLPROPERTIES (
+            'format-version'='2'
+        );
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_snapshot_operations
+        VALUES (1)
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_snapshot_operations
+        VALUES (2)
+        """
+    )
+
+    spark.sql(
+        f"""
+        DELETE FROM {catalog_name}.default.test_table_snapshot_operations
+        WHERE number = 2
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_snapshot_operations
+        VALUES (3)
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {catalog_name}.default.test_table_snapshot_operations
+        VALUES (4)
+        """
+    )

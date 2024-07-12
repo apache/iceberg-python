@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from copy import copy
 from enum import Enum
-from functools import singledispatch
 from types import TracebackType
 from typing import (
     Any,
@@ -31,18 +31,18 @@ from typing import (
     Type,
 )
 
+from pydantic_core import to_json
+
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import EMPTY_DICT, Record
+from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
-    DateType,
-    IcebergType,
     IntegerType,
     ListType,
     LongType,
@@ -51,9 +51,6 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
-    TimestampType,
-    TimestamptzType,
-    TimeType,
 )
 
 UNASSIGNED_SEQ = -1
@@ -283,31 +280,12 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 }
 
 
-@singledispatch
-def partition_field_to_data_file_partition_field(partition_field_type: IcebergType) -> PrimitiveType:
-    raise TypeError(f"Unsupported partition field type: {partition_field_type}")
-
-
-@partition_field_to_data_file_partition_field.register(LongType)
-@partition_field_to_data_file_partition_field.register(DateType)
-@partition_field_to_data_file_partition_field.register(TimeType)
-@partition_field_to_data_file_partition_field.register(TimestampType)
-@partition_field_to_data_file_partition_field.register(TimestamptzType)
-def _(partition_field_type: PrimitiveType) -> IntegerType:
-    return IntegerType()
-
-
-@partition_field_to_data_file_partition_field.register(PrimitiveType)
-def _(partition_field_type: PrimitiveType) -> PrimitiveType:
-    return partition_field_type
-
-
-def data_file_with_partition(partition_type: StructType, format_version: Literal[1, 2]) -> StructType:
+def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
     data_file_partition_type = StructType(*[
         NestedField(
             field_id=field.field_id,
             name=field.name,
-            field_type=partition_field_to_data_file_partition_field(field.field_type),
+            field_type=field.field_type,
             required=field.required,
         )
         for field in partition_type.fields
@@ -363,7 +341,7 @@ class DataFile(Record):
     split_offsets: Optional[List[int]]
     equality_ids: Optional[List[int]]
     sort_order_id: Optional[int]
-    spec_id: Optional[int]
+    spec_id: int
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Assign a key/value to a DataFile."""
@@ -372,7 +350,7 @@ class DataFile(Record):
             value = FileFormat[value]
         super().__setattr__(name, value)
 
-    def __init__(self, format_version: Literal[1, 2] = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
+    def __init__(self, format_version: TableVersion = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
         super().__init__(
             *data,
             **{"struct": DATA_FILE_TYPE[format_version], **named_data},
@@ -399,7 +377,7 @@ MANIFEST_ENTRY_SCHEMAS = {
     2: Schema(
         NestedField(0, "status", IntegerType(), required=True),
         NestedField(1, "snapshot_id", LongType(), required=False),
-        NestedField(3, "data_sequence_number", LongType(), required=False),
+        NestedField(3, "sequence_number", LongType(), required=False),
         NestedField(4, "file_sequence_number", LongType(), required=False),
         NestedField(2, "data_file", DATA_FILE_TYPE[2], required=True),
     ),
@@ -408,7 +386,7 @@ MANIFEST_ENTRY_SCHEMAS = {
 MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_version, schema in MANIFEST_ENTRY_SCHEMAS.items()}
 
 
-def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_file: StructType) -> Schema:
+def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file: StructType) -> Schema:
     return Schema(*[
         NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
         for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
@@ -416,15 +394,53 @@ def manifest_entry_schema_with_data_file(format_version: Literal[1, 2], data_fil
 
 
 class ManifestEntry(Record):
-    __slots__ = ("status", "snapshot_id", "data_sequence_number", "file_sequence_number", "data_file")
+    __slots__ = ("status", "snapshot_id", "sequence_number", "file_sequence_number", "data_file")
     status: ManifestEntryStatus
     snapshot_id: Optional[int]
-    data_sequence_number: Optional[int]
+    sequence_number: Optional[int]
     file_sequence_number: Optional[int]
     data_file: DataFile
 
     def __init__(self, *data: Any, **named_data: Any) -> None:
         super().__init__(*data, **{"struct": MANIFEST_ENTRY_SCHEMAS_STRUCT[DEFAULT_READ_VERSION], **named_data})
+
+    def _wrap(
+        self,
+        new_status: ManifestEntryStatus,
+        new_snapshot_id: Optional[int],
+        new_sequence_number: Optional[int],
+        new_file_sequence_number: Optional[int],
+        new_file: DataFile,
+    ) -> ManifestEntry:
+        self.status = new_status
+        self.snapshot_id = new_snapshot_id
+        self.sequence_number = new_sequence_number
+        self.file_sequence_number = new_file_sequence_number
+        self.data_file = new_file
+        return self
+
+    def _wrap_append(
+        self, new_snapshot_id: Optional[int], new_sequence_number: Optional[int], new_file: DataFile
+    ) -> ManifestEntry:
+        return self._wrap(ManifestEntryStatus.ADDED, new_snapshot_id, new_sequence_number, None, new_file)
+
+    def _wrap_delete(
+        self,
+        new_snapshot_id: Optional[int],
+        new_sequence_number: Optional[int],
+        new_file_sequence_number: Optional[int],
+        new_file: DataFile,
+    ) -> ManifestEntry:
+        return self._wrap(ManifestEntryStatus.DELETED, new_snapshot_id, new_sequence_number, new_file_sequence_number, new_file)
+
+    def _wrap_existing(
+        self,
+        new_snapshot_id: Optional[int],
+        new_sequence_number: Optional[int],
+        new_file_sequence_number: Optional[int],
+        new_file: DataFile,
+    ) -> ManifestEntry:
+        return self._wrap(ManifestEntryStatus.EXISTING, new_snapshot_id, new_sequence_number, new_file_sequence_number, new_file)
 
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
@@ -645,10 +661,10 @@ def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> Mani
     if entry.snapshot_id is None:
         entry.snapshot_id = manifest.added_snapshot_id
 
-    # in v1 tables, the data sequence number is not persisted and can be safely defaulted to 0
-    # in v2 tables, the data sequence number should be inherited iff the entry status is ADDED
-    if entry.data_sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
-        entry.data_sequence_number = manifest.sequence_number
+    # in v1 tables, the sequence number is not persisted and can be safely defaulted to 0
+    # in v2 tables, the sequence number should be inherited iff the entry status is ADDED
+    if entry.sequence_number is None and (manifest.sequence_number == 0 or entry.status == ManifestEntryStatus.ADDED):
+        entry.sequence_number = manifest.sequence_number
 
     # in v1 tables, the file sequence number is not persisted and can be safely defaulted to 0
     # in v2 tables, the file sequence number should be inherited iff the entry status is ADDED
@@ -669,25 +685,22 @@ class ManifestWriter(ABC):
     _output_file: OutputFile
     _writer: AvroOutputFile[ManifestEntry]
     _snapshot_id: int
-    _meta: Dict[str, str]
     _added_files: int
     _added_rows: int
     _existing_files: int
     _existing_rows: int
     _deleted_files: int
     _deleted_rows: int
-    _min_data_sequence_number: Optional[int]
+    _min_sequence_number: Optional[int]
     _partitions: List[Record]
+    _reused_entry_wrapper: ManifestEntry
 
-    def __init__(
-        self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int, meta: Dict[str, str] = EMPTY_DICT
-    ) -> None:
+    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int) -> None:
         self.closed = False
         self._spec = spec
         self._schema = schema
         self._output_file = output_file
         self._snapshot_id = snapshot_id
-        self._meta = meta
 
         self._added_files = 0
         self._added_rows = 0
@@ -695,8 +708,9 @@ class ManifestWriter(ABC):
         self._existing_rows = 0
         self._deleted_files = 0
         self._deleted_rows = 0
-        self._min_data_sequence_number = None
+        self._min_sequence_number = None
         self._partitions = []
+        self._reused_entry_wrapper = ManifestEntry()
 
     def __enter__(self) -> ManifestWriter:
         """Open the writer."""
@@ -711,6 +725,10 @@ class ManifestWriter(ABC):
         traceback: Optional[TracebackType],
     ) -> None:
         """Close the writer."""
+        if (self._added_files + self._existing_files + self._deleted_files) == 0:
+            # This is just a guard to ensure that we don't write empty manifest files
+            raise ValueError("An empty manifest file has been written")
+
         self.closed = True
         self._writer.__exit__(exc_type, exc_value, traceback)
 
@@ -719,9 +737,18 @@ class ManifestWriter(ABC):
 
     @property
     @abstractmethod
-    def version(self) -> Literal[1, 2]: ...
+    def version(self) -> TableVersion: ...
 
-    def _with_partition(self, format_version: Literal[1, 2]) -> Schema:
+    @property
+    def _meta(self) -> Dict[str, str]:
+        return {
+            "schema": self._schema.model_dump_json(),
+            "partition-spec": to_json(self._spec.fields).decode("utf-8"),
+            "partition-spec-id": str(self._spec.spec_id),
+            "format-version": str(self.version),
+        }
+
+    def _with_partition(self, format_version: TableVersion) -> Schema:
         data_file_type = data_file_with_partition(
             format_version=format_version, partition_type=self._spec.partition_type(self._schema)
         )
@@ -743,7 +770,7 @@ class ManifestWriter(ABC):
         """Return the manifest file."""
         # once the manifest file is generated, no more entries can be added
         self.closed = True
-        min_sequence_number = self._min_data_sequence_number or UNASSIGNED_SEQ
+        min_sequence_number = self._min_sequence_number or UNASSIGNED_SEQ
         return ManifestFile(
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),
@@ -774,17 +801,42 @@ class ManifestWriter(ABC):
         elif entry.status == ManifestEntryStatus.DELETED:
             self._deleted_files += 1
             self._deleted_rows += entry.data_file.record_count
+        else:
+            raise ValueError(f"Unknown entry: {entry.status}")
 
         self._partitions.append(entry.data_file.partition)
 
         if (
             (entry.status == ManifestEntryStatus.ADDED or entry.status == ManifestEntryStatus.EXISTING)
-            and entry.data_sequence_number is not None
-            and (self._min_data_sequence_number is None or entry.data_sequence_number < self._min_data_sequence_number)
+            and entry.sequence_number is not None
+            and (self._min_sequence_number is None or entry.sequence_number < self._min_sequence_number)
         ):
-            self._min_data_sequence_number = entry.data_sequence_number
+            self._min_sequence_number = entry.sequence_number
 
         self._writer.write_block([self.prepare_entry(entry)])
+        return self
+
+    def add(self, entry: ManifestEntry) -> ManifestWriter:
+        if entry.sequence_number is not None and entry.sequence_number >= 0:
+            self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, entry.sequence_number, entry.data_file))
+        else:
+            self.add_entry(self._reused_entry_wrapper._wrap_append(self._snapshot_id, None, entry.data_file))
+        return self
+
+    def delete(self, entry: ManifestEntry) -> ManifestWriter:
+        self.add_entry(
+            self._reused_entry_wrapper._wrap_delete(
+                self._snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
+            )
+        )
+        return self
+
+    def existing(self, entry: ManifestEntry) -> ManifestWriter:
+        self.add_entry(
+            self._reused_entry_wrapper._wrap_existing(
+                entry.snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
+            )
+        )
         return self
 
 
@@ -795,19 +847,13 @@ class ManifestWriterV1(ManifestWriter):
             schema,
             output_file,
             snapshot_id,
-            {
-                "schema": schema.model_dump_json(),
-                "partition-spec": spec.model_dump_json(),
-                "partition-spec-id": str(spec.spec_id),
-                "format-version": "1",
-            },
         )
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
 
     @property
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> TableVersion:
         return 1
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
@@ -816,29 +862,24 @@ class ManifestWriterV1(ManifestWriter):
 
 class ManifestWriterV2(ManifestWriter):
     def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
-        super().__init__(
-            spec,
-            schema,
-            output_file,
-            snapshot_id,
-            meta={
-                "schema": schema.model_dump_json(),
-                "partition-spec": spec.model_dump_json(),
-                "partition-spec-id": str(spec.spec_id),
-                "format-version": "2",
-                "content": "data",
-            },
-        )
+        super().__init__(spec, schema, output_file, snapshot_id)
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
 
     @property
-    def version(self) -> Literal[1, 2]:
+    def version(self) -> TableVersion:
         return 2
 
+    @property
+    def _meta(self) -> Dict[str, str]:
+        return {
+            **super()._meta,
+            "content": "data",
+        }
+
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
-        if entry.data_sequence_number is None:
+        if entry.sequence_number is None:
             if entry.snapshot_id is not None and entry.snapshot_id != self._snapshot_id:
                 raise ValueError(f"Found unassigned sequence number for an entry from snapshot: {entry.snapshot_id}")
             if entry.status != ManifestEntryStatus.ADDED:
@@ -847,7 +888,7 @@ class ManifestWriterV2(ManifestWriter):
 
 
 def write_manifest(
-    format_version: Literal[1, 2], spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
+    format_version: TableVersion, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
 ) -> ManifestWriter:
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id)
@@ -858,14 +899,14 @@ def write_manifest(
 
 
 class ManifestListWriter(ABC):
-    _format_version: Literal[1, 2]
+    _format_version: TableVersion
     _output_file: OutputFile
     _meta: Dict[str, str]
     _manifest_files: List[ManifestFile]
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, format_version: Literal[1, 2], output_file: OutputFile, meta: Dict[str, Any]):
+    def __init__(self, format_version: TableVersion, output_file: OutputFile, meta: Dict[str, Any]):
         self._format_version = format_version
         self._output_file = output_file
         self._meta = meta
@@ -934,7 +975,7 @@ class ManifestListWriterV2(ManifestListWriter):
         self._sequence_number = sequence_number
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
-        wrapped_manifest_file = ManifestFile(*manifest_file.record_fields())
+        wrapped_manifest_file = copy(manifest_file)
 
         if wrapped_manifest_file.sequence_number == UNASSIGNED_SEQ:
             # if the sequence number is being assigned here, then the manifest must be created by the current operation.
@@ -957,7 +998,7 @@ class ManifestListWriterV2(ManifestListWriter):
 
 
 def write_manifest_list(
-    format_version: Literal[1, 2],
+    format_version: TableVersion,
     output_file: OutputFile,
     snapshot_id: int,
     parent_snapshot_id: Optional[int],

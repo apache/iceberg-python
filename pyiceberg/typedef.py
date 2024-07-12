@@ -25,7 +25,7 @@ from typing import (
     Callable,
     Dict,
     Generic,
-    List,
+    Literal,
     Optional,
     Protocol,
     Set,
@@ -37,6 +37,7 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
+from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from pyiceberg.types import StructType
@@ -51,7 +52,7 @@ class FrozenDict(Dict[Any, Any]):
         raise AttributeError("FrozenDict does not support .update()")
 
 
-UTF8 = 'utf-8'
+UTF8 = "utf-8"
 
 EMPTY_DICT = FrozenDict()
 
@@ -196,6 +197,13 @@ class Record(StructProtocol):
         """Return the string representation of the Record class."""
         return f"{self.__class__.__name__}[{', '.join(f'{key}={repr(value)}' for key, value in self.__dict__.items() if not key.startswith('_'))}]"
 
-    def record_fields(self) -> List[str]:
-        """Return values of all the fields of the Record class except those specified in skip_fields."""
-        return [self.__getattribute__(v) if hasattr(self, v) else None for v in self._position_to_field_name]
+    def __len__(self) -> int:
+        """Return the number of fields in the Record class."""
+        return len(self._position_to_field_name)
+
+    def __hash__(self) -> int:
+        """Return hash value of the Record class."""
+        return hash(str(self))
+
+
+TableVersion: TypeAlias = Literal[1, 2]

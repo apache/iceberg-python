@@ -64,6 +64,8 @@ from pyiceberg.types import (
 )
 
 if TYPE_CHECKING:
+    import pyarrow as pa
+
     from pyiceberg.table.name_mapping import (
         NameMapping,
     )
@@ -179,6 +181,12 @@ class Schema(IcebergBaseModel):
     def as_struct(self) -> StructType:
         """Return the schema as a struct."""
         return StructType(*self.fields)
+
+    def as_arrow(self) -> "pa.Schema":
+        """Return the schema as an Arrow schema."""
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        return schema_to_pyarrow(self)
 
     def find_field(self, name_or_id: Union[str, int], case_sensitive: bool = True) -> NestedField:
         """Find a field using a field name or field ID.
@@ -1303,11 +1311,11 @@ def _valid_avro_name(name: str) -> bool:
     length = len(name)
     assert length > 0, ValueError("Can not validate empty avro name")
     first = name[0]
-    if not (first.isalpha() or first == '_'):
+    if not (first.isalpha() or first == "_"):
         return False
 
     for character in name[1:]:
-        if not (character.isalnum() or character == '_'):
+        if not (character.isalnum() or character == "_"):
             return False
     return True
 
@@ -1315,17 +1323,17 @@ def _valid_avro_name(name: str) -> bool:
 def _sanitize_name(name: str) -> str:
     sb = []
     first = name[0]
-    if not (first.isalpha() or first == '_'):
+    if not (first.isalpha() or first == "_"):
         sb.append(_sanitize_char(first))
     else:
         sb.append(first)
 
     for character in name[1:]:
-        if not (character.isalnum() or character == '_'):
+        if not (character.isalnum() or character == "_"):
             sb.append(_sanitize_char(character))
         else:
             sb.append(character)
-    return ''.join(sb)
+    return "".join(sb)
 
 
 def _sanitize_char(character: str) -> str:

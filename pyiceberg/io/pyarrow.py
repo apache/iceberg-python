@@ -31,8 +31,10 @@ import itertools
 import logging
 import os
 import re
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
+from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache, singledispatch
@@ -111,6 +113,7 @@ from pyiceberg.manifest import (
     DataFileContent,
     FileFormat,
 )
+from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
     PartnerAccessor,
     PreOrderSchemaVisitor,
@@ -124,7 +127,6 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import AddFileTask, PropertyUtil, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
@@ -152,12 +154,13 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
 if TYPE_CHECKING:
-    from pyiceberg.table import FileScanTask, Table
+    from pyiceberg.table import FileScanTask, WriteTask
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +207,7 @@ class PyArrowFile(InputFile, OutputFile):
         >>> # output_file.create().write(b'foobytes')
     """
 
-    _fs: FileSystem
+    _filesystem: FileSystem
     _path: str
     _buffer_size: int
 
@@ -330,8 +333,8 @@ class PyArrowFileIO(FileIO):
         uri = urlparse(location)
         if not uri.scheme:
             return "file", uri.netloc, os.path.abspath(location)
-        elif uri.scheme == "hdfs":
-            return uri.scheme, uri.netloc, location
+        elif uri.scheme in ("hdfs", "viewfs"):
+            return uri.scheme, uri.netloc, uri.path
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
@@ -354,12 +357,12 @@ class PyArrowFileIO(FileIO):
                 client_kwargs["connect_timeout"] = float(connect_timeout)
 
             return S3FileSystem(**client_kwargs)
-        elif scheme == "hdfs":
+        elif scheme in ("hdfs", "viewfs"):
             from pyarrow.fs import HadoopFileSystem
 
             hdfs_kwargs: Dict[str, Any] = {}
             if netloc:
-                return HadoopFileSystem.from_uri(f"hdfs://{netloc}")
+                return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
             if host := self.properties.get(HDFS_HOST):
                 hdfs_kwargs["host"] = host
             if port := self.properties.get(HDFS_PORT):
@@ -455,16 +458,32 @@ class PyArrowFileIO(FileIO):
                 raise PermissionError(f"Cannot delete file, access denied: {location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
 
+    def __getstate__(self) -> Dict[str, Any]:
+        """Create a dictionary of the PyArrowFileIO fields used when pickling."""
+        fileio_copy = copy(self.__dict__)
+        fileio_copy["fs_by_scheme"] = None
+        return fileio_copy
 
-def schema_to_pyarrow(schema: Union[Schema, IcebergType], metadata: Dict[bytes, bytes] = EMPTY_DICT) -> pa.schema:
-    return visit(schema, _ConvertToArrowSchema(metadata))
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Deserialize the state into a PyArrowFileIO instance."""
+        self.__dict__ = state
+        self.fs_by_scheme = lru_cache(self._initialize_fs)
+
+
+def schema_to_pyarrow(
+    schema: Union[Schema, IcebergType],
+    metadata: Dict[bytes, bytes] = EMPTY_DICT,
+    include_field_ids: bool = True,
+) -> pa.schema:
+    return visit(schema, _ConvertToArrowSchema(metadata, include_field_ids))
 
 
 class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     _metadata: Dict[bytes, bytes]
 
-    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT) -> None:
+    def __init__(self, metadata: Dict[bytes, bytes] = EMPTY_DICT, include_field_ids: bool = True) -> None:
         self._metadata = metadata
+        self._include_field_ids = include_field_ids
 
     def schema(self, _: Schema, struct_result: pa.StructType) -> pa.schema:
         return pa.schema(list(struct_result), metadata=self._metadata)
@@ -473,18 +492,22 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.struct(field_results)
 
     def field(self, field: NestedField, field_result: pa.DataType) -> pa.Field:
+        metadata = {}
+        if field.doc:
+            metadata[PYARROW_FIELD_DOC_KEY] = field.doc
+        if self._include_field_ids:
+            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+
         return pa.field(
             name=field.name,
             type=field_result,
             nullable=field.optional,
-            metadata={PYARROW_FIELD_DOC_KEY: field.doc, PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)}
-            if field.doc
-            else {PYARROW_PARQUET_FIELD_ID_KEY: str(field.field_id)},
+            metadata=metadata,
         )
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
         element_field = self.field(list_type.element_field, element_result)
-        return pa.list_(value_type=element_field)
+        return pa.large_list(value_type=element_field)
 
     def map(self, map_type: MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
         key_field = self.field(map_type.key_field, key_result)
@@ -528,7 +551,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.timestamp(unit="us", tz="UTC")
 
     def visit_string(self, _: StringType) -> pa.DataType:
-        return pa.string()
+        return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
         return pa.binary(16)
@@ -635,20 +658,22 @@ def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedAr
     }
 
 
-def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], rows: int) -> pa.Array:
+def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
     if len(positional_deletes) == 1:
         all_chunks = positional_deletes[0]
     else:
         all_chunks = pa.chunked_array(itertools.chain(*[arr.chunks for arr in positional_deletes]))
-    return np.setdiff1d(np.arange(rows), all_chunks, assume_unique=False)
+    return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
 
 
-def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = None) -> Schema:
+def pyarrow_to_schema(
+    schema: pa.Schema, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False
+) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        visitor = _ConvertToIceberg()
+        visitor = _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
     elif name_mapping is not None:
-        visitor = _ConvertToIceberg(name_mapping=name_mapping)
+        visitor = _ConvertToIceberg(name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
     else:
         raise ValueError(
             "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
@@ -656,8 +681,12 @@ def pyarrow_to_schema(schema: pa.Schema, name_mapping: Optional[NameMapping] = N
     return visit_pyarrow(schema, visitor)
 
 
-def _pyarrow_to_schema_without_ids(schema: pa.Schema) -> Schema:
-    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+def _pyarrow_to_schema_without_ids(schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> Schema:
+    return visit_pyarrow(schema, _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))
+
+
+def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
+    return visit_pyarrow(schema, _ConvertToLargeTypes())
 
 
 @singledispatch
@@ -716,6 +745,16 @@ def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:
     visitor.after_map_value(obj.item_field)
 
     return visitor.map(obj, key_result, value_result)
+
+
+@visit_pyarrow.register(pa.DictionaryType)
+def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
+    # Parquet has no dictionary type. dictionary-encoding is handled
+    # as an encoding detail, not as a separate type.
+    # We will follow this approach in determining the Iceberg Type,
+    # as we only support parquet in PyIceberg for now.
+    logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
+    return visit_pyarrow(obj.value_type, visitor)
 
 
 @visit_pyarrow.register(pa.DataType)
@@ -815,9 +854,10 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     _field_names: List[str]
     _name_mapping: Optional[NameMapping]
 
-    def __init__(self, name_mapping: Optional[NameMapping] = None) -> None:
+    def __init__(self, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False) -> None:
         self._field_names = []
         self._name_mapping = name_mapping
+        self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _field_id(self, field: pa.Field) -> int:
         if self._name_mapping:
@@ -884,11 +924,24 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return TimeType()
         elif pa.types.is_timestamp(primitive):
             primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit == "us":
-                if primitive.tz == "UTC" or primitive.tz == "+00:00":
-                    return TimestamptzType()
-                elif primitive.tz is None:
-                    return TimestampType()
+            if primitive.unit in ("s", "ms", "us"):
+                # Supported types, will be upcast automatically to 'us'
+                pass
+            elif primitive.unit == "ns":
+                if self._downcast_ns_timestamp_to_us:
+                    logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
+                else:
+                    raise TypeError(
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                    )
+            else:
+                raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
+
+            if primitive.tz == "UTC" or primitive.tz == "+00:00":
+                return TimestamptzType()
+            elif primitive.tz is None:
+                return TimestampType()
+
         elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
@@ -922,6 +975,30 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         self._field_names.pop()
 
 
+class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+        return pa.schema(struct_result)
+
+    def struct(self, struct: pa.StructType, field_results: List[pa.Field]) -> pa.StructType:
+        return pa.struct(field_results)
+
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+        return field.with_type(field_result)
+
+    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
+        return pa.large_list(element_result)
+
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+        return pa.map_(key_result, value_result)
+
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+        if primitive == pa.string():
+            return pa.large_string()
+        elif primitive == pa.binary():
+            return pa.large_binary()
+        return primitive
+
+
 class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
     Converts PyArrowSchema to Iceberg Schema with all -1 ids.
@@ -937,6 +1014,69 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
         return -1
 
 
+def _task_to_record_batches(
+    fs: FileSystem,
+    task: FileScanTask,
+    bound_row_filter: BooleanExpression,
+    projected_schema: Schema,
+    projected_field_ids: Set[int],
+    positional_deletes: Optional[List[ChunkedArray]],
+    case_sensitive: bool,
+    name_mapping: Optional[NameMapping] = None,
+) -> Iterator[pa.RecordBatch]:
+    _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
+    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
+    with fs.open_input_file(path) as fin:
+        fragment = arrow_format.make_fragment(fin)
+        physical_schema = fragment.physical_schema
+        # In V1 and V2 table formats, we only support Timestamp 'us' in Iceberg Schema
+        # Hence it is reasonable to always cast 'ns' timestamp to 'us' on read.
+        # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
+        # the table format version.
+        file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
+        pyarrow_filter = None
+        if bound_row_filter is not AlwaysTrue():
+            translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
+            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
+            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
+
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
+
+        if file_schema is None:
+            raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
+
+        fragment_scanner = ds.Scanner.from_fragment(
+            fragment=fragment,
+            # With PyArrow 16.0.0 there is an issue with casting record-batches:
+            # https://github.com/apache/arrow/issues/41884
+            # https://github.com/apache/arrow/issues/43183
+            # Would be good to remove this later on
+            schema=_pyarrow_schema_ensure_large_types(physical_schema),
+            # This will push down the query to Arrow.
+            # But in case there are positional deletes, we have to apply them first
+            filter=pyarrow_filter if not positional_deletes else None,
+            columns=[col.name for col in file_project_schema.columns],
+        )
+
+        current_index = 0
+        batches = fragment_scanner.to_batches()
+        for batch in batches:
+            if positional_deletes:
+                # Create the mask of indices that we're interested in
+                indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
+                batch = batch.take(indices)
+                # Apply the user filter
+                if pyarrow_filter is not None:
+                    # we need to switch back and forth between RecordBatch and Table
+                    # as Expression filter isn't yet supported in RecordBatch
+                    # https://github.com/apache/arrow/issues/39220
+                    arrow_table = pa.Table.from_batches([batch])
+                    arrow_table = arrow_table.filter(pyarrow_filter)
+                    batch = arrow_table.to_batches()[0]
+            yield to_requested_schema(projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True)
+            current_index += len(batch)
+
+
 def _task_to_table(
     fs: FileSystem,
     task: FileScanTask,
@@ -945,81 +1085,18 @@ def _task_to_table(
     projected_field_ids: Set[int],
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
-    row_counts: List[int],
-    limit: Optional[int] = None,
     name_mapping: Optional[NameMapping] = None,
 ) -> Optional[pa.Table]:
-    if limit and sum(row_counts) >= limit:
+    batches = list(
+        _task_to_record_batches(
+            fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+        )
+    )
+
+    if len(batches) > 0:
+        return pa.Table.from_batches(batches)
+    else:
         return None
-
-    _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
-    arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
-    with fs.open_input_file(path) as fin:
-        fragment = arrow_format.make_fragment(fin)
-        physical_schema = fragment.physical_schema
-        schema_raw = None
-        if metadata := physical_schema.metadata:
-            schema_raw = metadata.get(ICEBERG_SCHEMA)
-        file_schema = (
-            Schema.model_validate_json(schema_raw) if schema_raw is not None else pyarrow_to_schema(physical_schema, name_mapping)
-        )
-
-        pyarrow_filter = None
-        if bound_row_filter is not AlwaysTrue():
-            translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
-            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            pyarrow_filter = expression_to_pyarrow(bound_file_filter)
-
-        file_project_schema = sanitize_column_names(prune_columns(file_schema, projected_field_ids, select_full_types=False))
-
-        if file_schema is None:
-            raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
-
-        fragment_scanner = ds.Scanner.from_fragment(
-            fragment=fragment,
-            schema=physical_schema,
-            # This will push down the query to Arrow.
-            # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
-            columns=[col.name for col in file_project_schema.columns],
-        )
-
-        if positional_deletes:
-            # Create the mask of indices that we're interested in
-            indices = _combine_positional_deletes(positional_deletes, fragment.count_rows())
-
-            if limit:
-                if pyarrow_filter is not None:
-                    # In case of the filter, we don't exactly know how many rows
-                    # we need to fetch upfront, can be optimized in the future:
-                    # https://github.com/apache/arrow/issues/35301
-                    arrow_table = fragment_scanner.take(indices)
-                    arrow_table = arrow_table.filter(pyarrow_filter)
-                    arrow_table = arrow_table.slice(0, limit)
-                else:
-                    arrow_table = fragment_scanner.take(indices[0:limit])
-            else:
-                arrow_table = fragment_scanner.take(indices)
-                # Apply the user filter
-                if pyarrow_filter is not None:
-                    arrow_table = arrow_table.filter(pyarrow_filter)
-        else:
-            # If there are no deletes, we can just take the head
-            # and the user-filter is already applied
-            if limit:
-                arrow_table = fragment_scanner.head(limit)
-            else:
-                arrow_table = fragment_scanner.to_table()
-
-        if len(arrow_table) < 1:
-            return None
-
-        if limit is not None and sum(row_counts) >= limit:
-            return None
-
-        row_counts.append(len(arrow_table))
-
-        return to_requested_schema(projected_schema, file_project_schema, arrow_table)
 
 
 def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1042,7 +1119,8 @@ def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dic
 
 def project_table(
     tasks: Iterable[FileScanTask],
-    table: Table,
+    table_metadata: TableMetadata,
+    io: FileIO,
     row_filter: BooleanExpression,
     projected_schema: Schema,
     case_sensitive: bool = True,
@@ -1052,7 +1130,8 @@ def project_table(
 
     Args:
         tasks (Iterable[FileScanTask]): A URI or a path to a local file.
-        table (Table): The table that's being queried.
+        table_metadata (TableMetadata): The table metadata of the table that's being queried
+        io (FileIO): A FileIO to open streams to the object store
         row_filter (BooleanExpression): The expression for filtering rows.
         projected_schema (Schema): The output schema.
         case_sensitive (bool): Case sensitivity when looking up column names.
@@ -1061,30 +1140,29 @@ def project_table(
     Raises:
         ResolveError: When an incompatible query is done.
     """
-    scheme, netloc, _ = PyArrowFileIO.parse_location(table.location())
-    if isinstance(table.io, PyArrowFileIO):
-        fs = table.io.fs_by_scheme(scheme, netloc)
+    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
+    if isinstance(io, PyArrowFileIO):
+        fs = io.fs_by_scheme(scheme, netloc)
     else:
         try:
             from pyiceberg.io.fsspec import FsspecFileIO
 
-            if isinstance(table.io, FsspecFileIO):
+            if isinstance(io, FsspecFileIO):
                 from pyarrow.fs import PyFileSystem
 
-                fs = PyFileSystem(FSSpecHandler(table.io.get_fs(scheme)))
+                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
             else:
-                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {table.io}")
+                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
         except ModuleNotFoundError as e:
             # When FsSpec is not installed
-            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {table.io}") from e
+            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
-    bound_row_filter = bind(table.schema(), row_filter, case_sensitive=case_sensitive)
+    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
 
     projected_field_ids = {
         id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
     }.union(extract_field_ids(bound_row_filter))
 
-    row_counts: List[int] = []
     deletes_per_file = _read_all_delete_files(fs, tasks)
     executor = ExecutorFactory.get_or_create()
     futures = [
@@ -1097,21 +1175,20 @@ def project_table(
             projected_field_ids,
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
-            row_counts,
-            limit,
-            table.name_mapping(),
+            table_metadata.name_mapping(),
         )
         for task in tasks
     ]
-
+    total_row_count = 0
     # for consistent ordering, we need to maintain future order
     futures_index = {f: i for i, f in enumerate(futures)}
     completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
     for future in concurrent.futures.as_completed(futures):
         completed_futures.add(future)
-
+        if table_result := future.result():
+            total_row_count += len(table_result)
         # stop early if limit is satisfied
-        if limit is not None and sum(row_counts) >= limit:
+        if limit is not None and total_row_count >= limit:
             break
 
     # by now, we've either completed all tasks or satisfied the limit
@@ -1121,9 +1198,9 @@ def project_table(
     tables = [f.result() for f in completed_futures if f.result()]
 
     if len(tables) < 1:
-        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema))
+        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
 
-    result = pa.concat_tables(tables)
+    result = pa.concat_tables(tables, promote_options="permissive")
 
     if limit is not None:
         return result.slice(0, limit)
@@ -1131,36 +1208,133 @@ def project_table(
     return result
 
 
-def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:
-    struct_array = visit_with_partner(requested_schema, table, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
+def project_batches(
+    tasks: Iterable[FileScanTask],
+    table_metadata: TableMetadata,
+    io: FileIO,
+    row_filter: BooleanExpression,
+    projected_schema: Schema,
+    case_sensitive: bool = True,
+    limit: Optional[int] = None,
+) -> Iterator[pa.RecordBatch]:
+    """Resolve the right columns based on the identifier.
 
-    arrays = []
-    fields = []
-    for pos, field in enumerate(requested_schema.fields):
-        array = struct_array.field(pos)
-        arrays.append(array)
-        fields.append(pa.field(field.name, array.type, field.optional))
-    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+    Args:
+        tasks (Iterable[FileScanTask]): A URI or a path to a local file.
+        table_metadata (TableMetadata): The table metadata of the table that's being queried
+        io (FileIO): A FileIO to open streams to the object store
+        row_filter (BooleanExpression): The expression for filtering rows.
+        projected_schema (Schema): The output schema.
+        case_sensitive (bool): Case sensitivity when looking up column names.
+        limit (Optional[int]): Limit the number of records.
+
+    Raises:
+        ResolveError: When an incompatible query is done.
+    """
+    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
+    if isinstance(io, PyArrowFileIO):
+        fs = io.fs_by_scheme(scheme, netloc)
+    else:
+        try:
+            from pyiceberg.io.fsspec import FsspecFileIO
+
+            if isinstance(io, FsspecFileIO):
+                from pyarrow.fs import PyFileSystem
+
+                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
+            else:
+                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
+        except ModuleNotFoundError as e:
+            # When FsSpec is not installed
+            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
+
+    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+
+    projected_field_ids = {
+        id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
+    }.union(extract_field_ids(bound_row_filter))
+
+    deletes_per_file = _read_all_delete_files(fs, tasks)
+
+    total_row_count = 0
+
+    for task in tasks:
+        batches = _task_to_record_batches(
+            fs,
+            task,
+            bound_row_filter,
+            projected_schema,
+            projected_field_ids,
+            deletes_per_file.get(task.file.file_path),
+            case_sensitive,
+            table_metadata.name_mapping(),
+        )
+        for batch in batches:
+            if limit is not None:
+                if total_row_count + len(batch) >= limit:
+                    yield batch.slice(0, limit - total_row_count)
+                    break
+            yield batch
+            total_row_count += len(batch)
+
+
+def to_requested_schema(
+    requested_schema: Schema,
+    file_schema: Schema,
+    batch: pa.RecordBatch,
+    downcast_ns_timestamp_to_us: bool = False,
+    include_field_ids: bool = False,
+) -> pa.RecordBatch:
+    # We could re-use some of these visitors
+    struct_array = visit_with_partner(
+        requested_schema,
+        batch,
+        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
+        ArrowAccessor(file_schema),
+    )
+    return pa.RecordBatch.from_struct_array(struct_array)
 
 
 class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Array]]):
     file_schema: Schema
+    _include_field_ids: bool
 
-    def __init__(self, file_schema: Schema):
+    def __init__(self, file_schema: Schema, downcast_ns_timestamp_to_us: bool = False, include_field_ids: bool = False) -> None:
         self.file_schema = file_schema
+        self._include_field_ids = include_field_ids
+        self.downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self.file_schema.find_field(field.field_id)
-        if field.field_type.is_primitive and field.field_type != file_field.field_type:
-            return values.cast(schema_to_pyarrow(promote(file_field.field_type, field.field_type)))
+
+        if field.field_type.is_primitive:
+            if field.field_type != file_field.field_type:
+                return values.cast(
+                    schema_to_pyarrow(promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids)
+                )
+            elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
+                # Downcasting of nanoseconds to microseconds
+                if (
+                    pa.types.is_timestamp(target_type)
+                    and target_type.unit == "us"
+                    and pa.types.is_timestamp(values.type)
+                    and values.type.unit == "ns"
+                ):
+                    return values.cast(target_type, safe=False)
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
+        metadata = {}
+        if field.doc:
+            metadata[PYARROW_FIELD_DOC_KEY] = field.doc
+        if self._include_field_ids:
+            metadata[PYARROW_PARQUET_FIELD_ID_KEY] = str(field.field_id)
+
         return pa.field(
             name=field.name,
             type=arrow_type,
             nullable=field.optional,
-            metadata={DOC: field.doc} if field.doc is not None else None,
+            metadata=metadata,
         )
 
     def schema(self, schema: Schema, schema_partner: Optional[pa.Array], struct_result: Optional[pa.Array]) -> Optional[pa.Array]:
@@ -1179,7 +1353,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional:
-                arrow_type = schema_to_pyarrow(field.field_type)
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 fields.append(self._construct_field(field, arrow_type))
             else:
@@ -1191,13 +1365,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         return field_array
 
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
-        if isinstance(list_array, pa.ListArray) and value_array is not None:
+        if isinstance(list_array, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) and value_array is not None:
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                list_array = pa.ListArray.from_arrays(list_array.offsets, value_array)
+                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
 
-            arrow_field = pa.list_(self._construct_field(list_type.element_field, value_array.type))
+            arrow_field = pa.large_list(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
         else:
             return None
@@ -1241,13 +1415,15 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
 
             if isinstance(partner_struct, pa.StructArray):
                 return partner_struct.field(name)
-            elif isinstance(partner_struct, pa.Table):
-                return partner_struct.column(name).combine_chunks()
+            elif isinstance(partner_struct, pa.RecordBatch):
+                return partner_struct.column(name)
+            else:
+                raise ValueError(f"Cannot find {name} in expected partner_struct type {type(partner_struct)}")
 
         return None
 
     def list_element_partner(self, partner_list: Optional[pa.Array]) -> Optional[pa.Array]:
-        return partner_list.values if isinstance(partner_list, pa.ListArray) else None
+        return partner_list.values if isinstance(partner_list, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) else None
 
     def map_key_partner(self, partner_map: Optional[pa.Array]) -> Optional[pa.Array]:
         return partner_map.keys if isinstance(partner_map, pa.MapArray) else None
@@ -1438,6 +1614,8 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
     _default_mode: str
 
     def __init__(self, schema: Schema, properties: Dict[str, str]):
+        from pyiceberg.table import TableProperties
+
         self._schema = schema
         self._properties = properties
         self._default_mode = self._properties.get(
@@ -1473,6 +1651,8 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
         return k + v
 
     def primitive(self, primitive: PrimitiveType) -> List[StatisticsCollector]:
+        from pyiceberg.table import TableProperties
+
         column_name = self._schema.find_column_name(self._field_id)
         if column_name is None:
             return []
@@ -1594,29 +1774,88 @@ def parquet_path_to_id_mapping(
     return result
 
 
-def fill_parquet_file_metadata(
-    data_file: DataFile,
+@dataclass(frozen=True)
+class DataFileStatistics:
+    record_count: int
+    column_sizes: Dict[int, int]
+    value_counts: Dict[int, int]
+    null_value_counts: Dict[int, int]
+    nan_value_counts: Dict[int, int]
+    column_aggregates: Dict[int, StatsAggregator]
+    split_offsets: List[int]
+
+    def _partition_value(self, partition_field: PartitionField, schema: Schema) -> Any:
+        if partition_field.source_id not in self.column_aggregates:
+            return None
+
+        if not partition_field.transform.preserves_order:
+            raise ValueError(
+                f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
+            )
+
+        lower_value = partition_record_value(
+            partition_field=partition_field,
+            value=self.column_aggregates[partition_field.source_id].current_min,
+            schema=schema,
+        )
+        upper_value = partition_record_value(
+            partition_field=partition_field,
+            value=self.column_aggregates[partition_field.source_id].current_max,
+            schema=schema,
+        )
+        if lower_value != upper_value:
+            raise ValueError(
+                f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
+            )
+        return lower_value
+
+    def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
+        return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
+
+    def to_serialized_dict(self) -> Dict[str, Any]:
+        lower_bounds = {}
+        upper_bounds = {}
+
+        for k, agg in self.column_aggregates.items():
+            _min = agg.min_as_bytes()
+            if _min is not None:
+                lower_bounds[k] = _min
+            _max = agg.max_as_bytes()
+            if _max is not None:
+                upper_bounds[k] = _max
+        return {
+            "record_count": self.record_count,
+            "column_sizes": self.column_sizes,
+            "value_counts": self.value_counts,
+            "null_value_counts": self.null_value_counts,
+            "nan_value_counts": self.nan_value_counts,
+            "lower_bounds": lower_bounds,
+            "upper_bounds": upper_bounds,
+            "split_offsets": self.split_offsets,
+        }
+
+
+def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
-) -> None:
+) -> DataFileStatistics:
     """
-    Compute and fill the following fields of the DataFile object.
+    Compute and return DataFileStatistics that includes the following.
 
-    - file_format
+    - record_count
     - column_sizes
     - value_counts
     - null_value_counts
     - nan_value_counts
-    - lower_bounds
-    - upper_bounds
+    - column_aggregates
     - split_offsets
 
     Args:
-        data_file (DataFile): A DataFile object representing the Parquet file for which metadata is to be filled.
         parquet_metadata (pyarrow.parquet.FileMetaData): A pyarrow metadata object.
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
+        parquet_column_mapping (Dict[str, int]): The mapping of the parquet file name to the field ID
     """
     if parquet_metadata.num_columns != len(stats_columns):
         raise ValueError(
@@ -1695,113 +1934,178 @@ def fill_parquet_file_metadata(
 
     split_offsets.sort()
 
-    lower_bounds = {}
-    upper_bounds = {}
-
-    for k, agg in col_aggs.items():
-        _min = agg.min_as_bytes()
-        if _min is not None:
-            lower_bounds[k] = _min
-        _max = agg.max_as_bytes()
-        if _max is not None:
-            upper_bounds[k] = _max
-
     for field_id in invalidate_col:
-        del lower_bounds[field_id]
-        del upper_bounds[field_id]
+        del col_aggs[field_id]
         del null_value_counts[field_id]
 
-    data_file.record_count = parquet_metadata.num_rows
-    data_file.column_sizes = column_sizes
-    data_file.value_counts = value_counts
-    data_file.null_value_counts = null_value_counts
-    data_file.nan_value_counts = nan_value_counts
-    data_file.lower_bounds = lower_bounds
-    data_file.upper_bounds = upper_bounds
-    data_file.split_offsets = split_offsets
+    return DataFileStatistics(
+        record_count=parquet_metadata.num_rows,
+        column_sizes=column_sizes,
+        value_counts=value_counts,
+        null_value_counts=null_value_counts,
+        nan_value_counts=nan_value_counts,
+        column_aggregates=col_aggs,
+        split_offsets=split_offsets,
+    )
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    task = next(tasks)
-
-    try:
-        _ = next(tasks)
-        # If there are more tasks, raise an exception
-        raise NotImplementedError("Only unpartitioned writes are supported: https://github.com/apache/iceberg-python/issues/208")
-    except StopIteration:
-        pass
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
-
-    file_path = f'{table_metadata.location}/data/{task.generate_data_file_filename("parquet")}'
-    schema = table_metadata.schema()
-    arrow_file_schema = schema_to_pyarrow(schema)
-
-    fo = io.new_output(file_path)
     row_group_size = PropertyUtil.property_as_int(
         properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
     )
-    with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=arrow_file_schema, **parquet_writer_kwargs) as writer:
-            writer.write_table(task.df, row_group_size=row_group_size)
 
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=file_path,
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=len(fo),
-        # After this has been fixed:
-        # https://github.com/apache/iceberg-python/issues/271
-        # sort_order_id=task.sort_order_id,
-        sort_order_id=None,
-        # Just copy these from the table for now
-        spec_id=table_metadata.default_spec_id,
-        equality_ids=None,
-        key_metadata=None,
+    def write_parquet(task: WriteTask) -> DataFile:
+        table_schema = task.schema
+
+        # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
+        # otherwise use the original schema
+        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+            file_schema = sanitized_schema
+        else:
+            file_schema = table_schema
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        batches = [
+            to_requested_schema(
+                requested_schema=file_schema,
+                file_schema=table_schema,
+                batch=batch,
+                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                include_field_ids=True,
+            )
+            for batch in task.record_batches
+        ]
+        arrow_table = pa.Table.from_batches(batches)
+        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
+        fo = io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
+                writer.write(arrow_table, row_group_size=row_group_size)
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=writer.writer.metadata,
+            stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
+        )
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=task.partition_key.partition if task.partition_key else Record(),
+            file_size_in_bytes=len(fo),
+            # After this has been fixed:
+            # https://github.com/apache/iceberg-python/issues/271
+            # sort_order_id=task.sort_order_id,
+            sort_order_id=None,
+            # Just copy these from the table for now
+            spec_id=table_metadata.default_spec_id,
+            equality_ids=None,
+            key_metadata=None,
+            **statistics.to_serialized_dict(),
+        )
+
+        return data_file
+
+    executor = ExecutorFactory.get_or_create()
+    data_files = executor.map(write_parquet, tasks)
+
+    return iter(data_files)
+
+
+def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[pa.RecordBatch]]:
+    from pyiceberg.utils.bin_packing import PackingIterator
+
+    avg_row_size_bytes = tbl.nbytes / tbl.num_rows
+    target_rows_per_file = target_file_size // avg_row_size_bytes
+    batches = tbl.to_batches(max_chunksize=target_rows_per_file)
+    bin_packed_record_batches = PackingIterator(
+        items=batches,
+        target_weight=target_file_size,
+        lookback=len(batches),  # ignore lookback
+        weight_func=lambda x: x.nbytes,
+        largest_bin_first=False,
     )
-
-    fill_parquet_file_metadata(
-        data_file=data_file,
-        parquet_metadata=writer.writer.metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(schema),
-    )
-    return iter([data_file])
+    return bin_packed_record_batches
 
 
-def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[AddFileTask]) -> Iterator[DataFile]:
-    for task in tasks:
-        input_file = io.new_input(task.file_path)
+def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> None:
+    """
+    Check if the `table_schema` is compatible with `other_schema`.
+
+    Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+
+    Raises:
+        ValueError: If the schemas are not compatible.
+    """
+    name_mapping = table_schema.name_mapping
+    try:
+        task_schema = pyarrow_to_schema(
+            other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
+    except ValueError as e:
+        other_schema = _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
+        raise ValueError(
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+        ) from e
+
+    if table_schema.as_struct() != task_schema.as_struct():
+        from rich.console import Console
+        from rich.table import Table as RichTable
+
+        console = Console(record=True)
+
+        rich_table = RichTable(show_header=True, header_style="bold")
+        rich_table.add_column("")
+        rich_table.add_column("Table field")
+        rich_table.add_column("Dataframe field")
+
+        for lhs in table_schema.fields:
+            try:
+                rhs = task_schema.find_field(lhs.field_id)
+                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
+            except ValueError:
+                rich_table.add_row("❌", str(lhs), "Missing")
+
+        console.print(rich_table)
+        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+
+
+def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
+    for file_path in file_paths:
+        input_file = io.new_input(file_path)
         with input_file.open() as input_stream:
             parquet_metadata = pq.read_metadata(input_stream)
 
         if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
             raise NotImplementedError(
-                f"Cannot add file {task.file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
+                f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
             )
-
         schema = table_metadata.schema()
+        _check_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=parquet_metadata,
+            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
         data_file = DataFile(
             content=DataFileContent.DATA,
-            file_path=task.file_path,
+            file_path=file_path,
             file_format=FileFormat.PARQUET,
-            partition=task.partition_field_value,
-            record_count=parquet_metadata.num_rows,
+            partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
             file_size_in_bytes=len(input_file),
             sort_order_id=None,
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
             key_metadata=None,
+            **statistics.to_serialized_dict(),
         )
-        fill_parquet_file_metadata(
-            data_file=data_file,
-            parquet_metadata=parquet_metadata,
-            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
-        )
+
         yield data_file
 
 
@@ -1810,6 +2114,8 @@ PYARROW_UNCOMPRESSED_CODEC = "none"
 
 
 def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
+    from pyiceberg.table import PropertyUtil, TableProperties
+
     for key_pattern in [
         TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         TableProperties.PARQUET_PAGE_ROW_LIMIT,
@@ -1847,3 +2153,150 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
         ),
     }
+
+
+def _dataframe_to_data_files(
+    table_metadata: TableMetadata,
+    df: pa.Table,
+    io: FileIO,
+    write_uuid: Optional[uuid.UUID] = None,
+    counter: Optional[itertools.count[int]] = None,
+) -> Iterable[DataFile]:
+    """Convert a PyArrow table into a DataFile.
+
+    Returns:
+        An iterable that supplies datafiles that represent the table.
+    """
+    from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+
+    counter = counter or itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
+    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+
+    if table_metadata.spec().is_unpartitioned():
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                for batches in bin_pack_arrow_table(df, target_file_size)
+            ]),
+        )
+    else:
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter([
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=table_metadata.schema(),
+                )
+                for partition in partitions
+                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+            ]),
+        )
+
+
+@dataclass(frozen=True)
+class _TablePartition:
+    partition_key: PartitionKey
+    arrow_table_partition: pa.Table
+
+
+def _get_table_partitions(
+    arrow_table: pa.Table,
+    partition_spec: PartitionSpec,
+    schema: Schema,
+    slice_instructions: list[dict[str, Any]],
+) -> list[_TablePartition]:
+    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
+
+    partition_fields = partition_spec.fields
+
+    offsets = [inst["offset"] for inst in sorted_slice_instructions]
+    projected_and_filtered = {
+        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
+        .take(offsets)
+        .to_pylist()
+        for partition_field in partition_fields
+    }
+
+    table_partitions = []
+    for idx, inst in enumerate(sorted_slice_instructions):
+        partition_slice = arrow_table.slice(**inst)
+        fieldvalues = [
+            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
+            for partition_field in partition_fields
+        ]
+        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
+        table_partitions.append(_TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
+    return table_partitions
+
+
+def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
+    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+
+    Example:
+    Input:
+    An arrow table with partition key of ['n_legs', 'year'] and with data of
+    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
+     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
+    The algorithm:
+    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement of "at_end".
+    This gives the same table as raw input.
+    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
+    and null_placement : "at_start".
+    This gives:
+    [8, 7, 4, 5, 6, 3, 1, 2, 0]
+    Based on this we get partition groups of indices:
+    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
+    We then retrieve the partition keys by offsets.
+    And slice the arrow table by offsets and lengths of each partition.
+    """
+    partition_columns: List[Tuple[PartitionField, NestedField]] = [
+        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
+    ]
+    partition_values_table = pa.table({
+        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+        for partition, field in partition_columns
+    })
+
+    # Sort by partitions
+    sort_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
+        null_placement="at_end",
+    ).to_pylist()
+    arrow_table = arrow_table.take(sort_indices)
+
+    # Get slice_instructions to group by partitions
+    partition_values_table = partition_values_table.take(sort_indices)
+    reversed_indices = pa.compute.sort_indices(
+        partition_values_table,
+        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
+        null_placement="at_start",
+    ).to_pylist()
+    slice_instructions: List[Dict[str, Any]] = []
+    last = len(reversed_indices)
+    reversed_indices_size = len(reversed_indices)
+    ptr = 0
+    while ptr < reversed_indices_size:
+        group_size = last - reversed_indices[ptr]
+        offset = reversed_indices[ptr]
+        slice_instructions.append({"offset": offset, "length": group_size})
+        last = reversed_indices[ptr]
+        ptr = ptr + group_size
+
+    table_partitions: List[_TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+
+    return table_partitions

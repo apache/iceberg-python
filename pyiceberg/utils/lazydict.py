@@ -66,3 +66,7 @@ class LazyDict(Mapping[K, V]):
         """Return the number of items in the dictionary."""
         source = self._dict or self._build_dict()
         return len(source)
+
+    def __dict__(self) -> Dict[K, V]:  # type: ignore
+        """Convert the lazy dict in a dict."""
+        return self._dict or self._build_dict()

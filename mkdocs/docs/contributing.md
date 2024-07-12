@@ -71,7 +71,7 @@ pip3 install -e ".[s3fs,hive]"
 Install it directly for GitHub (not recommended), but sometimes handy:
 
 ```
-pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[s3fs]"
+pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyarrow]"
 ```
 
 ## Linting
@@ -87,6 +87,16 @@ Pre-commit will automatically fix the violations such as import orders, formatti
 In contrast to the name suggest, it doesn't run the checks on the commit. If this is something that you like, you can set this up by running `pre-commit install`.
 
 You can bump the integrations to the latest version using `pre-commit autoupdate`. This will check if there is a newer version of `{black,mypy,isort,...}` and update the yaml.
+
+## Cleaning
+
+Removal of old cached files generated during the Cython build process:
+
+```bash
+make clean
+```
+
+Helps prevent build failures and unexpected behavior by removing outdated files, ensuring that only up-to-date sources are used & the build environment is always clean.
 
 ## Testing
 

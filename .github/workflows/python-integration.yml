@@ -43,4 +43,4 @@ jobs:
       run: make test-integration
     - name: Show debug logs
       if: ${{ failure() }}
-      run: docker-compose -f dev/docker-compose.yml logs
+      run: docker compose -f dev/docker-compose.yml logs

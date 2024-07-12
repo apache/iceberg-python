@@ -35,6 +35,7 @@ from typing_extensions import Annotated
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
+from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import MetadataLogEntry, Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import (
@@ -49,7 +50,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
-from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -221,7 +222,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     current-snapshot-id even if the refs map is null."""
 
     # validators
-    @field_validator('properties', mode='before')
+    @field_validator("properties", mode="before")
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> Dict[str, str]:
         return transform_dict_value_to_str(properties)
 
@@ -237,6 +238,13 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
 
+    def name_mapping(self) -> Optional[NameMapping]:
+        """Return the table's field-id NameMapping."""
+        if name_mapping_json := self.properties.get("schema.name-mapping.default"):
+            return parse_mapping_from_json(name_mapping_json)
+        else:
+            return None
+
     def spec(self) -> PartitionSpec:
         """Return the partition spec of this table."""
         return next(spec for spec in self.partition_specs if spec.spec_id == self.default_spec_id)
@@ -245,6 +253,31 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
+    def specs_struct(self) -> StructType:
+        """Produce a struct of all the combined PartitionSpecs.
+
+        The partition fields should be optional: Partition fields may be added later,
+        in which case not all files would have the result field, and it may be null.
+
+        :return: A StructType that represents all the combined PartitionSpecs of the table
+        """
+        specs = self.specs()
+
+        # Collect all the fields
+        struct_fields = {field.field_id: field for spec in specs.values() for field in spec.fields}
+
+        schema = self.schema()
+
+        nested_fields = []
+        # Sort them by field_id in order to get a deterministic output
+        for field_id in sorted(struct_fields):
+            field = struct_fields[field_id]
+            source_type = schema.find_type(field.source_id)
+            result_type = field.transform.result_type(source_type)
+            nested_fields.append(NestedField(field_id=field.field_id, name=field.name, type=result_type, required=False))
+
+        return StructType(*nested_fields)
+
     def new_snapshot_id(self) -> int:
         """Generate a new snapshot-id that's not in use."""
         snapshot_id = _generate_snapshot_id()
@@ -252,6 +285,12 @@ class TableMetadataCommonFields(IcebergBaseModel):
             snapshot_id = _generate_snapshot_id()
 
         return snapshot_id
+
+    def snapshot_by_name(self, name: str) -> Optional[Snapshot]:
+        """Return the snapshot referenced by the given name or null if no such reference exists."""
+        if ref := self.refs.get(name):
+            return self.snapshot_by_id(ref.snapshot_id)
+        return None
 
     def current_snapshot(self) -> Optional[Snapshot]:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
@@ -266,11 +305,18 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the sort order by sort_order_id."""
         return next((sort_order for sort_order in self.sort_orders if sort_order.order_id == sort_order_id), None)
 
-    @field_serializer('current_snapshot_id')
+    @field_serializer("current_snapshot_id")
     def serialize_current_snapshot_id(self, current_snapshot_id: Optional[int]) -> Optional[int]:
         if current_snapshot_id is None and Config().get_bool("legacy-current-snapshot-id"):
             return -1
         return current_snapshot_id
+
+    @field_serializer("snapshots")
+    def serialize_snapshots(self, snapshots: List[Snapshot]) -> List[Snapshot]:
+        # Snapshot field `sequence-number` should not be written for v1 metadata
+        if self.format_version == 1:
+            return [snapshot.model_copy(update={"sequence_number": None}) for snapshot in snapshots]
+        return snapshots
 
 
 def _generate_snapshot_id() -> int:
@@ -280,7 +326,7 @@ def _generate_snapshot_id() -> int:
     """
     rnd_uuid = uuid.uuid4()
     snapshot_id = int.from_bytes(
-        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder='little', signed=True
+        bytes(lhs ^ rhs for lhs, rhs in zip(rnd_uuid.bytes[0:8], rnd_uuid.bytes[8:16])), byteorder="little", signed=True
     )
     snapshot_id = snapshot_id if snapshot_id >= 0 else snapshot_id * -1
 
@@ -366,6 +412,11 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
                 fields = data[PARTITION_SPEC]
                 data[PARTITION_SPECS] = [{SPEC_ID: INITIAL_SPEC_ID, FIELDS: fields}]
                 data[DEFAULT_SPEC_ID] = INITIAL_SPEC_ID
+            elif data.get("partition_spec") is not None:
+                # Promote the spec from partition_spec to partition-specs
+                fields = data["partition_spec"]
+                data[PARTITION_SPECS] = [{SPEC_ID: INITIAL_SPEC_ID, FIELDS: fields}]
+                data[DEFAULT_SPEC_ID] = INITIAL_SPEC_ID
             else:
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
 
@@ -389,7 +440,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         Returns:
             The TableMetadata with the sort_orders set, if not provided.
         """
-        if not data.get(SORT_ORDERS):
+        if not data.get(SORT_ORDERS) and not data.get("sort_orders"):
             data[SORT_ORDERS] = [UNSORTED_SORT_ORDER]
         return data
 
@@ -407,7 +458,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     """The table’s current schema. (Deprecated: use schemas and
     current-schema-id instead)."""
 
-    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec")
+    partition_spec: List[Dict[str, Any]] = Field(alias="partition-spec", default_factory=list)
     """The table’s current partition spec, stored as only fields.
     Note that this is used by writers to partition data, but is
     not used when reading because reads use the specs stored in

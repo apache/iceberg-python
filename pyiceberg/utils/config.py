@@ -16,12 +16,12 @@
 # under the License.
 import logging
 import os
-from distutils.util import strtobool
 from typing import List, Optional
 
 import strictyaml
 
 from pyiceberg.typedef import UTF8, FrozenDict, RecursiveDict
+from pyiceberg.types import strtobool
 
 PYICEBERG = "pyiceberg_"
 DEFAULT = "default"
@@ -127,7 +127,7 @@ class Config:
             if env_var_lower.startswith(PYICEBERG.lower()):
                 key = env_var_lower[len(PYICEBERG) :]
                 parts = key.split("__", maxsplit=2)
-                parts_normalized = [part.replace('__', '.').replace("_", "-") for part in parts]
+                parts_normalized = [part.replace("__", ".").replace("_", "-") for part in parts]
                 set_property(config, parts_normalized, config_value)
 
         return config

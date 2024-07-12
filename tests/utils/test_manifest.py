@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict, Literal
+from typing import Dict
 
 import fastavro
 import pytest
@@ -35,11 +35,11 @@ from pyiceberg.manifest import (
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
 
 
@@ -66,7 +66,7 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
 
     assert manifest_entry.status == ManifestEntryStatus.ADDED
     assert manifest_entry.snapshot_id == 8744736658442914487
-    assert manifest_entry.data_sequence_number == 0
+    assert manifest_entry.sequence_number == 0
     assert isinstance(manifest_entry.data_file, DataFile)
 
     data_file = manifest_entry.data_file
@@ -250,7 +250,7 @@ def test_read_manifest_v1(generated_manifest_file_file_v1: str) -> None:
 
     entry = entries[0]
 
-    assert entry.data_sequence_number == 0
+    assert entry.sequence_number == 0
     assert entry.file_sequence_number == 0
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
@@ -300,15 +300,32 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
     entry = entries[0]
 
-    assert entry.data_sequence_number == 3
+    assert entry.sequence_number == 3
     assert entry.file_sequence_number == 3
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
 
 
+def test_write_empty_manifest() -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/test_write_manifest.avro"
+
+        with pytest.raises(ValueError, match="An empty manifest file has been written"):
+            with write_manifest(
+                format_version=1,
+                spec=UNPARTITIONED_PARTITION_SPEC,
+                schema=test_schema,
+                output_file=io.new_output(tmp_avro_file),
+                snapshot_id=8744736658442914487,
+            ) as _:
+                pass
+
+
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: Literal[1, 2]
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
 ) -> None:
     io = load_file_io()
     snapshot = Snapshot(
@@ -348,8 +365,8 @@ def test_write_manifest(
 
         expected_metadata = {
             "schema": test_schema.model_dump_json(),
-            "partition-spec": test_spec.model_dump_json(),
-            "partition-spec-id": str(test_spec.spec_id),
+            "partition-spec": """[{"source-id":1,"field-id":1,"transform":"identity","name":"VendorID"},{"source-id":2,"field-id":2,"transform":"identity","name":"tpep_pickup_datetime"}]""",
+            "partition-spec-id": str(demo_manifest_file.partition_spec_id),
             "format-version": str(format_version),
         }
         _verify_metadata_with_fastavro(
@@ -362,7 +379,7 @@ def test_write_manifest(
 
         assert manifest_entry.status == ManifestEntryStatus.ADDED
         assert manifest_entry.snapshot_id == 8744736658442914487
-        assert manifest_entry.data_sequence_number == -1 if format_version == 1 else 3
+        assert manifest_entry.sequence_number == -1 if format_version == 1 else 3
         assert isinstance(manifest_entry.data_file, DataFile)
 
         data_file = manifest_entry.data_file
@@ -478,7 +495,7 @@ def test_write_manifest(
 
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest_list(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: Literal[1, 2]
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
 ) -> None:
     io = load_file_io()
 
@@ -539,7 +556,7 @@ def test_write_manifest_list(
 
         entry = entries[0]
 
-        assert entry.data_sequence_number == 0 if format_version == 1 else 3
+        assert entry.sequence_number == 0 if format_version == 1 else 3
         assert entry.file_sequence_number == 0 if format_version == 1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED

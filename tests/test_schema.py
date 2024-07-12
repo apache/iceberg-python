@@ -91,7 +91,7 @@ def test_schema_str(table_schema_simple: Schema) -> None:
 def test_schema_repr_single_field() -> None:
     """Test schema representation"""
     actual = repr(schema.Schema(NestedField(field_id=1, name="foo", field_type=StringType()), schema_id=1))
-    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=True), schema_id=1, identifier_field_ids=[])"
+    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), schema_id=1, identifier_field_ids=[])"
     assert expected == actual
 
 
@@ -104,7 +104,7 @@ def test_schema_repr_two_fields() -> None:
             schema_id=1,
         )
     )
-    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=True), NestedField(field_id=2, name='bar', field_type=IntegerType(), required=False), schema_id=1, identifier_field_ids=[])"
+    expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), NestedField(field_id=2, name='bar', field_type=IntegerType(), required=False), schema_id=1, identifier_field_ids=[])"
     assert expected == actual
 
 
@@ -1600,3 +1600,19 @@ def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
     )
 
     assert new_schema == expected_schema
+
+
+def test_arrow_schema() -> None:
+    base_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+    )
+
+    expected_schema = pa.schema([
+        pa.field("foo", pa.large_string(), nullable=False),
+        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("baz", pa.bool_(), nullable=True),
+    ])
+
+    assert base_schema.as_arrow() == expected_schema

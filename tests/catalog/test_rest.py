@@ -28,6 +28,7 @@ from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
+    NamespaceNotEmptyError,
     NoSuchNamespaceError,
     NoSuchTableError,
     OAuthError,
@@ -277,23 +278,35 @@ def test_properties_sets_headers(requests_mock: Mocker) -> None:
     )
 
     catalog = RestCatalog(
-        "rest", uri=TEST_URI, warehouse="s3://some-bucket", **{"header.Content-Type": "application/vnd.api+json"}
+        "rest",
+        uri=TEST_URI,
+        warehouse="s3://some-bucket",
+        **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
     )
 
     assert (
-        catalog._session.headers.get("Content-type") == "application/vnd.api+json"
-    ), "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+        catalog._session.headers.get("Content-type") == "application/json"
+    ), "Expected 'Content-Type' default header not to be overwritten"
+    assert (
+        requests_mock.last_request.headers["Content-type"] == "application/json"
+    ), "Config request did not include expected 'Content-Type' header"
 
     assert (
-        requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json"
-    ), "Config request did not include expected 'Content-Type' header"
+        catalog._session.headers.get("Customized-Header") == "some/value"
+    ), "Expected 'Customized-Header' header to be 'some/value'"
+    assert (
+        requests_mock.last_request.headers["Customized-Header"] == "some/value"
+    ), "Config request did not include expected 'Customized-Header' header"
 
 
 def test_config_sets_headers(requests_mock: Mocker) -> None:
     namespace = "leden"
     requests_mock.get(
         f"{TEST_URI}v1/config",
-        json={"defaults": {"header.Content-Type": "application/vnd.api+json"}, "overrides": {}},
+        json={
+            "defaults": {"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
+            "overrides": {},
+        },
         status_code=200,
     )
     requests_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": [namespace], "properties": {}}, status_code=200)
@@ -301,11 +314,18 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     catalog.create_namespace(namespace)
 
     assert (
-        catalog._session.headers.get("Content-type") == "application/vnd.api+json"
-    ), "Expected 'Content-Type' header to be 'application/vnd.api+json'"
+        catalog._session.headers.get("Content-type") == "application/json"
+    ), "Expected 'Content-Type' default header not to be overwritten"
     assert (
-        requests_mock.last_request.headers["Content-type"] == "application/vnd.api+json"
+        requests_mock.last_request.headers["Content-type"] == "application/json"
     ), "Create namespace request did not include expected 'Content-Type' header"
+
+    assert (
+        catalog._session.headers.get("Customized-Header") == "some/value"
+    ), "Expected 'Customized-Header' header to be 'some/value'"
+    assert (
+        requests_mock.last_request.headers["Customized-Header"] == "some/value"
+    ), "Create namespace request did not include expected 'Customized-Header' header"
 
 
 def test_token_400(rest_mock: Mocker) -> None:
@@ -481,6 +501,24 @@ def test_create_namespace_200(rest_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace(namespace)
 
 
+def test_create_namespace_if_exists_409(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "error": {
+                "message": "Namespace already exists: fokko in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "AlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace_if_not_exists(namespace)
+
+
 def test_create_namespace_409(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.post(
@@ -517,6 +555,25 @@ def test_drop_namespace_404(rest_mock: Mocker) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_namespace(namespace)
     assert "Namespace does not exist" in str(e.value)
+
+
+def test_drop_namespace_409(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/{namespace}",
+        json={
+            "error": {
+                "message": "Namespace is not empty: leden in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NamespaceNotEmptyError",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+    with pytest.raises(NamespaceNotEmptyError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_namespace(namespace)
+    assert "Namespace is not empty" in str(e.value)
 
 
 def test_load_namespace_properties_200(rest_mock: Mocker) -> None:
@@ -654,6 +711,16 @@ def test_table_exist_200(rest_mock: Mocker) -> None:
     assert catalog.table_exists(("fokko", "table"))
 
 
+def test_table_exist_204(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.table_exists(("fokko", "table"))
+
+
 def test_table_exist_500(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
@@ -711,6 +778,31 @@ def test_create_table_200(
         catalog=catalog,
     )
     assert actual == expected
+
+
+def test_create_table_with_given_location_removes_trailing_slash_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    location = "s3://warehouse/database/table-custom-location"
+    catalog.create_table(
+        identifier=("fokko", "fokko2"),
+        schema=table_schema_simple,
+        location=f"{location}/",
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+        ),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    assert rest_mock.last_request
+    assert rest_mock.last_request.json()["location"] == location
 
 
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:

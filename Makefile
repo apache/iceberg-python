@@ -16,7 +16,7 @@
 # under the License.
 
 install-poetry:
-	pip install poetry==1.7.1
+	pip install poetry==1.8.2
 
 install-dependencies:
 	poetry install -E pyarrow -E hive -E s3fs -E glue -E adlfs -E duckdb -E ray -E sql-postgres -E gcsfs -E sql-sqlite -E daft
@@ -37,17 +37,18 @@ test-s3:
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
 test-integration:
-	docker-compose -f dev/docker-compose-integration.yml kill
-	docker-compose -f dev/docker-compose-integration.yml rm -f
-	docker-compose -f dev/docker-compose-integration.yml up -d
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml up -d
 	sleep 10
-	docker-compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
+	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
-	docker-compose -f dev/docker-compose-integration.yml kill
-	docker-compose -f dev/docker-compose-integration.yml rm -f
-	docker-compose -f dev/docker-compose-integration.yml build --no-cache
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
 test-adlfs:
 	sh ./dev/run-azurite.sh
@@ -58,13 +59,26 @@ test-gcs:
 	poetry run  pytest tests/ -m gcs ${PYTEST_ARGS}
 
 test-coverage:
-	docker-compose -f dev/docker-compose-integration.yml kill
-	docker-compose -f dev/docker-compose-integration.yml rm -f
-	docker-compose -f dev/docker-compose-integration.yml up -d
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml up -d
 	sh ./dev/run-azurite.sh
 	sh ./dev/run-gcs-server.sh
-	docker-compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	sleep 10
+	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
+	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
 	poetry run coverage run --source=pyiceberg/ -m pytest tests/ ${PYTEST_ARGS}
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
 	poetry run coverage xml
+
+
+clean:
+	@echo "Cleaning up Cython and Python cached files"
+	@rm -rf build dist *.egg-info
+	@find . -name "*.so" -exec echo Deleting {} \; -delete
+	@find . -name "*.pyc" -exec echo Deleting {} \; -delete
+	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +
+	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
+	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
+	@echo "Cleanup complete"

@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from functools import cached_property, singledispatch
 from typing import (
     Any,
@@ -62,9 +62,10 @@ from pyiceberg.types import (
     StructType,
     TimestampType,
     TimestamptzType,
+    TimeType,
     UUIDType,
 )
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -228,11 +229,11 @@ class PartitionSpec(IcebergBaseModel):
 
         field_strs = []
         value_strs = []
-        for pos, value in enumerate(data.record_fields()):
+        for pos in range(len(self.fields)):
             partition_field = self.fields[pos]
-            value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=value)
+            value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=data[pos])
 
-            value_str = quote(value_str, safe='')
+            value_str = quote(value_str, safe="")
             value_strs.append(value_str)
             field_strs.append(partition_field.name)
 
@@ -386,16 +387,33 @@ class PartitionKey:
         for raw_partition_field_value in self.raw_partition_field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
             if len(partition_fields) != 1:
-                raise ValueError("partition_fields must contain exactly one field.")
+                raise ValueError(f"Cannot have redundant partitions: {partition_fields}")
             partition_field = partition_fields[0]
-            iceberg_type = self.schema.find_field(name_or_id=raw_partition_field_value.field.source_id).field_type
-            iceberg_typed_value = _to_partition_representation(iceberg_type, raw_partition_field_value.value)
-            transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
-            iceberg_typed_key_values[partition_field.name] = transformed_value
+            iceberg_typed_key_values[partition_field.name] = partition_record_value(
+                partition_field=partition_field,
+                value=raw_partition_field_value.value,
+                schema=self.schema,
+            )
         return Record(**iceberg_typed_key_values)
 
     def to_path(self) -> str:
         return self.partition_spec.partition_to_path(self.partition, self.schema)
+
+
+def partition_record_value(partition_field: PartitionField, value: Any, schema: Schema) -> Any:
+    """
+    Return the Partition Record representation of the value.
+
+    The value is first converted to internal partition representation.
+    For example, UUID is converted to bytes[16], DateType to days since epoch, etc.
+
+    Then the corresponding PartitionField's transform is applied to return
+    the final partition record value.
+    """
+    iceberg_type = schema.find_field(name_or_id=partition_field.source_id).field_type
+    iceberg_typed_value = _to_partition_representation(iceberg_type, value)
+    transformed_value = partition_field.transform.transform(iceberg_type)(iceberg_typed_value)
+    return transformed_value
 
 
 @singledispatch
@@ -412,6 +430,11 @@ def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
 @_to_partition_representation.register(DateType)
 def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
     return date_to_days(value) if value is not None else None
+
+
+@_to_partition_representation.register(TimeType)
+def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
+    return time_to_micros(value) if value is not None else None
 
 
 @_to_partition_representation.register(UUIDType)

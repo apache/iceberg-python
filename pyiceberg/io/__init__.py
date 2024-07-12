@@ -53,10 +53,18 @@ S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
+S3_SIGNER_URI = "s3.signer.uri"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
 HDFS_KERB_TICKET = "hdfs.kerberos_ticket"
+ADLFS_CONNECTION_STRING = "adlfs.connection-string"
+ADLFS_ACCOUNT_NAME = "adlfs.account-name"
+ADLFS_ACCOUNT_KEY = "adlfs.account-key"
+ADLFS_SAS_TOKEN = "adlfs.sas-token"
+ADLFS_TENANT_ID = "adlfs.tenant-id"
+ADLFS_CLIENT_ID = "adlfs.client-id"
+ADLFS_ClIENT_SECRET = "adlfs.client-secret"
 GCS_TOKEN = "gcs.oauth2.token"
 GCS_TOKEN_EXPIRES_AT_MS = "gcs.oauth2.token-expires-at"
 GCS_PROJECT_ID = "gcs.project-id"
@@ -277,6 +285,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "gs": [ARROW_FILE_IO],
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
+    "viewfs": [ARROW_FILE_IO],
     "abfs": [FSSPEC_FILE_IO],
     "abfss": [FSSPEC_FILE_IO],
 }
@@ -338,5 +347,5 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = 
         return PyArrowFileIO(properties)
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
-            'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[s3fs]", for more options refer to the docs.'
+            'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e

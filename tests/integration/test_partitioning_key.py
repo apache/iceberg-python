@@ -328,8 +328,8 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=IdentityTransform(), name="binary_field")],
-            [b'example'],
-            Record(binary_field=b'example'),
+            [b"example"],
+            Record(binary_field=b"example"),
             "binary_field=ZXhhbXBsZQ%3D%3D",
             f"""CREATE TABLE {identifier} (
                 binary_field binary,
@@ -347,8 +347,8 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=13, field_id=1001, transform=IdentityTransform(), name="decimal_field")],
-            [Decimal('123.45')],
-            Record(decimal_field=Decimal('123.45')),
+            [Decimal("123.45")],
+            Record(decimal_field=Decimal("123.45")),
             "decimal_field=123.45",
             f"""CREATE TABLE {identifier} (
                 decimal_field decimal(5,2),
@@ -638,8 +638,8 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=13, field_id=1001, transform=TruncateTransform(width=5), name="decimal_field_trunc")],
-            [Decimal('678.93')],
-            Record(decimal_field_trunc=Decimal('678.90')),
+            [Decimal("678.93")],
+            Record(decimal_field_trunc=Decimal("678.90")),
             "decimal_field_trunc=678.90",  # Assuming truncation width of 1 leads to truncating to 670
             f"""CREATE TABLE {identifier} (
                 decimal_field decimal(5,2),
@@ -657,8 +657,8 @@ identifier = "default.test_table"
         ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(10), name="binary_field_trunc")],
-            [b'HELLOICEBERG'],
-            Record(binary_field_trunc=b'HELLOICEBE'),
+            [b"HELLOICEBERG"],
+            Record(binary_field_trunc=b"HELLOICEBE"),
             "binary_field_trunc=SEVMTE9JQ0VCRQ%3D%3D",
             f"""CREATE TABLE {identifier} (
                 binary_field binary,
@@ -749,7 +749,7 @@ def test_partition_key(
     # key.to_path() generates the hive partitioning part of the to-write parquet file path
     assert key.to_path() == expected_hive_partition_path_slice
 
-    # Justify expected values are not made up but conform to spark behaviors
+    # Justify expected values are not made up but conforming to spark behaviors
     if spark_create_table_sql_for_justification is not None and spark_data_insert_sql_for_justification is not None:
         try:
             spark.sql(f"drop table {identifier}")

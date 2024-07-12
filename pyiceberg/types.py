@@ -24,10 +24,10 @@ Example:
     ...     NestedField(1, "required_field", StringType(), True),
     ...     NestedField(2, "optional_field", IntegerType())
     ... ))
-    'struct<1: required_field: optional string, 2: optional_field: optional int>'
+    'struct<1: required_field: required string, 2: optional_field: optional int>'
 
 Notes:
-  - https://iceberg.apache.org/#spec/#primitive-types
+  - https://iceberg.apache.org/spec/#primitive-types
 """
 
 from __future__ import annotations
@@ -90,6 +90,22 @@ def _parse_fixed_type(fixed: Any) -> int:
         return fixed["length"]
     else:
         return fixed
+
+
+def strtobool(val: str) -> bool:
+    """Convert a string representation of truth to true (1) or false (0).
+
+    True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
+    are 'n', 'no', 'f', 'false', 'off', and '0'.  Raises ValueError if
+    'val' is anything else.
+    """
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    else:
+        raise ValueError(f"Invalid truth value: {val!r}")
 
 
 class IcebergType(IcebergBaseModel):
@@ -160,7 +176,7 @@ class IcebergType(IcebergBaseModel):
         return isinstance(self, StructType)
 
 
-class PrimitiveType(IcebergRootModel[str], IcebergType, Singleton):
+class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
     """Base class for all Iceberg Primitive Types."""
 
     root: Any = Field()
@@ -289,7 +305,7 @@ class NestedField(IcebergType):
     field_id: int = Field(alias="id")
     name: str = Field()
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
-    required: bool = Field(default=True)
+    required: bool = Field(default=False)
     doc: Optional[str] = Field(default=None, repr=False)
     initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
     write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
@@ -299,7 +315,7 @@ class NestedField(IcebergType):
         field_id: Optional[int] = None,
         name: Optional[str] = None,
         field_type: Optional[IcebergType] = None,
-        required: bool = True,
+        required: bool = False,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
         write_default: Optional[L] = None,

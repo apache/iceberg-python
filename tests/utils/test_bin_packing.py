@@ -20,7 +20,9 @@ from typing import List
 
 import pytest
 
-from pyiceberg.utils.bin_packing import PackingIterator
+from pyiceberg.utils.bin_packing import ListPacker, PackingIterator
+
+INT_MAX = 2147483647
 
 
 @pytest.mark.parametrize(
@@ -83,4 +85,46 @@ def test_bin_packing_lookback(
     def weight_func(x: int) -> int:
         return x
 
+    packer: ListPacker[int] = ListPacker(target_weight, lookback, largest_bin_first)
+
     assert list(PackingIterator(splits, target_weight, lookback, weight_func, largest_bin_first)) == expected_lists
+    assert list(packer.pack(splits, weight_func)) == expected_lists
+
+
+@pytest.mark.parametrize(
+    "splits, target_weight, lookback, largest_bin_first, expected_lists",
+    [
+        # Single Lookback Tests
+        ([1, 2, 3, 4, 5], 3, 1, False, [[1, 2], [3], [4], [5]]),
+        ([1, 2, 3, 4, 5], 4, 1, False, [[1, 2], [3], [4], [5]]),
+        ([1, 2, 3, 4, 5], 5, 1, False, [[1], [2, 3], [4], [5]]),
+        ([1, 2, 3, 4, 5], 6, 1, False, [[1, 2, 3], [4], [5]]),
+        ([1, 2, 3, 4, 5], 7, 1, False, [[1, 2], [3, 4], [5]]),
+        ([1, 2, 3, 4, 5], 8, 1, False, [[1, 2], [3, 4], [5]]),
+        ([1, 2, 3, 4, 5], 9, 1, False, [[1, 2, 3], [4, 5]]),
+        ([1, 2, 3, 4, 5], 11, 1, False, [[1, 2, 3], [4, 5]]),
+        ([1, 2, 3, 4, 5], 12, 1, False, [[1, 2], [3, 4, 5]]),
+        ([1, 2, 3, 4, 5], 14, 1, False, [[1], [2, 3, 4, 5]]),
+        ([1, 2, 3, 4, 5], 15, 1, False, [[1, 2, 3, 4, 5]]),
+        # Unlimited Lookback Tests
+        ([1, 2, 3, 4, 5], 3, INT_MAX, False, [[1, 2], [3], [4], [5]]),
+        ([1, 2, 3, 4, 5], 4, INT_MAX, False, [[2], [1, 3], [4], [5]]),
+        ([1, 2, 3, 4, 5], 5, INT_MAX, False, [[2, 3], [1, 4], [5]]),
+        ([1, 2, 3, 4, 5], 6, INT_MAX, False, [[3], [2, 4], [1, 5]]),
+        ([1, 2, 3, 4, 5], 7, INT_MAX, False, [[1], [3, 4], [2, 5]]),
+        ([1, 2, 3, 4, 5], 8, INT_MAX, False, [[1, 2, 4], [3, 5]]),
+        ([1, 2, 3, 4, 5], 9, INT_MAX, False, [[1, 2, 3], [4, 5]]),
+        ([1, 2, 3, 4, 5], 10, INT_MAX, False, [[2, 3], [1, 4, 5]]),
+        ([1, 2, 3, 4, 5], 11, INT_MAX, False, [[1, 3], [2, 4, 5]]),
+        ([1, 2, 3, 4, 5], 12, INT_MAX, False, [[1, 2], [3, 4, 5]]),
+        ([1, 2, 3, 4, 5], 13, INT_MAX, False, [[2], [1, 3, 4, 5]]),
+        ([1, 2, 3, 4, 5], 14, INT_MAX, False, [[1], [2, 3, 4, 5]]),
+        ([1, 2, 3, 4, 5], 15, INT_MAX, False, [[1, 2, 3, 4, 5]]),
+    ],
+)
+def test_reverse_bin_packing_lookback(
+    splits: List[int], target_weight: int, lookback: int, largest_bin_first: bool, expected_lists: List[List[int]]
+) -> None:
+    packer: ListPacker[int] = ListPacker(target_weight, lookback, largest_bin_first)
+    result = packer.pack_end(splits, lambda x: x)
+    assert result == expected_lists

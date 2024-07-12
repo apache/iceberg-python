@@ -16,6 +16,7 @@
 # under the License.
 
 import os
+import pickle
 import tempfile
 
 import pytest
@@ -69,6 +70,25 @@ def test_custom_local_output_file() -> None:
             assert f.read() == b"foo"
 
         assert len(output_file) == 3
+
+
+def test_pickled_pyarrow_round_trip() -> None:
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        file_location = os.path.join(tmpdirname, "foo.txt")
+        file_io = PyArrowFileIO()
+        serialized_file_io = pickle.dumps(file_io)
+        deserialized_file_io = pickle.loads(serialized_file_io)
+        absolute_file_location = os.path.abspath(file_location)
+        output_file = deserialized_file_io.new_output(location=f"{absolute_file_location}")
+        with output_file.create() as f:
+            f.write(b"foo")
+
+        input_file = deserialized_file_io.new_input(location=f"{absolute_file_location}")
+        f = input_file.open()
+        data = f.read()
+        assert data == b"foo"
+        assert len(input_file) == 3
+        deserialized_file_io.delete(location=f"{absolute_file_location}")
 
 
 def test_custom_local_output_file_with_overwrite() -> None:

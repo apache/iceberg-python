@@ -61,6 +61,21 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
 | `write.parquet.row-group-limit`   | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
 
+## Table behavior options
+
+| Key                                  | Options             | Default       | Description                                                 |
+| ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
+| `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
+| `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
+| `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+
+<!-- prettier-ignore-start -->
+
+!!! note "Fast append"
+    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-support) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+
+<!-- prettier-ignore-end -->
+
 # FileIO
 
 Iceberg works with the concept of a FileIO which is a pluggable module for reading, writing, and deleting files. By default, PyIceberg will try to initialize the FileIO that's suitable for the scheme (`s3://`, `gs://`, etc.) and will use the first one that's installed.
@@ -89,6 +104,7 @@ For the FileIO there are several configuration options available:
 | s3.access-key-id     | admin                    | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.secret-access-key | password                 | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.signer            | bearer                   | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
+| s3.signer.uri        | http://my.signer:8080/s3 | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.singer.uri>/v1/aws/s3/sign`.                                                                |
 | s3.region            | us-west-2                | Sets the region of the bucket                                                                                                                                                                                                                             |
 | s3.proxy-uri         | http://my.proxy.com:8080 | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                     | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
@@ -128,19 +144,19 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-disable -->
 
-| Key                        | Example             | Description                                                                                                                                                                                                                                                                                    |
-| -------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| gcs.project-id             | my-gcp-project      | Configure Google Cloud Project for GCS FileIO.                                                                                                                                                                                                                                                 |
-| gcs.oauth.token            | ya29.dr.AfM...      | Configure method authentication to GCS for FileIO. Can be the following, 'google_default', 'cache', 'anon', 'browser', 'cloud'. If not specified your credentials will be resolved in the following order: gcloud CLI default, gcsfs cached token, google compute metadata service, anonymous. |
-| gcs.oauth.token-expires-at | 1690971805918       | Configure expiration for credential generated with an access token. Milliseconds since epoch                                                                                                                                                                                                   |
-| gcs.access                 | read_only           | Configure client to have specific access. Must be one of 'read_only', 'read_write', or 'full_control'                                                                                                                                                                                          |
-| gcs.consistency            | md5                 | Configure the check method when writing files. Must be one of 'none', 'size', or 'md5'                                                                                                                                                                                                         |
-| gcs.cache-timeout          | 60                  | Configure the cache expiration time in seconds for object metadata cache                                                                                                                                                                                                                       |
-| gcs.requester-pays         | False               | Configure whether to use requester-pays requests                                                                                                                                                                                                                                               |
-| gcs.session-kwargs         | {}                  | Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.                                                                                                                                                                                  |
-| gcs.endpoint               | http://0.0.0.0:4443 | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint.                                            |
-| gcs.default-location       | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                                                                         |
-| gcs.version-aware          | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                                                              |
+| Key                         | Example             | Description                                                                                                                                                                                                                                         |
+| --------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| gcs.project-id              | my-gcp-project      | Configure Google Cloud Project for GCS FileIO.                                                                                                                                                                                                      |
+| gcs.oauth2.token            | ya29.dr.AfM...      | String representation of the access token used for temporary access.                                                                                                                                                                                |
+| gcs.oauth2.token-expires-at | 1690971805918       | Configure expiration for credential generated with an access token. Milliseconds since epoch                                                                                                                                                        |
+| gcs.access                  | read_only           | Configure client to have specific access. Must be one of 'read_only', 'read_write', or 'full_control'                                                                                                                                               |
+| gcs.consistency             | md5                 | Configure the check method when writing files. Must be one of 'none', 'size', or 'md5'                                                                                                                                                              |
+| gcs.cache-timeout           | 60                  | Configure the cache expiration time in seconds for object metadata cache                                                                                                                                                                            |
+| gcs.requester-pays          | False               | Configure whether to use requester-pays requests                                                                                                                                                                                                    |
+| gcs.session-kwargs          | {}                  | Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.                                                                                                                                       |
+| gcs.endpoint                | http://0.0.0.0:4443 | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
+| gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
+| gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
 
 <!-- markdown-link-check-enable-->
 
@@ -221,6 +237,12 @@ catalog:
     uri: sqlite:////tmp/pyiceberg.db
 ```
 
+| Key           | Example                                                      | Default | Description                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| uri           | postgresql+psycopg2://username:password@localhost/mydatabase |         | SQLAlchemy backend URL for the catalog database (see [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls))                                |
+| echo          | true                                                         | false   | SQLAlchemy engine [echo param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.echo) to log all statements to the default log handler                      |
+| pool_pre_ping | true                                                         | false   | SQLAlchemy engine [pool_pre_ping param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.pool_pre_ping) to test connections for liveness upon each checkout |
+
 ## Hive Catalog
 
 ```yaml
@@ -230,6 +252,15 @@ catalog:
     s3.endpoint: http://localhost:9000
     s3.access-key-id: admin
     s3.secret-access-key: password
+```
+
+When using Hive 2.x, make sure to set the compatibility flag:
+
+```yaml
+catalog:
+  default:
+...
+    hive.hive2-compatible: true
 ```
 
 ## Glue Catalog
@@ -289,4 +320,8 @@ PyIceberg uses multiple threads to parallelize operations. The number of workers
 
 # Backward Compatibility
 
-Previous versions of Java (`<1.4.0`) implementations incorrectly assume the optional attribute `current-snapshot-id` to be a required attribute in TableMetadata. This means that if `current-snapshot-id` is missing in the metadata file (e.g. on table creation), the application will throw an exception without being able to load the table. This assumption has been corrected in more recent Iceberg versions. However, it is possible to force PyIceberg to create a table with a metadata file that will be compatible with previous versions. This can be configured by setting the `legacy-current-snapshot-id` entry as "True" in the configuration file, or by setting the `LEGACY_CURRENT_SNAPSHOT_ID` environment variable. Refer to the [PR discussion](https://github.com/apache/iceberg-python/pull/473) for more details on the issue
+Previous versions of Java (`<1.4.0`) implementations incorrectly assume the optional attribute `current-snapshot-id` to be a required attribute in TableMetadata. This means that if `current-snapshot-id` is missing in the metadata file (e.g. on table creation), the application will throw an exception without being able to load the table. This assumption has been corrected in more recent Iceberg versions. However, it is possible to force PyIceberg to create a table with a metadata file that will be compatible with previous versions. This can be configured by setting the `legacy-current-snapshot-id` property as "True" in the configuration file, or by setting the `PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID` environment variable. Refer to the [PR discussion](https://github.com/apache/iceberg-python/pull/473) for more details on the issue
+
+# Nanoseconds Support
+
+PyIceberg currently only supports upto microsecond precision in its TimestampType. PyArrow timestamp types in 's' and 'ms' will be upcast automatically to 'us' precision timestamps on write. Timestamps in 'ns' precision can also be downcast automatically on write if desired. This can be configured by setting the `downcast-ns-timestamp-to-us-on-write` property as "True" in the configuration file, or by setting the `PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE` environment variable. Refer to the [nanoseconds timestamp proposal document](https://docs.google.com/document/d/1bE1DcEGNzZAMiVJSZ0X1wElKLNkT9kRkk0hDlfkXzvU/edit#heading=h.ibflcctc9i1d) for more details on the long term roadmap for nanoseconds support
