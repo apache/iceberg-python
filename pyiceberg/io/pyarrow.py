@@ -2003,7 +2003,6 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
     def write_parquet(task: WriteTask) -> DataFile:
         table_schema = task.schema
-
         # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
         # otherwise use the original schema
         if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
@@ -2123,15 +2122,12 @@ def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, down
         ):
             continue
         elif lhs.field_type != rhs.field_type:
-            try:
-                promote(rhs.field_type, lhs.field_type)
-            except ResolveError:
-                rich_table.add_row(
-                    field_name,
-                    "Type",
-                    f"{print_nullability(lhs.required)} {str(lhs.field_type)}",
-                    f"{print_nullability(rhs.required)} {str(rhs.field_type)}",
-                )
+            rich_table.add_row(
+                field_name,
+                "Type",
+                f"{print_nullability(lhs.required)} {str(lhs.field_type)}",
+                f"{print_nullability(rhs.required)} {str(rhs.field_type)}",
+            )
 
     for field_name in extra_fields:
         rhs = task_schema.find_field(field_name)

@@ -43,7 +43,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import BooleanType, IntegerType, LongType, NestedField
+from pyiceberg.types import IntegerType, NestedField
 from utils import _create_table
 
 
@@ -962,42 +962,6 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     )
 
     assert len(tbl.scan().to_arrow()) == 22
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_table_write_schema_with_valid_upcast(
-    session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
-) -> None:
-    identifier = "default.test_table_write_with_valid_upcast"
-    table_schema = Schema(
-        NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
-        NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="long", field_type=LongType(), required=True),
-    )
-    other_schema = pa.schema((
-        pa.field("boolean", pa.bool_(), nullable=False),
-        pa.field("integer", pa.int32(), nullable=False),
-        pa.field("long", pa.int32(), nullable=False),  # IntegerType can be cast to LongType
-    ))
-    arrow_table = pa.Table.from_pydict(
-        {
-            "bool": [False, True],
-            "integer": [1, 9],
-            "long": [1, 9],
-        },
-        schema=other_schema,
-    )
-    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table], schema=table_schema)
-    tbl.append(arrow_table)
-    # table's long field should cast to long on read
-    assert tbl.scan().to_arrow() == arrow_table.cast(
-        pa.schema((
-            pa.field("boolean", pa.bool_(), nullable=False),
-            pa.field("integer", pa.int32(), nullable=False),
-            pa.field("long", pa.int64(), nullable=False),  # IntegerType can be cast to LongType
-        ))
-    )
 
 
 @pytest.mark.integration
