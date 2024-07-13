@@ -44,6 +44,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
     strtobool,
+    transform_dict_value_to_str,
 )
 
 non_parameterized_types = [
@@ -649,3 +650,14 @@ def test_strtobool() -> None:
     for val in invalid_values:
         with pytest.raises(ValueError, match=f"Invalid truth value: {val!r}"):
             strtobool(val)
+
+
+def test_transform_dict_value_to_str() -> None:
+    input_dict = {"key1": 1, "key2": 2.0, "key3": "3", "key4: ": True, "key5": False}
+    expected_dict = {"key1": "1", "key2": "2.0", "key3": "3", "key4: ": "true", "key5": "false"}
+    # valid values
+    assert transform_dict_value_to_str(input_dict) == expected_dict
+    # Null value not allowed, should raise ValueError
+    input_dict["key6"] = None
+    with pytest.raises(ValueError, match="None type is not a supported value in properties: key6"):
+        transform_dict_value_to_str(input_dict)

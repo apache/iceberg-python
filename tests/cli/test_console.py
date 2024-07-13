@@ -83,7 +83,7 @@ TEST_TABLE_SCHEMA = Schema(
     NestedField(3, "z", LongType(), required=True),
 )
 TEST_TABLE_PARTITION_SPEC = PartitionSpec(PartitionField(name="x", transform=IdentityTransform(), source_id=1, field_id=1000))
-TEST_TABLE_PROPERTIES = {"read.split.target.size": "134217728"}
+TEST_TABLE_PROPERTIES = {"read.split.target.size": "134217728", "write.parquet.bloom-filter-enabled.column.x": True}
 TEST_TABLE_UUID = uuid.UUID("d20125c8-7284-442c-9aea-15fee620737c")
 TEST_TIMESTAMP = 1602638573874
 MOCK_ENVIRONMENT = {"PYICEBERG_CATALOG__PRODUCTION__URI": "test://doesnotexist"}
@@ -367,7 +367,10 @@ def test_properties_get_table(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["properties", "get", "table", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == "read.split.target.size  134217728\n"
+    assert (
+        result.output
+        == "read.split.target.size                       134217728\nwrite.parquet.bloom-filter-enabled.column.x  true     \n"
+    )
 
 
 def test_properties_get_table_specific_property(catalog: InMemoryCatalog) -> None:
@@ -763,7 +766,7 @@ def test_json_properties_get_table(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["--output=json", "properties", "get", "table", "default.my_table"])
     assert result.exit_code == 0
-    assert result.output == """{"read.split.target.size": "134217728"}\n"""
+    assert result.output == """{"read.split.target.size": "134217728", "write.parquet.bloom-filter-enabled.column.x": "true"}\n"""
 
 
 def test_json_properties_get_table_specific_property(catalog: InMemoryCatalog) -> None:
