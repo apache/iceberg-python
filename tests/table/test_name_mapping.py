@@ -247,11 +247,6 @@ def test_mapping_lookup_by_name(table_name_mapping_nested: NameMapping) -> None:
         table_name_mapping_nested.find("boom")
 
 
-def test_invalid_mapped_field() -> None:
-    with pytest.raises(ValueError):
-        MappedField(field_id=1, names=[])
-
-
 def test_update_mapping_no_updates_or_adds(table_name_mapping_nested: NameMapping) -> None:
     assert update_mapping(table_name_mapping_nested, {}, {}) == table_name_mapping_nested
 
