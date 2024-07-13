@@ -32,10 +32,12 @@ from abc import ABC, abstractmethod
 from io import SEEK_SET
 from types import TracebackType
 from typing import (
+    Any,
     Dict,
     List,
     Optional,
     Protocol,
+    Tuple,
     Type,
     Union,
     runtime_checkable,
@@ -46,6 +48,10 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
+AWS_REGION = "aws.region"
+AWS_ACCESS_KEY_ID = "aws.access-key-id"
+AWS_SECRET_ACCESS_KEY = "aws.secret-access-key"
+AWS_SESSION_TOKEN = "aws.session-token"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
@@ -76,6 +82,11 @@ GCS_SESSION_KWARGS = "gcs.session-kwargs"
 GCS_ENDPOINT = "gcs.endpoint"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
+
+S3_REGION_PROPERTIES = (S3_REGION, AWS_REGION)
+S3_ACCESS_KEY_ID_PROPERTIES = (S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID)
+S3_SECRET_ACCESS_KEY_PROPERTIES = (S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
+S3_SESSION_TOKEN_PROPERTIES = (S3_SESSION_TOKEN, AWS_SESSION_TOKEN)
 
 
 @runtime_checkable
@@ -317,6 +328,13 @@ def _infer_file_io_from_scheme(path: str, properties: Properties) -> Optional[Fi
                     return file_io
         else:
             warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}")
+    return None
+
+
+def _get_first_property_value(properties: Properties, property_names: Tuple[str, ...]) -> Optional[Any]:
+    for property_name in property_names:
+        if property_value := properties.get(property_name):
+            return property_value
     return None
 
 

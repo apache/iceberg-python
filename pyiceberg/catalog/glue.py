@@ -39,6 +39,12 @@ from mypy_boto3_glue.type_defs import (
 )
 
 from pyiceberg.catalog import (
+    DEPRECATED_ACCESS_KEY_ID,
+    DEPRECATED_AWS_SESSION_TOKEN,
+    DEPRECATED_BOTOCORE_SESSION,
+    DEPRECATED_PROFILE_NAME,
+    DEPRECATED_REGION,
+    DEPRECATED_SECRET_ACCESS_KEY,
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
@@ -58,6 +64,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
@@ -113,12 +120,19 @@ ICEBERG_FIELD_ID = "iceberg.field.id"
 ICEBERG_FIELD_OPTIONAL = "iceberg.field.optional"
 ICEBERG_FIELD_CURRENT = "iceberg.field.current"
 
-GLUE_PROFILE_NAME_PROPERTIES = ("glue.profile-name", "profile_name")
-GLUE_REGION_PROPERTIES = ("glue.region", "aws.region", "region_name")
-GLUE_BOTOCORE_SESSION_PROPERTIES = ("glue.botocore-session", "botocore_session")
-GLUE_ACCESS_KEY_ID_PROPERTIES = ("glue.access-key-id", "aws.access-key-id", "aws_access_key_id")
-GLUE_SECRET_ACCESS_KEY_PROPERTIES = ("glue.secret-access-key", "aws.secret-access-key", "aws_secret_access_key")
-GLUE_SESSION_TOKEN_PROPERTIES = ("glue.session-token", "aws.session-token", "aws_session_token")
+GLUE_PROFILE_NAME = "glue.profile-name"
+GLUE_REGION = "glue.region"
+GLUE_BOTOCORE_SESSION = "glue.botocore-session"
+GLUE_ACCESS_KEY_ID = "glue.access-key-id"
+GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
+GLUE_SESSION_TOKEN = "glue.session-token"
+
+GLUE_PROFILE_NAME_PROPERTIES = (GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME)
+GLUE_REGION_PROPERTIES = (GLUE_REGION, AWS_REGION, DEPRECATED_REGION)
+GLUE_BOTOCORE_SESSION_PROPERTIES = (GLUE_BOTOCORE_SESSION, DEPRECATED_BOTOCORE_SESSION)
+GLUE_ACCESS_KEY_ID_PROPERTIES = (GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID)
+GLUE_SECRET_ACCESS_KEY_PROPERTIES = (GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY)
+GLUE_SESSION_TOKEN_PROPERTIES = (GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_AWS_SESSION_TOKEN)
 
 
 def _construct_parameters(

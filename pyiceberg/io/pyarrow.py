@@ -95,18 +95,19 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
-    S3_ACCESS_KEY_ID,
+    S3_ACCESS_KEY_ID_PROPERTIES,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_PROXY_URI,
-    S3_REGION,
-    S3_SECRET_ACCESS_KEY,
-    S3_SESSION_TOKEN,
+    S3_REGION_PROPERTIES,
+    S3_SECRET_ACCESS_KEY_PROPERTIES,
+    S3_SESSION_TOKEN_PROPERTIES,
     FileIO,
     InputFile,
     InputStream,
     OutputFile,
     OutputStream,
+    _get_first_property_value,
 )
 from pyiceberg.manifest import (
     DataFile,
@@ -344,10 +345,10 @@ class PyArrowFileIO(FileIO):
 
             client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
-                "access_key": self.properties.get(S3_ACCESS_KEY_ID),
-                "secret_key": self.properties.get(S3_SECRET_ACCESS_KEY),
-                "session_token": self.properties.get(S3_SESSION_TOKEN),
-                "region": self.properties.get(S3_REGION),
+                "access_key": _get_first_property_value(self.properties, S3_ACCESS_KEY_ID_PROPERTIES),
+                "secret_key": _get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY_PROPERTIES),
+                "session_token": _get_first_property_value(self.properties, S3_SESSION_TOKEN_PROPERTIES),
+                "region": _get_first_property_value(self.properties, S3_REGION_PROPERTIES),
             }
 
             if proxy_uri := self.properties.get(S3_PROXY_URI):

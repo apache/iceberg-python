@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -33,7 +34,7 @@ from typing import (
     Tuple,
     Type,
     Union,
-    cast, Any,
+    cast,
 )
 
 from pyiceberg.exceptions import (
@@ -66,6 +67,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
+from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -99,6 +101,21 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     """,
     re.X,
 )
+
+DEPRECATED_PROFILE_NAME = "profile_name"
+DEPRECATED_REGION = "region_name"
+DEPRECATED_BOTOCORE_SESSION = "botocore_session"
+DEPRECATED_ACCESS_KEY_ID = "aws_access_key_id"
+DEPRECATED_SECRET_ACCESS_KEY = "aws_secret_access_key"
+DEPRECATED_AWS_SESSION_TOKEN = "aws_session_token"
+DEPRECATED_PROPERTY_NAMES = {
+    DEPRECATED_PROFILE_NAME,
+    DEPRECATED_REGION,
+    DEPRECATED_BOTOCORE_SESSION,
+    DEPRECATED_ACCESS_KEY_ID,
+    DEPRECATED_SECRET_ACCESS_KEY,
+    DEPRECATED_AWS_SESSION_TOKEN,
+}
 
 
 class CatalogType(Enum):
@@ -838,9 +855,15 @@ class MetastoreCatalog(Catalog, ABC):
 
         raise ValueError("No default path is set, please specify a location when creating a table")
 
-    def _get_first_property_value(self, property_names: Tuple[str,...]) -> Optional[Any]:
+    def _get_first_property_value(self, property_names: Tuple[str, ...]) -> Optional[Any]:
         for property_name in property_names:
             if property_value := self.properties.get(property_name):
+                if property_name in DEPRECATED_PROPERTY_NAMES:
+                    deprecated(
+                        deprecated_in="0.7.0",
+                        removed_in="0.8.0",
+                        help_message=f"The property {property_name} is deprecated. Please use properties start with aws., glue., and dynamo. instead",
+                    )(lambda: None)()
                 return property_value
         return None
 
@@ -901,5 +924,3 @@ class MetastoreCatalog(Catalog, ABC):
             TableMetadata: An empty TableMetadata instance.
         """
         return TableMetadataV1(location="", last_column_id=-1, schema=Schema())
-
-
