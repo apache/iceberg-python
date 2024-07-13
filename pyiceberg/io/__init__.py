@@ -48,10 +48,10 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
-AWS_REGION = "aws.region"
-AWS_ACCESS_KEY_ID = "aws.access-key-id"
-AWS_SECRET_ACCESS_KEY = "aws.secret-access-key"
-AWS_SESSION_TOKEN = "aws.session-token"
+AWS_REGION = "client.region"
+AWS_ACCESS_KEY_ID = "client.access-key-id"
+AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
+AWS_SESSION_TOKEN = "client.session-token"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
