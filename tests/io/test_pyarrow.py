@@ -1856,6 +1856,24 @@ def test_schema_compatible(table_schema_simple: Schema) -> None:
         pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
 
 
+def test_schema_compatible_upcast() -> None:
+    table_schema = Schema(
+        NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
+        NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="long", field_type=LongType(), required=True),
+    )
+    other_schema = pa.schema((
+        pa.field("boolean", pa.bool_(), nullable=False),
+        pa.field("integer", pa.int32(), nullable=False),
+        pa.field("long", pa.int32(), nullable=False),  # IntegerType can be cast to LongType
+    ))
+
+    try:
+        _check_schema_compatible(table_schema, other_schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_schema_compatible`")
+
+
 def test_schema_projection(table_schema_simple: Schema) -> None:
     # remove optional `baz` field from `table_schema_simple`
     other_schema = pa.schema((
