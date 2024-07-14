@@ -270,6 +270,7 @@ Your AWS credentials can be passed directly through the Python API.
 Otherwise, please refer to
 [How to configure AWS credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) to set your AWS account credentials locally.
 If you did not set up a default AWS profile, you can configure the `profile_name`.
+If you want to use the same credentials for both Glue Catalog and S3 FileIO, you can set the [`client.*` properties](configuration.md#unified-aws-credentials).
 
 ```yaml
 catalog:
@@ -311,11 +312,12 @@ catalog:
 
 <!-- prettier-ignore-end -->
 
-## DynamoDB Catalog
+### DynamoDB Catalog
 
 If you want to use AWS DynamoDB as the catalog, you can use the last two ways to configure the pyiceberg and refer
 [How to configure AWS credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html)
 to set your AWS account credentials locally.
+If you want to use the same credentials for both Dynamodb Catalog and S3 FileIO, you can set the [`client.*` properties](configuration.md#unified-aws-credentials).
 
 ```yaml
 catalog:
@@ -369,14 +371,14 @@ You can explicitly set the AWS credentials for both Glue/Dynamodb Catalog and S3
 
 Note that the `client.*` properties will be overridden by service-specific properties if they are set. For example, if `client.region` is set to `us-west-1` and `s3.region` is set to `us-east-1`, the S3 FileIO will use `us-east-1` as the region.
 
-# Concurrency
+## Concurrency
 
 PyIceberg uses multiple threads to parallelize operations. The number of workers can be configured by supplying a `max-workers` entry in the configuration file, or by setting the `PYICEBERG_MAX_WORKERS` environment variable. The default value depends on the system hardware and Python version. See [the Python documentation](https://docs.python.org/3/library/concurrent.futures.html#threadpoolexecutor) for more details.
 
-# Backward Compatibility
+## Backward Compatibility
 
 Previous versions of Java (`<1.4.0`) implementations incorrectly assume the optional attribute `current-snapshot-id` to be a required attribute in TableMetadata. This means that if `current-snapshot-id` is missing in the metadata file (e.g. on table creation), the application will throw an exception without being able to load the table. This assumption has been corrected in more recent Iceberg versions. However, it is possible to force PyIceberg to create a table with a metadata file that will be compatible with previous versions. This can be configured by setting the `legacy-current-snapshot-id` property as "True" in the configuration file, or by setting the `PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID` environment variable. Refer to the [PR discussion](https://github.com/apache/iceberg-python/pull/473) for more details on the issue
 
-# Nanoseconds Support
+## Nanoseconds Support
 
 PyIceberg currently only supports upto microsecond precision in its TimestampType. PyArrow timestamp types in 's' and 'ms' will be upcast automatically to 'us' precision timestamps on write. Timestamps in 'ns' precision can also be downcast automatically on write if desired. This can be configured by setting the `downcast-ns-timestamp-to-us-on-write` property as "True" in the configuration file, or by setting the `PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE` environment variable. Refer to the [nanoseconds timestamp proposal document](https://docs.google.com/document/d/1bE1DcEGNzZAMiVJSZ0X1wElKLNkT9kRkk0hDlfkXzvU/edit#heading=h.ibflcctc9i1d) for more details on the long term roadmap for nanoseconds support
