@@ -91,6 +91,23 @@ def test_json_mapped_field_deserialization() -> None:
     assert MappedField(field_id=1, names=["id", "record_id"]) == MappedField.model_validate_json(mapped_field_with_null_fields)
 
 
+def test_json_mapped_field_no_names_deserialization() -> None:
+    mapped_field = """{
+        "field-id": 1,
+        "names": []
+    }
+    """
+    assert MappedField(field_id=1, names=[]) == MappedField.model_validate_json(mapped_field)
+
+    mapped_field_with_null_fields = """{
+        "field-id": 1,
+        "names": [],
+        "fields": null
+    }
+    """
+    assert MappedField(field_id=1, names=[]) == MappedField.model_validate_json(mapped_field_with_null_fields)
+
+
 def test_json_name_mapping_deserialization() -> None:
     name_mapping = """
 [
@@ -245,11 +262,6 @@ def test_mapping_lookup_by_name(table_name_mapping_nested: NameMapping) -> None:
 
     with pytest.raises(ValueError, match="Could not find field with name: boom"):
         table_name_mapping_nested.find("boom")
-
-
-def test_invalid_mapped_field() -> None:
-    with pytest.raises(ValueError):
-        MappedField(field_id=1, names=[])
 
 
 def test_update_mapping_no_updates_or_adds(table_name_mapping_nested: NameMapping) -> None:
