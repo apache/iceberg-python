@@ -37,7 +37,7 @@ from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, Struc
 
 class MappedField(IcebergBaseModel):
     field_id: int = Field(alias="field-id")
-    names: List[str] = conlist(str, min_length=1)
+    names: List[str] = conlist(str)
     fields: List[MappedField] = Field(default_factory=list)
 
     @field_validator("fields", mode="before")
