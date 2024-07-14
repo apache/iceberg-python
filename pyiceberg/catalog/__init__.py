@@ -716,7 +716,7 @@ class MetastoreCatalog(Catalog, ABC):
                 deprecated(
                     deprecated_in="0.7.0",
                     removed_in="0.8.0",
-                    help_message=f"The property {property_name} is deprecated. Please use properties that start with aws., glue., and dynamo. instead",
+                    help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
                 )(lambda: None)()
 
     def create_table_transaction(

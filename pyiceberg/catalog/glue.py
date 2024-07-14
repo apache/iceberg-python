@@ -126,7 +126,6 @@ ICEBERG_FIELD_CURRENT = "iceberg.field.current"
 
 GLUE_PROFILE_NAME = "glue.profile-name"
 GLUE_REGION = "glue.region"
-GLUE_BOTOCORE_SESSION = "glue.botocore-session"
 GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
@@ -304,9 +303,7 @@ class GlueCatalog(MetastoreCatalog):
         session = boto3.Session(
             profile_name=PropertyUtil.get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
             region_name=PropertyUtil.get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
-            botocore_session=PropertyUtil.get_first_property_value(
-                properties, GLUE_BOTOCORE_SESSION, DEPRECATED_BOTOCORE_SESSION
-            ),
+            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
             aws_access_key_id=PropertyUtil.get_first_property_value(
                 properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
             ),

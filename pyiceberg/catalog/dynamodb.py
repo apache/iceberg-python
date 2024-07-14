@@ -86,7 +86,6 @@ ITEM = "Item"
 
 DYNAMODB_PROFILE_NAME = "dynamodb.profile-name"
 DYNAMODB_REGION = "dynamodb.region"
-DYNAMODB_BOTOCORE_SESSION = "dynamodb.botocore-session"
 DYNAMODB_ACCESS_KEY_ID = "dynamodb.access-key-id"
 DYNAMODB_SECRET_ACCESS_KEY = "dynamodb.secret-access-key"
 DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
@@ -101,9 +100,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         session = boto3.Session(
             profile_name=PropertyUtil.get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
             region_name=PropertyUtil.get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
-            botocore_session=PropertyUtil.get_first_property_value(
-                properties, DYNAMODB_BOTOCORE_SESSION, DEPRECATED_BOTOCORE_SESSION
-            ),
+            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
             aws_access_key_id=PropertyUtil.get_first_property_value(
                 properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
             ),
