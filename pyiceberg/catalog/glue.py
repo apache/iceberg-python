@@ -116,6 +116,10 @@ GLUE_ID = "glue.id"
 GLUE_SKIP_ARCHIVE = "glue.skip-archive"
 GLUE_SKIP_ARCHIVE_DEFAULT = True
 
+# Configure an alternative endpoint of the Glue service for GlueCatalog to access.
+# This could be used to use GlueCatalog with any glue-compatible metastore service that has a different endpoint
+GLUE_CATALOG_ENDPOINT = "glue.endpoint"
+
 ICEBERG_FIELD_ID = "iceberg.field.id"
 ICEBERG_FIELD_OPTIONAL = "iceberg.field.optional"
 ICEBERG_FIELD_CURRENT = "iceberg.field.current"
@@ -313,7 +317,7 @@ class GlueCatalog(MetastoreCatalog):
                 properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
             ),
         )
-        self.glue: GlueClient = session.client("glue")
+        self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
 
         if glue_catalog_id := properties.get(GLUE_ID):
             _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)

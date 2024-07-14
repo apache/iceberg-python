@@ -461,7 +461,7 @@ def test_append_transform_partition_verify_partitions_count(
     session_catalog: Catalog,
     spark: SparkSession,
     arrow_table_date_timestamps: pa.Table,
-    arrow_table_date_timestamps_schema: Schema,
+    table_date_timestamps_schema: Schema,
     transform: Transform[Any, Any],
     expected_partitions: Set[Any],
     format_version: int,
@@ -469,7 +469,7 @@ def test_append_transform_partition_verify_partitions_count(
     # Given
     part_col = "timestamptz"
     identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_transform_partitioned_on_col_{part_col}"
-    nested_field = arrow_table_date_timestamps_schema.find_field(part_col)
+    nested_field = table_date_timestamps_schema.find_field(part_col)
     partition_spec = PartitionSpec(
         PartitionField(source_id=nested_field.field_id, field_id=1001, transform=transform, name=part_col),
     )
@@ -481,7 +481,7 @@ def test_append_transform_partition_verify_partitions_count(
         properties={"format-version": str(format_version)},
         data=[arrow_table_date_timestamps],
         partition_spec=partition_spec,
-        schema=arrow_table_date_timestamps_schema,
+        schema=table_date_timestamps_schema,
     )
 
     # Then
@@ -510,20 +510,20 @@ def test_append_multiple_partitions(
     session_catalog: Catalog,
     spark: SparkSession,
     arrow_table_date_timestamps: pa.Table,
-    arrow_table_date_timestamps_schema: Schema,
+    table_date_timestamps_schema: Schema,
     format_version: int,
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_multiple_partitions"
     partition_spec = PartitionSpec(
         PartitionField(
-            source_id=arrow_table_date_timestamps_schema.find_field("date").field_id,
+            source_id=table_date_timestamps_schema.find_field("date").field_id,
             field_id=1001,
             transform=YearTransform(),
             name="date_year",
         ),
         PartitionField(
-            source_id=arrow_table_date_timestamps_schema.find_field("timestamptz").field_id,
+            source_id=table_date_timestamps_schema.find_field("timestamptz").field_id,
             field_id=1000,
             transform=HourTransform(),
             name="timestamptz_hour",
@@ -537,7 +537,7 @@ def test_append_multiple_partitions(
         properties={"format-version": str(format_version)},
         data=[arrow_table_date_timestamps],
         partition_spec=partition_spec,
-        schema=arrow_table_date_timestamps_schema,
+        schema=table_date_timestamps_schema,
     )
 
     # Then

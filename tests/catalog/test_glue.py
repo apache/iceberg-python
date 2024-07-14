@@ -925,3 +925,13 @@ def test_register_table_with_given_location(
     table = test_catalog.register_table(identifier, location)
     assert table.identifier == (catalog_name,) + identifier
     assert test_catalog.table_exists(identifier) is True
+
+
+@mock_aws
+def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
+    catalog_name = "glue"
+    test_endpoint = "https://test-endpoint"
+    test_catalog = GlueCatalog(
+        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
+    )
+    assert test_catalog.glue.meta.endpoint_url == test_endpoint

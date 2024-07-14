@@ -2043,6 +2043,11 @@ def get_bucket_name() -> str:
     return bucket_name
 
 
+def get_glue_endpoint() -> Optional[str]:
+    """Set the optional environment variable AWS_TEST_GLUE_ENDPOINT for a glue endpoint to test."""
+    return os.getenv("AWS_TEST_GLUE_ENDPOINT")
+
+
 def get_s3_path(bucket_name: str, database_name: Optional[str] = None, table_name: Optional[str] = None) -> str:
     result_path = f"s3://{bucket_name}"
     if database_name is not None:
@@ -2382,10 +2387,122 @@ def arrow_table_date_timestamps() -> "pa.Table":
 
 
 @pytest.fixture(scope="session")
-def arrow_table_date_timestamps_schema() -> Schema:
-    """Pyarrow table Schema with only date, timestamp and timestamptz values."""
+def table_date_timestamps_schema() -> Schema:
+    """Iceberg table Schema with only date, timestamp and timestamptz values."""
     return Schema(
         NestedField(field_id=1, name="date", field_type=DateType(), required=False),
         NestedField(field_id=2, name="timestamp", field_type=TimestampType(), required=False),
         NestedField(field_id=3, name="timestamptz", field_type=TimestamptzType(), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_schema_with_all_timestamp_precisions() -> "pa.Schema":
+    """Pyarrow Schema with all supported timestamp types."""
+    import pyarrow as pa
+
+    return pa.schema([
+        ("timestamp_s", pa.timestamp(unit="s")),
+        ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
+        ("timestamp_ms", pa.timestamp(unit="ms")),
+        ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
+        ("timestamp_us", pa.timestamp(unit="us")),
+        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ns", pa.timestamp(unit="ns")),
+        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
+        ("timestamptz_ns_z", pa.timestamp(unit="ns", tz="Z")),
+        ("timestamptz_s_0000", pa.timestamp(unit="s", tz="+00:00")),
+    ])
+
+
+@pytest.fixture(scope="session")
+def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timestamp_precisions: "pa.Schema") -> "pa.Table":
+    """Pyarrow table with all supported timestamp types."""
+    import pandas as pd
+    import pyarrow as pa
+
+    test_data = pd.DataFrame({
+        "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_s": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_ms": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_us": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamp_ns": [
+            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
+            None,
+            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
+        ],
+        "timestamptz_ns": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamptz_us_etc_utc": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+        "timestamptz_ns_z": [
+            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
+            None,
+            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
+        ],
+        "timestamptz_s_0000": [
+            datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
+        ],
+    })
+    return pa.Table.from_pandas(test_data, schema=arrow_table_schema_with_all_timestamp_precisions)
+
+
+@pytest.fixture(scope="session")
+def arrow_table_schema_with_all_microseconds_timestamp_precisions() -> "pa.Schema":
+    """Pyarrow Schema with all microseconds timestamp."""
+    import pyarrow as pa
+
+    return pa.schema([
+        ("timestamp_s", pa.timestamp(unit="us")),
+        ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ms", pa.timestamp(unit="us")),
+        ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_us", pa.timestamp(unit="us")),
+        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamp_ns", pa.timestamp(unit="us")),
+        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamptz_ns_z", pa.timestamp(unit="us", tz="UTC")),
+        ("timestamptz_s_0000", pa.timestamp(unit="us", tz="UTC")),
+    ])
+
+
+@pytest.fixture(scope="session")
+def table_schema_with_all_microseconds_timestamp_precision() -> Schema:
+    """Iceberg table Schema with only date, timestamp and timestamptz values."""
+    return Schema(
+        NestedField(field_id=1, name="timestamp_s", field_type=TimestampType(), required=False),
+        NestedField(field_id=2, name="timestamptz_s", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=3, name="timestamp_ms", field_type=TimestampType(), required=False),
+        NestedField(field_id=4, name="timestamptz_ms", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=5, name="timestamp_us", field_type=TimestampType(), required=False),
+        NestedField(field_id=6, name="timestamptz_us", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=7, name="timestamp_ns", field_type=TimestampType(), required=False),
+        NestedField(field_id=8, name="timestamptz_ns", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=9, name="timestamptz_us_etc_utc", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=10, name="timestamptz_ns_z", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=11, name="timestamptz_s_0000", field_type=TimestamptzType(), required=False),
     )

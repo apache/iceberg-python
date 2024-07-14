@@ -67,7 +67,7 @@ def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
     for key, value in dict.items():
         if value is None:
             raise ValueError(f"None type is not a supported value in properties: {key}")
-    return {k: str(v) for k, v in dict.items()}
+    return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in dict.items()}
 
 
 def _parse_decimal_type(decimal: Any) -> Tuple[int, int]:
