@@ -18,6 +18,7 @@
 
 import os
 import tempfile
+import uuid
 from datetime import date
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
@@ -77,7 +78,7 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import UTF8, Record
+from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -346,6 +347,58 @@ def test_deleting_hdfs_file_not_found() -> None:
             PyArrowFileIO().delete("hdfs://foo/bar.txt")
 
         assert "Cannot delete file, does not exist:" in str(exc_info.value)
+
+
+def test_pyarrow_s3_session_properties() -> None:
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        "client.access-key-id": "client.access-key-id",
+        "client.secret-access-key": "client.secret-access-key",
+        "client.region": "client.region",
+        "client.session-token": "client.session-token",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="s3.session-token",
+        )
+
+
+def test_pyarrow_unified_session_properties() -> None:
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        "client.access-key-id": "admin",
+        "client.secret-access-key": "password",
+        "client.region": "us-east-1",
+        "client.session-token": "client.session-token",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="client.session-token",
+        )
 
 
 def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:
