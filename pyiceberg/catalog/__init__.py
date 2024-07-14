@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
-    Any,
     Callable,
     Dict,
     List,
@@ -709,6 +708,17 @@ class Catalog(ABC):
 
 
 class MetastoreCatalog(Catalog, ABC):
+    def __init__(self, name: str, **properties: str):
+        super().__init__(name, **properties)
+
+        for property_name in DEPRECATED_PROPERTY_NAMES:
+            if self.properties.get(property_name):
+                deprecated(
+                    deprecated_in="0.7.0",
+                    removed_in="0.8.0",
+                    help_message=f"The property {property_name} is deprecated. Please use properties that start with aws., glue., and dynamo. instead",
+                )(lambda: None)()
+
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],
@@ -854,18 +864,6 @@ class MetastoreCatalog(Catalog, ABC):
             return f"{warehouse_path}/{database_name}.db/{table_name}"
 
         raise ValueError("No default path is set, please specify a location when creating a table")
-
-    def _get_first_property_value(self, property_names: Tuple[str, ...]) -> Optional[Any]:
-        for property_name in property_names:
-            if property_value := self.properties.get(property_name):
-                if property_name in DEPRECATED_PROPERTY_NAMES:
-                    deprecated(
-                        deprecated_in="0.7.0",
-                        removed_in="0.8.0",
-                        help_message=f"The property {property_name} is deprecated. Please use properties start with aws., glue., and dynamo. instead",
-                    )(lambda: None)()
-                return property_value
-        return None
 
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:

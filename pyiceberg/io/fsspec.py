@@ -46,6 +46,10 @@ from pyiceberg.io import (
     ADLFS_CONNECTION_STRING,
     ADLFS_SAS_TOKEN,
     ADLFS_TENANT_ID,
+    AWS_ACCESS_KEY_ID,
+    AWS_REGION,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
     GCS_ACCESS,
     GCS_CACHE_TIMEOUT,
     GCS_CONSISTENCY,
@@ -56,13 +60,13 @@ from pyiceberg.io import (
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_VERSION_AWARE,
-    S3_ACCESS_KEY_ID_PROPERTIES,
+    S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
     S3_PROXY_URI,
-    S3_REGION_PROPERTIES,
-    S3_SECRET_ACCESS_KEY_PROPERTIES,
-    S3_SESSION_TOKEN_PROPERTIES,
+    S3_REGION,
+    S3_SECRET_ACCESS_KEY,
+    S3_SESSION_TOKEN,
     S3_SIGNER_URI,
     ADLFS_ClIENT_SECRET,
     FileIO,
@@ -70,7 +74,6 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
-    _get_first_property_value,
 )
 from pyiceberg.typedef import Properties
 
@@ -115,12 +118,14 @@ def _file(_: Properties) -> LocalFileSystem:
 def _s3(properties: Properties) -> AbstractFileSystem:
     from s3fs import S3FileSystem
 
+    from pyiceberg.table import PropertyUtil
+
     client_kwargs = {
         "endpoint_url": properties.get(S3_ENDPOINT),
-        "aws_access_key_id": _get_first_property_value(properties, S3_ACCESS_KEY_ID_PROPERTIES),
-        "aws_secret_access_key": _get_first_property_value(properties, S3_SECRET_ACCESS_KEY_PROPERTIES),
-        "aws_session_token": _get_first_property_value(properties, S3_SESSION_TOKEN_PROPERTIES),
-        "region_name": _get_first_property_value(properties, S3_REGION_PROPERTIES),
+        "aws_access_key_id": PropertyUtil.get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+        "aws_secret_access_key": PropertyUtil.get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+        "aws_session_token": PropertyUtil.get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+        "region_name": PropertyUtil.get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
     register_events: Dict[str, Callable[[Properties], None]] = {}

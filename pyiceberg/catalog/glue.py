@@ -127,13 +127,6 @@ GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
 
-GLUE_PROFILE_NAME_PROPERTIES = (GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME)
-GLUE_REGION_PROPERTIES = (GLUE_REGION, AWS_REGION, DEPRECATED_REGION)
-GLUE_BOTOCORE_SESSION_PROPERTIES = (GLUE_BOTOCORE_SESSION, DEPRECATED_BOTOCORE_SESSION)
-GLUE_ACCESS_KEY_ID_PROPERTIES = (GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID)
-GLUE_SECRET_ACCESS_KEY_PROPERTIES = (GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY)
-GLUE_SESSION_TOKEN_PROPERTIES = (GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN)
-
 
 def _construct_parameters(
     metadata_location: str, glue_table: Optional[TableTypeDef] = None, prev_metadata_location: Optional[str] = None
@@ -302,13 +295,23 @@ class GlueCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
 
+        from pyiceberg.table import PropertyUtil
+
         session = boto3.Session(
-            profile_name=self._get_first_property_value(GLUE_PROFILE_NAME_PROPERTIES),
-            region_name=self._get_first_property_value(GLUE_REGION_PROPERTIES),
-            botocore_session=self._get_first_property_value(GLUE_BOTOCORE_SESSION_PROPERTIES),
-            aws_access_key_id=self._get_first_property_value(GLUE_ACCESS_KEY_ID_PROPERTIES),
-            aws_secret_access_key=self._get_first_property_value(GLUE_SECRET_ACCESS_KEY_PROPERTIES),
-            aws_session_token=self._get_first_property_value(GLUE_SESSION_TOKEN_PROPERTIES),
+            profile_name=PropertyUtil.get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
+            region_name=PropertyUtil.get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
+            botocore_session=PropertyUtil.get_first_property_value(
+                properties, GLUE_BOTOCORE_SESSION, DEPRECATED_BOTOCORE_SESSION
+            ),
+            aws_access_key_id=PropertyUtil.get_first_property_value(
+                properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
+            ),
+            aws_secret_access_key=PropertyUtil.get_first_property_value(
+                properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
+            ),
+            aws_session_token=PropertyUtil.get_first_property_value(
+                properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
+            ),
         )
         self.glue: GlueClient = session.client("glue")
 
