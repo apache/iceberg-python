@@ -90,6 +90,7 @@ def test_json_mapped_field_deserialization() -> None:
     """
     assert MappedField(field_id=1, names=["id", "record_id"]) == MappedField.model_validate_json(mapped_field_with_null_fields)
 
+
 def test_json_mapped_field_no_names_deserialization() -> None:
     mapped_field = """{
         "field-id": 1,
