@@ -42,6 +42,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.schema import Schema
+from pyiceberg.typedef import Properties
 from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
 
 
@@ -576,6 +577,74 @@ def test_passing_provided_profile() -> None:
         test_catalog = DynamoDbCatalog(catalog_name, **props)
         assert test_catalog.dynamodb is mock_client
         mock_session.assert_called_with(**session_props)
+        assert test_catalog.dynamodb is mock_session().client()
+
+
+@mock_aws
+def test_passing_glue_session_properties() -> None:
+    session_properties: Properties = {
+        "dynamodb.access-key-id": "dynamodb.access-key-id",
+        "dynamodb.secret-access-key": "dynamodb.secret-access-key",
+        "dynamodb.profile-name": "dynamodb.profile-name",
+        "dynamodb.region": "dynamodb.region",
+        "dynamodb.session-token": "dynamodb.session-token",
+        "client.access-key-id": "client.access-key-id",
+        "client.secret-access-key": "client.secret-access-key",
+        "client.region": "client.region",
+        "client.session-token": "client.session-token",
+        "aws_access_key_id": "aws_access_key_id",
+        "aws_secret_access_key": "aws_secret_access_key",
+        "aws_session_token": "aws_session_token",
+        "region_name": "region_name",
+        "profile_name": "profile_name",
+    }
+
+    with mock.patch("boto3.Session") as mock_session:
+        mock_client = mock.Mock()
+        mock_session.return_value.client.return_value = mock_client
+        mock_client.describe_table.return_value = {"Table": {"TableStatus": "ACTIVE"}}
+        test_catalog = DynamoDbCatalog("dynamodb", **session_properties)
+
+        mock_session.assert_called_with(
+            aws_access_key_id="dynamodb.access-key-id",
+            aws_secret_access_key="dynamodb.secret-access-key",
+            aws_session_token="dynamodb.session-token",
+            region_name="dynamodb.region",
+            profile_name="dynamodb.profile-name",
+            botocore_session=None,
+        )
+        assert test_catalog.dynamodb is mock_session().client()
+
+
+@mock_aws
+def test_passing_unified_session_properties_to_dynamodb() -> None:
+    session_properties: Properties = {
+        "dynamodb.profile-name": "dynamodb.profile-name",
+        "client.access-key-id": "client.access-key-id",
+        "client.secret-access-key": "client.secret-access-key",
+        "client.region": "client.region",
+        "client.session-token": "client.session-token",
+        "aws_access_key_id": "aws_access_key_id",
+        "aws_secret_access_key": "aws_secret_access_key",
+        "aws_session_token": "aws_session_token",
+        "region_name": "region_name",
+        "profile_name": "profile_name",
+    }
+
+    with mock.patch("boto3.Session") as mock_session:
+        mock_client = mock.Mock()
+        mock_session.return_value.client.return_value = mock_client
+        mock_client.describe_table.return_value = {"Table": {"TableStatus": "ACTIVE"}}
+        test_catalog = DynamoDbCatalog("dynamodb", **session_properties)
+
+        mock_session.assert_called_with(
+            aws_access_key_id="client.access-key-id",
+            aws_secret_access_key="client.secret-access-key",
+            aws_session_token="client.session-token",
+            region_name="client.region",
+            profile_name="dynamodb.profile-name",
+            botocore_session=None,
+        )
         assert test_catalog.dynamodb is mock_session().client()
 
 
