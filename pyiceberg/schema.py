@@ -1621,3 +1621,145 @@ def _(file_type: FixedType, read_type: IcebergType) -> IcebergType:
         return read_type
     else:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
+
+
+def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) -> None:
+    """
+    Check if the `provided_schema` is compatible with `requested_schema`.
+
+    Both Schemas must have valid IDs and share the same ID for the same field names.
+
+    Two schemas are considered compatible when:
+    1. All `required` fields in `requested_schema` are present and are also `required` in the `provided_schema`
+    2. Field Types are consistent for fields that are present in both schemas. I.e. the field type
+       in the `provided_schema` can be promoted to the field type of the same field ID in `requested_schema`
+
+    Raises:
+        ValueError: If the schemas are not compatible.
+    """
+    visit(requested_schema, _SchemaCompatibilityVisitor(provided_schema))
+
+    # from rich.console import Console
+    # from rich.table import Table as RichTable
+
+    # console = Console(record=True)
+
+    # rich_table = RichTable(show_header=True, header_style="bold")
+    # rich_table.add_column("")
+    # rich_table.add_column("Table field")
+    # rich_table.add_column("Dataframe field")
+
+    # is_compatible = True
+
+    # for field_id in requested_schema.field_ids:
+    #     lhs = requested_schema.find_field(field_id)
+    #     try:
+    #         rhs = provided_schema.find_field(field_id)
+    #     except ValueError:
+    #         if lhs.required:
+    #             rich_table.add_row("❌", str(lhs), "Missing")
+    #             is_compatible = False
+    #         else:
+    #             rich_table.add_row("✅", str(lhs), "Missing")
+    #         continue
+
+    #     if lhs.required and not rhs.required:
+    #         rich_table.add_row("❌", str(lhs), "Missing")
+    #         is_compatible = False
+
+    #     if lhs.field_type == rhs.field_type:
+    #         rich_table.add_row("✅", str(lhs), str(rhs))
+    #         continue
+    #     elif any(
+    #         (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
+    #         for container_type in {StructType, MapType, ListType}
+    #     ):
+    #         rich_table.add_row("✅", str(lhs), str(rhs))
+    #         continue
+    #     else:
+    #         try:
+    #             promote(rhs.field_type, lhs.field_type)
+    #             rich_table.add_row("✅", str(lhs), str(rhs))
+    #         except ResolveError:
+    #             rich_table.add_row("❌", str(lhs), str(rhs))
+    #             is_compatible = False
+
+    # if not is_compatible:
+    #     console.print(rich_table)
+    #     raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+
+
+class _SchemaCompatibilityVisitor(SchemaVisitor[bool]):
+    provided_schema: Schema
+
+    def __init__(self, provided_schema: Schema):
+        from rich.console import Console
+        from rich.table import Table as RichTable
+
+        self.provided_schema = provided_schema
+        self.rich_table = RichTable(show_header=True, header_style="bold")
+        self.rich_table.add_column("")
+        self.rich_table.add_column("Table field")
+        self.rich_table.add_column("Dataframe field")
+        self.console = Console(record=True)
+
+    def _is_field_compatible(self, lhs: NestedField) -> bool:
+        # Check required field exists as required field first
+        try:
+            rhs = self.provided_schema.find_field(lhs.field_id)
+        except ValueError:
+            if lhs.required:
+                self.rich_table.add_row("❌", str(lhs), "Missing")
+                return False
+            else:
+                self.rich_table.add_row("✅", str(lhs), "Missing")
+                return True
+
+        if lhs.required and not rhs.required:
+            self.rich_table.add_row("❌", str(lhs), "Missing")
+            return False
+
+        # Check type compatibility
+        if lhs.field_type == rhs.field_type:
+            self.rich_table.add_row("✅", str(lhs), str(rhs))
+            return True
+        elif any(
+            (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
+            for container_type in {StructType, MapType, ListType}
+        ):
+            self.rich_table.add_row("✅", str(lhs), str(rhs))
+            return True
+        else:
+            try:
+                promote(rhs.field_type, lhs.field_type)
+                self.rich_table.add_row("✅", str(lhs), str(rhs))
+                return True
+            except ResolveError:
+                self.rich_table.add_row("❌", str(lhs), str(rhs))
+                return False
+
+    def schema(self, schema: Schema, struct_result: bool) -> bool:
+        if not struct_result:
+            self.console.print(self.rich_table)
+            raise ValueError(f"Mismatch in fields:\n{self.console.export_text()}")
+        return struct_result
+
+    def struct(self, struct: StructType, field_results: List[bool]) -> bool:
+        return all(field_results)
+
+    def field(self, field: NestedField, field_result: bool) -> bool:
+        return all([self._is_field_compatible(field), field_result])
+
+    def list(self, list_type: ListType, element_result: bool) -> bool:
+        return element_result and self._is_field_compatible(list_type.element_field)
+
+    def map(self, map_type: MapType, key_result: bool, value_result: bool) -> bool:
+        return all([
+            self._is_field_compatible(map_type.key_field),
+            self._is_field_compatible(map_type.value_field),
+            key_result,
+            value_result,
+        ])
+
+    def primitive(self, primitive: PrimitiveType) -> bool:
+        return True

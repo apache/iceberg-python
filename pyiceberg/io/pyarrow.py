@@ -120,7 +120,7 @@ from pyiceberg.schema import (
     Schema,
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
-    assign_fresh_schema_ids,
+    _check_schema_compatible,
     pre_order_visit,
     promote,
     prune_columns,
@@ -2002,7 +2002,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
-        table_schema = task.schema
+        table_schema = table_metadata.schema()
         # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
         # otherwise use the original schema
         if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
@@ -2014,7 +2014,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         batches = [
             _to_requested_schema(
                 requested_schema=file_schema,
-                file_schema=table_schema,
+                file_schema=task.schema,
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 include_field_ids=True,
@@ -2073,74 +2073,30 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
     return bin_packed_record_batches
 
 
-def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> None:
+def _check_pyarrow_schema_compatible(
+    requested_schema: Schema, provided_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False
+) -> None:
     """
-    Check if the `table_schema` is compatible with `other_schema`.
+    Check if the `requested_schema` is compatible with `provided_schema`.
 
     Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
 
     Raises:
         ValueError: If the schemas are not compatible.
     """
-    task_schema = assign_fresh_schema_ids(
-        _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
-    )
+    name_mapping = requested_schema.name_mapping
+    try:
+        provided_schema = pyarrow_to_schema(
+            provided_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
+    except ValueError as e:
+        provided_schema = _pyarrow_to_schema_without_ids(provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        additional_names = provided_schema.field_names - requested_schema.field_names
+        raise ValueError(
+            f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
+        ) from e
 
-    extra_fields = task_schema.field_names - table_schema.field_names
-    missing_fields = table_schema.field_names - task_schema.field_names
-    fields_in_both = task_schema.field_names.intersection(table_schema.field_names)
-
-    from rich.console import Console
-    from rich.table import Table as RichTable
-
-    console = Console(record=True)
-
-    rich_table = RichTable(show_header=True, header_style="bold")
-    rich_table.add_column("Field Name")
-    rich_table.add_column("Category")
-    rich_table.add_column("Table field")
-    rich_table.add_column("Dataframe field")
-
-    def print_nullability(required: bool) -> str:
-        return "required" if required else "optional"
-
-    for field_name in fields_in_both:
-        lhs = table_schema.find_field(field_name)
-        rhs = task_schema.find_field(field_name)
-        # Check nullability
-        if lhs.required != rhs.required:
-            rich_table.add_row(
-                field_name,
-                "Nullability",
-                f"{print_nullability(lhs.required)} {str(lhs.field_type)}",
-                f"{print_nullability(rhs.required)} {str(rhs.field_type)}",
-            )
-        # Check if type is consistent
-        if any(
-            (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
-            for container_type in {StructType, MapType, ListType}
-        ):
-            continue
-        elif lhs.field_type != rhs.field_type:
-            rich_table.add_row(
-                field_name,
-                "Type",
-                f"{print_nullability(lhs.required)} {str(lhs.field_type)}",
-                f"{print_nullability(rhs.required)} {str(rhs.field_type)}",
-            )
-
-    for field_name in extra_fields:
-        rhs = task_schema.find_field(field_name)
-        rich_table.add_row(field_name, "Extra Fields", "", f"{print_nullability(rhs.required)} {str(rhs.field_type)}")
-
-    for field_name in missing_fields:
-        lhs = table_schema.find_field(field_name)
-        if lhs.required:
-            rich_table.add_row(field_name, "Missing Fields", f"{print_nullability(lhs.required)} {str(lhs.field_type)}", "")
-
-    if rich_table.row_count:
-        console.print(rich_table)
-        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+    _check_schema_compatible(requested_schema, provided_schema)
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
@@ -2154,7 +2110,7 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
                 f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
             )
         schema = table_metadata.schema()
-        _check_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+        _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
 
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=parquet_metadata,
@@ -2235,7 +2191,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties, WriteTask
 
     counter = counter or itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
@@ -2244,13 +2200,16 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
+    name_mapping = table_metadata.schema().name_mapping
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+    task_schema = pyarrow_to_schema(df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
 
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
                 for batches in bin_pack_arrow_table(df, target_file_size)
             ]),
         )
@@ -2265,7 +2224,7 @@ def _dataframe_to_data_files(
                     task_id=next(counter),
                     record_batches=batches,
                     partition_key=partition.partition_key,
-                    schema=table_metadata.schema(),
+                    schema=task_schema,
                 )
                 for partition in partitions
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
