@@ -538,6 +538,9 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
+        if self.table_metadata.spec().is_unpartitioned():
+            raise ValueError("Cannot apply dynamic overwrite on an unpartitioned table.")
+
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
 
         # cast if the two schemas are compatible but not equal

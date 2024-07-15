@@ -558,6 +558,15 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog, arrow_
 
 
 @pytest.mark.integration
+def test_dynamic_overwrite_invalid_on_unpartitioned_table(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    with pytest.raises(ValueError, match="Cannot apply dynamic overwrite on an unpartitioned table."):
+        tbl.dynamic_overwrite(arrow_table_with_null)
+
+
+@pytest.mark.integration
 def test_summaries_with_only_nulls(
     spark: SparkSession, session_catalog: Catalog, arrow_table_without_data: pa.Table, arrow_table_with_only_nulls: pa.Table
 ) -> None:
