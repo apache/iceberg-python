@@ -43,7 +43,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import IntegerType, ListType, LongType, MapType, NestedField, StringType
+from pyiceberg.types import IntegerType, LongType, NestedField
 from utils import _create_table
 
 
@@ -1027,47 +1027,25 @@ def test_table_write_schema_with_valid_nullability_diff(
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_table_write_schema_with_valid_upcast(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession,
+    session_catalog: Catalog,
+    format_version: int,
+    table_schema_with_longs: Schema,
+    pyarrow_schema_with_longs: pa.Schema,
+    pyarrow_table_with_longs: pa.Table,
 ) -> None:
     identifier = "default.test_table_write_with_valid_upcast"
-    table_schema = Schema(
-        NestedField(field_id=1, name="long", field_type=LongType(), required=False),
-        NestedField(
-            field_id=2,
-            name="list",
-            field_type=ListType(element_id=4, element_type=LongType(), element_required=False),
-            required=True,
-        ),
-        NestedField(
-            field_id=3,
-            name="map",
-            field_type=MapType(
-                key_id=5,
-                key_type=StringType(),
-                value_id=6,
-                value_type=LongType(),
-                value_required=False,
-            ),
-            required=True,
-        ),
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version},
+        [pyarrow_table_with_longs],
+        schema=table_schema_with_longs,
     )
-    other_schema = pa.schema((
-        pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
-        pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
-        pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
-    ))
-    arrow_table = pa.Table.from_pydict(
-        {
-            "long": [1, 9],
-            "list": [[1, 1], [2, 2]],
-            "map": [{"a": 1}, {"b": 2}],
-        },
-        schema=other_schema,
-    )
-    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table], schema=table_schema)
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
-    assert written_arrow_table == arrow_table.cast(
+    assert written_arrow_table == pyarrow_table_with_longs.cast(
         pa.schema((
             pa.field("long", pa.int64(), nullable=True),
             pa.field("list", pa.large_list(pa.int64()), nullable=False),

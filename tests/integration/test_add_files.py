@@ -38,6 +38,7 @@ from pyiceberg.types import (
     BooleanType,
     DateType,
     IntegerType,
+    LongType,
     NestedField,
     StringType,
     TimestamptzType,
@@ -617,3 +618,96 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         ),
     ):
         tbl.add_files(file_paths=[file_path])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_write_schema_with_valid_nullability_diff(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.test_table_write_with_valid_nullability_diff{format_version}"
+    table_schema = Schema(
+        NestedField(field_id=1, name="long", field_type=LongType(), required=False),
+    )
+    other_schema = pa.schema((
+        pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
+    ))
+    arrow_table = pa.Table.from_pydict(
+        {
+            "long": [1, 9],
+        },
+        schema=other_schema,
+    )
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=table_schema,
+        properties={"format-version": str(format_version)},
+        partition_spec=PartitionSpec(),
+    )
+
+    file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
+    # write parquet files
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=other_schema) as writer:
+            writer.write_table(arrow_table)
+
+    tbl.add_files(file_paths=[file_path])
+    # table's long field should cast to be optional on read
+    written_arrow_table = tbl.scan().to_arrow()
+    assert written_arrow_table == arrow_table.cast(pa.schema((pa.field("long", pa.int64(), nullable=True),)))
+    lhs = spark.table(f"{identifier}").toPandas()
+    rhs = written_arrow_table.to_pandas()
+
+    for column in written_arrow_table.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            assert left == right
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_write_schema_with_valid_upcast(
+    spark: SparkSession,
+    session_catalog: Catalog,
+    format_version: int,
+    table_schema_with_longs: Schema,
+    pyarrow_schema_with_longs: pa.Schema,
+    pyarrow_table_with_longs: pa.Table,
+) -> None:
+    identifier = f"default.test_table_write_with_valid_upcast{format_version}"
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=table_schema_with_longs,
+        properties={"format-version": str(format_version)},
+        partition_spec=PartitionSpec(),
+    )
+
+    file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
+    # write parquet files
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=pyarrow_schema_with_longs) as writer:
+            writer.write_table(pyarrow_table_with_longs)
+
+    tbl.add_files(file_paths=[file_path])
+    # table's long field should cast to long on read
+    written_arrow_table = tbl.scan().to_arrow()
+    assert written_arrow_table == pyarrow_table_with_longs.cast(
+        pa.schema((
+            pa.field("long", pa.int64(), nullable=True),
+            pa.field("list", pa.large_list(pa.int64()), nullable=False),
+            pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+        ))
+    )
+    lhs = spark.table(f"{identifier}").toPandas()
+    rhs = written_arrow_table.to_pandas()
+
+    for column in written_arrow_table.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if column == "map":
+                # Arrow returns a list of tuples, instead of a dict
+                right = dict(right)
+            if column == "list":
+                # Arrow returns an array, convert to list for equality check
+                left, right = list(left), list(right)
+            assert left == right
