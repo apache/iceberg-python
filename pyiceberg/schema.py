@@ -1673,10 +1673,7 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
             return True
         # We only check that the parent node is also of the same type.
         # We check the type of the child nodes when we traverse them later.
-        elif any(
-            (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
-            for container_type in {StructType, MapType, ListType}
-        ):
+        elif not lhs.is_primtive and not rhs.is_primitive:
             self.rich_table.add_row("✅", str(lhs), str(rhs))
             return True
         else:
