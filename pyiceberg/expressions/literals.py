@@ -311,6 +311,10 @@ class LongLiteral(Literal[int]):
     def _(self, _: TimestampType) -> Literal[int]:
         return TimestampLiteral(self.value)
 
+    @to.register(TimestamptzType)
+    def _(self, _: TimestamptzType) -> Literal[int]:
+        return TimestampLiteral(self.value)
+
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         unscaled = Decimal(self.value)
