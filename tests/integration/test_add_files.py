@@ -501,11 +501,14 @@ def test_add_files_fails_on_schema_mismatch(spark: SparkSession, session_catalog
             )
 
     expected = """Mismatch in fields:
-┏━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-┃ Field Name ┃ Category ┃ Table field  ┃ Dataframe field ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
-│ baz        │ Type     │ optional int │ optional string │
-└────────────┴──────────┴──────────────┴─────────────────┘
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field              ┃ Dataframe field          ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional boolean │ 1: foo: optional boolean │
+│ ✅ │ 2: bar: optional string  │ 2: bar: optional string  │
+│ ❌ │ 3: baz: optional int     │ 3: baz: optional string  │
+│ ✅ │ 4: qux: optional date    │ 4: qux: optional date    │
+└────┴──────────────────────────┴──────────────────────────┘
 """
 
     with pytest.raises(ValueError, match=expected):

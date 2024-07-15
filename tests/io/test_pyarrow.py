@@ -1757,7 +1757,7 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 ┃    ┃ Table field              ┃ Dataframe field          ┃
 ┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
-│ ❌ │ 2: bar: required int     │ Missing                  │
+│ ❌ │ 2: bar: required int     │ 2: bar: optional int     │
 │ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
 └────┴──────────────────────────┴──────────────────────────┘
 """
@@ -1836,29 +1836,29 @@ def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Sche
 │ ✅ │ 1: foo: optional string            │ 1: foo: optional string            │
 │ ✅ │ 2: bar: required int               │ 2: bar: required int               │
 │ ✅ │ 3: baz: optional boolean           │ 3: baz: optional boolean           │
-│ ✅ │ 5: element: required string        │ 5: element: required string        │
 │ ✅ │ 4: qux: required list<string>      │ 4: qux: required list<string>      │
-│ ✅ │ 9: key: required string            │ 9: key: required string            │
-│ ✅ │ 10: value: required int            │ 10: value: required int            │
+│ ✅ │ 5: element: required string        │ 5: element: required string        │
+│ ✅ │ 6: quux: required map<string,      │ 6: quux: required map<string,      │
+│    │ map<string, int>>                  │ map<string, int>>                  │
 │ ✅ │ 7: key: required string            │ 7: key: required string            │
 │ ✅ │ 8: value: required map<string,     │ 8: value: required map<string,     │
 │    │ int>                               │ int>                               │
-│ ✅ │ 6: quux: required map<string,      │ 6: quux: required map<string,      │
-│    │ map<string, int>>                  │ map<string, int>>                  │
-│ ✅ │ 13: latitude: optional float       │ 13: latitude: optional float       │
-│ ✅ │ 14: longitude: optional float      │ 14: longitude: optional float      │
-│ ✅ │ 12: element: required struct<13:   │ 12: element: required struct<13:   │
-│    │ latitude: optional float, 14:      │ latitude: optional float, 14:      │
-│    │ longitude: optional float>         │ longitude: optional float>         │
+│ ✅ │ 9: key: required string            │ 9: key: required string            │
+│ ✅ │ 10: value: required int            │ 10: value: required int            │
 │ ✅ │ 11: location: required             │ 11: location: required             │
 │    │ list<struct<13: latitude: optional │ list<struct<13: latitude: optional │
 │    │ float, 14: longitude: optional     │ float, 14: longitude: optional     │
 │    │ float>>                            │ float>>                            │
-│ ✅ │ 16: name: optional string          │ 16: name: optional string          │
-│ ❌ │ 17: age: required int              │ Missing                            │
+│ ✅ │ 12: element: required struct<13:   │ 12: element: required struct<13:   │
+│    │ latitude: optional float, 14:      │ latitude: optional float, 14:      │
+│    │ longitude: optional float>         │ longitude: optional float>         │
+│ ✅ │ 13: latitude: optional float       │ 13: latitude: optional float       │
+│ ✅ │ 14: longitude: optional float      │ 14: longitude: optional float      │
 │ ✅ │ 15: person: optional struct<16:    │ 15: person: optional struct<16:    │
 │    │ name: optional string, 17: age:    │ name: optional string>             │
 │    │ required int>                      │                                    │
+│ ✅ │ 16: name: optional string          │ 16: name: optional string          │
+│ ❌ │ 17: age: required int              │ Missing                            │
 └────┴────────────────────────────────────┴────────────────────────────────────┘
 """
 

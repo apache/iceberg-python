@@ -324,11 +324,6 @@ class Schema(IcebergBaseModel):
         """Return the IDs of the current schema."""
         return set(self._name_to_id.values())
 
-    @property
-    def field_names(self) -> Set[str]:
-        """Return the Names of the current schema."""
-        return set(self._name_to_id.keys())
-
     def _validate_identifier_field(self, field_id: int) -> None:
         """Validate that the field with the given ID is a valid identifier field.
 
@@ -1637,59 +1632,10 @@ def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) 
     Raises:
         ValueError: If the schemas are not compatible.
     """
-    visit(requested_schema, _SchemaCompatibilityVisitor(provided_schema))
-
-    # from rich.console import Console
-    # from rich.table import Table as RichTable
-
-    # console = Console(record=True)
-
-    # rich_table = RichTable(show_header=True, header_style="bold")
-    # rich_table.add_column("")
-    # rich_table.add_column("Table field")
-    # rich_table.add_column("Dataframe field")
-
-    # is_compatible = True
-
-    # for field_id in requested_schema.field_ids:
-    #     lhs = requested_schema.find_field(field_id)
-    #     try:
-    #         rhs = provided_schema.find_field(field_id)
-    #     except ValueError:
-    #         if lhs.required:
-    #             rich_table.add_row("❌", str(lhs), "Missing")
-    #             is_compatible = False
-    #         else:
-    #             rich_table.add_row("✅", str(lhs), "Missing")
-    #         continue
-
-    #     if lhs.required and not rhs.required:
-    #         rich_table.add_row("❌", str(lhs), "Missing")
-    #         is_compatible = False
-
-    #     if lhs.field_type == rhs.field_type:
-    #         rich_table.add_row("✅", str(lhs), str(rhs))
-    #         continue
-    #     elif any(
-    #         (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
-    #         for container_type in {StructType, MapType, ListType}
-    #     ):
-    #         rich_table.add_row("✅", str(lhs), str(rhs))
-    #         continue
-    #     else:
-    #         try:
-    #             promote(rhs.field_type, lhs.field_type)
-    #             rich_table.add_row("✅", str(lhs), str(rhs))
-    #         except ResolveError:
-    #             rich_table.add_row("❌", str(lhs), str(rhs))
-    #             is_compatible = False
-
-    # if not is_compatible:
-    #     console.print(rich_table)
-    #     raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+    pre_order_visit(requested_schema, _SchemaCompatibilityVisitor(provided_schema))
 
 
-class _SchemaCompatibilityVisitor(SchemaVisitor[bool]):
+class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
     provided_schema: Schema
 
     def __init__(self, provided_schema: Schema):
@@ -1704,7 +1650,9 @@ class _SchemaCompatibilityVisitor(SchemaVisitor[bool]):
         self.console = Console(record=True)
 
     def _is_field_compatible(self, lhs: NestedField) -> bool:
-        # Check required field exists as required field first
+        # Validate nullability first.
+        # An optional field can be missing in the provided schema
+        # But a required field must exist as a required field
         try:
             rhs = self.provided_schema.find_field(lhs.field_id)
         except ValueError:
@@ -1716,13 +1664,15 @@ class _SchemaCompatibilityVisitor(SchemaVisitor[bool]):
                 return True
 
         if lhs.required and not rhs.required:
-            self.rich_table.add_row("❌", str(lhs), "Missing")
+            self.rich_table.add_row("❌", str(lhs), str(rhs))
             return False
 
         # Check type compatibility
         if lhs.field_type == rhs.field_type:
             self.rich_table.add_row("✅", str(lhs), str(rhs))
             return True
+        # We only check that the parent node is also of the same type.
+        # We check the type of the child nodes when we traverse them later.
         elif any(
             (isinstance(lhs.field_type, container_type) and isinstance(rhs.field_type, container_type))
             for container_type in {StructType, MapType, ListType}
@@ -1731,6 +1681,8 @@ class _SchemaCompatibilityVisitor(SchemaVisitor[bool]):
             return True
         else:
             try:
+                # If type can be promoted to the requested schema
+                # it is considered compatible
                 promote(rhs.field_type, lhs.field_type)
                 self.rich_table.add_row("✅", str(lhs), str(rhs))
                 return True
@@ -1738,27 +1690,28 @@ class _SchemaCompatibilityVisitor(SchemaVisitor[bool]):
                 self.rich_table.add_row("❌", str(lhs), str(rhs))
                 return False
 
-    def schema(self, schema: Schema, struct_result: bool) -> bool:
-        if not struct_result:
+    def schema(self, schema: Schema, struct_result: Callable[[], bool]) -> bool:
+        if not (result := struct_result()):
             self.console.print(self.rich_table)
             raise ValueError(f"Mismatch in fields:\n{self.console.export_text()}")
-        return struct_result
+        return result
 
-    def struct(self, struct: StructType, field_results: List[bool]) -> bool:
-        return all(field_results)
+    def struct(self, struct: StructType, field_results: List[Callable[[], bool]]) -> bool:
+        results = [result() for result in field_results]
+        return all(results)
 
-    def field(self, field: NestedField, field_result: bool) -> bool:
-        return all([self._is_field_compatible(field), field_result])
+    def field(self, field: NestedField, field_result: Callable[[], bool]) -> bool:
+        return self._is_field_compatible(field) and field_result()
 
-    def list(self, list_type: ListType, element_result: bool) -> bool:
-        return element_result and self._is_field_compatible(list_type.element_field)
+    def list(self, list_type: ListType, element_result: Callable[[], bool]) -> bool:
+        return self._is_field_compatible(list_type.element_field) and element_result()
 
-    def map(self, map_type: MapType, key_result: bool, value_result: bool) -> bool:
+    def map(self, map_type: MapType, key_result: Callable[[], bool], value_result: Callable[[], bool]) -> bool:
         return all([
             self._is_field_compatible(map_type.key_field),
             self._is_field_compatible(map_type.value_field),
-            key_result,
-            value_result,
+            key_result(),
+            value_result(),
         ])
 
     def primitive(self, primitive: PrimitiveType) -> bool:
