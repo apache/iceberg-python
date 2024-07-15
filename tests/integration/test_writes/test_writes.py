@@ -357,7 +357,8 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
     tbl.append(arrow_table)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
-    assert spark_df.equals(pyiceberg_df)
+    assert spark_df["id"].equals(pyiceberg_df["id"])
+    assert all(spark_df["name"].values == pyiceberg_df["name"].values)
 
 
 @pytest.mark.integration
@@ -401,12 +402,12 @@ def test_python_writes_with_small_and_large_types_spark_reads(
     assert arrow_table_on_read.schema == pa.schema([
         pa.field("foo", pa.large_string()),
         pa.field("id", pa.int32()),
-        pa.field("name", pa.large_string()),
+        pa.field("name", pa.string()),
         pa.field(
             "address",
             pa.struct([
-                pa.field("street", pa.large_string()),
-                pa.field("city", pa.large_string()),
+                pa.field("street", pa.string()),
+                pa.field("city", pa.string()),
                 pa.field("zip", pa.int32()),
                 pa.field("bar", pa.large_string()),
             ]),
