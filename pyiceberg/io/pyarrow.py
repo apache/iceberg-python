@@ -1453,17 +1453,14 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
             except ValueError:
                 return None
 
-            try:
-                if isinstance(partner_struct, pa.StructArray):
-                    return partner_struct.field(name)
-                elif isinstance(partner_struct, pa.Table):
-                    return partner_struct.column(name).combine_chunks()
-                elif isinstance(partner_struct, pa.RecordBatch):
-                    return partner_struct.column(name)
-                else:
-                    raise ValueError(f"Cannot find {name} in expected partner_struct type {type(partner_struct)}")
-            except KeyError:
-                return None
+            if isinstance(partner_struct, pa.StructArray):
+                return partner_struct.field(name)
+            elif isinstance(partner_struct, pa.Table):
+                return partner_struct.column(name).combine_chunks()
+            elif isinstance(partner_struct, pa.RecordBatch):
+                return partner_struct.column(name)
+            else:
+                raise ValueError(f"Cannot find {name} in expected partner_struct type {type(partner_struct)}")
 
         return None
 

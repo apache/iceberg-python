@@ -1079,13 +1079,12 @@ def test_table_write_schema_with_valid_upcast(
 
     for column in written_arrow_table.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-            print(f"{left=}, {right=}")
             if column == "map":
                 # Arrow returns a list of tuples, instead of a dict
                 right = dict(right)
             if column == "list":
-                # Arrow returns an array
-                right = list(right)
+                # Arrow returns an array, convert to list for equality check
+                left, right = list(left), list(right)
             assert left == right
 
 
