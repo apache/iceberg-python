@@ -269,8 +269,6 @@ catalog:
 Your AWS credentials can be passed directly through the Python API.
 Otherwise, please refer to
 [How to configure AWS credentials](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) to set your AWS account credentials locally.
-If you did not set up a default AWS profile, you can configure the `profile_name`.
-If you want to use the same credentials for both Glue Catalog and S3 FileIO, you can set the [`client.*` properties](configuration.md#unified-aws-credentials).
 
 ```yaml
 catalog:
@@ -280,6 +278,9 @@ catalog:
     glue.secret-access-key: <SECRET_ACCESS_KEY>
     glue.session-token: <SESSION_TOKEN>
     glue.region: <REGION_NAME>
+    s3.endpoint: http://localhost:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
 ```
 
 ```yaml
@@ -288,7 +289,17 @@ catalog:
     type: glue
     glue.profile-name: <PROFILE_NAME>
     glue.region: <REGION_NAME>
+    s3.endpoint: http://localhost:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
 ```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "Client-specific Properties"
+    `glue.*` properties are for Glue Catalog only. If you want to use the same credentials for both Glue Catalog and S3 FileIO, you can set the `client.*` properties. See the [Unified AWS Credentials](configuration.md#unified-aws-credentials) section for more details.
+
+<!-- prettier-ignore-end -->
 
 <!-- markdown-link-check-disable -->
 
@@ -337,17 +348,27 @@ catalog:
     dynamodb.secret-access-key: <SECRET_ACCESS_KEY>
     dynamodb.session-token: <SESSION_TOKEN>
     dynamodb.region: <REGION_NAME>
+    s3.endpoint: http://localhost:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
 ```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "Client-specific Properties"
+    `dynamodb.*` properties are for DynamoDB Catalog only. If you want to use the same credentials for both DynamoDB Catalog and S3 FileIO, you can set the `client.*` properties. See the [Unified AWS Credentials](configuration.md#unified-aws-credentials) section for more details.
+
+<!-- prettier-ignore-end -->
 
 <!-- markdown-link-check-disable -->
 
 | Key                        | Example        | Description                                                                |
 | -------------------------- | -------------- | -------------------------------------------------------------------------- |
-| dynamodb.profile-name      | default        | Configure the static profile used to access the Dynamodb Catalog           |
-| dynamodb.region            | us-east-1      | Set the region of the Dynamodb Catalog                                     |
-| dynamodb.access-key-id     | admin          | Configure the static access key id used to access the Dynamodb Catalog     |
-| dynamodb.secret-access-key | password       | Configure the static secret access key used to access the Dynamodb Catalog |
-| dynamodb.session-token     | AQoDYXdzEJr... | Configure the static session token used to access the Dynamodb Catalog     |
+| dynamodb.profile-name      | default        | Configure the static profile used to access the DynamoDB Catalog           |
+| dynamodb.region            | us-east-1      | Set the region of the DynamoDB Catalog                                     |
+| dynamodb.access-key-id     | admin          | Configure the static access key id used to access the DynamoDB Catalog     |
+| dynamodb.secret-access-key | password       | Configure the static secret access key used to access the DynamoDB Catalog |
+| dynamodb.session-token     | AQoDYXdzEJr... | Configure the static session token used to access the DynamoDB Catalog     |
 
 <!-- markdown-link-check-enable-->
 
@@ -360,7 +381,18 @@ catalog:
 
 ## Unified AWS Credentials
 
-You can explicitly set the AWS credentials for both Glue/Dynamodb Catalog and S3 FileIO by configure `client.*` properties.
+You can explicitly set the AWS credentials for both Glue/DynamoDB Catalog and S3 FileIO by configuring `client.*` properties. For example:
+
+```yaml
+catalog:
+  default:
+    type: glue
+    client.access-key-id: <ACCESS_KEY_ID>
+    client.secret-access-key: <SECRET_ACCESS_KEY>
+    client.region: <REGION_NAME>
+```
+
+configures the AWS credentials for both Glue Catalog and S3 FileIO.
 
 | Key                      | Example        | Description                                                                                            |
 | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------ |
@@ -369,7 +401,12 @@ You can explicitly set the AWS credentials for both Glue/Dynamodb Catalog and S3
 | client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO |
 | client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
 
-Note that the `client.*` properties will be overridden by service-specific properties if they are set. For example, if `client.region` is set to `us-west-1` and `s3.region` is set to `us-east-1`, the S3 FileIO will use `us-east-1` as the region.
+<!-- prettier-ignore-start -->
+
+!!! Note "Properties Priority"
+    `client.*` properties will be overridden by service-specific properties if they are set. For example, if `client.region` is set to `us-west-1` and `s3.region` is set to `us-east-1`, the S3 FileIO will use `us-east-1` as the region.
+
+<!-- prettier-ignore-end -->
 
 ## Concurrency
 
