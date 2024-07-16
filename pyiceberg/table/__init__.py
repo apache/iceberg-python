@@ -543,11 +543,6 @@ class Transaction:
 
         _check_schema_compatible(self._table.schema(), other_schema=df.schema)
 
-        # cast if the two schemas are compatible but not equal
-        table_arrow_schema = self._table.schema().as_arrow()
-        if table_arrow_schema != df.schema:
-            df = df.cast(table_arrow_schema)
-
         # If dataframe does not have data, there is no need to overwrite
         if df.shape[0] == 0:
             return
