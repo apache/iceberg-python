@@ -654,29 +654,30 @@ def test_table_write_schema_with_valid_upcast(
     spark: SparkSession,
     session_catalog: Catalog,
     format_version: int,
-    table_schema_with_longs: Schema,
-    pyarrow_schema_with_longs: pa.Schema,
-    pyarrow_table_with_longs: pa.Table,
+    table_schema_with_promoted_types: Schema,
+    pyarrow_schema_with_promoted_types: pa.Schema,
+    pyarrow_table_with_promoted_types: pa.Table,
 ) -> None:
     identifier = f"default.test_table_write_with_valid_upcast{format_version}"
-    tbl = _create_table(session_catalog, identifier, format_version, schema=table_schema_with_longs)
+    tbl = _create_table(session_catalog, identifier, format_version, schema=table_schema_with_promoted_types)
 
     file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
     # write parquet files
     fo = tbl.io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
-        with pq.ParquetWriter(fos, schema=pyarrow_schema_with_longs) as writer:
-            writer.write_table(pyarrow_table_with_longs)
+        with pq.ParquetWriter(fos, schema=pyarrow_schema_with_promoted_types) as writer:
+            writer.write_table(pyarrow_table_with_promoted_types)
 
     tbl.add_files(file_paths=[file_path])
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
-    assert written_arrow_table == pyarrow_table_with_longs.cast(
+    assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
         pa.schema((
             pa.field("long", pa.int64(), nullable=True),
             pa.field("list", pa.large_list(pa.int64()), nullable=False),
             pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
             pa.field("double", pa.float64(), nullable=True),
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
         ))
     )
     lhs = spark.table(f"{identifier}").toPandas()
@@ -690,4 +691,8 @@ def test_table_write_schema_with_valid_upcast(
             if column == "list":
                 # Arrow returns an array, convert to list for equality check
                 left, right = list(left), list(right)
+            if column == "uuid":
+                # Spark Iceberg represents UUID as hex string like '715a78ef-4e53-4089-9bf9-3ad0ee9bf545'
+                # whereas PyIceberg represents UUID as bytes on read
+                left, right = left.replace("-", ""), right.hex()
             assert left == right

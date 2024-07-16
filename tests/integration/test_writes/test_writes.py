@@ -1030,9 +1030,9 @@ def test_table_write_schema_with_valid_upcast(
     spark: SparkSession,
     session_catalog: Catalog,
     format_version: int,
-    table_schema_with_longs: Schema,
-    pyarrow_schema_with_longs: pa.Schema,
-    pyarrow_table_with_longs: pa.Table,
+    table_schema_with_promoted_types: Schema,
+    pyarrow_schema_with_promoted_types: pa.Schema,
+    pyarrow_table_with_promoted_types: pa.Table,
 ) -> None:
     identifier = "default.test_table_write_with_valid_upcast"
 
@@ -1040,17 +1040,18 @@ def test_table_write_schema_with_valid_upcast(
         session_catalog,
         identifier,
         {"format-version": format_version},
-        [pyarrow_table_with_longs],
-        schema=table_schema_with_longs,
+        [pyarrow_table_with_promoted_types],
+        schema=table_schema_with_promoted_types,
     )
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
-    assert written_arrow_table == pyarrow_table_with_longs.cast(
+    assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
         pa.schema((
             pa.field("long", pa.int64(), nullable=True),
             pa.field("list", pa.large_list(pa.int64()), nullable=False),
             pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
             pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
         ))
     )
     lhs = spark.table(f"{identifier}").toPandas()
@@ -1064,6 +1065,10 @@ def test_table_write_schema_with_valid_upcast(
             if column == "list":
                 # Arrow returns an array, convert to list for equality check
                 left, right = list(left), list(right)
+            if column == "uuid":
+                # Spark Iceberg represents UUID as hex string like '715a78ef-4e53-4089-9bf9-3ad0ee9bf545'
+                # whereas PyIceberg represents UUID as bytes on read
+                left, right = left.replace("-", ""), right.hex()
             assert left == right
 
 
