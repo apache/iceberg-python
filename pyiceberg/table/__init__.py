@@ -503,13 +503,13 @@ class Transaction:
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
 
-    def _build_partition_predicate(self, spec_id: int, delete_partitions: List[Record]) -> BooleanExpression:
+    def _build_partition_predicate(self, partition_records: List[Record]) -> BooleanExpression:
         partition_spec = self.table_metadata.spec()
         schema = self.table_metadata.schema()
         partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
 
         expr: BooleanExpression = AlwaysFalse()
-        for partition_record in delete_partitions:
+        for partition_record in partition_records:
             match_partition_expression: BooleanExpression = AlwaysTrue()
 
             for pos in range(len(partition_fields)):
@@ -559,17 +559,21 @@ class Transaction:
             )
         )
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            delete_partitions = [data_file.partition for data_file in data_files]
-            delete_filter = self._build_partition_predicate(
-                spec_id=self.table_metadata.spec().spec_id, delete_partitions=delete_partitions
-            )
+            deleted_partitions = [data_file.partition for data_file in data_files]
+            delete_filter = self._build_partition_predicate(partition_records=deleted_partitions)
             delete_snapshot.delete_by_predicate(delete_filter)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append(
-            append_snapshot_commit_uuid
-        ) as append_snapshot:
+        manifest_merge_enabled = PropertyUtil.property_as_bool(
+            self.table_metadata.properties,
+            TableProperties.MANIFEST_MERGE_ENABLED,
+            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+        )
+        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
+        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+
+        with append_method(commit_uuid=append_snapshot_commit_uuid) as append_files:
             for data_file in data_files:
-                append_snapshot.append_data_file(data_file)
+                append_files.append_data_file(data_file)
 
     def overwrite(
         self,
@@ -613,14 +617,22 @@ class Transaction:
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+        manifest_merge_enabled = PropertyUtil.property_as_bool(
+            self.table_metadata.properties,
+            TableProperties.MANIFEST_MERGE_ENABLED,
+            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+        )
+        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
+        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+
+        with append_method() as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self._table.metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self._table.metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
-                    update_snapshot.append_data_file(data_file)
+                    append_files.append_data_file(data_file)
 
     def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
