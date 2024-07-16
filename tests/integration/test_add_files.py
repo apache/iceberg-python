@@ -30,6 +30,7 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io import FileIO
+from pyiceberg.io.pyarrow import _pyarrow_schema_ensure_large_types
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -611,10 +612,8 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_table_write_schema_with_valid_nullability_diff(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
-) -> None:
-    identifier = f"default.test_table_write_with_valid_nullability_diff{format_version}"
+def test_add_file_with_valid_nullability_diff(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.test_table_with_valid_nullability_diff{format_version}"
     table_schema = Schema(
         NestedField(field_id=1, name="long", field_type=LongType(), required=False),
     )
@@ -629,7 +628,7 @@ def test_table_write_schema_with_valid_nullability_diff(
     )
     tbl = _create_table(session_catalog, identifier, format_version, schema=table_schema)
 
-    file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
+    file_path = f"s3://warehouse/default/test_add_file_with_valid_nullability_diff/v{format_version}/test.parquet"
     # write parquet files
     fo = tbl.io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
@@ -650,7 +649,7 @@ def test_table_write_schema_with_valid_nullability_diff(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_table_write_schema_with_valid_upcast(
+def test_add_files_with_valid_upcast(
     spark: SparkSession,
     session_catalog: Catalog,
     format_version: int,
@@ -658,10 +657,10 @@ def test_table_write_schema_with_valid_upcast(
     pyarrow_schema_with_promoted_types: pa.Schema,
     pyarrow_table_with_promoted_types: pa.Table,
 ) -> None:
-    identifier = f"default.test_table_write_with_valid_upcast{format_version}"
+    identifier = f"default.test_table_with_valid_upcast{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version, schema=table_schema_with_promoted_types)
 
-    file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
+    file_path = f"s3://warehouse/default/test_add_files_with_valid_upcast/v{format_version}/test.parquet"
     # write parquet files
     fo = tbl.io.new_output(file_path)
     with fo.create(overwrite=True) as fos:
@@ -695,4 +694,41 @@ def test_table_write_schema_with_valid_upcast(
                 # Spark Iceberg represents UUID as hex string like '715a78ef-4e53-4089-9bf9-3ad0ee9bf545'
                 # whereas PyIceberg represents UUID as bytes on read
                 left, right = left.replace("-", ""), right.hex()
+            assert left == right
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.test_table_subset_of_schema{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_path = f"s3://warehouse/default/test_add_files_subset_of_schema/v{format_version}/test.parquet"
+    arrow_table_without_some_columns = ARROW_TABLE.combine_chunks().drop(ARROW_TABLE.column_names[0])
+
+    # write parquet files
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=arrow_table_without_some_columns.schema) as writer:
+            writer.write_table(arrow_table_without_some_columns)
+
+    tbl.add_files(file_paths=[file_path])
+    written_arrow_table = tbl.scan().to_arrow()
+    assert tbl.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {
+                "foo": None,  # Missing column is read as None on read
+                "bar": "bar_string",
+                "baz": 123,
+                "qux": date(2024, 3, 7),
+            }
+        ],
+        schema=_pyarrow_schema_ensure_large_types(ARROW_SCHEMA),
+    )
+
+    lhs = spark.table(f"{identifier}").toPandas()
+    rhs = written_arrow_table.to_pandas()
+
+    for column in written_arrow_table.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
             assert left == right

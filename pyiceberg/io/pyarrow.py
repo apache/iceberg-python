@@ -1906,16 +1906,6 @@ def data_file_statistics_from_parquet_metadata(
             set the mode for column metrics collection
         parquet_column_mapping (Dict[str, int]): The mapping of the parquet file name to the field ID
     """
-    if parquet_metadata.num_columns != len(stats_columns):
-        raise ValueError(
-            f"Number of columns in statistics configuration ({len(stats_columns)}) is different from the number of columns in pyarrow table ({parquet_metadata.num_columns})"
-        )
-
-    if parquet_metadata.num_columns != len(parquet_column_mapping):
-        raise ValueError(
-            f"Number of columns in column mapping ({len(parquet_column_mapping)}) is different from the number of columns in pyarrow table ({parquet_metadata.num_columns})"
-        )
-
     column_sizes: Dict[int, int] = {}
     value_counts: Dict[int, int] = {}
     split_offsets: List[int] = []
