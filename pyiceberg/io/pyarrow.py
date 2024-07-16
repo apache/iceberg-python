@@ -1552,9 +1552,16 @@ class StatsAggregator:
 
         expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
-            raise ValueError(
-                f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
-            )
+            # Allow promotable physical types
+            # INT32 -> INT64 and FLOAT -> DOUBLE are safe type casts
+            if (physical_type_string == "INT32" and expected_physical_type == "INT64") or (
+                physical_type_string == "FLOAT" and expected_physical_type == "DOUBLE"
+            ):
+                pass
+            else:
+                raise ValueError(
+                    f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
+                )
 
         self.primitive_type = iceberg_type
 

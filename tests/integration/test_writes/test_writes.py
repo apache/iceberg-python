@@ -1050,6 +1050,7 @@ def test_table_write_schema_with_valid_upcast(
             pa.field("long", pa.int64(), nullable=True),
             pa.field("list", pa.large_list(pa.int64()), nullable=False),
             pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+            pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
         ))
     )
     lhs = spark.table(f"{identifier}").toPandas()

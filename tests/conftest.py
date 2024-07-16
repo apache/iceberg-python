@@ -2531,6 +2531,7 @@ def table_schema_with_longs() -> Schema:
             ),
             required=True,
         ),
+        NestedField(field_id=7, name="double", field_type=DoubleType(), required=False),
     )
 
 
@@ -2543,6 +2544,7 @@ def pyarrow_schema_with_longs() -> "pa.Schema":
         pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
         pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
         pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
+        pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
     ))
 
 
@@ -2556,6 +2558,7 @@ def pyarrow_table_with_longs(pyarrow_schema_with_longs: "pa.Schema") -> "pa.Tabl
             "long": [1, 9],
             "list": [[1, 1], [2, 2]],
             "map": [{"a": 1}, {"b": 2}],
+            "double": [1.1, 9.2],
         },
         schema=pyarrow_schema_with_longs,
     )

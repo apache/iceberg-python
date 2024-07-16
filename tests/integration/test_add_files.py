@@ -590,18 +590,7 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
     mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
 
     identifier = f"default.timestamptz_ns_added{format_version}"
-
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = session_catalog.create_table(
-        identifier=identifier,
-        schema=nanoseconds_schema_iceberg,
-        properties={"format-version": str(format_version)},
-        partition_spec=PartitionSpec(),
-    )
+    tbl = _create_table(session_catalog, identifier, format_version, schema=nanoseconds_schema_iceberg)
 
     file_path = f"s3://warehouse/default/test_timestamp_tz/v{format_version}/test.parquet"
     # write parquet files
@@ -638,12 +627,7 @@ def test_table_write_schema_with_valid_nullability_diff(
         },
         schema=other_schema,
     )
-    tbl = session_catalog.create_table(
-        identifier=identifier,
-        schema=table_schema,
-        properties={"format-version": str(format_version)},
-        partition_spec=PartitionSpec(),
-    )
+    tbl = _create_table(session_catalog, identifier, format_version, schema=table_schema)
 
     file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
     # write parquet files
@@ -675,12 +659,7 @@ def test_table_write_schema_with_valid_upcast(
     pyarrow_table_with_longs: pa.Table,
 ) -> None:
     identifier = f"default.test_table_write_with_valid_upcast{format_version}"
-    tbl = session_catalog.create_table(
-        identifier=identifier,
-        schema=table_schema_with_longs,
-        properties={"format-version": str(format_version)},
-        partition_spec=PartitionSpec(),
-    )
+    tbl = _create_table(session_catalog, identifier, format_version, schema=table_schema_with_longs)
 
     file_path = f"s3://warehouse/default/test_valid_nullability_diff/v{format_version}/test.parquet"
     # write parquet files
@@ -697,6 +676,7 @@ def test_table_write_schema_with_valid_upcast(
             pa.field("long", pa.int64(), nullable=True),
             pa.field("list", pa.large_list(pa.int64()), nullable=False),
             pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+            pa.field("double", pa.float64(), nullable=True),
         ))
     )
     lhs = spark.table(f"{identifier}").toPandas()
