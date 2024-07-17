@@ -2506,3 +2506,62 @@ def table_schema_with_all_microseconds_timestamp_precision() -> Schema:
         NestedField(field_id=10, name="timestamptz_ns_z", field_type=TimestamptzType(), required=False),
         NestedField(field_id=11, name="timestamptz_s_0000", field_type=TimestamptzType(), required=False),
     )
+
+
+@pytest.fixture(scope="session")
+def table_schema_with_promoted_types() -> Schema:
+    """Iceberg table Schema with longs, doubles and uuid in simple and nested types."""
+    return Schema(
+        NestedField(field_id=1, name="long", field_type=LongType(), required=False),
+        NestedField(
+            field_id=2,
+            name="list",
+            field_type=ListType(element_id=4, element_type=LongType(), element_required=False),
+            required=True,
+        ),
+        NestedField(
+            field_id=3,
+            name="map",
+            field_type=MapType(
+                key_id=5,
+                key_type=StringType(),
+                value_id=6,
+                value_type=LongType(),
+                value_required=False,
+            ),
+            required=True,
+        ),
+        NestedField(field_id=7, name="double", field_type=DoubleType(), required=False),
+        NestedField(field_id=8, name="uuid", field_type=UUIDType(), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def pyarrow_schema_with_promoted_types() -> "pa.Schema":
+    """Pyarrow Schema with longs, doubles and uuid in simple and nested types."""
+    import pyarrow as pa
+
+    return pa.schema((
+        pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
+        pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
+        pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
+        pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
+        pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
+    ))
+
+
+@pytest.fixture(scope="session")
+def pyarrow_table_with_promoted_types(pyarrow_schema_with_promoted_types: "pa.Schema") -> "pa.Table":
+    """Pyarrow table with longs, doubles and uuid in simple and nested types."""
+    import pyarrow as pa
+
+    return pa.Table.from_pydict(
+        {
+            "long": [1, 9],
+            "list": [[1, 1], [2, 2]],
+            "map": [{"a": 1}, {"b": 2}],
+            "double": [1.1, 9.2],
+            "uuid": [b"qZx\xefNS@\x89\x9b\xf9:\xd0\xee\x9b\xf5E", b"\x97]\x87T^JDJ\x96\x97\xf4v\xe4\x03\x0c\xde"],
+        },
+        schema=pyarrow_schema_with_promoted_types,
+    )

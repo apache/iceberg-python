@@ -60,7 +60,7 @@ from pyiceberg.io.pyarrow import (
     PyArrowFile,
     PyArrowFileIO,
     StatsAggregator,
-    _check_schema_compatible,
+    _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
@@ -1742,7 +1742,7 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
@@ -1763,7 +1763,20 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+
+
+def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None:
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=False),
+    ))
+
+    try:
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
@@ -1783,21 +1796,114 @@ def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+
+
+def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Schema) -> None:
+    schema = table_schema_nested.as_arrow()
+    schema = schema.remove(6).insert(
+        6,
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("age", pa.int32(), nullable=False),
+            ]),
+            nullable=True,
+        ),
+    )
+    try:
+        _check_pyarrow_schema_compatible(table_schema_nested, schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
+
+
+def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Schema) -> None:
+    other_schema = table_schema_nested.as_arrow()
+    other_schema = other_schema.remove(6).insert(
+        6,
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("name", pa.string(), nullable=True),
+            ]),
+            nullable=True,
+        ),
+    )
+    expected = """Mismatch in fields:
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field                        ┃ Dataframe field                    ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional string            │ 1: foo: optional string            │
+│ ✅ │ 2: bar: required int               │ 2: bar: required int               │
+│ ✅ │ 3: baz: optional boolean           │ 3: baz: optional boolean           │
+│ ✅ │ 4: qux: required list<string>      │ 4: qux: required list<string>      │
+│ ✅ │ 5: element: required string        │ 5: element: required string        │
+│ ✅ │ 6: quux: required map<string,      │ 6: quux: required map<string,      │
+│    │ map<string, int>>                  │ map<string, int>>                  │
+│ ✅ │ 7: key: required string            │ 7: key: required string            │
+│ ✅ │ 8: value: required map<string,     │ 8: value: required map<string,     │
+│    │ int>                               │ int>                               │
+│ ✅ │ 9: key: required string            │ 9: key: required string            │
+│ ✅ │ 10: value: required int            │ 10: value: required int            │
+│ ✅ │ 11: location: required             │ 11: location: required             │
+│    │ list<struct<13: latitude: optional │ list<struct<13: latitude: optional │
+│    │ float, 14: longitude: optional     │ float, 14: longitude: optional     │
+│    │ float>>                            │ float>>                            │
+│ ✅ │ 12: element: required struct<13:   │ 12: element: required struct<13:   │
+│    │ latitude: optional float, 14:      │ latitude: optional float, 14:      │
+│    │ longitude: optional float>         │ longitude: optional float>         │
+│ ✅ │ 13: latitude: optional float       │ 13: latitude: optional float       │
+│ ✅ │ 14: longitude: optional float      │ 14: longitude: optional float      │
+│ ✅ │ 15: person: optional struct<16:    │ 15: person: optional struct<16:    │
+│    │ name: optional string, 17: age:    │ name: optional string>             │
+│    │ required int>                      │                                    │
+│ ✅ │ 16: name: optional string          │ 16: name: optional string          │
+│ ❌ │ 17: age: required int              │ Missing                            │
+└────┴────────────────────────────────────┴────────────────────────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        _check_pyarrow_schema_compatible(table_schema_nested, other_schema)
+
+
+def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
+    try:
+        _check_pyarrow_schema_compatible(table_schema_nested, table_schema_nested.as_arrow())
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
     other_schema = pa.schema((
         pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
         pa.field("baz", pa.bool_(), nullable=True),
         pa.field("new_field", pa.date32(), nullable=True),
     ))
 
-    expected = r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
+    with pytest.raises(
+        ValueError, match=r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
+    ):
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
 
-    with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+
+def test_schema_compatible(table_schema_simple: Schema) -> None:
+    try:
+        _check_pyarrow_schema_compatible(table_schema_simple, table_schema_simple.as_arrow())
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
+
+
+def test_schema_projection(table_schema_simple: Schema) -> None:
+    # remove optional `baz` field from `table_schema_simple`
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+    ))
+    try:
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_schema_downcast(table_schema_simple: Schema) -> None:
@@ -1809,9 +1915,9 @@ def test_schema_downcast(table_schema_simple: Schema) -> None:
     ))
 
     try:
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
     except Exception:
-        pytest.fail("Unexpected Exception raised when calling `_check_schema`")
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_partition_for_demo() -> None:

@@ -73,7 +73,6 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, OutputFile, load_file_io
-from pyiceberg.io.pyarrow import _check_schema_compatible, _dataframe_to_data_files, expression_to_pyarrow, project_table
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -471,6 +470,8 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
@@ -481,8 +482,8 @@ class Transaction:
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_schema_compatible(
-            self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        _check_pyarrow_schema_compatible(
+            self._table.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
         manifest_merge_enabled = PropertyUtil.property_as_bool(
@@ -528,6 +529,8 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
@@ -538,8 +541,8 @@ class Transaction:
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_schema_compatible(
-            self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        _check_pyarrow_schema_compatible(
+            self._table.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
@@ -566,6 +569,8 @@ class Transaction:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files, expression_to_pyarrow, project_table
+
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
