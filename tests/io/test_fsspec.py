@@ -31,6 +31,7 @@ from pyiceberg.io import fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, s3v4_rest_signer
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.typedef import Properties
+from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
 def test_fsspec_infer_local_fs_from_path(fsspec_fileio: FsspecFileIO) -> None:
@@ -237,7 +238,6 @@ def test_fsspec_pickle_round_trip_s3(fsspec_fileio: FsspecFileIO) -> None:
     _test_fsspec_pickle_round_trip(fsspec_fileio, "s3://warehouse/foo.txt")
 
 
-@pytest.mark.s3
 def test_fsspec_s3_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",
@@ -245,10 +245,7 @@ def test_fsspec_s3_session_properties() -> None:
         "s3.secret-access-key": "password",
         "s3.region": "us-east-1",
         "s3.session-token": "s3.session-token",
-        "client.access-key-id": "client.access-key-id",
-        "client.secret-access-key": "client.secret-access-key",
-        "client.region": "client.region",
-        "client.session-token": "client.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
@@ -269,14 +266,10 @@ def test_fsspec_s3_session_properties() -> None:
         )
 
 
-@pytest.mark.s3
 def test_fsspec_unified_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",
-        "client.access-key-id": "admin",
-        "client.secret-access-key": "password",
-        "client.region": "us-east-1",
-        "client.session-token": "client.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
@@ -288,9 +281,9 @@ def test_fsspec_unified_session_properties() -> None:
         mock_s3fs.assert_called_with(
             client_kwargs={
                 "endpoint_url": "http://localhost:9000",
-                "aws_access_key_id": "admin",
-                "aws_secret_access_key": "password",
-                "region_name": "us-east-1",
+                "aws_access_key_id": "client.access-key-id",
+                "aws_secret_access_key": "client.secret-access-key",
+                "region_name": "client.region",
                 "aws_session_token": "client.session-token",
             },
             config_kwargs={},

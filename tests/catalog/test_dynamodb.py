@@ -43,7 +43,12 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Properties
-from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
+from tests.conftest import (
+    BUCKET_NAME,
+    DEPRECATED_AWS_SESSION_PROPERTIES,
+    TABLE_METADATA_LOCATION_REGEX,
+    UNIFIED_AWS_SESSION_PROPERTIES,
+)
 
 
 @mock_aws
@@ -588,15 +593,8 @@ def test_passing_glue_session_properties() -> None:
         "dynamodb.profile-name": "dynamodb.profile-name",
         "dynamodb.region": "dynamodb.region",
         "dynamodb.session-token": "dynamodb.session-token",
-        "client.access-key-id": "client.access-key-id",
-        "client.secret-access-key": "client.secret-access-key",
-        "client.region": "client.region",
-        "client.session-token": "client.session-token",
-        "aws_access_key_id": "aws_access_key_id",
-        "aws_secret_access_key": "aws_secret_access_key",
-        "aws_session_token": "aws_session_token",
-        "region_name": "region_name",
-        "profile_name": "profile_name",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -620,15 +618,8 @@ def test_passing_glue_session_properties() -> None:
 def test_passing_unified_session_properties_to_dynamodb() -> None:
     session_properties: Properties = {
         "dynamodb.profile-name": "dynamodb.profile-name",
-        "client.access-key-id": "client.access-key-id",
-        "client.secret-access-key": "client.secret-access-key",
-        "client.region": "client.region",
-        "client.session-token": "client.session-token",
-        "aws_access_key_id": "aws_access_key_id",
-        "aws_secret_access_key": "aws_secret_access_key",
-        "aws_session_token": "aws_session_token",
-        "region_name": "region_name",
-        "profile_name": "profile_name",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:

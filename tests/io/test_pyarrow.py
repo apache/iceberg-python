@@ -99,6 +99,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
@@ -356,10 +357,7 @@ def test_pyarrow_s3_session_properties() -> None:
         "s3.secret-access-key": "password",
         "s3.region": "us-east-1",
         "s3.session-token": "s3.session-token",
-        "client.access-key-id": "client.access-key-id",
-        "client.secret-access-key": "client.secret-access-key",
-        "client.region": "client.region",
-        "client.session-token": "client.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
     with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
@@ -380,10 +378,7 @@ def test_pyarrow_s3_session_properties() -> None:
 def test_pyarrow_unified_session_properties() -> None:
     session_properties: Properties = {
         "s3.endpoint": "http://localhost:9000",
-        "client.access-key-id": "admin",
-        "client.secret-access-key": "password",
-        "client.region": "us-east-1",
-        "client.session-token": "client.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
     with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
@@ -394,9 +389,9 @@ def test_pyarrow_unified_session_properties() -> None:
 
         mock_s3fs.assert_called_with(
             endpoint_override="http://localhost:9000",
-            access_key="admin",
-            secret_key="password",
-            region="us-east-1",
+            access_key="client.access-key-id",
+            secret_key="client.secret-access-key",
+            region="client.region",
             session_token="client.session-token",
         )
 
