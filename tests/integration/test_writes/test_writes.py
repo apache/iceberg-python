@@ -43,7 +43,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import IntegerType, NestedField
+from pyiceberg.types import IntegerType, LongType, NestedField
 from utils import _create_table
 
 
@@ -964,9 +964,10 @@ def test_sanitize_character_partitioned(catalog: Catalog) -> None:
     assert len(tbl.scan().to_arrow()) == 22
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
-    identifier = "default.table_append_subset_of_schema"
+def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    identifier = "default.test_table_write_subset_of_schema"
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     arrow_table_without_some_columns = arrow_table_with_null.combine_chunks().drop(arrow_table_with_null.column_names[0])
     assert len(arrow_table_without_some_columns.columns) < len(arrow_table_with_null.columns)
@@ -974,6 +975,101 @@ def table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with_null
     tbl.append(arrow_table_without_some_columns)
     # overwrite and then append should produce twice the data
     assert len(tbl.scan().to_arrow()) == len(arrow_table_without_some_columns) * 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+    identifier = "default.test_table_write_out_of_order_schema"
+    # rotate the schema fields by 1
+    fields = list(arrow_table_with_null.schema)
+    rotated_fields = fields[1:] + fields[:1]
+    rotated_schema = pa.schema(rotated_fields)
+    assert arrow_table_with_null.schema != rotated_schema
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=rotated_schema)
+
+    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+    # overwrite and then append should produce twice the data
+    assert len(tbl.scan().to_arrow()) == len(arrow_table_with_null) * 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_write_schema_with_valid_nullability_diff(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_table_write_with_valid_nullability_diff"
+    table_schema = Schema(
+        NestedField(field_id=1, name="long", field_type=LongType(), required=False),
+    )
+    other_schema = pa.schema((
+        pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
+    ))
+    arrow_table = pa.Table.from_pydict(
+        {
+            "long": [1, 9],
+        },
+        schema=other_schema,
+    )
+    tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table], schema=table_schema)
+    # table's long field should cast to be optional on read
+    written_arrow_table = tbl.scan().to_arrow()
+    assert written_arrow_table == arrow_table.cast(pa.schema((pa.field("long", pa.int64(), nullable=True),)))
+    lhs = spark.table(f"{identifier}").toPandas()
+    rhs = written_arrow_table.to_pandas()
+
+    for column in written_arrow_table.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            assert left == right
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_table_write_schema_with_valid_upcast(
+    spark: SparkSession,
+    session_catalog: Catalog,
+    format_version: int,
+    table_schema_with_promoted_types: Schema,
+    pyarrow_schema_with_promoted_types: pa.Schema,
+    pyarrow_table_with_promoted_types: pa.Table,
+) -> None:
+    identifier = "default.test_table_write_with_valid_upcast"
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version},
+        [pyarrow_table_with_promoted_types],
+        schema=table_schema_with_promoted_types,
+    )
+    # table's long field should cast to long on read
+    written_arrow_table = tbl.scan().to_arrow()
+    assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
+        pa.schema((
+            pa.field("long", pa.int64(), nullable=True),
+            pa.field("list", pa.large_list(pa.int64()), nullable=False),
+            pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+            pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+        ))
+    )
+    lhs = spark.table(f"{identifier}").toPandas()
+    rhs = written_arrow_table.to_pandas()
+
+    for column in written_arrow_table.column_names:
+        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
+            if column == "map":
+                # Arrow returns a list of tuples, instead of a dict
+                right = dict(right)
+            if column == "list":
+                # Arrow returns an array, convert to list for equality check
+                left, right = list(left), list(right)
+            if column == "uuid":
+                # Spark Iceberg represents UUID as hex string like '715a78ef-4e53-4089-9bf9-3ad0ee9bf545'
+                # whereas PyIceberg represents UUID as bytes on read
+                left, right = left.replace("-", ""), right.hex()
+            assert left == right
 
 
 @pytest.mark.integration

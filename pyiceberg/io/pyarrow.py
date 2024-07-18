@@ -124,6 +124,7 @@ from pyiceberg.schema import (
     Schema,
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
+    _check_schema_compatible,
     pre_order_visit,
     promote,
     prune_columns,
@@ -1413,7 +1414,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
                 list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
-
+            value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = pa.large_list(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
         else:
@@ -1423,6 +1424,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
         self, map_type: MapType, map_array: Optional[pa.Array], key_result: Optional[pa.Array], value_result: Optional[pa.Array]
     ) -> Optional[pa.Array]:
         if isinstance(map_array, pa.MapArray) and key_result is not None and value_result is not None:
+            key_result = self._cast_if_needed(map_type.key_field, key_result)
+            value_result = self._cast_if_needed(map_type.value_field, value_result)
             arrow_field = pa.map_(
                 self._construct_field(map_type.key_field, key_result.type),
                 self._construct_field(map_type.value_field, value_result.type),
@@ -1555,9 +1558,16 @@ class StatsAggregator:
 
         expected_physical_type = _primitive_to_physical(iceberg_type)
         if expected_physical_type != physical_type_string:
-            raise ValueError(
-                f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
-            )
+            # Allow promotable physical types
+            # INT32 -> INT64 and FLOAT -> DOUBLE are safe type casts
+            if (physical_type_string == "INT32" and expected_physical_type == "INT64") or (
+                physical_type_string == "FLOAT" and expected_physical_type == "DOUBLE"
+            ):
+                pass
+            else:
+                raise ValueError(
+                    f"Unexpected physical type {physical_type_string} for {iceberg_type}, expected {expected_physical_type}"
+                )
 
         self.primitive_type = iceberg_type
 
@@ -1902,16 +1912,6 @@ def data_file_statistics_from_parquet_metadata(
             set the mode for column metrics collection
         parquet_column_mapping (Dict[str, int]): The mapping of the parquet file name to the field ID
     """
-    if parquet_metadata.num_columns != len(stats_columns):
-        raise ValueError(
-            f"Number of columns in statistics configuration ({len(stats_columns)}) is different from the number of columns in pyarrow table ({parquet_metadata.num_columns})"
-        )
-
-    if parquet_metadata.num_columns != len(parquet_column_mapping):
-        raise ValueError(
-            f"Number of columns in column mapping ({len(parquet_column_mapping)}) is different from the number of columns in pyarrow table ({parquet_metadata.num_columns})"
-        )
-
     column_sizes: Dict[int, int] = {}
     value_counts: Dict[int, int] = {}
     split_offsets: List[int] = []
@@ -2004,8 +2004,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     )
 
     def write_parquet(task: WriteTask) -> DataFile:
-        table_schema = task.schema
-
+        table_schema = table_metadata.schema()
         # if schema needs to be transformed, use the transformed schema and adjust the arrow table accordingly
         # otherwise use the original schema
         if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
@@ -2017,7 +2016,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         batches = [
             _to_requested_schema(
                 requested_schema=file_schema,
-                file_schema=table_schema,
+                file_schema=task.schema,
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 include_field_ids=True,
@@ -2076,47 +2075,30 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
     return bin_packed_record_batches
 
 
-def _check_schema_compatible(table_schema: Schema, other_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> None:
+def _check_pyarrow_schema_compatible(
+    requested_schema: Schema, provided_schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False
+) -> None:
     """
-    Check if the `table_schema` is compatible with `other_schema`.
+    Check if the `requested_schema` is compatible with `provided_schema`.
 
     Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
 
     Raises:
         ValueError: If the schemas are not compatible.
     """
-    name_mapping = table_schema.name_mapping
+    name_mapping = requested_schema.name_mapping
     try:
-        task_schema = pyarrow_to_schema(
-            other_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        provided_schema = pyarrow_to_schema(
+            provided_schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
     except ValueError as e:
-        other_schema = _pyarrow_to_schema_without_ids(other_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
-        additional_names = set(other_schema.column_names) - set(table_schema.column_names)
+        provided_schema = _pyarrow_to_schema_without_ids(provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
 
-    if table_schema.as_struct() != task_schema.as_struct():
-        from rich.console import Console
-        from rich.table import Table as RichTable
-
-        console = Console(record=True)
-
-        rich_table = RichTable(show_header=True, header_style="bold")
-        rich_table.add_column("")
-        rich_table.add_column("Table field")
-        rich_table.add_column("Dataframe field")
-
-        for lhs in table_schema.fields:
-            try:
-                rhs = task_schema.find_field(lhs.field_id)
-                rich_table.add_row("✅" if lhs == rhs else "❌", str(lhs), str(rhs))
-            except ValueError:
-                rich_table.add_row("❌", str(lhs), "Missing")
-
-        console.print(rich_table)
-        raise ValueError(f"Mismatch in fields:\n{console.export_text()}")
+    _check_schema_compatible(requested_schema, provided_schema)
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
@@ -2130,7 +2112,7 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
                 f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
             )
         schema = table_metadata.schema()
-        _check_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+        _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
 
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=parquet_metadata,
@@ -2211,7 +2193,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.table import PropertyUtil, TableProperties, WriteTask
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties, WriteTask
 
     counter = counter or itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
@@ -2220,13 +2202,16 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
+    name_mapping = table_metadata.schema().name_mapping
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+    task_schema = pyarrow_to_schema(df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
 
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
             tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=table_metadata.schema())
+                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
                 for batches in bin_pack_arrow_table(df, target_file_size)
             ]),
         )
@@ -2241,7 +2226,7 @@ def _dataframe_to_data_files(
                     task_id=next(counter),
                     record_batches=batches,
                     partition_key=partition.partition_key,
-                    schema=table_metadata.schema(),
+                    schema=task_schema,
                 )
                 for partition in partitions
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
