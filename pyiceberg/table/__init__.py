@@ -1571,13 +1571,14 @@ class Table:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         with self.transaction() as tx:
-            tx.append(df=df, snapshot_properties=snapshot_properties)
+            tx.append(df=df, snapshot_properties=snapshot_properties,branch=branch)
 
     def overwrite(
         self,
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1595,7 +1596,7 @@ class Table:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         with self.transaction() as tx:
-            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties,branch=branch)
 
     def delete(
         self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
@@ -3075,14 +3076,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         io: FileIO,
         branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
-        snapshot_properties: Dict[str, str] = EMPTY_DICT
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
         self._io = io
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
-        # Since we only support the main branch for now
         self._branch = branch
         self._parent_snapshot_id = (
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
@@ -3230,7 +3230,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name=self._branch, type=SnapshotRefType.BRANCH
+                    snapshot_id=self._snapshot_id,
+                    parent_snapshot_id=self._parent_snapshot_id,
+                    ref_name=self._branch,
+                    type=SnapshotRefType.BRANCH,
                 ),
             ),
             (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=self._branch),),
@@ -3282,10 +3285,13 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        super().__init__(
+            operation=operation, transaction=transaction, io=io, branch=branch, commit_uuid=commit_uuid, snapshot_properties=snapshot_properties
+        )
         self._predicate = AlwaysFalse()
 
     def _commit(self) -> UpdatesAndRequirements:
@@ -3441,10 +3447,11 @@ class MergeAppendFiles(FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, branch, commit_uuid, snapshot_properties)
         self._target_size_bytes = PropertyUtil.property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
@@ -3560,21 +3567,23 @@ class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
+    _branch: str
     _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def __init__(self, transaction: Transaction, io: FileIO, branch:str, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
+        self._branch = branch
 
     def fast_append(self) -> FastAppendFiles:
         return FastAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io,branch=self._branch, snapshot_properties=self._snapshot_properties
         )
 
     def merge_append(self) -> MergeAppendFiles:
         return MergeAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io,branch=self._branch, snapshot_properties=self._snapshot_properties
         )
 
     def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> OverwriteFiles:
@@ -3586,6 +3595,7 @@ class UpdateSnapshot:
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
+            branch=self._branch
         )
 
     def delete(self) -> DeleteFiles:
@@ -3594,6 +3604,7 @@ class UpdateSnapshot:
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
+            branch=self._branch
         )
 
 
