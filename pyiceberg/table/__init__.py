@@ -253,6 +253,13 @@ class PropertyUtil:
             return value.lower() == "true"
         return default
 
+    @staticmethod
+    def get_first_property_value(properties: Properties, *property_names: str) -> Optional[Any]:
+        for property_name in property_names:
+            if property_value := properties.get(property_name):
+                return property_value
+        return None
+
 
 class Transaction:
     _table: Table

@@ -46,6 +46,10 @@ from pyiceberg.io import (
     ADLFS_CONNECTION_STRING,
     ADLFS_SAS_TOKEN,
     ADLFS_TENANT_ID,
+    AWS_ACCESS_KEY_ID,
+    AWS_REGION,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
     GCS_ACCESS,
     GCS_CACHE_TIMEOUT,
     GCS_CONSISTENCY,
@@ -114,12 +118,14 @@ def _file(_: Properties) -> LocalFileSystem:
 def _s3(properties: Properties) -> AbstractFileSystem:
     from s3fs import S3FileSystem
 
+    from pyiceberg.table import PropertyUtil
+
     client_kwargs = {
         "endpoint_url": properties.get(S3_ENDPOINT),
-        "aws_access_key_id": properties.get(S3_ACCESS_KEY_ID),
-        "aws_secret_access_key": properties.get(S3_SECRET_ACCESS_KEY),
-        "aws_session_token": properties.get(S3_SESSION_TOKEN),
-        "region_name": properties.get(S3_REGION),
+        "aws_access_key_id": PropertyUtil.get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+        "aws_secret_access_key": PropertyUtil.get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+        "aws_session_token": PropertyUtil.get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+        "region_name": PropertyUtil.get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
     register_events: Dict[str, Callable[[Properties], None]] = {}

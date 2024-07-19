@@ -19,6 +19,7 @@ import os
 import pickle
 import tempfile
 import uuid
+from unittest import mock
 
 import pytest
 from botocore.awsrequest import AWSRequest
@@ -29,6 +30,8 @@ from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, s3v4_rest_signer
 from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.typedef import Properties
+from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
 def test_fsspec_infer_local_fs_from_path(fsspec_fileio: FsspecFileIO) -> None:
@@ -233,6 +236,58 @@ def test_writing_avro_file(generated_manifest_entry_file: str, fsspec_fileio: Fs
 @pytest.mark.s3
 def test_fsspec_pickle_round_trip_s3(fsspec_fileio: FsspecFileIO) -> None:
     _test_fsspec_pickle_round_trip(fsspec_fileio, "s3://warehouse/foo.txt")
+
+
+def test_fsspec_s3_session_properties() -> None:
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            client_kwargs={
+                "endpoint_url": "http://localhost:9000",
+                "aws_access_key_id": "admin",
+                "aws_secret_access_key": "password",
+                "region_name": "us-east-1",
+                "aws_session_token": "s3.session-token",
+            },
+            config_kwargs={},
+        )
+
+
+def test_fsspec_unified_session_properties() -> None:
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            client_kwargs={
+                "endpoint_url": "http://localhost:9000",
+                "aws_access_key_id": "client.access-key-id",
+                "aws_secret_access_key": "client.secret-access-key",
+                "region_name": "client.region",
+                "aws_session_token": "client.session-token",
+            },
+            config_kwargs={},
+        )
 
 
 @pytest.mark.adlfs

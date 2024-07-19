@@ -36,8 +36,14 @@ from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import Properties
 from pyiceberg.types import IntegerType
-from tests.conftest import BUCKET_NAME, TABLE_METADATA_LOCATION_REGEX
+from tests.conftest import (
+    BUCKET_NAME,
+    DEPRECATED_AWS_SESSION_PROPERTIES,
+    TABLE_METADATA_LOCATION_REGEX,
+    UNIFIED_AWS_SESSION_PROPERTIES,
+)
 
 
 @mock_aws
@@ -635,6 +641,54 @@ def test_passing_profile_name() -> None:
         test_catalog = GlueCatalog("glue", **test_properties)
 
     mock_session.assert_called_with(**session_properties)
+    assert test_catalog.glue is mock_session().client()
+
+
+@mock_aws
+def test_passing_glue_session_properties() -> None:
+    session_properties: Properties = {
+        "glue.access-key-id": "glue.access-key-id",
+        "glue.secret-access-key": "glue.secret-access-key",
+        "glue.profile-name": "glue.profile-name",
+        "glue.region": "glue.region",
+        "glue.session-token": "glue.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+        **DEPRECATED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("boto3.Session") as mock_session:
+        test_catalog = GlueCatalog("glue", **session_properties)
+
+    mock_session.assert_called_with(
+        aws_access_key_id="glue.access-key-id",
+        aws_secret_access_key="glue.secret-access-key",
+        aws_session_token="glue.session-token",
+        region_name="glue.region",
+        profile_name="glue.profile-name",
+        botocore_session=None,
+    )
+    assert test_catalog.glue is mock_session().client()
+
+
+@mock_aws
+def test_passing_unified_session_properties_to_glue() -> None:
+    session_properties: Properties = {
+        "glue.profile-name": "glue.profile-name",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+        **DEPRECATED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("boto3.Session") as mock_session:
+        test_catalog = GlueCatalog("glue", **session_properties)
+
+    mock_session.assert_called_with(
+        aws_access_key_id="client.access-key-id",
+        aws_secret_access_key="client.secret-access-key",
+        aws_session_token="client.session-token",
+        region_name="client.region",
+        profile_name="glue.profile-name",
+        botocore_session=None,
+    )
     assert test_catalog.glue is mock_session().client()
 
 

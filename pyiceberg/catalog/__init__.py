@@ -66,6 +66,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
+from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -99,6 +100,21 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     """,
     re.X,
 )
+
+DEPRECATED_PROFILE_NAME = "profile_name"
+DEPRECATED_REGION = "region_name"
+DEPRECATED_BOTOCORE_SESSION = "botocore_session"
+DEPRECATED_ACCESS_KEY_ID = "aws_access_key_id"
+DEPRECATED_SECRET_ACCESS_KEY = "aws_secret_access_key"
+DEPRECATED_SESSION_TOKEN = "aws_session_token"
+DEPRECATED_PROPERTY_NAMES = {
+    DEPRECATED_PROFILE_NAME,
+    DEPRECATED_REGION,
+    DEPRECATED_BOTOCORE_SESSION,
+    DEPRECATED_ACCESS_KEY_ID,
+    DEPRECATED_SECRET_ACCESS_KEY,
+    DEPRECATED_SESSION_TOKEN,
+}
 
 
 class CatalogType(Enum):
@@ -692,6 +708,17 @@ class Catalog(ABC):
 
 
 class MetastoreCatalog(Catalog, ABC):
+    def __init__(self, name: str, **properties: str):
+        super().__init__(name, **properties)
+
+        for property_name in DEPRECATED_PROPERTY_NAMES:
+            if self.properties.get(property_name):
+                deprecated(
+                    deprecated_in="0.7.0",
+                    removed_in="0.8.0",
+                    help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
+                )(lambda: None)()
+
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],

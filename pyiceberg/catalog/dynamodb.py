@@ -29,6 +29,12 @@ from typing import (
 import boto3
 
 from pyiceberg.catalog import (
+    DEPRECATED_ACCESS_KEY_ID,
+    DEPRECATED_BOTOCORE_SESSION,
+    DEPRECATED_PROFILE_NAME,
+    DEPRECATED_REGION,
+    DEPRECATED_SECRET_ACCESS_KEY,
+    DEPRECATED_SESSION_TOKEN,
     ICEBERG,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
@@ -47,7 +53,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
@@ -78,17 +84,32 @@ PROPERTY_KEY_PREFIX = "p."
 ACTIVE = "ACTIVE"
 ITEM = "Item"
 
+DYNAMODB_PROFILE_NAME = "dynamodb.profile-name"
+DYNAMODB_REGION = "dynamodb.region"
+DYNAMODB_ACCESS_KEY_ID = "dynamodb.access-key-id"
+DYNAMODB_SECRET_ACCESS_KEY = "dynamodb.secret-access-key"
+DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
+
 
 class DynamoDbCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
+
+        from pyiceberg.table import PropertyUtil
+
         session = boto3.Session(
-            profile_name=properties.get("profile_name"),
-            region_name=properties.get("region_name"),
-            botocore_session=properties.get("botocore_session"),
-            aws_access_key_id=properties.get("aws_access_key_id"),
-            aws_secret_access_key=properties.get("aws_secret_access_key"),
-            aws_session_token=properties.get("aws_session_token"),
+            profile_name=PropertyUtil.get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
+            region_name=PropertyUtil.get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
+            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
+            aws_access_key_id=PropertyUtil.get_first_property_value(
+                properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
+            ),
+            aws_secret_access_key=PropertyUtil.get_first_property_value(
+                properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
+            ),
+            aws_session_token=PropertyUtil.get_first_property_value(
+                properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
+            ),
         )
         self.dynamodb = session.client(DYNAMODB_CLIENT)
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
