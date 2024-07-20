@@ -139,7 +139,13 @@ For the FileIO there are several configuration options available:
 
 ## Catalogs
 
-PyIceberg currently has native support for REST, SQL, Hive, Glue and DynamoDB.
+PyIceberg currently has native catalog type support for REST, SQL, Hive, Glue and DynamoDB.
+You can also set the catalog implementation explicitly:
+
+| Key             | Example                      | Description                                                                                      |
+| --------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| type            | rest                         | Type of catalog, one of `rest`, `sql`, `hive`, `glue`, `dymamodb`. Default to `rest`             |
+| py-catalog-impl | mypackage.mymodule.MyCatalog | Sets the catalog explicitly to an implementation, and will fail explicitly if it can't be loaded |
 
 There are three ways to pass in configuration:
 
@@ -378,6 +384,18 @@ catalog:
     `profile_name`, `region_name`, `botocore_session`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token` are deprecated and will be removed in 0.8.0:
 
 <!-- prettier-ignore-end -->
+
+### Custom Catalog Implementations
+
+If you want to load any custom catalog implementation, you can set catalog configurations like the following:
+
+```yaml
+catalog:
+  default:
+    py-catalog-impl: mypackage.mymodule.MyCatalog
+    custom-key1: value1
+    custom-key2: value2
+```
 
 ## Unified AWS Credentials
 

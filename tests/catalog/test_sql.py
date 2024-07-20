@@ -27,6 +27,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 
 from pyiceberg.catalog import (
     Catalog,
+    load_catalog,
 )
 from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
 from pyiceberg.exceptions import (
@@ -208,6 +209,18 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
             f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
             f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
         )
+
+
+def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
+    assert isinstance(
+        load_catalog(
+            catalog_name,
+            py_catalog_impl="pyiceberg.catalog.sql.SqlCatalog",
+            uri=f"sqlite:////{warehouse}/sql-catalog.db",
+            warehouse=f"file://{warehouse}",
+        ),
+        SqlCatalog,
+    )
 
 
 @pytest.mark.parametrize(
