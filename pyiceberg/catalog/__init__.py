@@ -238,8 +238,8 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     if catalog_impl := properties.get(PY_CATALOG_IMPL):
         if provided_catalog_type:
             raise ValueError(
-                f"Must not set both catalog type and py-catalog-impl configuration, "
-                f"but found type {provided_catalog_type} and impl {catalog_impl}"
+                f"Must not set both catalog type and py-catalog-impl configurations, "
+                f"but found type {provided_catalog_type} and py-catalog-impl {catalog_impl}"
             )
 
         if catalog := _import_catalog(name, catalog_impl, properties):

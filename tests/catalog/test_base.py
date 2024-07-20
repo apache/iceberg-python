@@ -310,8 +310,8 @@ def test_load_catalog_has_type_and_impl() -> None:
         load_catalog("catalog", **{"py-catalog-impl": "pyiceberg.does.not.exist.Catalog", "type": "sql"})
 
     assert (
-        "Must not set both catalog type and py-catalog-impl configuration, "
-        "but found type sql and impl pyiceberg.does.not.exist.Catalog" in str(exc_info.value)
+        "Must not set both catalog type and py-catalog-impl configurations, "
+        "but found type sql and py-catalog-impl pyiceberg.does.not.exist.Catalog" in str(exc_info.value)
     )
 
 
