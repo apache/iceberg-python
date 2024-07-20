@@ -32,7 +32,7 @@ import pytest
 from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 
-from pyiceberg.catalog import PY_CATALOG_IMPL, Catalog, MetastoreCatalog, PropertiesUpdateSummary, load_catalog
+from pyiceberg.catalog import Catalog, MetastoreCatalog, PropertiesUpdateSummary, load_catalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
@@ -293,16 +293,26 @@ def given_catalog_has_a_table(
 
 def test_load_catalog_impl_not_full_path() -> None:
     with pytest.raises(ValueError) as exc_info:
-        load_catalog("catalog", **{PY_CATALOG_IMPL: "CustomCatalog"})
+        load_catalog("catalog", **{"py-catalog-impl": "CustomCatalog"})
 
     assert "py-catalog-impl should be full path (module.CustomCatalog), got: CustomCatalog" in str(exc_info.value)
 
 
 def test_load_catalog_impl_does_not_exist() -> None:
     with pytest.raises(ValueError) as exc_info:
-        load_catalog("catalog", **{PY_CATALOG_IMPL: "pyiceberg.does.not.exist.Catalog"})
+        load_catalog("catalog", **{"py-catalog-impl": "pyiceberg.does.not.exist.Catalog"})
 
     assert "Could not initialize Catalog: pyiceberg.does.not.exist.Catalog" in str(exc_info.value)
+
+
+def test_load_catalog_has_type_and_impl() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        load_catalog("catalog", **{"py-catalog-impl": "pyiceberg.does.not.exist.Catalog", "type": "sql"})
+
+    assert (
+        "Must not set both catalog type and py-catalog-impl configuration, "
+        "but found type sql and impl pyiceberg.does.not.exist.Catalog" in str(exc_info.value)
+    )
 
 
 def test_namespace_from_tuple() -> None:

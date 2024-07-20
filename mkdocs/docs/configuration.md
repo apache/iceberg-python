@@ -140,10 +140,10 @@ For the FileIO there are several configuration options available:
 ## Catalogs
 
 PyIceberg currently has native catalog type support for REST, SQL, Hive, Glue and DynamoDB.
-You can also set the catalog implementation explicitly:
+Alternatively, you can also directly set the catalog implementation:
 
 | Key             | Example                      | Description                                                                                      |
-| --------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| --------------- | ---------------------------- |--------------------------------------------------------------------------------------------------|
 | type            | rest                         | Type of catalog, one of `rest`, `sql`, `hive`, `glue`, `dymamodb`. Default to `rest`             |
 | py-catalog-impl | mypackage.mymodule.MyCatalog | Sets the catalog explicitly to an implementation, and will fail explicitly if it can't be loaded |
 

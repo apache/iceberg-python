@@ -215,9 +215,11 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
     assert isinstance(
         load_catalog(
             catalog_name,
-            py_catalog_impl="pyiceberg.catalog.sql.SqlCatalog",
-            uri=f"sqlite:////{warehouse}/sql-catalog.db",
-            warehouse=f"file://{warehouse}",
+            **{
+                "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
+                "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+                "warehouse": f"file://{warehouse}",
+            },
         ),
         SqlCatalog,
     )

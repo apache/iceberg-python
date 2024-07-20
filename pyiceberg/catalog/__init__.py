@@ -232,15 +232,21 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     env = _ENV_CONFIG.get_catalog_config(name)
     conf: RecursiveDict = merge_config(env or {}, cast(RecursiveDict, properties))
 
+    catalog_type: Optional[CatalogType]
+    provided_catalog_type = conf.get(TYPE)
+
     if catalog_impl := properties.get(PY_CATALOG_IMPL):
+        if provided_catalog_type:
+            raise ValueError(
+                f"Must not set both catalog type and py-catalog-impl configuration, "
+                f"but found type {provided_catalog_type} and impl {catalog_impl}"
+            )
+
         if catalog := _import_catalog(name, catalog_impl, properties):
             logger.info("Loaded Catalog: %s", catalog_impl)
             return catalog
         else:
             raise ValueError(f"Could not initialize Catalog: {catalog_impl}")
-
-    catalog_type: Optional[CatalogType]
-    provided_catalog_type = conf.get(TYPE)
 
     catalog_type = None
     if provided_catalog_type and isinstance(provided_catalog_type, str):
