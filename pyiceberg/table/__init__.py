@@ -984,9 +984,10 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
     if update.last_column_id < base_metadata.last_column_id:
         raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
 
+    skip_empty_schema = base_metadata.schemas == [Schema()]
     metadata_updates: Dict[str, Any] = {
         "last_column_id": update.last_column_id,
-        "schemas": base_metadata.schemas + [update.schema_],
+        "schemas": [update.schema_] if skip_empty_schema else base_metadata.schemas + [update.schema_],
     }
 
     context.add_update(update)
@@ -1127,9 +1128,20 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    # (TODO) actually implement this
+    context.add_update(update)
+    return base_metadata
+
+
+
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
+    if update.sort_order == UNSORTED_SORT_ORDER:
+        # no op
+        return base_metadata
     return base_metadata.model_copy(
         update={
             "sort_orders": base_metadata.sort_orders + [update.sort_order],
