@@ -1135,7 +1135,6 @@ def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _T
     return base_metadata
 
 
-
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
