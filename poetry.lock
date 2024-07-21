@@ -3389,7 +3389,7 @@ name = "ray"
 version = "2.10.0"
 description = "Ray provides a simple, universal API for building distributed applications."
 optional = true
-python-versions = "<3.9"
+python-versions = ">=3.8"
 files = [
     {file = "ray-2.10.0-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:8a174268c7b6ca9826e4884b837395b695a45c17049927965d1b4cc370184ba2"},
     {file = "ray-2.10.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:c193deed7e3f604cdb37047f5646cab14f4337693dd32add8bc902dfadb89f75"},
@@ -4499,14 +4499,14 @@ cffi = ["cffi (>=1.11)"]
 [extras]
 adlfs = ["adlfs"]
 daft = ["getdaft"]
-duckdb = ["duckdb", "pyarrow"]
+duckdb = ["duckdb", "numpy", "pyarrow"]
 dynamodb = ["boto3"]
 gcsfs = ["gcsfs"]
 glue = ["boto3", "mypy-boto3-glue"]
 hive = ["thrift"]
-pandas = ["pandas", "pyarrow"]
-pyarrow = ["pyarrow"]
-ray = ["pandas", "pyarrow", "ray", "ray"]
+pandas = ["numpy", "pandas", "pyarrow"]
+pyarrow = ["numpy", "pyarrow"]
+ray = ["numpy", "pandas", "pyarrow", "ray", "ray"]
 s3fs = ["s3fs"]
 snappy = ["python-snappy"]
 sql-postgres = ["psycopg2-binary", "sqlalchemy"]
@@ -4516,4 +4516,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "460c71839873955ae79db901413eb7416a28f0cb9b16a123253124c1f1fcc0d9"
+content-hash = "947839b5cf43b53a6ea0c5273c162a66398ef1b5efbfcfcdc17a7614f7b66ef9"

@@ -577,10 +577,10 @@ generate-setup-file = false
 script = "build-module.py"
 
 [tool.poetry.extras]
-pyarrow = ["pyarrow"]
-pandas = ["pandas", "pyarrow"]
-duckdb = ["duckdb", "pyarrow"]
-ray = ["ray", "pyarrow", "pandas"]
+pyarrow = ["pyarrow", "numpy"]
+pandas = ["pandas", "pyarrow", "numpy"]
+duckdb = ["duckdb", "pyarrow", "numpy"]
+ray = ["ray", "pyarrow", "pandas", "numpy"]
 daft = ["getdaft"]
 snappy = ["python-snappy"]
 hive = ["thrift"]
