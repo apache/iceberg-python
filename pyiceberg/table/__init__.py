@@ -721,22 +721,22 @@ class CreateTableTransaction(Transaction):
 
         schema: Schema = table_metadata.schema()
         self._updates += (
-            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id, initial_change=True),
+            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id),
             SetCurrentSchemaUpdate(schema_id=-1),
         )
 
         spec: PartitionSpec = table_metadata.spec()
         if spec.is_unpartitioned():
-            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC, initial_change=True),)
+            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC),)
         else:
-            self._updates += (AddPartitionSpecUpdate(spec=spec, initial_change=True),)
+            self._updates += (AddPartitionSpecUpdate(spec=spec),)
         self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
         sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
         if sort_order is None or sort_order.is_unsorted:
-            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER, initial_change=True),)
+            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER),)
         else:
-            self._updates += (AddSortOrderUpdate(sort_order=sort_order, initial_change=True),)
+            self._updates += (AddSortOrderUpdate(sort_order=sort_order),)
         self._updates += (SetDefaultSortOrderUpdate(sort_order_id=-1),)
 
         self._updates += (
@@ -779,8 +779,6 @@ class AddSchemaUpdate(IcebergBaseModel):
     # This field is required: https://github.com/apache/iceberg/pull/7445
     last_column_id: int = Field(alias="last-column-id")
 
-    initial_change: bool = Field(default=False, exclude=True)
-
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
     action: Literal["set-current-schema"] = Field(default="set-current-schema")
@@ -793,8 +791,6 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
-    initial_change: bool = Field(default=False, exclude=True)
-
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -806,8 +802,6 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
-
-    initial_change: bool = Field(default=False, exclude=True)
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
@@ -992,7 +986,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
 
     metadata_updates: Dict[str, Any] = {
         "last_column_id": update.last_column_id,
-        "schemas": [update.schema_] if update.initial_change else base_metadata.schemas + [update.schema_],
+        "schemas": base_metadata.schemas + [update.schema_],
     }
 
     context.add_update(update)
@@ -1022,11 +1016,11 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 @_apply_table_update.register(AddPartitionSpecUpdate)
 def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     for spec in base_metadata.partition_specs:
-        if spec.spec_id == update.spec.spec_id and not update.initial_change:
+        if spec.spec_id == update.spec.spec_id:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
 
     metadata_updates: Dict[str, Any] = {
-        "partition_specs": [update.spec] if update.initial_change else base_metadata.partition_specs + [update.spec],
+        "partition_specs": base_metadata.partition_specs + [update.spec],
         "last_partition_id": max(
             max([field.field_id for field in update.spec.fields], default=0),
             base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
@@ -1134,7 +1128,7 @@ def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableM
     context.add_update(update)
     return base_metadata.model_copy(
         update={
-            "sort_orders": [update.sort_order] if update.initial_change else base_metadata.sort_orders + [update.sort_order],
+            "sort_orders": base_metadata.sort_orders + [update.sort_order],
         }
     )
 
