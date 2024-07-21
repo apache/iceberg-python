@@ -1206,3 +1206,10 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_table_update_have_corresponding_dispatch() -> None:
+    from pyiceberg.table import TableUpdate, _apply_table_update
+    # every TableUpdate should have a corresponding `_apply_table_update` dispatch function
+
+    assert len(_apply_table_update.registry) == len(TableUpdate.__origin__.__args__)  # type: ignore
