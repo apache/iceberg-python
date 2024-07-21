@@ -1258,3 +1258,10 @@ def test_table_module_refactoring_backward_compatibility() -> None:
         )
     except Exception as exc:
         raise pytest.fail("Importing moved modules should not raise an exception") from exc
+
+
+def test_table_update_have_corresponding_dispatch() -> None:
+    from pyiceberg.table import TableUpdate, _apply_table_update
+    # asser that every TableUpdate has a corresponding `_apply_table_update` dispatch function
+
+    assert len(_apply_table_update.registry) == len(TableUpdate.__origin__.__args__)  # type: ignore
