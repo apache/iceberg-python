@@ -1015,6 +1015,11 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(AddPartitionSpecUpdate)
 def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+    if update.spec.spec_id == INITIAL_PARTITION_SPEC_ID:
+        # no op
+        return base_metadata
+
     for spec in base_metadata.partition_specs:
         if spec.spec_id == update.spec.spec_id:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
@@ -1027,7 +1032,6 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
         ),
     }
 
-    context.add_update(update)
     return base_metadata.model_copy(update=metadata_updates)
 
 
