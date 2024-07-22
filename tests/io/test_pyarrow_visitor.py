@@ -28,7 +28,7 @@ from pyiceberg.expressions import (
     BoundReference,
     Or,
 )
-from pyiceberg.expressions.literals import LongLiteral, literal
+from pyiceberg.expressions.literals import literal
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
@@ -597,7 +597,7 @@ def bound_reference_long() -> BoundReference[int]:
     return BoundReference(field=NestedField(1, "field", LongType(), required=False), accessor=Accessor(position=0, inner=None))
 
 
-def test_collect_null_mentioned_terms() -> None:
+def test_collect_null_unmentioned_terms() -> None:
     bound_reference_str = BoundReference(
         field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
     )
@@ -606,7 +606,7 @@ def test_collect_null_mentioned_terms() -> None:
     bound_reference_long = BoundReference(
         field=NestedField(2, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
     )
-    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100)) # type: ignore
+    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100))  # type: ignore
 
     bound_reference_bool = BoundReference(
         field=NestedField(3, "field_bool", BooleanType(), required=False), accessor=Accessor(position=2, inner=None)
@@ -622,7 +622,7 @@ def test_collect_null_mentioned_terms() -> None:
     } == {f.field.name for f in categorized_terms[1]}
 
 
-def test_collect_null_mentioned_terms_with_multiple_predicates_on_the_same_term() -> None:
+def test_collect_null_unmentioned_terms_with_multiple_predicates_on_the_same_term() -> None:
     """Test a single term appears multiple places in the expression tree"""
     bound_reference_str = BoundReference(
         field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
@@ -632,7 +632,7 @@ def test_collect_null_mentioned_terms_with_multiple_predicates_on_the_same_term(
     bound_reference_long = BoundReference(
         field=NestedField(1, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
     )
-    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100)) # type: ignore
+    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100))  # type: ignore
 
     bound_is_null_long_field = BoundIsNull(bound_reference_long)
 

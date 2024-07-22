@@ -725,7 +725,7 @@ def test_always_false_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
 
 
-def test_revert_expression_to_pyarrow() -> None:
+def test_expression_to_reverted_pyarrow() -> None:
     bound_reference_str = BoundReference(
         field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
     )
@@ -734,7 +734,7 @@ def test_revert_expression_to_pyarrow() -> None:
     bound_reference_long = BoundReference(
         field=NestedField(1, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
     )
-    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100)) # type: ignore
+    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100))  # type: ignore
 
     bound_is_null_long_field = BoundIsNull(bound_reference_long)
 

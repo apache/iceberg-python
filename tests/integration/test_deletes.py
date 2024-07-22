@@ -107,7 +107,7 @@ def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCat
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_partitioned_table_rewrite_with_null(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+def test_rewrite_partitioned_table_with_null(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
     identifier = "default.table_partitioned_delete"
 
     run_spark_commands(
@@ -455,7 +455,7 @@ def test_delete_truncate(session_catalog: RestCatalog) -> None:
 
 
 @pytest.mark.integration
-def test_delete_overwrite_with_null(session_catalog: RestCatalog) -> None:
+def test_delete_overwrite_table_with_null(session_catalog: RestCatalog) -> None:
     arrow_schema = pa.schema([pa.field("ints", pa.int32())])
     arrow_tbl = pa.Table.from_pylist(
         [{"ints": 1}, {"ints": 2}, {"ints": None}],

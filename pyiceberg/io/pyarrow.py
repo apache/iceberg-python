@@ -634,7 +634,7 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return left_result | right_result
 
 
-class _CollectIsValidPredicatesFromExpression(BoundBooleanExpressionVisitor[Any]):
+class _CollectNullUnmentionedTermsFromExpression(BoundBooleanExpressionVisitor[Any]):
     def __init__(self) -> None:
         # BoundTerms which have either is_null or is_not_null appearing at least once in the boolean expr.
         self.is_valid_or_not_bound_terms: set[BoundTerm[Any]] = set()
@@ -715,7 +715,7 @@ class _CollectIsValidPredicatesFromExpression(BoundBooleanExpressionVisitor[Any]
 
 def _get_is_valid_or_not_bound_refs(expr: BooleanExpression) -> tuple[Set[BoundReference[Any]], Set[BoundReference[Any]]]:
     """Collect the bound terms catogorized by having at least one is_null or is_not_null in the expr and the remaining."""
-    collector = _CollectIsValidPredicatesFromExpression()
+    collector = _CollectNullUnmentionedTermsFromExpression()
     boolean_expression_visit(expr, collector)
     null_unmentioned_bound_terms = collector.null_unmentioned_bound_terms
     is_valid_or_not_bound_terms = collector.is_valid_or_not_bound_terms
