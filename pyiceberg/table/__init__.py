@@ -1178,9 +1178,14 @@ def update_table_metadata(
     """
     context = _TableMetadataUpdateContext()
     new_metadata = base_metadata
+    new_metadata = new_metadata.model_copy(update={"last_updated_ms": 0})
 
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
+
+    # Update last_updated_ms if it was not updated by update operations
+    if new_metadata.last_updated_ms == 0:
+        new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())

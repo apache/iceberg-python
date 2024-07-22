@@ -1255,6 +1255,7 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
+    last_updated_ms = table.metadata.last_updated_ms
 
     assert catalog._parse_metadata_version(table.metadata_location) == 0
     assert table.metadata.current_schema_id == 0
@@ -1274,6 +1275,7 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+    assert updated_table_metadata.last_updated_ms > last_updated_ms
 
 
 @pytest.mark.parametrize(

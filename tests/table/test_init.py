@@ -598,7 +598,7 @@ def test_apply_set_properties_update(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
 
     new_metadata_no_update = update_table_metadata(base_metadata, (SetPropertiesUpdate(updates={}),))
-    assert new_metadata_no_update == base_metadata
+    assert new_metadata_no_update.properties == base_metadata.properties
 
     new_metadata = update_table_metadata(
         base_metadata, (SetPropertiesUpdate(updates={"read.split.target.size": "123", "test_a": "test_a", "test_b": "test_b"}),)
@@ -689,7 +689,7 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
         snapshot_id=25,
         parent_snapshot_id=19,
         sequence_number=200,
-        timestamp_ms=1602638573590,
+        timestamp_ms=1602638593590,
         manifest_list="s3:/a/b/c.avro",
         summary=Summary(Operation.APPEND),
         schema_id=3,
