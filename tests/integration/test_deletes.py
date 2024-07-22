@@ -107,6 +107,41 @@ def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCat
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
+def test_partitioned_table_rewrite_with_null(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+    identifier = "default.table_partitioned_delete"
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES('format-version' = {format_version})
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (10, 20), (10, 30)
+        """,
+            f"""
+            INSERT INTO {identifier} VALUES (11, 20), (11, NULL)
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+    tbl.delete(EqualTo("number", 20))
+
+    # We don't delete a whole partition, so there is only a overwrite
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "append", "overwrite"]
+    assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [11, 10], "number": [None, 30]}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_partitioned_table_no_match(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
     identifier = "default.table_partitioned_delete"
 
@@ -417,3 +452,43 @@ def test_delete_truncate(session_catalog: RestCatalog) -> None:
     assert len(entries) == 1
 
     assert entries[0].status == ManifestEntryStatus.DELETED
+
+
+@pytest.mark.integration
+def test_delete_overwrite_with_null(session_catalog: RestCatalog) -> None:
+    arrow_schema = pa.schema([pa.field("ints", pa.int32())])
+    arrow_tbl = pa.Table.from_pylist(
+        [{"ints": 1}, {"ints": 2}, {"ints": None}],
+        schema=arrow_schema,
+    )
+
+    iceberg_schema = Schema(NestedField(1, "ints", IntegerType()))
+
+    tbl_identifier = "default.test_delete_overwrite_with_null"
+
+    try:
+        session_catalog.drop_table(tbl_identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(tbl_identifier, iceberg_schema)
+    tbl.append(arrow_tbl)
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [Operation.APPEND]
+
+    arrow_tbl_overwrite = pa.Table.from_pylist(
+        [
+            {"ints": 3},
+            {"ints": 4},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.overwrite(arrow_tbl_overwrite, "ints == 2")  # Should rewrite one file
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [
+        Operation.APPEND,
+        Operation.OVERWRITE,
+        Operation.APPEND,
+    ]
+
+    assert tbl.scan().to_arrow()["ints"].to_pylist() == [3, 4, 1, None]

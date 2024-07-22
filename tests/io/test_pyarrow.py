@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
-
 import os
 import tempfile
 import uuid
@@ -69,12 +68,13 @@ from pyiceberg.io.pyarrow import (
     _to_requested_schema,
     bin_pack_arrow_table,
     expression_to_pyarrow,
+    expression_to_reverted_pyarrow,
     project_table,
     schema_to_pyarrow,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
-from pyiceberg.schema import Schema, make_compatible_name, visit
+from pyiceberg.schema import Accessor, Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.transforms import IdentityTransform
@@ -723,6 +723,27 @@ def test_always_true_to_pyarrow(bound_reference: BoundReference[str]) -> None:
 
 def test_always_false_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
+
+
+def test_revert_expression_to_pyarrow() -> None:
+    bound_reference_str = BoundReference(
+        field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+    )
+    bound_eq_str_field = BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
+
+    bound_reference_long = BoundReference(
+        field=NestedField(1, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
+    )
+    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100)) # type: ignore
+
+    bound_is_null_long_field = BoundIsNull(bound_reference_long)
+
+    bound_expr = Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_long_field)
+    result = expression_to_reverted_pyarrow(bound_expr)
+    assert (
+        repr(result)
+        == """<pyarrow.compute.Expression (invert((((field_str == "hello") and (field_long > 100)) or is_null(field_long, {nan_is_null=false}))) or is_null(field_str, {nan_is_null=false}))>"""
+    )
 
 
 @pytest.fixture

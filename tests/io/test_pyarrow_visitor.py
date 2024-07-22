@@ -20,17 +20,27 @@ import re
 import pyarrow as pa
 import pytest
 
+from pyiceberg.expressions import (
+    And,
+    BoundEqualTo,
+    BoundGreaterThan,
+    BoundIsNull,
+    BoundReference,
+    Or,
+)
+from pyiceberg.expressions.literals import LongLiteral, literal
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
+    _get_is_valid_or_not_bound_refs,
     _HasIds,
     _pyarrow_schema_ensure_large_types,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
 )
-from pyiceberg.schema import Schema, visit
+from pyiceberg.schema import Accessor, Schema, visit
 from pyiceberg.table.name_mapping import MappedField, NameMapping
 from pyiceberg.types import (
     BinaryType,
@@ -580,3 +590,57 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
         ),
     ])
     assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
+
+
+@pytest.fixture
+def bound_reference_long() -> BoundReference[int]:
+    return BoundReference(field=NestedField(1, "field", LongType(), required=False), accessor=Accessor(position=0, inner=None))
+
+
+def test_collect_null_mentioned_terms() -> None:
+    bound_reference_str = BoundReference(
+        field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+    )
+    bound_eq_str_field = BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
+
+    bound_reference_long = BoundReference(
+        field=NestedField(2, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
+    )
+    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100)) # type: ignore
+
+    bound_reference_bool = BoundReference(
+        field=NestedField(3, "field_bool", BooleanType(), required=False), accessor=Accessor(position=2, inner=None)
+    )
+    bound_is_null_bool_field = BoundIsNull(bound_reference_bool)
+
+    bound_expr = Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_bool_field)
+
+    categorized_terms = _get_is_valid_or_not_bound_refs(bound_expr)
+    assert {"field_long", "field_str"} == {f.field.name for f in categorized_terms[0]}
+    assert {
+        "field_bool",
+    } == {f.field.name for f in categorized_terms[1]}
+
+
+def test_collect_null_mentioned_terms_with_multiple_predicates_on_the_same_term() -> None:
+    """Test a single term appears multiple places in the expression tree"""
+    bound_reference_str = BoundReference(
+        field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+    )
+    bound_eq_str_field = BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
+
+    bound_reference_long = BoundReference(
+        field=NestedField(1, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
+    )
+    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100)) # type: ignore
+
+    bound_is_null_long_field = BoundIsNull(bound_reference_long)
+
+    bound_expr = Or(
+        And(Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_long_field), bound_larger_than_long_field),
+        bound_eq_str_field,
+    )
+
+    categorized_terms = _get_is_valid_or_not_bound_refs(bound_expr)
+    assert {"field_str"} == set({f.field.name for f in categorized_terms[0]})
+    assert {"field_long"} == set({f.field.name for f in categorized_terms[1]})

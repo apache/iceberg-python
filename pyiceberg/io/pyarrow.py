@@ -73,11 +73,7 @@ from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
-from pyiceberg.expressions import (
-    AlwaysTrue,
-    BooleanExpression,
-    BoundTerm,
-)
+from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNull, BoundReference, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
@@ -638,8 +634,122 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return left_result | right_result
 
 
+class _CollectIsValidPredicatesFromExpression(BoundBooleanExpressionVisitor[Any]):
+    def __init__(self) -> None:
+        # BoundTerms which have either is_null or is_not_null appearing at least once in the boolean expr.
+        self.is_valid_or_not_bound_terms: set[BoundTerm[Any]] = set()
+        # The remaining BoundTerms appearing in the boolean expr.
+        self.null_unmentioned_bound_terms: set[BoundTerm[Any]] = set()
+        super().__init__()
+
+    def _handle_explicit_is_null_or_not(self, term: BoundTerm[Any]) -> None:
+        """Handle the predicate case where either is_null or is_not_null is included."""
+        if term in self.null_unmentioned_bound_terms:
+            self.null_unmentioned_bound_terms.remove(term)
+        self.is_valid_or_not_bound_terms.add(term)
+
+    def _handle_skipped(self, term: BoundTerm[Any]) -> None:
+        """Handle the predicate case where neither is_null or is_not_null is included."""
+        if term not in self.is_valid_or_not_bound_terms:
+            self.null_unmentioned_bound_terms.add(term)
+
+    def visit_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_not_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> None:
+        self._handle_skipped(term)
+
+    # todo: do I have to modify this as well
+    def visit_is_nan(self, term: BoundTerm[Any]) -> None:
+        self._handle_skipped(term)
+
+    # todo: do I have to modify this as well, might need 2 self.xx sets for mentioned_nan and none-mentioned-nan
+    def visit_not_nan(self, term: BoundTerm[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_is_null(self, term: BoundTerm[Any]) -> None:
+        self._handle_explicit_is_null_or_not(term)
+
+    def visit_not_null(self, term: BoundTerm[Any]) -> None:
+        self._handle_explicit_is_null_or_not(term)
+
+    def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_not_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_less_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_not_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_skipped(term)
+
+    def visit_true(self) -> None:
+        return
+
+    def visit_false(self) -> None:
+        return
+
+    def visit_not(self, child_result: pc.Expression) -> None:
+        return
+
+    def visit_and(self, left_result: pc.Expression, right_result: pc.Expression) -> None:
+        return
+
+    def visit_or(self, left_result: pc.Expression, right_result: pc.Expression) -> None:
+        return
+
+
+def _get_is_valid_or_not_bound_refs(expr: BooleanExpression) -> tuple[Set[BoundReference[Any]], Set[BoundReference[Any]]]:
+    """Collect the bound terms catogorized by having at least one is_null or is_not_null in the expr and the remaining."""
+    collector = _CollectIsValidPredicatesFromExpression()
+    boolean_expression_visit(expr, collector)
+    null_unmentioned_bound_terms = collector.null_unmentioned_bound_terms
+    is_valid_or_not_bound_terms = collector.is_valid_or_not_bound_terms
+
+    null_unmentioned_bound_refs: Set[BoundReference[Any]] = set()
+    is_valid_or_not_bound_refs: Set[BoundReference[Any]] = set()
+    for t in null_unmentioned_bound_terms:
+        if not isinstance(t, BoundReference):
+            raise ValueError("Collected Bound Term that is not reference.")
+        else:
+            null_unmentioned_bound_refs.add(t)
+    for t in is_valid_or_not_bound_terms:
+        if not isinstance(t, BoundReference):
+            raise ValueError("Collected Bound Term that is not reference.")
+        else:
+            is_valid_or_not_bound_refs.add(t)
+    return null_unmentioned_bound_refs, is_valid_or_not_bound_refs
+
+
 def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
     return boolean_expression_visit(expr, _ConvertToArrowExpression())
+
+
+def expression_to_reverted_pyarrow(expr: BooleanExpression) -> pc.Expression:
+    """Complimentary filter convertion function of expression_to_pyarrow.
+
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this effect because ~ in pc.Expression does not handle null.
+    """
+    null_unmentioned_bound_terms: set[BoundReference[Any]] = _get_is_valid_or_not_bound_refs(expr)[0]
+    preserver_expr: BooleanExpression = Not(expr)
+
+    for term in null_unmentioned_bound_terms:
+        preserver_expr = Or(preserver_expr, BoundIsNull(term=term))
+    return expression_to_pyarrow(preserver_expr)
 
 
 @lru_cache
