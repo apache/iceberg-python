@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import re
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -24,8 +25,10 @@ from pyiceberg.expressions import (
     And,
     BoundEqualTo,
     BoundGreaterThan,
+    BoundIsNaN,
     BoundIsNull,
     BoundReference,
+    Not,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -33,6 +36,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
+    _expression_to_complementary_pyarrow,
     _get_null_nan_refs,
     _HasIds,
     _pyarrow_schema_ensure_large_types,
@@ -593,54 +597,115 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
 
 
 @pytest.fixture
-def bound_reference_long() -> BoundReference[int]:
-    return BoundReference(field=NestedField(1, "field", LongType(), required=False), accessor=Accessor(position=0, inner=None))
-
-
-def test_collect_null_unmentioned_terms() -> None:
-    bound_reference_str = BoundReference(
-        field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+def bound_reference_str() -> BoundReference[Any]:
+    return BoundReference(
+        field=NestedField(1, "field_str_unmentioned", StringType(), required=False), accessor=Accessor(position=0, inner=None)
     )
-    bound_eq_str_field = BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
 
-    bound_reference_long = BoundReference(
-        field=NestedField(2, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
+
+@pytest.fixture
+def bound_reference_float() -> BoundReference[Any]:
+    return BoundReference(
+        field=NestedField(2, "field_float_mentioned_nan", FloatType(), required=False), accessor=Accessor(position=1, inner=None)
     )
-    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100))  # type: ignore
 
-    bound_reference_bool = BoundReference(
-        field=NestedField(3, "field_bool", BooleanType(), required=False), accessor=Accessor(position=2, inner=None)
+
+@pytest.fixture
+def bound_reference_double() -> BoundReference[Any]:
+    return BoundReference(
+        field=NestedField(3, "field_double_mentioned_null", DoubleType(), required=False),
+        accessor=Accessor(position=2, inner=None),
     )
-    bound_is_null_bool_field = BoundIsNull(bound_reference_bool)
 
-    bound_expr = Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_bool_field)
 
+@pytest.fixture
+def bound_eq_str_field(bound_reference_str: BoundReference[Any]) -> BoundEqualTo[Any]:
+    return BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
+
+
+@pytest.fixture
+def bound_greater_than_float_field(bound_reference_float: BoundReference[Any]) -> BoundGreaterThan[Any]:
+    return BoundGreaterThan(term=bound_reference_float, literal=literal(100))
+
+
+@pytest.fixture
+def bound_is_nan_float_field(bound_reference_float: BoundReference[Any]) -> BoundIsNaN[Any]:
+    return BoundIsNaN(bound_reference_float)
+
+
+@pytest.fixture
+def bound_eq_double_field(bound_reference_double: BoundReference[Any]) -> BoundEqualTo[Any]:
+    return BoundEqualTo(term=bound_reference_double, literal=literal(False))
+
+
+@pytest.fixture
+def bound_is_null_double_field(bound_reference_double: BoundReference[Any]) -> BoundIsNull[Any]:
+    return BoundIsNull(bound_reference_double)
+
+
+@pytest.mark.german
+def test_collect_null_nan_unmentioned_terms(
+    bound_eq_str_field: BoundEqualTo[Any], bound_is_nan_float_field: BoundIsNaN[Any], bound_is_null_double_field: BoundIsNull[Any]
+) -> None:
+    bound_expr = And(
+        Or(And(bound_eq_str_field, bound_is_nan_float_field), bound_is_null_double_field), Not(bound_is_nan_float_field)
+    )
     categorized_terms = _get_null_nan_refs(bound_expr)
-    assert {"field_long", "field_str"} == {f.field.name for f in categorized_terms[0]}
-    assert {
-        "field_bool",
-    } == {f.field.name for f in categorized_terms[1]}
+
+    assert {f.field.name for f in categorized_terms[0]} == {"field_float_mentioned_nan", "field_str_unmentioned"}
+    assert {f.field.name for f in categorized_terms[1]} == {"field_str_unmentioned", "field_double_mentioned_null"}
+    assert {f.field.name for f in categorized_terms[2]} == {
+        "field_double_mentioned_null",
+    }
+    assert {f.field.name for f in categorized_terms[3]} == {"field_float_mentioned_nan"}
 
 
-def test_collect_null_unmentioned_terms_with_multiple_predicates_on_the_same_term() -> None:
+@pytest.mark.german
+def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
+    bound_eq_str_field: BoundEqualTo[Any],
+    bound_greater_than_float_field: BoundGreaterThan[Any],
+    bound_is_nan_float_field: BoundIsNaN[Any],
+    bound_eq_double_field: BoundEqualTo[Any],
+    bound_is_null_double_field: BoundIsNull[Any],
+) -> None:
     """Test a single term appears multiple places in the expression tree"""
-    bound_reference_str = BoundReference(
-        field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+    bound_expr = And(
+        Or(
+            And(bound_eq_str_field, bound_greater_than_float_field),
+            And(bound_is_nan_float_field, bound_eq_double_field),
+            bound_greater_than_float_field,
+        ),
+        Not(bound_is_null_double_field),
     )
-    bound_eq_str_field = BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
-
-    bound_reference_long = BoundReference(
-        field=NestedField(1, "field_long", LongType(), required=False), accessor=Accessor(position=1, inner=None)
-    )
-    bound_larger_than_long_field = BoundGreaterThan(term=bound_reference_long, literal=literal(100))  # type: ignore
-
-    bound_is_null_long_field = BoundIsNull(bound_reference_long)
-
-    bound_expr = Or(
-        And(Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_long_field), bound_larger_than_long_field),
-        bound_eq_str_field,
-    )
-
     categorized_terms = _get_null_nan_refs(bound_expr)
-    assert {"field_str"} == set({f.field.name for f in categorized_terms[0]})
-    assert {"field_long"} == set({f.field.name for f in categorized_terms[1]})
+    assert {f.field.name for f in categorized_terms[0]} == {"field_float_mentioned_nan", "field_str_unmentioned"}
+    assert {f.field.name for f in categorized_terms[1]} == {"field_str_unmentioned", "field_double_mentioned_null"}
+    assert {f.field.name for f in categorized_terms[2]} == {
+        "field_double_mentioned_null",
+    }
+    assert {f.field.name for f in categorized_terms[3]} == {"field_float_mentioned_nan"}
+
+
+@pytest.mark.china
+def test__expression_to_complementary_pyarrow(
+    bound_eq_str_field: BoundEqualTo[Any],
+    bound_greater_than_float_field: BoundGreaterThan[Any],
+    bound_is_nan_float_field: BoundIsNaN[Any],
+    bound_eq_double_field: BoundEqualTo[Any],
+    bound_is_null_double_field: BoundIsNull[Any],
+) -> None:
+    bound_expr = And(
+        Or(
+            And(bound_eq_str_field, bound_greater_than_float_field),
+            And(bound_is_nan_float_field, bound_eq_double_field),
+            bound_greater_than_float_field,
+        ),
+        Not(bound_is_null_double_field),
+    )
+    result = _expression_to_complementary_pyarrow(bound_expr)
+    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or.
+    print("this is the result", repr(result))
+    assert (
+        repr(result)
+        == """<pyarrow.compute.Expression (((invert((((((field_str_unmentioned == "hello") and (field_float_mentioned_nan > 100)) or (is_nan(field_float_mentioned_nan) and (field_double_mentioned_null == 0))) or (field_float_mentioned_nan > 100)) and invert(is_null(field_double_mentioned_null, {nan_is_null=false})))) or is_null(field_float_mentioned_nan, {nan_is_null=false})) or is_null(field_str_unmentioned, {nan_is_null=false})) or is_nan(field_double_mentioned_null))>"""
+    )

@@ -494,7 +494,7 @@ def test_delete_overwrite_table_with_null(session_catalog: RestCatalog) -> None:
     assert tbl.scan().to_arrow()["ints"].to_pylist() == [3, 4, 1, None]
 
 
-@pytest.mark.canada
+@pytest.mark.integration
 def test_delete_overwrite_table_with_nan(session_catalog: RestCatalog) -> None:
     arrow_schema = pa.schema([pa.field("floats", pa.float32())])
 
@@ -527,7 +527,7 @@ def test_delete_overwrite_table_with_nan(session_catalog: RestCatalog) -> None:
         schema=arrow_schema,
     )
     """
-    We want to test the _expression_to_complimentary_pyarrow function can generate a correct complimentary filter
+    We want to test the _expression_to_complementary_pyarrow function can generate a correct complimentary filter
     for selecting records to remain in the new overwritten file.
     Compared with test_delete_overwrite_table_with_null which tests rows with null cells,
     nan testing is faced with a more tricky issue:
@@ -536,7 +536,7 @@ def test_delete_overwrite_table_with_nan(session_catalog: RestCatalog) -> None:
 
     This means if we set the test case as floats == 2.0 (equal predicate as in test_delete_overwrite_table_with_null),
     test will pass even without the logic under test
-    in _CollectNullNaNUnmentionedTermsFromExpression (a helper of _expression_to_complimentary_pyarrow
+    in _CollectNullNaNUnmentionedTermsFromExpression (a helper of _expression_to_complementary_pyarrow
     to handle revert of iceberg expression of is_null/not_null/is_nan/not_nan).
     Instead, we test the filter of !=, so that the revert is == which exposes the issue.
     """
@@ -556,8 +556,3 @@ def test_delete_overwrite_table_with_nan(session_catalog: RestCatalog) -> None:
     assert 2.0 in result
     assert 3.0 in result
     assert 4.0 in result
-
-
-@pytest.mark.german
-def test_nan() -> None:
-    print("what is sue", float("nan") == float("nan"))
