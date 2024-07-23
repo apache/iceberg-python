@@ -634,7 +634,7 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return left_result | right_result
 
 
-class _CollectNullNaNUnmentionedTermsFromExpression(BoundBooleanExpressionVisitor[Any]):
+class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[Any]):
     # BoundTerms which have either is_null or is_not_null appearing at least once in the boolean expr.
     is_null_or_not_bound_terms: set[BoundTerm[Any]]
     # The remaining BoundTerms appearing in the boolean expr.
@@ -744,13 +744,25 @@ class _CollectNullNaNUnmentionedTermsFromExpression(BoundBooleanExpressionVisito
     def visit_or(self, left_result: pc.Expression, right_result: pc.Expression) -> None:
         return
 
+    def collect(
+        self,
+        expr: BooleanExpression,
+    ) -> None:
+        """Collect the bound references categorized by having at least one is_null or is_not_null in the expr and the remaining."""
+        boolean_expression_visit(expr, self)
 
-def _get_null_nan_refs(
-    expr: BooleanExpression,
-) -> tuple[Set[BoundReference[Any]], Set[BoundReference[Any]], Set[BoundReference[Any]], Set[BoundReference[Any]]]:
-    """Collect the bound references categorized by having at least one is_null or is_not_null in the expr and the remaining."""
-    collector = _CollectNullNaNUnmentionedTermsFromExpression()
-    boolean_expression_visit(expr, collector)
+
+def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
+    return boolean_expression_visit(expr, _ConvertToArrowExpression())
+
+
+def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expression:
+    """Complementary filter conversion function of expression_to_pyarrow.
+
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
+    """
+    collector = _NullNaNUnmentionedTermsCollector()
+    collector.collect(expr)
 
     def _downcast_term_to_reference(bound_terms: Set[BoundTerm[Any]]) -> Set[BoundReference[Any]]:
         """Handle mypy check for BoundTerm -> BoundReference."""
@@ -763,32 +775,20 @@ def _get_null_nan_refs(
         return bound_refs
 
     null_unmentioned_bound_refs: Set[BoundReference[Any]] = _downcast_term_to_reference(collector.null_unmentioned_bound_terms)
-    is_null_or_not_bound_refs: Set[BoundReference[Any]] = _downcast_term_to_reference(collector.is_null_or_not_bound_terms)
     nan_unmentioned_bound_refs: Set[BoundReference[Any]] = _downcast_term_to_reference(collector.nan_unmentioned_bound_terms)
-    is_nan_or_not_bound_refs: Set[BoundReference[Any]] = _downcast_term_to_reference(collector.is_nan_or_not_bound_terms)
-
-    return null_unmentioned_bound_refs, nan_unmentioned_bound_refs, is_null_or_not_bound_refs, is_nan_or_not_bound_refs
-
-
-def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
-    return boolean_expression_visit(expr, _ConvertToArrowExpression())
-
-
-def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expression:
-    """Complementary filter conversion function of expression_to_pyarrow.
-
-    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
-    """
-    categorized_refs = _get_null_nan_refs(expr)
 
     # Convert the set of references to a sorted list so that layout of the expression to build is deterministic.
-    null_unmentioned_bound_refs: List[BoundReference[Any]] = sorted(categorized_refs[0], key=lambda ref: ref.field.name)
-    nan_unmentioned_bound_refs: List[BoundReference[Any]] = sorted(categorized_refs[1], key=lambda ref: ref.field.name)
+    null_unmentioned_bound_refs_sorted: List[BoundReference[Any]] = sorted(
+        null_unmentioned_bound_refs, key=lambda ref: ref.field.name
+    )
+    nan_unmentioned_bound_refs_sorted: List[BoundReference[Any]] = sorted(
+        nan_unmentioned_bound_refs, key=lambda ref: ref.field.name
+    )
 
     preserve_expr: BooleanExpression = Not(expr)
-    for term in null_unmentioned_bound_refs:
+    for term in null_unmentioned_bound_refs_sorted:
         preserve_expr = Or(preserve_expr, BoundIsNull(term=term))
-    for term in nan_unmentioned_bound_refs:
+    for term in nan_unmentioned_bound_refs_sorted:
         preserve_expr = Or(preserve_expr, BoundIsNaN(term=term))
     return expression_to_pyarrow(preserve_expr)
 

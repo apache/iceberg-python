@@ -37,8 +37,8 @@ from pyiceberg.io.pyarrow import (
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
     _expression_to_complementary_pyarrow,
-    _get_null_nan_refs,
     _HasIds,
+    _NullNaNUnmentionedTermsCollector,
     _pyarrow_schema_ensure_large_types,
     pyarrow_to_schema,
     schema_to_pyarrow,
@@ -649,14 +649,20 @@ def test_collect_null_nan_unmentioned_terms(
     bound_expr = And(
         Or(And(bound_eq_str_field, bound_is_nan_float_field), bound_is_null_double_field), Not(bound_is_nan_float_field)
     )
-    categorized_terms = _get_null_nan_refs(bound_expr)
-
-    assert {f.field.name for f in categorized_terms[0]} == {"field_float_mentioned_nan", "field_str_unmentioned"}
-    assert {f.field.name for f in categorized_terms[1]} == {"field_str_unmentioned", "field_double_mentioned_null"}
-    assert {f.field.name for f in categorized_terms[2]} == {
+    collector = _NullNaNUnmentionedTermsCollector()
+    collector.collect(bound_expr)
+    assert {f.field.name for f in collector.null_unmentioned_bound_terms} == {  # type: ignore
+        "field_float_mentioned_nan",
+        "field_str_unmentioned",
+    }
+    assert {f.field.name for f in collector.nan_unmentioned_bound_terms} == {  # type: ignore
+        "field_str_unmentioned",
         "field_double_mentioned_null",
     }
-    assert {f.field.name for f in categorized_terms[3]} == {"field_float_mentioned_nan"}
+    assert {f.field.name for f in collector.is_null_or_not_bound_terms} == {  # type: ignore
+        "field_double_mentioned_null",
+    }
+    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"field_float_mentioned_nan"}  # type: ignore
 
 
 def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
@@ -675,13 +681,20 @@ def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same
         ),
         Not(bound_is_null_double_field),
     )
-    categorized_terms = _get_null_nan_refs(bound_expr)
-    assert {f.field.name for f in categorized_terms[0]} == {"field_float_mentioned_nan", "field_str_unmentioned"}
-    assert {f.field.name for f in categorized_terms[1]} == {"field_str_unmentioned", "field_double_mentioned_null"}
-    assert {f.field.name for f in categorized_terms[2]} == {
+    collector = _NullNaNUnmentionedTermsCollector()
+    collector.collect(bound_expr)
+    assert {f.field.name for f in collector.null_unmentioned_bound_terms} == {  # type: ignore
+        "field_float_mentioned_nan",
+        "field_str_unmentioned",
+    }
+    assert {f.field.name for f in collector.nan_unmentioned_bound_terms} == {  # type: ignore
+        "field_str_unmentioned",
         "field_double_mentioned_null",
     }
-    assert {f.field.name for f in categorized_terms[3]} == {"field_float_mentioned_nan"}
+    assert {f.field.name for f in collector.is_null_or_not_bound_terms} == {  # type: ignore
+        "field_double_mentioned_null",
+    }
+    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"field_float_mentioned_nan"}  # type: ignore
 
 
 def test__expression_to_complementary_pyarrow(
