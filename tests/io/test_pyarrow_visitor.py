@@ -643,7 +643,6 @@ def bound_is_null_double_field(bound_reference_double: BoundReference[Any]) -> B
     return BoundIsNull(bound_reference_double)
 
 
-@pytest.mark.german
 def test_collect_null_nan_unmentioned_terms(
     bound_eq_str_field: BoundEqualTo[Any], bound_is_nan_float_field: BoundIsNaN[Any], bound_is_null_double_field: BoundIsNull[Any]
 ) -> None:
@@ -660,7 +659,6 @@ def test_collect_null_nan_unmentioned_terms(
     assert {f.field.name for f in categorized_terms[3]} == {"field_float_mentioned_nan"}
 
 
-@pytest.mark.german
 def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
     bound_eq_str_field: BoundEqualTo[Any],
     bound_greater_than_float_field: BoundGreaterThan[Any],
@@ -686,7 +684,6 @@ def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same
     assert {f.field.name for f in categorized_terms[3]} == {"field_float_mentioned_nan"}
 
 
-@pytest.mark.china
 def test__expression_to_complementary_pyarrow(
     bound_eq_str_field: BoundEqualTo[Any],
     bound_greater_than_float_field: BoundGreaterThan[Any],
@@ -703,8 +700,7 @@ def test__expression_to_complementary_pyarrow(
         Not(bound_is_null_double_field),
     )
     result = _expression_to_complementary_pyarrow(bound_expr)
-    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or.
-    print("this is the result", repr(result))
+    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
     assert (
         repr(result)
         == """<pyarrow.compute.Expression (((invert((((((field_str_unmentioned == "hello") and (field_float_mentioned_nan > 100)) or (is_nan(field_float_mentioned_nan) and (field_double_mentioned_null == 0))) or (field_float_mentioned_nan > 100)) and invert(is_null(field_double_mentioned_null, {nan_is_null=false})))) or is_null(field_float_mentioned_nan, {nan_is_null=false})) or is_null(field_str_unmentioned, {nan_is_null=false})) or is_nan(field_double_mentioned_null))>"""

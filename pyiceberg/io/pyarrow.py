@@ -674,7 +674,6 @@ class _CollectNullNaNUnmentionedTermsFromExpression(BoundBooleanExpressionVisito
             self.nan_unmentioned_bound_terms.add(term)
 
     def visit_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> None:
-        print("testing isnan trace: in predicate visit called.")
         self._handle_null_unmentioned(term)
         self._handle_nan_unmentioned(term)
 
@@ -683,27 +682,22 @@ class _CollectNullNaNUnmentionedTermsFromExpression(BoundBooleanExpressionVisito
         self._handle_nan_unmentioned(term)
 
     def visit_is_nan(self, term: BoundTerm[Any]) -> None:
-        print("testing isnan trace: is nan visit called.")
         self._handle_null_unmentioned(term)
         self._handle_explicit_is_nan_or_not(term)
 
     def visit_not_nan(self, term: BoundTerm[Any]) -> None:
-        print("testing isnan trace: not nan visit called.")
         self._handle_null_unmentioned(term)
         self._handle_explicit_is_nan_or_not(term)
 
     def visit_is_null(self, term: BoundTerm[Any]) -> None:
-        print("testing isnan trace: is null visit called.")
         self._handle_explicit_is_null_or_not(term)
         self._handle_nan_unmentioned(term)
 
     def visit_not_null(self, term: BoundTerm[Any]) -> None:
-        print("testing isnan trace: not null visit called.")
         self._handle_explicit_is_null_or_not(term)
         self._handle_nan_unmentioned(term)
 
     def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
-        print("testing isnan trace: equal visit called.")
         self._handle_null_unmentioned(term)
         self._handle_nan_unmentioned(term)
 
@@ -712,12 +706,10 @@ class _CollectNullNaNUnmentionedTermsFromExpression(BoundBooleanExpressionVisito
         self._handle_nan_unmentioned(term)
 
     def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
-        print("testing isnan trace: >= visit called.")
         self._handle_null_unmentioned(term)
         self._handle_nan_unmentioned(term)
 
     def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
-        print("testing isnan trace: > equal visit called.")
         self._handle_null_unmentioned(term)
         self._handle_nan_unmentioned(term)
 
@@ -756,7 +748,7 @@ class _CollectNullNaNUnmentionedTermsFromExpression(BoundBooleanExpressionVisito
 def _get_null_nan_refs(
     expr: BooleanExpression,
 ) -> tuple[Set[BoundReference[Any]], Set[BoundReference[Any]], Set[BoundReference[Any]], Set[BoundReference[Any]]]:
-    """Collect the bound terms categorized by having at least one is_null or is_not_null in the expr and the remaining."""
+    """Collect the bound references categorized by having at least one is_null or is_not_null in the expr and the remaining."""
     collector = _CollectNullNaNUnmentionedTermsFromExpression()
     boolean_expression_visit(expr, collector)
 
@@ -785,13 +777,15 @@ def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
 def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expression:
     """Complementary filter conversion function of expression_to_pyarrow.
 
-    Could not use expression_to_pyarrow(Not(expr)) to achieve this complimentary effect because ~ in pc.Expression does not handle null.
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
     """
     categorized_refs = _get_null_nan_refs(expr)
-    null_unmentioned_bound_refs: set[BoundReference[Any]] = categorized_refs[0]
-    nan_unmentioned_bound_refs: set[BoundReference[Any]] = categorized_refs[1]
+
+    # Convert the set of references to a sorted list so that layout of the expression to build is deterministic.
+    null_unmentioned_bound_refs: List[BoundReference[Any]] = sorted(categorized_refs[0], key=lambda ref: ref.field.name)
+    nan_unmentioned_bound_refs: List[BoundReference[Any]] = sorted(categorized_refs[1], key=lambda ref: ref.field.name)
+
     preserve_expr: BooleanExpression = Not(expr)
-    print("check the order:", [f.field.name for f in null_unmentioned_bound_refs])
     for term in null_unmentioned_bound_refs:
         preserve_expr = Or(preserve_expr, BoundIsNull(term=term))
     for term in nan_unmentioned_bound_refs:
