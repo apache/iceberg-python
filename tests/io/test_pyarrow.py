@@ -63,12 +63,12 @@ from pyiceberg.io.pyarrow import (
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _determine_partitions,
+    _expression_to_complimentary_pyarrow,
     _primitive_to_physical,
     _read_deletes,
     _to_requested_schema,
     bin_pack_arrow_table,
     expression_to_pyarrow,
-    expression_to_reverted_pyarrow,
     project_table,
     schema_to_pyarrow,
 )
@@ -725,7 +725,7 @@ def test_always_false_to_pyarrow(bound_reference: BoundReference[str]) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
 
 
-def test_expression_to_reverted_pyarrow() -> None:
+def test__expression_to_complimentary_pyarrow() -> None:
     bound_reference_str = BoundReference(
         field=NestedField(1, "field_str", StringType(), required=False), accessor=Accessor(position=0, inner=None)
     )
@@ -739,7 +739,7 @@ def test_expression_to_reverted_pyarrow() -> None:
     bound_is_null_long_field = BoundIsNull(bound_reference_long)
 
     bound_expr = Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_long_field)
-    result = expression_to_reverted_pyarrow(bound_expr)
+    result = _expression_to_complimentary_pyarrow(bound_expr)
     assert (
         repr(result)
         == """<pyarrow.compute.Expression (invert((((field_str == "hello") and (field_long > 100)) or is_null(field_long, {nan_is_null=false}))) or is_null(field_str, {nan_is_null=false}))>"""

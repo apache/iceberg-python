@@ -771,10 +771,10 @@ def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
     return boolean_expression_visit(expr, _ConvertToArrowExpression())
 
 
-def expression_to_reverted_pyarrow(expr: BooleanExpression) -> pc.Expression:
+def _expression_to_complimentary_pyarrow(expr: BooleanExpression) -> pc.Expression:
     """Complimentary filter conversion function of expression_to_pyarrow.
 
-    Could not use expression_to_pyarrow(Not(expr)) to achieve this effect because ~ in pc.Expression does not handle null.
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this complimentary effect because ~ in pc.Expression does not handle null.
     """
     null_unmentioned_bound_refs: set[BoundReference[Any]] = _get_null_nan_refs(expr)[0]
     nan_unmentioned_bound_refs: set[BoundReference[Any]] = _get_null_nan_refs(expr)[1]

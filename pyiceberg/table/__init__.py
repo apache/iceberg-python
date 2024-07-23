@@ -578,8 +578,8 @@ class Transaction:
         """
         from pyiceberg.io.pyarrow import (
             _dataframe_to_data_files,
+            _expression_to_complimentary_pyarrow,
             expression_to_pyarrow,
-            expression_to_reverted_pyarrow,
             project_table,
         )
 
@@ -600,7 +600,7 @@ class Transaction:
             bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
             print(f"{bound_delete_filter=}")
             print(f"{expression_to_pyarrow(Not(bound_delete_filter))=}")
-            preserve_row_filter = expression_to_reverted_pyarrow(bound_delete_filter)
+            preserve_row_filter = _expression_to_complimentary_pyarrow(bound_delete_filter)
             print(f"{preserve_row_filter=}")
 
             files = self._scan(row_filter=delete_filter).plan_files()
