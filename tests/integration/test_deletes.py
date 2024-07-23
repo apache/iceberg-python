@@ -27,7 +27,7 @@ from pyiceberg.expressions import AlwaysTrue, EqualTo
 from pyiceberg.manifest import ManifestEntryStatus
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Summary
-from pyiceberg.types import IntegerType, NestedField
+from pyiceberg.types import FloatType, IntegerType, NestedField
 
 
 def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
@@ -492,3 +492,72 @@ def test_delete_overwrite_table_with_null(session_catalog: RestCatalog) -> None:
     ]
 
     assert tbl.scan().to_arrow()["ints"].to_pylist() == [3, 4, 1, None]
+
+
+@pytest.mark.canada
+def test_delete_overwrite_table_with_nan(session_catalog: RestCatalog) -> None:
+    arrow_schema = pa.schema([pa.field("floats", pa.float32())])
+
+    # Create Arrow Table with NaN values
+    data = [pa.array([1.0, float("nan"), 2.0], type=pa.float32())]
+    arrow_tbl = pa.Table.from_arrays(
+        data,
+        schema=arrow_schema,
+    )
+
+    iceberg_schema = Schema(NestedField(1, "floats", FloatType()))
+
+    tbl_identifier = "default.test_delete_overwrite_with_nan"
+
+    try:
+        session_catalog.drop_table(tbl_identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(tbl_identifier, iceberg_schema)
+    tbl.append(arrow_tbl)
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [Operation.APPEND]
+
+    arrow_tbl_overwrite = pa.Table.from_pylist(
+        [
+            {"floats": 3.0},
+            {"floats": 4.0},
+        ],
+        schema=arrow_schema,
+    )
+    """
+    We want to test the expression_to_reverted_pyarrow function can generate a correct complimentary filter
+    for selecting records to remain in the new overwritten file.
+    Compared with test_delete_overwrite_table_with_null which tests rows with null cells,
+    nan testing is faced with a more tricky issue:
+    A filter of (field == value) will not include cells of nan but col != val will.
+    (Interestingly, neither == or != will include null)
+
+    This means if we set the test case as floats == 2.0 (equal predicate as in test_delete_overwrite_table_with_null),
+    test will pass even without the logic under test
+    in _CollectNullNaNUnmentionedTermsFromExpression (a helper of expression_to_reverted_pyarrow
+    to handle revert of iceberg expression of is_null/not_null/is_nan/not_nan).
+    Instead, we test the filter of !=, so that the revert is == which exposes the issue.
+    """
+    tbl.overwrite(arrow_tbl_overwrite, "floats != 2.0")  # Should rewrite one file
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [
+        Operation.APPEND,
+        Operation.OVERWRITE,
+        Operation.APPEND,
+    ]
+
+    result = tbl.scan().to_arrow()["floats"].to_pylist()
+
+    from math import isnan
+
+    assert any(isnan(e) for e in result)
+    assert 2.0 in result
+    assert 3.0 in result
+    assert 4.0 in result
+
+
+@pytest.mark.german
+def test_nan() -> None:
+    print("what is sue", float("nan") == float("nan"))

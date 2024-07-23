@@ -33,7 +33,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
-    _get_is_valid_or_not_bound_refs,
+    _get_null_nan_refs,
     _HasIds,
     _pyarrow_schema_ensure_large_types,
     pyarrow_to_schema,
@@ -615,7 +615,7 @@ def test_collect_null_unmentioned_terms() -> None:
 
     bound_expr = Or(And(bound_eq_str_field, bound_larger_than_long_field), bound_is_null_bool_field)
 
-    categorized_terms = _get_is_valid_or_not_bound_refs(bound_expr)
+    categorized_terms = _get_null_nan_refs(bound_expr)
     assert {"field_long", "field_str"} == {f.field.name for f in categorized_terms[0]}
     assert {
         "field_bool",
@@ -641,6 +641,6 @@ def test_collect_null_unmentioned_terms_with_multiple_predicates_on_the_same_ter
         bound_eq_str_field,
     )
 
-    categorized_terms = _get_is_valid_or_not_bound_refs(bound_expr)
+    categorized_terms = _get_null_nan_refs(bound_expr)
     assert {"field_str"} == set({f.field.name for f in categorized_terms[0]})
     assert {"field_long"} == set({f.field.name for f in categorized_terms[1]})

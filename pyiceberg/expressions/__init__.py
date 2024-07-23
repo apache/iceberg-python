@@ -136,7 +136,7 @@ class BoundReference(BoundTerm[L]):
         return self
 
     def __hash__(self) -> int:
-        """Return hash value of the Record class."""
+        """Return hash value of the BoundReference class."""
         return hash(str(self))
 
 

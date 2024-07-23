@@ -58,6 +58,7 @@ from pyiceberg.expressions import (
     And,
     BooleanExpression,
     EqualTo,
+    Not,
     Or,
     Reference,
 )
@@ -575,7 +576,12 @@ class Transaction:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
-        from pyiceberg.io.pyarrow import _dataframe_to_data_files, expression_to_reverted_pyarrow, project_table
+        from pyiceberg.io.pyarrow import (
+            _dataframe_to_data_files,
+            expression_to_pyarrow,
+            expression_to_reverted_pyarrow,
+            project_table,
+        )
 
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
@@ -592,7 +598,10 @@ class Transaction:
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
             bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
+            print(f"{bound_delete_filter=}")
+            print(f"{expression_to_pyarrow(Not(bound_delete_filter))=}")
             preserve_row_filter = expression_to_reverted_pyarrow(bound_delete_filter)
+            print(f"{preserve_row_filter=}")
 
             files = self._scan(row_filter=delete_filter).plan_files()
 
