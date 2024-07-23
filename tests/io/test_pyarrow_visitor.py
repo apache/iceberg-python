@@ -599,21 +599,21 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
 @pytest.fixture
 def bound_reference_str() -> BoundReference[Any]:
     return BoundReference(
-        field=NestedField(1, "field_str_unmentioned", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+        field=NestedField(1, "string_field", StringType(), required=False), accessor=Accessor(position=0, inner=None)
     )
 
 
 @pytest.fixture
 def bound_reference_float() -> BoundReference[Any]:
     return BoundReference(
-        field=NestedField(2, "field_float_mentioned_nan", FloatType(), required=False), accessor=Accessor(position=1, inner=None)
+        field=NestedField(2, "float_field", FloatType(), required=False), accessor=Accessor(position=1, inner=None)
     )
 
 
 @pytest.fixture
 def bound_reference_double() -> BoundReference[Any]:
     return BoundReference(
-        field=NestedField(3, "field_double_mentioned_null", DoubleType(), required=False),
+        field=NestedField(3, "double_field", DoubleType(), required=False),
         accessor=Accessor(position=2, inner=None),
     )
 
@@ -652,17 +652,17 @@ def test_collect_null_nan_unmentioned_terms(
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(bound_expr)
     assert {f.field.name for f in collector.null_unmentioned_bound_terms} == {  # type: ignore
-        "field_float_mentioned_nan",
-        "field_str_unmentioned",
+        "float_field",
+        "string_field",
     }
     assert {f.field.name for f in collector.nan_unmentioned_bound_terms} == {  # type: ignore
-        "field_str_unmentioned",
-        "field_double_mentioned_null",
+        "string_field",
+        "double_field",
     }
     assert {f.field.name for f in collector.is_null_or_not_bound_terms} == {  # type: ignore
-        "field_double_mentioned_null",
+        "double_field",
     }
-    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"field_float_mentioned_nan"}  # type: ignore
+    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"float_field"}  # type: ignore
 
 
 def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
@@ -684,17 +684,17 @@ def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(bound_expr)
     assert {f.field.name for f in collector.null_unmentioned_bound_terms} == {  # type: ignore
-        "field_float_mentioned_nan",
-        "field_str_unmentioned",
+        "float_field",
+        "string_field",
     }
     assert {f.field.name for f in collector.nan_unmentioned_bound_terms} == {  # type: ignore
-        "field_str_unmentioned",
-        "field_double_mentioned_null",
+        "string_field",
+        "double_field",
     }
     assert {f.field.name for f in collector.is_null_or_not_bound_terms} == {  # type: ignore
-        "field_double_mentioned_null",
+        "double_field",
     }
-    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"field_float_mentioned_nan"}  # type: ignore
+    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"float_field"}  # type: ignore
 
 
 def test__expression_to_complementary_pyarrow(
@@ -716,5 +716,5 @@ def test__expression_to_complementary_pyarrow(
     # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
     assert (
         repr(result)
-        == """<pyarrow.compute.Expression (((invert((((((field_str_unmentioned == "hello") and (field_float_mentioned_nan > 100)) or (is_nan(field_float_mentioned_nan) and (field_double_mentioned_null == 0))) or (field_float_mentioned_nan > 100)) and invert(is_null(field_double_mentioned_null, {nan_is_null=false})))) or is_null(field_float_mentioned_nan, {nan_is_null=false})) or is_null(field_str_unmentioned, {nan_is_null=false})) or is_nan(field_double_mentioned_null))>"""
+        == """<pyarrow.compute.Expression (((invert((((((string_field == "hello") and (float_field > 100)) or (is_nan(float_field) and (double_field == 0))) or (float_field > 100)) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
     )
