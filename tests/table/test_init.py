@@ -598,7 +598,7 @@ def test_apply_set_properties_update(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
 
     new_metadata_no_update = update_table_metadata(base_metadata, (SetPropertiesUpdate(updates={}),))
-    assert new_metadata_no_update.properties == base_metadata.properties
+    assert new_metadata_no_update == base_metadata
 
     new_metadata = update_table_metadata(
         base_metadata, (SetPropertiesUpdate(updates={"read.split.target.size": "123", "test_a": "test_a", "test_b": "test_b"}),)

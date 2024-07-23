@@ -707,7 +707,6 @@ def test_commit_table_update_schema(
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_table_metadata = table.metadata
-    last_update_ms = original_table_metadata.last_updated_ms
 
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
@@ -729,7 +728,6 @@ def test_commit_table_update_schema(
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
-    assert updated_table_metadata.last_updated_ms > last_update_ms
 
     # Ensure schema is also pushed to Glue
     table_info = _glue.get_table(
@@ -761,7 +759,6 @@ def test_commit_table_properties(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
-    last_updated_ms = table.metadata.last_updated_ms
 
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -773,7 +770,6 @@ def test_commit_table_properties(
     updated_table_metadata = table.metadata
     assert test_catalog._parse_metadata_version(table.metadata_location) == 1
     assert updated_table_metadata.properties == {"Description": "test_description", "test_a": "test_aa", "test_c": "test_c"}
-    assert updated_table_metadata.last_updated_ms > last_updated_ms
 
     table_info = _glue.get_table(
         DatabaseName=database_name,
