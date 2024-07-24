@@ -105,7 +105,6 @@ def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCat
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [11, 10], "number": [30, 30]}
 
 
-@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_rewrite_partitioned_table_with_null(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
     identifier = "default.table_partitioned_delete"
@@ -454,7 +453,6 @@ def test_delete_truncate(session_catalog: RestCatalog) -> None:
     assert entries[0].status == ManifestEntryStatus.DELETED
 
 
-@pytest.mark.integration
 def test_delete_overwrite_table_with_null(session_catalog: RestCatalog) -> None:
     arrow_schema = pa.schema([pa.field("ints", pa.int32())])
     arrow_tbl = pa.Table.from_pylist(
@@ -494,7 +492,6 @@ def test_delete_overwrite_table_with_null(session_catalog: RestCatalog) -> None:
     assert tbl.scan().to_arrow()["ints"].to_pylist() == [3, 4, 1, None]
 
 
-@pytest.mark.integration
 def test_delete_overwrite_table_with_nan(session_catalog: RestCatalog) -> None:
     arrow_schema = pa.schema([pa.field("floats", pa.float32())])
 

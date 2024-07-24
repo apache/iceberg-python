@@ -634,7 +634,7 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return left_result | right_result
 
 
-class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[Any]):
+class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
     # BoundTerms which have either is_null or is_not_null appearing at least once in the boolean expr.
     is_null_or_not_bound_terms: set[BoundTerm[Any]]
     # The remaining BoundTerms appearing in the boolean expr.
@@ -645,11 +645,11 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[Any]):
     nan_unmentioned_bound_terms: set[BoundTerm[Any]]
 
     def __init__(self) -> None:
+        super().__init__()
         self.is_null_or_not_bound_terms = set()
         self.null_unmentioned_bound_terms = set()
         self.is_nan_or_not_bound_terms = set()
         self.nan_unmentioned_bound_terms = set()
-        super().__init__()
 
     def _handle_explicit_is_null_or_not(self, term: BoundTerm[Any]) -> None:
         """Handle the predicate case where either is_null or is_not_null is included."""
@@ -735,13 +735,13 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[Any]):
     def visit_false(self) -> None:
         return
 
-    def visit_not(self, child_result: pc.Expression) -> None:
+    def visit_not(self, child_result: None) -> None:
         return
 
-    def visit_and(self, left_result: pc.Expression, right_result: pc.Expression) -> None:
+    def visit_and(self, left_result: None, right_result: None) -> None:
         return
 
-    def visit_or(self, left_result: pc.Expression, right_result: pc.Expression) -> None:
+    def visit_or(self, left_result: None, right_result: None) -> None:
         return
 
     def collect(
