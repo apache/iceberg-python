@@ -651,18 +651,18 @@ def test_collect_null_nan_unmentioned_terms(
     )
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(bound_expr)
-    assert {f.field.name for f in collector.null_unmentioned_bound_terms} == {  # type: ignore
+    assert {t.ref().field.name for t in collector.null_unmentioned_bound_terms} == {
         "float_field",
         "string_field",
     }
-    assert {f.field.name for f in collector.nan_unmentioned_bound_terms} == {  # type: ignore
+    assert {t.ref().field.name for t in collector.nan_unmentioned_bound_terms} == {
         "string_field",
         "double_field",
     }
-    assert {f.field.name for f in collector.is_null_or_not_bound_terms} == {  # type: ignore
+    assert {t.ref().field.name for t in collector.is_null_or_not_bound_terms} == {
         "double_field",
     }
-    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"float_field"}  # type: ignore
+    assert {t.ref().field.name for t in collector.is_nan_or_not_bound_terms} == {"float_field"}
 
 
 def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
@@ -683,21 +683,21 @@ def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same
     )
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(bound_expr)
-    assert {f.field.name for f in collector.null_unmentioned_bound_terms} == {  # type: ignore
+    assert {t.ref().field.name for t in collector.null_unmentioned_bound_terms} == {
         "float_field",
         "string_field",
     }
-    assert {f.field.name for f in collector.nan_unmentioned_bound_terms} == {  # type: ignore
+    assert {t.ref().field.name for t in collector.nan_unmentioned_bound_terms} == {
         "string_field",
         "double_field",
     }
-    assert {f.field.name for f in collector.is_null_or_not_bound_terms} == {  # type: ignore
+    assert {t.ref().field.name for t in collector.is_null_or_not_bound_terms} == {
         "double_field",
     }
-    assert {f.field.name for f in collector.is_nan_or_not_bound_terms} == {"float_field"}  # type: ignore
+    assert {t.ref().field.name for t in collector.is_nan_or_not_bound_terms} == {"float_field"}
 
 
-def test__expression_to_complementary_pyarrow(
+def test_expression_to_complementary_pyarrow(
     bound_eq_str_field: BoundEqualTo[Any],
     bound_greater_than_float_field: BoundGreaterThan[Any],
     bound_is_nan_float_field: BoundIsNaN[Any],
