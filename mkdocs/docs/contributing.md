@@ -180,6 +180,24 @@ Which will warn:
 Call to load_something, deprecated in 0.1.0, will be removed in 0.2.0. Please use load_something_else() instead.
 ```
 
+If you want to remove a property or notify about a behavior change, please add a deprecation notice by calling the deprecation_message function:
+
+```python
+from pyiceberg.utils.deprecated import deprecation_message
+
+deprecation_message(
+    deprecated_in="0.1.0",
+    removed_in="0.2.0",
+    help_message="The old_property is deprecated. Please use the something_else property instead.",
+)
+```
+
+Which will warn:
+
+```
+Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
+```
+
 ## Type annotations
 
 For the type annotation the types from the `Typing` package are used.

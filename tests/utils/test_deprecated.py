@@ -35,3 +35,17 @@ def test_deprecated(warn: Mock) -> None:
     assert warn.call_args[0] == (
         "Call to deprecated_method, deprecated in 0.1.0, will be removed in 0.2.0. Please use load_something_else() instead.",
     )
+
+
+@patch("warnings.warn")
+def test_deprecation_message(warn: Mock) -> None:
+    from pyiceberg.utils.deprecated import deprecation_message
+
+    deprecation_message(
+        deprecated_in="0.1.0",
+        removed_in="0.2.0",
+        help_message="Please use something_else instead",
+    )
+
+    assert warn.called
+    assert warn.call_args[0] == ("Deprecated in 0.1.0, will be removed in 0.2.0. Please use something_else instead",)
