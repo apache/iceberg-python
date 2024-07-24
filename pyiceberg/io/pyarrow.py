@@ -131,7 +131,7 @@ from pyiceberg.schema import (
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.transforms import TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, Properties, Record
+from pyiceberg.typedef import EMPTY_DICT, L, Properties, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -572,11 +572,11 @@ def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
-    def visit_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> pc.Expression:
+    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
         return pc.field(term.ref().field.name).isin(pyarrow_literals)
 
-    def visit_not_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> pc.Expression:
+    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
         return ~pc.field(term.ref().field.name).isin(pyarrow_literals)
 
@@ -673,11 +673,11 @@ class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
         if term not in self.is_nan_or_not_bound_terms:
             self.nan_unmentioned_bound_terms.add(term)
 
-    def visit_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> None:
+    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> None:
         self._handle_null_unmentioned(term)
         self._handle_nan_unmentioned(term)
 
-    def visit_not_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> None:
+    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> None:
         self._handle_null_unmentioned(term)
         self._handle_nan_unmentioned(term)
 
