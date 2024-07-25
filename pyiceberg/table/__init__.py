@@ -911,6 +911,9 @@ class _TableMetadataUpdateContext:
             update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
 
+    def has_changes(self) -> bool:
+        return len(self._updates) > 0
+
 
 @singledispatch
 def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
@@ -1184,6 +1187,10 @@ def update_table_metadata(
 
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
+
+    # Update last_updated_ms if it was not updated by update operations
+    if context.has_changes() and base_metadata.last_updated_ms == new_metadata.last_updated_ms:
+        new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
