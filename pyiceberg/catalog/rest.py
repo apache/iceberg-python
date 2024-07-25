@@ -401,7 +401,6 @@ class RestCatalog(Catalog):
         self.uri = config[URI]
 
     def _identifier_to_validated_tuple(self, identifier: Union[str, Identifier]) -> Identifier:
-        print(f"DEBUG: {identifier}")
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
             raise NoSuchIdentifierError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
