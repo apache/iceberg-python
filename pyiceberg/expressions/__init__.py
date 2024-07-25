@@ -135,6 +135,10 @@ class BoundReference(BoundTerm[L]):
     def ref(self) -> BoundReference[L]:
         return self
 
+    def __hash__(self) -> int:
+        """Return hash value of the BoundReference class."""
+        return hash(str(self))
+
 
 class UnboundTerm(Term[Any], Unbound[BoundTerm[L]], ABC):
     """Represents an unbound term."""
