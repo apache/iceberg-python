@@ -63,7 +63,6 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
-    PropertyUtil,
     StagedTable,
     Table,
     TableIdentifier,
@@ -73,7 +72,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -303,7 +302,7 @@ class RestCatalog(Catalog):
 
         self._warn_oauth_tokens_deprecation()
 
-        if url := PropertyUtil.get_first_property_value(self.properties, AUTH_URL, OAUTH2_SERVER_URI):
+        if url := get_first_property_value(self.properties, AUTH_URL, OAUTH2_SERVER_URI):
             return url
         else:
             return self.url(Endpoints.get_token, prefixed=False)
@@ -312,7 +311,7 @@ class RestCatalog(Catalog):
         has_oauth_server_uri = OAUTH2_SERVER_URI in self.properties
         has_credential = CREDENTIAL in self.properties
         has_init_token = TOKEN in self.properties
-        has_sigv4_enabled = strtobool(self.properties.get(SIGV4, "false"))
+        has_sigv4_enabled = property_as_bool(self.properties, SIGV4, False)
 
         if not has_oauth_server_uri and (has_init_token or has_credential) and not has_sigv4_enabled:
             deprecation_message(

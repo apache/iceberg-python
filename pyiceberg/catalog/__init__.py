@@ -67,7 +67,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -742,11 +742,11 @@ class MetastoreCatalog(Catalog, ABC):
 
         for property_name in DEPRECATED_PROPERTY_NAMES:
             if self.properties.get(property_name):
-                deprecated(
+                deprecation_message(
                     deprecated_in="0.7.0",
                     removed_in="0.8.0",
                     help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
-                )(lambda: None)()
+                )
 
     def create_table_transaction(
         self,
