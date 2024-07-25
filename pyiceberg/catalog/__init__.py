@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import re
 import uuid
@@ -77,6 +78,7 @@ _ENV_CONFIG = Config()
 
 TOKEN = "token"
 TYPE = "type"
+PY_CATALOG_IMPL = "py-catalog-impl"
 ICEBERG = "iceberg"
 TABLE_TYPE = "table_type"
 WAREHOUSE_LOCATION = "warehouse"
@@ -233,6 +235,19 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     catalog_type: Optional[CatalogType]
     provided_catalog_type = conf.get(TYPE)
 
+    if catalog_impl := properties.get(PY_CATALOG_IMPL):
+        if provided_catalog_type:
+            raise ValueError(
+                "Must not set both catalog type and py-catalog-impl configurations, "
+                f"but found type {provided_catalog_type} and py-catalog-impl {catalog_impl}"
+            )
+
+        if catalog := _import_catalog(name, catalog_impl, properties):
+            logger.info("Loaded Catalog: %s", catalog_impl)
+            return catalog
+        else:
+            raise ValueError(f"Could not initialize Catalog: {catalog_impl}")
+
     catalog_type = None
     if provided_catalog_type and isinstance(provided_catalog_type, str):
         catalog_type = CatalogType[provided_catalog_type.upper()]
@@ -281,6 +296,20 @@ def delete_data_files(io: FileIO, manifests_to_delete: List[ManifestFile]) -> No
                 except OSError as exc:
                     logger.warning(msg=f"Failed to delete data file {path}", exc_info=exc)
                 deleted_files[path] = True
+
+
+def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Optional[Catalog]:
+    try:
+        path_parts = catalog_impl.split(".")
+        if len(path_parts) < 2:
+            raise ValueError(f"py-catalog-impl should be full path (module.CustomCatalog), got: {catalog_impl}")
+        module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
+        module = importlib.import_module(module_name)
+        class_ = getattr(module, class_name)
+        return class_(name, **properties)
+    except ModuleNotFoundError:
+        logger.warning("Could not initialize Catalog: %s", catalog_impl)
+        return None
 
 
 @dataclass
