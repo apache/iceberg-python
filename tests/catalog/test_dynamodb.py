@@ -74,7 +74,7 @@ def test_create_table_with_database_location(
     test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -91,7 +91,7 @@ def test_create_table_with_pyarrow_schema(
     test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, pyarrow_schema_simple_without_ids)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -104,7 +104,7 @@ def test_create_table_with_default_warehouse(
     test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -119,7 +119,7 @@ def test_create_table_with_given_location(
     table = test_catalog.create_table(
         identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
     )
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -133,7 +133,7 @@ def test_create_table_removes_trailing_slash_in_location(
     test_catalog.create_namespace(namespace=database_name)
     location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert table.location() == location
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
@@ -158,7 +158,7 @@ def test_create_table_with_strips(
     test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db/"})
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -171,7 +171,7 @@ def test_create_table_with_strips_bucket_root(
     test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
-    assert table_strip.identifier == (catalog_name,) + identifier
+    assert table_strip.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table_strip.metadata_location)
 
 
@@ -219,7 +219,7 @@ def test_load_table(
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -234,7 +234,7 @@ def test_load_table_from_self_identifier(
     test_catalog.create_table(identifier, table_schema_nested)
     intermediate = test_catalog.load_table(identifier)
     table = test_catalog.load_table(intermediate.identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -257,7 +257,7 @@ def test_drop_table(
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
@@ -274,7 +274,7 @@ def test_drop_table_from_self_identifier(
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     test_catalog.drop_table(table.identifier)
     with pytest.raises(NoSuchTableError):
@@ -302,11 +302,11 @@ def test_rename_table(
     test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     test_catalog.rename_table(identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (catalog_name,) + new_identifier
+    assert new_table.identifier == new_identifier
     # the metadata_location should not change
     assert new_table.metadata_location == table.metadata_location
     # old table should be dropped
@@ -325,11 +325,11 @@ def test_rename_table_from_self_identifier(
     test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.identifier == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     test_catalog.rename_table(table.identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (catalog_name,) + new_identifier
+    assert new_table.identifier == new_identifier
     # the metadata_location should not change
     assert new_table.metadata_location == table.metadata_location
     # old table should be dropped

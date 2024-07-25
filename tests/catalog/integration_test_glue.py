@@ -119,7 +119,7 @@ def test_create_table(
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested, get_s3_path(get_bucket_name(), database_name, table_name))
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.identifier == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
@@ -183,7 +183,7 @@ def test_create_table_with_default_location(
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.identifier == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
@@ -242,11 +242,11 @@ def test_rename_table(
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
-    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.identifier == identifier
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (CATALOG_NAME,) + new_identifier
+    assert new_table.identifier == new_identifier
     assert new_table.metadata_location == table.metadata_location
     metadata_location = new_table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
@@ -258,7 +258,7 @@ def test_drop_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.identifier == identifier
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
@@ -271,7 +271,7 @@ def test_purge_table(
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.identifier == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
     test_catalog.purge_table(identifier)
@@ -536,7 +536,7 @@ def test_create_table_transaction(
                 update_snapshot.append_data_file(data_file)
 
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (CATALOG_NAME,) + identifier
+    assert table.identifier == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
     assert MetastoreCatalog._parse_metadata_version(table.metadata_location) == 0
@@ -584,6 +584,6 @@ def test_register_table_with_given_location(
     test_catalog.drop_table(identifier)  # drops the table but keeps the metadata file
     assert not test_catalog.table_exists(identifier)
     table = test_catalog.register_table(new_identifier, location)
-    assert table.identifier == (CATALOG_NAME,) + new_identifier
+    assert table.identifier == new_identifier
     assert table.metadata_location == location
     assert test_catalog.table_exists(new_identifier)

@@ -247,8 +247,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
         return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
 
@@ -639,7 +638,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(self.name, database_name, table_name),
+            identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),

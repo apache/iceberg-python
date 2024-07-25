@@ -698,7 +698,7 @@ def test_load_table(hive_table: HiveTable) -> None:
         last_sequence_number=34,
     )
 
-    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert table.identifier == ("default", "new_tabl2e")
     assert expected == table.metadata
 
 
@@ -799,7 +799,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
         last_sequence_number=34,
     )
 
-    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert table.identifier == ("default", "new_tabl2e")
     assert expected == table.metadata
 
 
@@ -818,7 +818,7 @@ def test_rename_table(hive_table: HiveTable) -> None:
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_identifier, to_identifier)
 
-    assert table.identifier == ("hive",) + to_identifier
+    assert table.identifier == to_identifier
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
@@ -844,7 +844,7 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_table.identifier, to_identifier)
 
-    assert table.identifier == ("hive",) + to_identifier
+    assert table.identifier == to_identifier
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)

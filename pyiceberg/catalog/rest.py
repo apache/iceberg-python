@@ -354,7 +354,7 @@ class RestCatalog(Catalog):
 
     def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), "table": identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), "table": identifier_tuple[-1]}
 
@@ -462,7 +462,7 @@ class RestCatalog(Catalog):
 
     def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
-            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
@@ -473,7 +473,7 @@ class RestCatalog(Catalog):
 
     def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
         return StagedTable(
-            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
@@ -631,17 +631,14 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
-        response = self._session.get(
-            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
-        )
+        response = self._session.get(self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)))
         try:
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchTableError})
 
         table_response = TableResponse(**response.json())
-        return self._response_to_table(identifier_tuple, table_response)
+        return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:

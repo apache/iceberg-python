@@ -1412,7 +1412,7 @@ class Table:
 
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
-        fresh = self.catalog.load_table(self.identifier[1:])
+        fresh = self.catalog.load_table(self.identifier)
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location

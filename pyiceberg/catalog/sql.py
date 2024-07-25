@@ -155,7 +155,7 @@ class SqlCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(self.name,) + Catalog.identifier_to_tuple(table_namespace) + (table_name,),
+            identifier=Catalog.identifier_to_tuple(table_namespace) + (table_name,),
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),
@@ -277,10 +277,9 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         with Session(self.engine) as session:
             stmt = select(IcebergTables).where(
                 IcebergTables.catalog_name == self.name,
