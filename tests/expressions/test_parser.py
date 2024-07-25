@@ -52,7 +52,7 @@ def test_false() -> None:
 def test_is_null() -> None:
     assert IsNull("foo") == parser.parse("foo is null")
     assert IsNull("foo") == parser.parse("foo IS NULL")
-    assert IsNull("foo") == parser.parse("table.foo IS NULL")
+    assert IsNull("table.foo") == parser.parse("table.foo IS NULL")
 
 
 def test_not_null() -> None:
@@ -199,3 +199,7 @@ def test_with_function() -> None:
         parser.parse("foo = 1 and lower(bar) = '2'")
 
     assert "Expected end of text, found 'and'" in str(exc_info)
+
+
+def test_nested_field_equality() -> None:
+    assert EqualTo("foo.first", "a") == parser.parse("foo.first == 'a'")

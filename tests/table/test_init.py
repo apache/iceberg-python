@@ -307,6 +307,15 @@ def test_table_scan_row_filter(table_v2: Table) -> None:
     assert scan.filter(EqualTo("x", 10)).filter(In("y", (10, 11))).row_filter == And(EqualTo("x", 10), In("y", (10, 11)))
 
 
+def test_table_scan_row_filter_on_nested_field(table_v2_with_struct_type: Table) -> None:
+    scan = table_v2_with_struct_type.scan()
+    assert scan.row_filter == AlwaysTrue()
+    assert scan.filter(EqualTo("person.id", 10)).row_filter == EqualTo("person.id", 10)
+    assert scan.filter(EqualTo("person.id", 10)).filter(In("person.age", (10, 11))).row_filter == And(
+        EqualTo("person.id", 10), In("person.age", (10, 11))
+    )
+
+
 def test_table_scan_ref(table_v2: Table) -> None:
     scan = table_v2.scan()
     assert scan.use_ref("test").snapshot_id == 3051729675574597004

@@ -919,6 +919,67 @@ TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES = {
 }
 
 
+TABLE_METADATA_V2_WITH_STRUCT_TYPE = {
+    "format-version": 2,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://bucket/test/location",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 7,
+    "current-schema-id": 1,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 1,
+            "identifier-field-ids": [],
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "person",
+                    "required": False,
+                    "type": {
+                        "type": "struct",
+                        "fields": [
+                            {"id": 2, "name": "id", "required": False, "type": "long"},
+                            {"id": 3, "name": "age", "required": False, "type": "float"},
+                        ],
+                    },
+                },
+            ],
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": []}],
+    "last-partition-id": 1000,
+    "properties": {"read.split.target.size": "134217728"},
+    "current-snapshot-id": 3055729675574597004,
+    "snapshots": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1515100955770,
+            "sequence-number": 0,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/1.avro",
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "parent-snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1555100955770,
+            "sequence-number": 1,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/2.avro",
+            "schema-id": 1,
+        },
+    ],
+    "snapshot-log": [
+        {"snapshot-id": 3051729675574597004, "timestamp-ms": 1515100955770},
+        {"snapshot-id": 3055729675574597004, "timestamp-ms": 1555100955770},
+    ],
+    "metadata-log": [{"metadata-file": "s3://bucket/.../v1.json", "timestamp-ms": 1515100}],
+    "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
+}
+
+
 @pytest.fixture
 def example_table_metadata_v2() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V2
@@ -927,6 +988,11 @@ def example_table_metadata_v2() -> Dict[str, Any]:
 @pytest.fixture
 def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
     return TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES
+
+
+@pytest.fixture
+def table_metadata_v2_with_struct_type() -> Dict[str, Any]:
+    return TABLE_METADATA_V2_WITH_STRUCT_TYPE
 
 
 @pytest.fixture(scope="session")
@@ -2148,6 +2214,22 @@ def table_v2_with_fixed_and_decimal_types(
 ) -> Table:
     table_metadata = TableMetadataV2(
         **table_metadata_v2_with_fixed_and_decimal_types,
+    )
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v2_with_struct_type(
+    table_metadata_v2_with_struct_type: Dict[str, Any],
+) -> Table:
+    table_metadata = TableMetadataV2(
+        **table_metadata_v2_with_struct_type,
     )
     return Table(
         identifier=("database", "table"),
