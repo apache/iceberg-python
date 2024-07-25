@@ -680,15 +680,8 @@ class Transaction:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        if self._table.name_mapping() is None:
-            self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
-        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
-            data_files = _parquet_files_to_data_files(
-                table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
-            )
-            for data_file in data_files:
-                update_snapshot.append_data_file(data_file)
+        self.delete(delete_filter=overwrite_filter)
+        self.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
 
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
