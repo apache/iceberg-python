@@ -664,6 +664,32 @@ class Transaction:
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
 
+    def add_files_overwrite(
+        self,
+        file_paths: List[str],
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ) -> None:
+        """Shorthand API for adding files as data files and overwriting the table.
+
+        Args:
+            file_paths: The list of full file paths to be added as data files to the table
+            overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
+                              or a boolean expression in case of a partial overwrite
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        if self._table.name_mapping() is None:
+            self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
+        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+            data_files = _parquet_files_to_data_files(
+                table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
+            )
+            for data_file in data_files:
+                update_snapshot.append_data_file(data_file)
+
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
 
@@ -1612,6 +1638,29 @@ class Table:
         """
         with self.transaction() as tx:
             tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
+
+    def add_files_overwrite(
+        self,
+        file_paths: List[str],
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ) -> None:
+        """
+        Shorthand API for adding files as data files and overwriting the table.
+
+        Args:
+            file_paths: The list of full file paths to be added as data files to the table
+            overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
+                    or a boolean expression in case of a partial overwrite
+            snapshot_properties: Custom properties to be added to the snapshot summary
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        with self.transaction() as tx:
+            tx.add_files_overwrite(
+                file_paths=file_paths, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties
+            )
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
