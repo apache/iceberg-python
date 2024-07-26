@@ -1228,7 +1228,7 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
     assert catalog.uri == "https://other-service.io/api"
 
 
-def test_commit_table_fail(rest_mock: Mocker, example_table_metadata_v2: Dict[str, Any]) -> None:
+def test_table_identifier_in_commit_table_request(rest_mock: Mocker, example_table_metadata_v2: Dict[str, Any]) -> None:
     test_table_request = CommitTableRequest(
         identifier=TableIdentifier(namespace=("catalog_name", "namespace"), name="table_name"),
         updates=[],

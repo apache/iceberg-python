@@ -33,7 +33,7 @@ from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
 from pytest_mock.plugin import MockerFixture
 
-from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
@@ -1282,3 +1282,14 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (11, 3),
             (12, 3),
         ]
+
+
+@pytest.mark.integration
+def test_rest_catalog_with_empty_catalog_name_append_data(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.test_rest_append"
+    test_catalog = load_catalog(
+        "",  # intentionally empty
+        **session_catalog.properties,
+    )
+    tbl = _create_table(test_catalog, identifier, data=[])
+    tbl.append(arrow_table_with_null)
