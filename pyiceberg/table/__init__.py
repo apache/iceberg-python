@@ -58,7 +58,6 @@ from pyiceberg.expressions import (
     And,
     BooleanExpression,
     EqualTo,
-    Not,
     Or,
     Reference,
 )
@@ -576,7 +575,11 @@ class Transaction:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
-        from pyiceberg.io.pyarrow import _dataframe_to_data_files, expression_to_pyarrow, project_table
+        from pyiceberg.io.pyarrow import (
+            _dataframe_to_data_files,
+            _expression_to_complementary_pyarrow,
+            project_table,
+        )
 
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
@@ -593,7 +596,7 @@ class Transaction:
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
             bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
-            preserve_row_filter = expression_to_pyarrow(Not(bound_delete_filter))
+            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
             files = self._scan(row_filter=delete_filter).plan_files()
 
@@ -908,6 +911,9 @@ class _TableMetadataUpdateContext:
             update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
 
+    def has_changes(self) -> bool:
+        return len(self._updates) > 0
+
 
 @singledispatch
 def _apply_table_update(update: TableUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
@@ -1181,6 +1187,10 @@ def update_table_metadata(
 
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
+
+    # Update last_updated_ms if it was not updated by update operations
+    if context.has_changes() and base_metadata.last_updated_ms == new_metadata.last_updated_ms:
+        new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())

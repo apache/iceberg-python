@@ -865,6 +865,7 @@ def test_create_table_transaction(
         partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo")),
         properties={"format-version": format_version},
     ) as txn:
+        last_updated_metadata = txn.table_metadata.last_updated_ms
         with txn.update_schema() as update_schema:
             update_schema.add_column(path="b", field_type=IntegerType())
 
@@ -887,6 +888,7 @@ def test_create_table_transaction(
     assert table.spec().fields_by_source_id(2)[0].name == "bar"
     assert table.spec().fields_by_source_id(2)[0].field_id == 1001
     assert table.spec().fields_by_source_id(2)[0].transform == IdentityTransform()
+    assert table.metadata.last_updated_ms > last_updated_metadata
 
 
 @mock_aws

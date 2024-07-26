@@ -16,21 +16,35 @@
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import re
+from typing import Any
 
 import pyarrow as pa
 import pytest
 
+from pyiceberg.expressions import (
+    And,
+    BoundEqualTo,
+    BoundGreaterThan,
+    BoundIsNaN,
+    BoundIsNull,
+    BoundReference,
+    Not,
+    Or,
+)
+from pyiceberg.expressions.literals import literal
 from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
+    _expression_to_complementary_pyarrow,
     _HasIds,
+    _NullNaNUnmentionedTermsCollector,
     _pyarrow_schema_ensure_large_types,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
 )
-from pyiceberg.schema import Schema, visit
+from pyiceberg.schema import Accessor, Schema, visit
 from pyiceberg.table.name_mapping import MappedField, NameMapping
 from pyiceberg.types import (
     BinaryType,
@@ -580,3 +594,127 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
         ),
     ])
     assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
+
+
+@pytest.fixture
+def bound_reference_str() -> BoundReference[Any]:
+    return BoundReference(
+        field=NestedField(1, "string_field", StringType(), required=False), accessor=Accessor(position=0, inner=None)
+    )
+
+
+@pytest.fixture
+def bound_reference_float() -> BoundReference[Any]:
+    return BoundReference(
+        field=NestedField(2, "float_field", FloatType(), required=False), accessor=Accessor(position=1, inner=None)
+    )
+
+
+@pytest.fixture
+def bound_reference_double() -> BoundReference[Any]:
+    return BoundReference(
+        field=NestedField(3, "double_field", DoubleType(), required=False),
+        accessor=Accessor(position=2, inner=None),
+    )
+
+
+@pytest.fixture
+def bound_eq_str_field(bound_reference_str: BoundReference[Any]) -> BoundEqualTo[Any]:
+    return BoundEqualTo(term=bound_reference_str, literal=literal("hello"))
+
+
+@pytest.fixture
+def bound_greater_than_float_field(bound_reference_float: BoundReference[Any]) -> BoundGreaterThan[Any]:
+    return BoundGreaterThan(term=bound_reference_float, literal=literal(100))
+
+
+@pytest.fixture
+def bound_is_nan_float_field(bound_reference_float: BoundReference[Any]) -> BoundIsNaN[Any]:
+    return BoundIsNaN(bound_reference_float)
+
+
+@pytest.fixture
+def bound_eq_double_field(bound_reference_double: BoundReference[Any]) -> BoundEqualTo[Any]:
+    return BoundEqualTo(term=bound_reference_double, literal=literal(False))
+
+
+@pytest.fixture
+def bound_is_null_double_field(bound_reference_double: BoundReference[Any]) -> BoundIsNull[Any]:
+    return BoundIsNull(bound_reference_double)
+
+
+def test_collect_null_nan_unmentioned_terms(
+    bound_eq_str_field: BoundEqualTo[Any], bound_is_nan_float_field: BoundIsNaN[Any], bound_is_null_double_field: BoundIsNull[Any]
+) -> None:
+    bound_expr = And(
+        Or(And(bound_eq_str_field, bound_is_nan_float_field), bound_is_null_double_field), Not(bound_is_nan_float_field)
+    )
+    collector = _NullNaNUnmentionedTermsCollector()
+    collector.collect(bound_expr)
+    assert {t.ref().field.name for t in collector.null_unmentioned_bound_terms} == {
+        "float_field",
+        "string_field",
+    }
+    assert {t.ref().field.name for t in collector.nan_unmentioned_bound_terms} == {
+        "string_field",
+        "double_field",
+    }
+    assert {t.ref().field.name for t in collector.is_null_or_not_bound_terms} == {
+        "double_field",
+    }
+    assert {t.ref().field.name for t in collector.is_nan_or_not_bound_terms} == {"float_field"}
+
+
+def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
+    bound_eq_str_field: BoundEqualTo[Any],
+    bound_greater_than_float_field: BoundGreaterThan[Any],
+    bound_is_nan_float_field: BoundIsNaN[Any],
+    bound_eq_double_field: BoundEqualTo[Any],
+    bound_is_null_double_field: BoundIsNull[Any],
+) -> None:
+    """Test a single term appears multiple places in the expression tree"""
+    bound_expr = And(
+        Or(
+            And(bound_eq_str_field, bound_greater_than_float_field),
+            And(bound_is_nan_float_field, bound_eq_double_field),
+            bound_greater_than_float_field,
+        ),
+        Not(bound_is_null_double_field),
+    )
+    collector = _NullNaNUnmentionedTermsCollector()
+    collector.collect(bound_expr)
+    assert {t.ref().field.name for t in collector.null_unmentioned_bound_terms} == {
+        "float_field",
+        "string_field",
+    }
+    assert {t.ref().field.name for t in collector.nan_unmentioned_bound_terms} == {
+        "string_field",
+        "double_field",
+    }
+    assert {t.ref().field.name for t in collector.is_null_or_not_bound_terms} == {
+        "double_field",
+    }
+    assert {t.ref().field.name for t in collector.is_nan_or_not_bound_terms} == {"float_field"}
+
+
+def test_expression_to_complementary_pyarrow(
+    bound_eq_str_field: BoundEqualTo[Any],
+    bound_greater_than_float_field: BoundGreaterThan[Any],
+    bound_is_nan_float_field: BoundIsNaN[Any],
+    bound_eq_double_field: BoundEqualTo[Any],
+    bound_is_null_double_field: BoundIsNull[Any],
+) -> None:
+    bound_expr = And(
+        Or(
+            And(bound_eq_str_field, bound_greater_than_float_field),
+            And(bound_is_nan_float_field, bound_eq_double_field),
+            bound_greater_than_float_field,
+        ),
+        Not(bound_is_null_double_field),
+    )
+    result = _expression_to_complementary_pyarrow(bound_expr)
+    # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
+    assert (
+        repr(result)
+        == """<pyarrow.compute.Expression (((invert((((((string_field == "hello") and (float_field > 100)) or (is_nan(float_field) and (double_field == 0))) or (float_field > 100)) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
+    )

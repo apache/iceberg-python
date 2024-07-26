@@ -27,6 +27,7 @@ from sqlalchemy.exc import ArgumentError, IntegrityError
 
 from pyiceberg.catalog import (
     Catalog,
+    load_catalog,
 )
 from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
 from pyiceberg.exceptions import (
@@ -208,6 +209,20 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
             f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
             f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
         )
+
+
+def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
+    assert isinstance(
+        load_catalog(
+            catalog_name,
+            **{
+                "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
+                "uri": f"sqlite:////{warehouse}/sql-catalog.db",
+                "warehouse": f"file://{warehouse}",
+            },
+        ),
+        SqlCatalog,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1255,6 +1270,7 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
+    last_updated_ms = table.metadata.last_updated_ms
 
     assert catalog._parse_metadata_version(table.metadata_location) == 0
     assert table.metadata.current_schema_id == 0
@@ -1274,6 +1290,7 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+    assert updated_table_metadata.last_updated_ms > last_updated_ms
 
 
 @pytest.mark.parametrize(

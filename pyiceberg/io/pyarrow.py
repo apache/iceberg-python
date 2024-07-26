@@ -73,11 +73,7 @@ from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
-from pyiceberg.expressions import (
-    AlwaysTrue,
-    BooleanExpression,
-    BoundTerm,
-)
+from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
@@ -579,11 +575,11 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
     def _flat_name_to_list(self, name: str) -> List[str]:
         return name.split(".")
 
-    def visit_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> pc.Expression:
+    def visit_in(self, term: BoundTerm[Any], literals: Set[Any]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
         return pc.field(*self._flat_name_to_list(term.ref().name)).isin(pyarrow_literals)
 
-    def visit_not_in(self, term: BoundTerm[pc.Expression], literals: Set[Any]) -> pc.Expression:
+    def visit_not_in(self, term: BoundTerm[Any], literals: Set[Any]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
         return ~pc.field(*self._flat_name_to_list(term.ref().name)).isin(pyarrow_literals)
 
@@ -641,8 +637,150 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return left_result | right_result
 
 
+class _NullNaNUnmentionedTermsCollector(BoundBooleanExpressionVisitor[None]):
+    # BoundTerms which have either is_null or is_not_null appearing at least once in the boolean expr.
+    is_null_or_not_bound_terms: set[BoundTerm[Any]]
+    # The remaining BoundTerms appearing in the boolean expr.
+    null_unmentioned_bound_terms: set[BoundTerm[Any]]
+    # BoundTerms which have either is_nan or is_not_nan appearing at least once in the boolean expr.
+    is_nan_or_not_bound_terms: set[BoundTerm[Any]]
+    # The remaining BoundTerms appearing in the boolean expr.
+    nan_unmentioned_bound_terms: set[BoundTerm[Any]]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.is_null_or_not_bound_terms = set()
+        self.null_unmentioned_bound_terms = set()
+        self.is_nan_or_not_bound_terms = set()
+        self.nan_unmentioned_bound_terms = set()
+
+    def _handle_explicit_is_null_or_not(self, term: BoundTerm[Any]) -> None:
+        """Handle the predicate case where either is_null or is_not_null is included."""
+        if term in self.null_unmentioned_bound_terms:
+            self.null_unmentioned_bound_terms.remove(term)
+        self.is_null_or_not_bound_terms.add(term)
+
+    def _handle_null_unmentioned(self, term: BoundTerm[Any]) -> None:
+        """Handle the predicate case where neither is_null or is_not_null is included."""
+        if term not in self.is_null_or_not_bound_terms:
+            self.null_unmentioned_bound_terms.add(term)
+
+    def _handle_explicit_is_nan_or_not(self, term: BoundTerm[Any]) -> None:
+        """Handle the predicate case where either is_nan or is_not_nan is included."""
+        if term in self.nan_unmentioned_bound_terms:
+            self.nan_unmentioned_bound_terms.remove(term)
+        self.is_nan_or_not_bound_terms.add(term)
+
+    def _handle_nan_unmentioned(self, term: BoundTerm[Any]) -> None:
+        """Handle the predicate case where neither is_nan or is_not_nan is included."""
+        if term not in self.is_nan_or_not_bound_terms:
+            self.nan_unmentioned_bound_terms.add(term)
+
+    def visit_in(self, term: BoundTerm[Any], literals: Set[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_not_in(self, term: BoundTerm[Any], literals: Set[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_is_nan(self, term: BoundTerm[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_explicit_is_nan_or_not(term)
+
+    def visit_not_nan(self, term: BoundTerm[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_explicit_is_nan_or_not(term)
+
+    def visit_is_null(self, term: BoundTerm[Any]) -> None:
+        self._handle_explicit_is_null_or_not(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_not_null(self, term: BoundTerm[Any]) -> None:
+        self._handle_explicit_is_null_or_not(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_not_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_less_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_not_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> None:
+        self._handle_null_unmentioned(term)
+        self._handle_nan_unmentioned(term)
+
+    def visit_true(self) -> None:
+        return
+
+    def visit_false(self) -> None:
+        return
+
+    def visit_not(self, child_result: None) -> None:
+        return
+
+    def visit_and(self, left_result: None, right_result: None) -> None:
+        return
+
+    def visit_or(self, left_result: None, right_result: None) -> None:
+        return
+
+    def collect(
+        self,
+        expr: BooleanExpression,
+    ) -> None:
+        """Collect the bound references categorized by having at least one is_null or is_not_null in the expr and the remaining."""
+        boolean_expression_visit(expr, self)
+
+
 def expression_to_pyarrow(expr: BooleanExpression) -> pc.Expression:
     return boolean_expression_visit(expr, _ConvertToArrowExpression())
+
+
+def _expression_to_complementary_pyarrow(expr: BooleanExpression) -> pc.Expression:
+    """Complementary filter conversion function of expression_to_pyarrow.
+
+    Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because ~ in pyarrow.compute.Expression does not handle null.
+    """
+    collector = _NullNaNUnmentionedTermsCollector()
+    collector.collect(expr)
+
+    # Convert the set of terms to a sorted list so that layout of the expression to build is deterministic.
+    null_unmentioned_bound_terms: List[BoundTerm[Any]] = sorted(
+        collector.null_unmentioned_bound_terms, key=lambda term: term.ref().field.name
+    )
+    nan_unmentioned_bound_terms: List[BoundTerm[Any]] = sorted(
+        collector.nan_unmentioned_bound_terms, key=lambda term: term.ref().field.name
+    )
+
+    preserve_expr: BooleanExpression = Not(expr)
+    for term in null_unmentioned_bound_terms:
+        preserve_expr = Or(preserve_expr, BoundIsNull(term=term))
+    for term in nan_unmentioned_bound_terms:
+        preserve_expr = Or(preserve_expr, BoundIsNaN(term=term))
+    return expression_to_pyarrow(preserve_expr)
 
 
 @lru_cache

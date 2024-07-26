@@ -624,6 +624,7 @@ def test_apply_set_properties_update(table_v2: Table) -> None:
         "test_b": "test_b",
         "test_c": "test_c",
     }
+    assert new_metadata_add_only.last_updated_ms > base_metadata.last_updated_ms
 
 
 def test_apply_remove_properties_update(table_v2: Table) -> None:
@@ -698,7 +699,7 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
         snapshot_id=25,
         parent_snapshot_id=19,
         sequence_number=200,
-        timestamp_ms=1602638573590,
+        timestamp_ms=1602638593590,
         manifest_list="s3:/a/b/c.avro",
         summary=Summary(Operation.APPEND),
         schema_id=3,
@@ -768,6 +769,7 @@ def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
     assert len(new_metadata.sort_orders) == 2
     assert new_metadata.sort_orders[-1] == new_sort_order
     assert new_metadata.default_sort_order_id == new_sort_order.order_id
+    assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
 
 
 def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
