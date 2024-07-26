@@ -672,6 +672,17 @@ class RestCatalog(Catalog):
 
         return self.load_table(to_identifier)
 
+    def _remove_catalog_name_from_table_request_identifier(self, table_request: CommitTableRequest) -> CommitTableRequest:
+        if table_request.identifier.namespace.root[0] == self.name:
+            return table_request.model_copy(
+                update={
+                    "identifier": TableIdentifier(
+                        namespace=table_request.identifier.namespace.root[1:], name=table_request.identifier.name
+                    ).model_dump()
+                }
+            )
+        return table_request
+
     @retry(**_RETRY_ARGS)
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
         """Update the table.
@@ -689,7 +700,7 @@ class RestCatalog(Catalog):
         """
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=table_request.model_dump_json().encode(UTF8),
+            data=self._remove_catalog_name_from_table_request_identifier(table_request).model_dump_json().encode(UTF8),
         )
         try:
             response.raise_for_status()

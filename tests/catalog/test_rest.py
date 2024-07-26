@@ -37,7 +37,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
+from pyiceberg.table import CommitTableRequest, Table, TableIdentifier
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -1226,3 +1226,25 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
 
     catalog = cast(RestCatalog, load_catalog("production", uri="https://other-service.io/api"))
     assert catalog.uri == "https://other-service.io/api"
+
+
+def test_table_identifier_in_commit_table_request(rest_mock: Mocker, example_table_metadata_v2: Dict[str, Any]) -> None:
+    test_table_request = CommitTableRequest(
+        identifier=TableIdentifier(namespace=("catalog_name", "namespace"), name="table_name"),
+        updates=[],
+        requirements=[],
+    )
+    rest_mock.post(
+        url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata": example_table_metadata_v2,
+            "metadata-location": "test",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)._commit_table(test_table_request)
+    assert (
+        rest_mock.last_request.text
+        == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
+    )
