@@ -700,7 +700,7 @@ def test_simple_field_row_filter_scan(catalog: Catalog) -> None:
     ])
 
     assert result_table.schema.equals(expected_schema)
-    assert len(result_table) == 0
+    assert len(result_table) == 1
 
 
 @pytest.mark.integration
