@@ -765,3 +765,40 @@ def test_nested_field_row_filter_scan(catalog: Catalog) -> None:
 
     assert result_table.schema.equals(expected_schema)
     assert len(result_table) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_dot_field_row_filter_scan(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema([
+        ("id", pa.int32()),
+        ("name.first", pa.string()),
+    ])
+    table = create_table(catalog, schema)
+
+    arrow_table = pa.Table.from_pydict({"id": [1, 2], "name.first": ["John", "Katie"]}, schema=schema)
+
+    table.append(arrow_table)
+
+    result_table = table.scan(row_filter="name.first = 'John'", selected_fields=("name.first",)).to_arrow()
+
+    expected_schema = pa.schema([
+        ("name.first", pa.large_string()),
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
+
+    with table.update_schema() as schema_update:
+        schema_update.rename_column("name.first", "name.other_first")
+
+    result_table = table.scan(row_filter="name.other_first = 'John'", selected_fields=("name.other_first",)).to_arrow()
+
+    expected_schema = pa.schema([
+        ("name.other_first", pa.int32()),
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
