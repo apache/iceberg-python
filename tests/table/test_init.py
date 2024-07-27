@@ -663,15 +663,16 @@ def test_apply_add_schema_update(table_v2: Table) -> None:
     assert test_context.is_added_schema(2)
 
 
-def test_update_metadata_table_schema(table_v2: Table) -> None:
-    transaction = table_v2.transaction()
+@pytest.mark.parametrize("table", [pytest.lazy_fixture("table_v1"), pytest.lazy_fixture("table_v2")])
+def test_update_metadata_table_schema(table: Table) -> None:
+    base_current_schema_id = table.metadata.current_schema_id
+    transaction = table.transaction()
     update = transaction.update_schema()
     update.add_column(path="b", field_type=IntegerType())
     update.commit()
-    new_metadata = update_table_metadata(table_v2.metadata, transaction._updates)  # pylint: disable=W0212
-    apply_schema: Schema = next(schema for schema in new_metadata.schemas if schema.schema_id == 2)
+    new_metadata = update_table_metadata(table.metadata, transaction._updates)  # pylint: disable=W0212
+    apply_schema: Schema = new_metadata.schema()
     assert len(apply_schema.fields) == 4
-
     assert apply_schema == Schema(
         NestedField(field_id=1, name="x", field_type=LongType(), required=True),
         NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
@@ -679,10 +680,13 @@ def test_update_metadata_table_schema(table_v2: Table) -> None:
         NestedField(field_id=4, name="b", field_type=IntegerType(), required=False),
         identifier_field_ids=[1, 2],
     )
-    assert apply_schema.schema_id == 2
+    assert apply_schema.schema_id == base_current_schema_id + 1
     assert apply_schema.highest_field_id == 4
+    assert new_metadata.current_schema_id == base_current_schema_id + 1
+    assert apply_schema == new_metadata.schema()
 
-    assert new_metadata.current_schema_id == 2
+    if table.metadata.format_version == 1:
+        assert new_metadata.schema_ == apply_schema
 
 
 def test_update_metadata_add_snapshot(table_v2: Table) -> None:
