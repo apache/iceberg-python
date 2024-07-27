@@ -29,7 +29,7 @@ classifiers = [
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11"
+  "Programming Language :: Python :: 3.11",
 ]
 packages = [
   { include = "pyiceberg" },
@@ -37,7 +37,10 @@ packages = [
   { from = "vendor", include = "hive_metastore" },
   { include = "tests", format = "sdist" },
   { include = "Makefile", format = "sdist" },
-  { include = "NOTICE", format = ["sdist", "wheel"] }
+  { include = "NOTICE", format = [
+    "sdist",
+    "wheel",
+  ] },
 ]
 include = [
   { path = "dev", format = "sdist" },
@@ -62,8 +65,8 @@ pyarrow = { version = ">=9.0.0,<18.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
-  { version = "==2.10.0", python = "<3.9", optional = true},
-  { version = ">=2.10.0,<3.0.0", python = ">=3.9", optional = true}
+  { version = "==2.10.0", python = "<3.9", optional = true },
+  { version = ">=2.10.0,<3.0.0", python = ">=3.9", optional = true },
 ]
 python-snappy = { version = ">=0.6.0,<1.0.0", optional = true }
 thrift = { version = ">=0.13.0,<1.0.0", optional = true }
@@ -599,13 +602,11 @@ markers = [
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
   "adlfs: marks a test as requiring access to adlfs compliant storage (use with --adlfs.account-name, --adlfs.account-key, and --adlfs.endpoint args)",
   "integration: marks integration tests against Apache Spark",
-  "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)"
+  "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
 ]
 
 # Turns a warning into an error
-#filterwarnings = [
-#    "error"
-#]
+filterwarnings = ["error"]
 
 [tool.black]
 line-length = 130
