@@ -32,7 +32,7 @@ from pyiceberg import __version__
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 
 DEFAULT_MIN_SNAPSHOTS_TO_KEEP = 1
 DEFAULT_MAX_SNAPSHOT_AGE_MS = 432000000
@@ -420,7 +420,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
     refs = table.refs()
     if type:
         type = type.lower()
-        if type not in {"branch", "tag"}:
+        if type not in {SnapshotRefType.BRANCH, SnapshotRefType.TAG}:
             raise ValueError(f"Type must be either branch or tag, got: {type}")
 
     relevant_refs = [
@@ -434,7 +434,7 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
 
 def _retention_properties(ref: SnapshotRef, table_properties: Dict[str, str]) -> Dict[str, str]:
     retention_properties = {}
-    if ref.snapshot_ref_type == "branch":
+    if ref.snapshot_ref_type == SnapshotRefType.BRANCH:
         default_min_snapshots_to_keep = table_properties.get(
             "history.expire.min-snapshots-to-keep", DEFAULT_MIN_SNAPSHOTS_TO_KEEP
         )
