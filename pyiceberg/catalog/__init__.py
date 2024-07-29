@@ -838,6 +838,7 @@ class MetastoreCatalog(Catalog, ABC):
             base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
             updates=table_request.updates,
             enforce_validation=current_table is None,
+            metadata_location=current_table.metadata_location if current_table else None,
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
