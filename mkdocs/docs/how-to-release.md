@@ -58,7 +58,7 @@ Set the tag on the last commit:
 
 ```bash
 export RC=rc1
-export VERSION=0.1.0${RC}
+export VERSION=0.7.0${RC}
 export VERSION_WITHOUT_RC=${VERSION/rc?/}
 export VERSION_BRANCH=${VERSION_WITHOUT_RC//./-}
 export GIT_TAG=pyiceberg-${VERSION}
@@ -89,7 +89,11 @@ Both the source distribution (`sdist`) and the binary distributions (`wheels`) n
 
 Before committing the files to the Apache SVN artifact distribution SVN hashes need to be generated, and those need to be signed with gpg to make sure that they are authentic.
 
-Go to [Github Actions and run the `Python release` action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml). **Set the version to main, since we cannot modify the source**. Download the zip, and sign the files:
+Go to [Github Actions and run the `Python release` action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml). **Set the version to main, since we cannot modify the source**.
+
+![Github Actions Run Workflow for SVN Upload](assets/images/ghactions-run-workflow-svn-upload.png)
+
+Download the zip, and sign the files:
 
 ```bash
 cd release-main/
@@ -116,12 +120,14 @@ svn ci -m "PyIceberg ${VERSION}" ${SVN_TMP_DIR_VERSIONED}
 
 ### Upload to PyPi
 
-Go to Github Actions and run the `Python release` action. Set the version of the release candidate as the input: `0.1.0rc1`. Download the zip and unzip it locally.
+Go to Github Actions and run the `Python release` action again. This time, set the **version** of the release candidate as the input: e.g. `0.7.0rc1`. Download the zip and unzip it locally.
+
+![Github Actions Run Workflow for PyPi Upload](assets/images/ghactions-run-workflow-pypi-upload.png)
 
 Next step is to upload them to pypi. Please keep in mind that this **won't** bump the version for everyone that hasn't pinned their version, since it is set to an RC [pre-release and those are ignored](https://packaging.python.org/en/latest/guides/distributing-packages-using-setuptools/#pre-release-versioning).
 
 ```bash
-twine upload release-0.1.0rc1/*
+twine upload release-0.7.0rc1/*
 ```
 
 Final step is to generate the email to the dev mail list:
