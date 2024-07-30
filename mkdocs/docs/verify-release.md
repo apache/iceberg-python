@@ -94,9 +94,8 @@ This section explains how to run the tests of the source distribution.
 
 <!-- prettier-ignore-start -->
 
-!!! note "Clean environment"
-    To make sure that your environment is fresh is to run the tests in a new Docker container:
-    `docker run -t -i -v $(pwd):/pyiceberg/ python:3.9 bash`. And change directory: `cd /pyiceberg/`.
+!!! note "Python Version"
+    Make sure you're using [a supported Python version](https://github.com/apache/iceberg-python/blob/main/pyproject.toml#L29-L32)
 
 <!-- prettier-ignore-end -->
 
