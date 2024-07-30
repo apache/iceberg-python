@@ -684,7 +684,7 @@ class RestCatalog(Catalog):
                 update={
                     "identifier": TableIdentifier(
                         namespace=table_request.identifier.namespace.root[1:], name=table_request.identifier.name
-                    ).model_dump()
+                    )
                 }
             )
         return table_request
