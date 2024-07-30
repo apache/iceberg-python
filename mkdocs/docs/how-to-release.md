@@ -208,6 +208,15 @@ svn add /tmp/iceberg-dist-release/
 svn ci -m "PyIceberg <VERSION>" /tmp/iceberg-dist-release/
 ```
 
+<!-- prettier-ignore-start -->
+
+!!! note
+    Only a PMC member has the permission to upload an artifact to the release dist.
+
+<!-- prettier-ignore-end -->
+
+### Upload the accepted release to PyPi
+
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
 
 ```bash
@@ -243,3 +252,13 @@ Make sure to create a PR to update the [GitHub issues template](https://github.c
 ## Update the integration tests
 
 Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
+
+## Create a Github Release Note
+
+First, follow the directions for Setting the tag again to create a tag for the approved release version (e.g. `0.7.0`).
+
+Then, create a new [Release Note](https://github.com/apache/iceberg-python/releases) on the iceberg-python Github repository by clicking on **Draft a New Release**.
+
+Choose the approved release version as the tag and **Generate release notes**.
+
+**Set as the latest release** and **Publish**.
