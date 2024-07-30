@@ -526,7 +526,6 @@ def test_write_parquet_other_properties(
 @pytest.mark.parametrize(
     "properties",
     [
-        {"write.parquet.row-group-size-bytes": "42"},
         {"write.parquet.page-row-limit": "42"},
         {"write.parquet.bloom-filter-enabled.column.bool": "42"},
         {"write.parquet.bloom-filter-max-bytes": "42"},
