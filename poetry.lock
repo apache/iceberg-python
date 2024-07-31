@@ -1345,17 +1345,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.2.31"
+version = "0.2.32"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.2.31-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a6c07b4d41649bde6b192c10fe6efeb88cbe74e56cb604174d5b29796750ee9f"},
-    {file = "getdaft-0.2.31-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:580b01d16d6491d841fdf14ff8d10aa8e9ec973f3bf636721d24ef18bfde590e"},
-    {file = "getdaft-0.2.31-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b78a966b7cccf539b381b4fa416c3d1d2099d752f07f14a2d22366b574b804bf"},
-    {file = "getdaft-0.2.31-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e1868def8854e954ef3d4162ade002081acd0105780cdea37112852134beb495"},
-    {file = "getdaft-0.2.31-cp38-abi3-win_amd64.whl", hash = "sha256:ff14721eef785ffccd34b56ac06b1a9f4f93defcb9d6e87c9215b06c3170c633"},
-    {file = "getdaft-0.2.31.tar.gz", hash = "sha256:d1402efd6961bc81b33c9d70f459b2f4997769f6f9baf2a0c8abe4b732fb45cc"},
+    {file = "getdaft-0.2.32-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a5e9e4ae4248d81e141839b06198733c7101b4180ec0092de5f88d2661647253"},
+    {file = "getdaft-0.2.32-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:b9a0cc8da66d67e5b2bf656d0810e06c3289550d695531e5aa4397dfe98104ad"},
+    {file = "getdaft-0.2.32-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:7d54237a8a50817c56b87995fdcb1d17247bc0d0cb548bea8e5226f9fe268916"},
+    {file = "getdaft-0.2.32-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e1d4862a21edb410af0cf8f985acc7cffb10312c4a666c0b586ec9e6b585d796"},
+    {file = "getdaft-0.2.32-cp38-abi3-win_amd64.whl", hash = "sha256:8c710d33e13fc26888ab6428942237038e117db7eb89a2531b2566ca27ff5491"},
+    {file = "getdaft-0.2.32.tar.gz", hash = "sha256:a6dfd6bcb67238fa56a68ab95502f564c07ba4c15e707247f51606e350953d22"},
 ]
 
 [package.dependencies]
