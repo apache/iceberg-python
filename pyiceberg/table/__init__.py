@@ -3135,16 +3135,22 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
-                with write_manifest(
-                    format_version=self._transaction.table_metadata.format_version,
-                    spec=self._transaction.table_metadata.spec(),
-                    schema=self._transaction.table_metadata.schema(),
-                    output_file=self.new_manifest_output(),
-                    snapshot_id=self._snapshot_id,
-                ) as writer:
-                    for delete_entry in deleted_entries:
-                        writer.add_entry(delete_entry)
-                return [writer.to_manifest_file()]
+                deleted_manifests = []
+                partition_groups: Dict[int, List[ManifestEntry]] = defaultdict(list)
+                for deleted_entry in deleted_entries:
+                    partition_groups[deleted_entry.data_file.spec_id].append(deleted_entry)
+                for spec_id, entries in partition_groups.items():
+                    with write_manifest(
+                        format_version=self._transaction.table_metadata.format_version,
+                        spec=self._transaction.table_metadata.specs()[spec_id],
+                        schema=self._transaction.table_metadata.schema(),
+                        output_file=self.new_manifest_output(),
+                        snapshot_id=self._snapshot_id,
+                    ) as writer:
+                        for entry in entries:
+                            writer.add_entry(entry)
+                    deleted_manifests.append(writer.to_manifest_file())
+                return deleted_manifests
             else:
                 return []
 
