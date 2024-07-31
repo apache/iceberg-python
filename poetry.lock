@@ -963,22 +963,22 @@ files = [
 
 [[package]]
 name = "deptry"
-version = "0.17.0"
+version = "0.18.0"
 description = "A command line utility to check for unused, missing and transitive dependencies in a Python project."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "deptry-0.17.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ddd05503cbae9cce608003bc50691cb2a6d714a9da30bc16a99116eedad5a0c2"},
-    {file = "deptry-0.17.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:31af1dd2f83bddb6cf5abc9f37a86f8ca4b8572fda971a4e7eb0d552a727f454"},
-    {file = "deptry-0.17.0-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0588827e36f4822517fc66308a85428780e15bbce819e2216d0a5d010edd1998"},
-    {file = "deptry-0.17.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ce0eb1408aae315fa757fc9877101079ea6b2ebcae18b261e5d3e0141ba517b2"},
-    {file = "deptry-0.17.0-cp38-abi3-win_amd64.whl", hash = "sha256:d102754cd1f4ba2ed599fccaec54acb6be56bd00e8d03384d0a2bcb8ba8141e1"},
-    {file = "deptry-0.17.0-pp310-pypy310_pp73-macosx_10_12_x86_64.whl", hash = "sha256:1753b8807c3da82637beb6a0b32df85fea73bcc33a31bcda2087487bd92c336e"},
-    {file = "deptry-0.17.0-pp310-pypy310_pp73-macosx_11_0_arm64.whl", hash = "sha256:f34309d3c2f28c459f2e55d93b67c81950cb863e1b210788f3491ab973e42f53"},
-    {file = "deptry-0.17.0-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ac6b569c9623e41f1a18f722ddf8422ca7b0d5f718f9d6c71bc9dfcd9e28cf5d"},
-    {file = "deptry-0.17.0-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d7de2feebecb256ccee69b0f8144c678763d7842704959239fa7e7f3fc60f8a1"},
-    {file = "deptry-0.17.0-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:e4724e014c0787452962833cc3030170d267fbd3ac34f6c09b8449d8e8147f39"},
-    {file = "deptry-0.17.0.tar.gz", hash = "sha256:f48a71bab8f46a896fe507c8be5f2b50bb9bab0c44e4dfad00afe87e9a08c14b"},
+    {file = "deptry-0.18.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:aac16b9825c67887f84795d3fe3c5a676376cd6cc8555f6f7b57bfd45603e421"},
+    {file = "deptry-0.18.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:b1440d2fab960e224b542726e6fcb0d3065635cfa8233c14f6c578faa2766e02"},
+    {file = "deptry-0.18.0-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d5764d6b484d488ce0f7085dc1767d99069b476383857aafd3bbc912128892dd"},
+    {file = "deptry-0.18.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ee0a916d78ba8db092a9454d5bc20fccbadb6ed0e8fb81fc020ba7e0df3578ed"},
+    {file = "deptry-0.18.0-cp38-abi3-win_amd64.whl", hash = "sha256:7d1b561a4477ab130e1cb277b3d3aa25743b3005e1bb60076031ec3926b47541"},
+    {file = "deptry-0.18.0-pp310-pypy310_pp73-macosx_10_12_x86_64.whl", hash = "sha256:e73d5c2676a1f49a954baa59c248b56bc940ab87d6070cb164f1394c24e07cf3"},
+    {file = "deptry-0.18.0-pp310-pypy310_pp73-macosx_11_0_arm64.whl", hash = "sha256:7343bb4948ad625ac1b3109279665004e6790ce01c8dc6a8a2ef1e4424c29773"},
+    {file = "deptry-0.18.0-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:cdf6da66e31ef8bdace3bb34a86c4f066b5c5296776dd61b76802c72b0b3f5f4"},
+    {file = "deptry-0.18.0-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c7590966832f5222d2277612e07e67285d92123ad96cf7713cda579d420d63d1"},
+    {file = "deptry-0.18.0-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:57e09ca29e98c4782197dc959849498941b5c4fc53178e9fe1fa30025e608bfd"},
+    {file = "deptry-0.18.0.tar.gz", hash = "sha256:9cf8e398ea394f90ccfa8e11d7dcfba8ed485f6a33270ee2b024475b72a00d11"},
 ]
 
 [package.dependencies]
@@ -4516,4 +4516,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "8e5d69eca240ed51c5a433867ef87fcdb6a7e6782c3d4f8b470bed05db423ca6"
+content-hash = "20d6e8d93d560846b194615d956bafa65ecbf8ac7aafcfb79f82ee1256d7c571"
