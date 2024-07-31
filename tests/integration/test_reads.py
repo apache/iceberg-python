@@ -40,7 +40,12 @@ from pyiceberg.expressions import (
     NotEqualTo,
     NotNaN,
 )
-from pyiceberg.io.pyarrow import pyarrow_to_schema
+from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
+from pyiceberg.io.pyarrow import (
+    _pyarrow_schema_ensure_large_types,
+    _pyarrow_schema_ensure_small_types,
+    pyarrow_to_schema,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.types import (
@@ -663,3 +668,55 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 
         table.transaction().set_properties(lock="xxx").commit_transaction()
         assert table.properties.get("lock") == "xxx"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_table_scan_with_large_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_with_large_types"
+    arrow_table = pa.Table.from_arrays(
+        [pa.array(["a", "b", "c"]), pa.array([b"a", b"b", b"c"]), pa.array([["a", "b"], ["c", "d"], ["e", "f"]])],
+        names=["string", "binary", "list"],
+    )
+
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=arrow_table.schema,
+    )
+
+    tbl.append(arrow_table)
+
+    result_table = tbl.scan().to_arrow()
+
+    assert result_table.schema.equals(_pyarrow_schema_ensure_large_types(arrow_table.schema))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_table_scan_with_small_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_with_small_types"
+    arrow_table = pa.Table.from_arrays(
+        [pa.array(["a", "b", "c"]), pa.array([b"a", b"b", b"c"]), pa.array([["a", "b"], ["c", "d"], ["e", "f"]])],
+        names=["string", "binary", "list"],
+    )
+
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=arrow_table.schema,
+    )
+
+    tbl.append(arrow_table)
+
+    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = False
+    result_table = tbl.scan().to_arrow()
+    assert result_table.schema.equals(_pyarrow_schema_ensure_small_types(arrow_table.schema))

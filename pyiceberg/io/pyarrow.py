@@ -883,8 +883,8 @@ def _(obj: Union[pa.ListType, pa.LargeListType, pa.FixedSizeListType], visitor: 
     visitor.before_list_element(obj.value_field)
     result = visit_pyarrow(obj.value_type, visitor)
     visitor.after_list_element(obj.value_field)
-
-    return visitor.list(obj, result)
+    ret = visitor.list(obj, result)
+    return ret
 
 
 @visit_pyarrow.register(pa.MapType)
@@ -1163,7 +1163,8 @@ class _ConvertToSmallTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
         return field.with_type(field_result)
 
     def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
-        return pa._list(element_result)
+        print("DEBUG")
+        return pa.list_(element_result)
 
     def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
         return pa.map_(key_result, value_result)
@@ -1599,12 +1600,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
 
     def list(self, list_type: ListType, list_array: Optional[pa.Array], value_array: Optional[pa.Array]) -> Optional[pa.Array]:
         if isinstance(list_array, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) and value_array is not None:
+            list_initializer = pa.large_list if isinstance(list_array, pa.LargeListArray) else pa.list_
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
                 list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
             value_array = self._cast_if_needed(list_type.element_field, value_array)
-            arrow_field = pa.large_list(self._construct_field(list_type.element_field, value_array.type))
+            arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
         else:
             return None
