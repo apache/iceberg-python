@@ -718,9 +718,9 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
         with txn.update_schema() as schema_txn:
             schema_txn.union_by_name(pa_table_with_column.schema)
 
-        with txn.update_snapshot().fast_append() as snapshot_update:
-            for data_file in _dataframe_to_data_files(table_metadata=txn.table_metadata, df=pa_table_with_column, io=tbl.io):
-                snapshot_update.append_data_file(data_file)
+        txn.append(pa_table_with_column)
+        txn.overwrite(pa_table_with_column)
+        txn.delete("foo = 'a'")
 
 
 @pytest.mark.integration
