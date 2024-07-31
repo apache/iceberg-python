@@ -606,7 +606,13 @@ markers = [
 ]
 
 # Turns a warning into an error
-filterwarnings = ["error"]
+filterwarnings = [
+  "error",
+  "ignore:A plugin raised an exception during an old-style hookwrapper teardown.",
+  "ignore:unclosed <socket.socket",
+  # Remove this in a future release of PySpark.
+  "ignore:distutils Version classes are deprecated. Use packaging.version instead.",
+]
 
 [tool.black]
 line-length = 130

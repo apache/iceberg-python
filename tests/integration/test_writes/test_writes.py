@@ -256,7 +256,7 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
     identifier = "default.arrow_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
 
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
     # should produce a DELETE entry
     tbl.overwrite(arrow_table_with_null)
     # Since we don't rewrite, this should produce a new manifest with an ADDED entry
@@ -288,7 +288,7 @@ def test_python_writes_with_spark_snapshot_reads(
             .snapshot_id
         )
 
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
     assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
     tbl.overwrite(arrow_table_with_null)
     assert tbl.current_snapshot().snapshot_id == get_current_snapshot_id(identifier)  # type: ignore
@@ -330,7 +330,7 @@ def test_python_writes_special_character_column_with_spark_reads(
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
-    tbl.overwrite(arrow_table_with_special_character_column)
+    tbl.append(arrow_table_with_special_character_column)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
@@ -354,7 +354,7 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
 
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
-    tbl.overwrite(arrow_table)
+    tbl.append(arrow_table)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
@@ -393,7 +393,7 @@ def test_python_writes_with_small_and_large_types_spark_reads(
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
-    tbl.overwrite(arrow_table)
+    tbl.append(arrow_table)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
@@ -429,7 +429,7 @@ def test_write_bin_pack_data_files(spark: SparkSession, session_catalog: Catalog
 
     # writes 1 data file since the table is smaller than default target file size
     assert arrow_table_with_null.nbytes < TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
     assert get_data_files_count(identifier) == 1
 
     # writes 1 data file as long as table is smaller than default target file size
@@ -820,7 +820,7 @@ def test_inspect_snapshots(
     identifier = "default.table_metadata_snapshots"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
     # should produce a DELETE entry
     tbl.overwrite(arrow_table_with_null)
     # Since we don't rewrite, this should produce a new manifest with an ADDED entry
@@ -979,6 +979,7 @@ def test_table_write_subset_of_schema(session_catalog: Catalog, arrow_table_with
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
 def test_table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
     identifier = "default.test_table_write_out_of_order_schema"
     # rotate the schema fields by 1
@@ -989,6 +990,7 @@ def test_table_write_out_of_order_schema(session_catalog: Catalog, arrow_table_w
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=rotated_schema)
 
     tbl.overwrite(arrow_table_with_null)
+
     tbl.append(arrow_table_with_null)
     # overwrite and then append should produce twice the data
     assert len(tbl.scan().to_arrow()) == len(arrow_table_with_null) * 2
