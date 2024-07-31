@@ -159,17 +159,19 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
 
+    from pyiceberg.table import PropertyUtil
+
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
         token=properties.get(GCS_TOKEN),
         consistency=properties.get(GCS_CONSISTENCY, "none"),
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
-        requester_pays=properties.get(GCS_REQUESTER_PAYS, False),
+        requester_pays=PropertyUtil.property_as_bool(properties, GCS_REQUESTER_PAYS, False),
         session_kwargs=json.loads(properties.get(GCS_SESSION_KWARGS, "{}")),
         endpoint_url=properties.get(GCS_ENDPOINT),
         default_location=properties.get(GCS_DEFAULT_LOCATION),
-        version_aware=properties.get(GCS_VERSION_AWARE, "false").lower() == "true",
+        version_aware=PropertyUtil.property_as_bool(properties, GCS_VERSION_AWARE, False),
     )
 
 

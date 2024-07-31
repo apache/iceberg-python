@@ -144,6 +144,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    strtobool,
     transform_dict_value_to_str,
 )
 from pyiceberg.utils.bin_packing import ListPacker
@@ -249,7 +250,7 @@ class PropertyUtil:
     @staticmethod
     def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
         if value := properties.get(property_name):
-            return value.lower() == "true"
+            return strtobool(value)
         return default
 
     @staticmethod
@@ -1964,7 +1965,10 @@ class DataScan(TableScan):
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
         metrics_evaluator = _InclusiveMetricsEvaluator(
-            self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
+            self.table_metadata.schema(),
+            self.row_filter,
+            self.case_sensitive,
+            strtobool(self.options.get("include_empty_files", "false")),
         ).eval
 
         min_sequence_number = _min_sequence_number(manifests)

@@ -63,6 +63,7 @@ from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
+    PropertyUtil,
     StagedTable,
     Table,
     TableIdentifier,
@@ -257,7 +258,7 @@ class RestCatalog(Catalog):
         self._config_headers(session)
 
         # Configure SigV4 Request Signing
-        if str(self.properties.get(SIGV4, False)).lower() == "true":
+        if PropertyUtil.property_as_bool(self.properties, SIGV4, False):
             self._init_sigv4(session)
 
         return session
