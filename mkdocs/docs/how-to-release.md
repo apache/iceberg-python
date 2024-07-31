@@ -198,14 +198,14 @@ Kind regards,
 ### Copy the artifacts to the release dist
 
 ```
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg /tmp/iceberg-dist-dev
-svn checkout https://dist.apache.org/repos/dist/release/iceberg/ /tmp/iceberg-dist-release
+export RC=rc2
+export VERSION=0.7.0${RC}
+export VERSION_WITHOUT_RC=${VERSION/rc?/}
 
-mkdir -p /tmp/iceberg-dist-release/pyiceberg-<VERSION>
-cp -r /tmp/iceberg-dist-dev/pyiceberg-<VERSION>rcN/* /tmp/iceberg-dist-release/pyiceberg-<VERSION>
+export SVN_DEV_DIR_VERSIONED="https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION}"
+export SVN_RELEASE_DIR_VERSIONED="https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION_WITHOUT_RC}"
 
-svn add /tmp/iceberg-dist-release/
-svn ci -m "PyIceberg <VERSION>" /tmp/iceberg-dist-release/
+svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add release ${VERSION_WITHOUT_RC}"
 ```
 
 <!-- prettier-ignore-start -->
