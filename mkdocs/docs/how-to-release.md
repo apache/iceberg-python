@@ -255,9 +255,13 @@ Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/
 
 ## Create a Github Release Note
 
-First, follow the directions for Setting the tag again to create a tag for the approved release version (e.g. `0.7.0`).
+Input the tag as the newly approved release version (e.g. `0.7.0`) and set it to create the tag on publish. Pick the target commit version as the commit ID the release was approved on.
 
-Then, create a new [Release Note](https://github.com/apache/iceberg-python/releases) on the iceberg-python Github repository by clicking on **Draft a New Release**.
+![Generate Release Notes](assets/images/gen-release-notes.jpg)
+
+Then, select the previous release version as the **Previous tag** to use the diff between the two versions in generating the release notes.
+
+Create a new [Release Note](https://github.com/apache/iceberg-python/releases/new) on the iceberg-python Github repository by clicking on **Draft a New Release**.
 
 Choose the approved release version as the tag and **Generate release notes**.
 
