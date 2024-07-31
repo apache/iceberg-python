@@ -95,6 +95,7 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
+    PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -153,6 +154,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
@@ -836,6 +838,10 @@ def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
     return visit_pyarrow(schema, _ConvertToLargeTypes())
 
 
+def _pyarrow_schema_ensure_small_types(schema: pa.Schema) -> pa.Schema:
+    return visit_pyarrow(schema, _ConvertToSmallTypes())
+
+
 @singledispatch
 def visit_pyarrow(obj: Union[pa.DataType, pa.Schema], visitor: PyArrowSchemaVisitor[T]) -> T:
     """Apply a pyarrow schema visitor to any point within a schema.
@@ -1146,6 +1152,30 @@ class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
         return primitive
 
 
+class _ConvertToSmallTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+        return pa.schema(struct_result)
+
+    def struct(self, struct: pa.StructType, field_results: List[pa.Field]) -> pa.StructType:
+        return pa.struct(field_results)
+
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+        return field.with_type(field_result)
+
+    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
+        return pa._list(element_result)
+
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+        return pa.map_(key_result, value_result)
+
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+        if primitive == pa.large_string():
+            return pa.string()
+        elif primitive == pa.large_binary():
+            return pa.binary()
+        return primitive
+
+
 class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
     Converts PyArrowSchema to Iceberg Schema with all -1 ids.
@@ -1170,6 +1200,7 @@ def _task_to_record_batches(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
+    use_large_types: bool = True,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
@@ -1198,7 +1229,9 @@ def _task_to_record_batches(
             # https://github.com/apache/arrow/issues/41884
             # https://github.com/apache/arrow/issues/43183
             # Would be good to remove this later on
-            schema=_pyarrow_schema_ensure_large_types(physical_schema),
+            schema=_pyarrow_schema_ensure_large_types(physical_schema)
+            if use_large_types
+            else (_pyarrow_schema_ensure_small_types(physical_schema)),
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
@@ -1233,10 +1266,19 @@ def _task_to_table(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
+    use_large_types: bool = True,
 ) -> Optional[pa.Table]:
     batches = list(
         _task_to_record_batches(
-            fs, task, bound_row_filter, projected_schema, projected_field_ids, positional_deletes, case_sensitive, name_mapping
+            fs,
+            task,
+            bound_row_filter,
+            projected_schema,
+            projected_field_ids,
+            positional_deletes,
+            case_sensitive,
+            name_mapping,
+            use_large_types,
         )
     )
 
@@ -1304,6 +1346,10 @@ def project_table(
             # When FsSpec is not installed
             raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
+    use_large_types = (
+        val if isinstance(val := io.properties.get(PYARROW_USE_LARGE_TYPES_ON_READ, "True"), bool) else strtobool(val)
+    )
+
     bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
 
     projected_field_ids = {
@@ -1323,6 +1369,7 @@ def project_table(
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
             table_metadata.name_mapping(),
+            use_large_types,
         )
         for task in tasks
     ]
@@ -1395,6 +1442,9 @@ def project_batches(
             # When FsSpec is not installed
             raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
+    use_large_types = (
+        val if isinstance(val := io.properties.get(PYARROW_USE_LARGE_TYPES_ON_READ, "True"), bool) else strtobool(val)
+    )
     bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
 
     projected_field_ids = {
@@ -1415,6 +1465,7 @@ def project_batches(
             deletes_per_file.get(task.file.file_path),
             case_sensitive,
             table_metadata.name_mapping(),
+            use_large_types,
         )
         for batch in batches:
             if limit is not None:

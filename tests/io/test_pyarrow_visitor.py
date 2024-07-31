@@ -40,6 +40,7 @@ from pyiceberg.io.pyarrow import (
     _HasIds,
     _NullNaNUnmentionedTermsCollector,
     _pyarrow_schema_ensure_large_types,
+    _pyarrow_schema_ensure_small_types,
     pyarrow_to_schema,
     schema_to_pyarrow,
     visit_pyarrow,
@@ -594,6 +595,11 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
         ),
     ])
     assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
+
+
+def test_pyarrow_schema_ensure_small_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
+    schema_with_large_types = _pyarrow_schema_ensure_small_types(pyarrow_schema_nested_without_ids)
+    assert _pyarrow_schema_ensure_small_types(schema_with_large_types) == pyarrow_schema_nested_without_ids
 
 
 @pytest.fixture
