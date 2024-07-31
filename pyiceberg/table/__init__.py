@@ -152,6 +152,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -224,41 +225,6 @@ class TableProperties:
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
     MANIFEST_MERGE_ENABLED_DEFAULT = False
-
-
-class PropertyUtil:
-    @staticmethod
-    def property_as_int(properties: Dict[str, str], property_name: str, default: Optional[int] = None) -> Optional[int]:
-        if value := properties.get(property_name):
-            try:
-                return int(value)
-            except ValueError as e:
-                raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
-        else:
-            return default
-
-    @staticmethod
-    def property_as_float(properties: Dict[str, str], property_name: str, default: Optional[float] = None) -> Optional[float]:
-        if value := properties.get(property_name):
-            try:
-                return float(value)
-            except ValueError as e:
-                raise ValueError(f"Could not parse table property {property_name} to a float: {value}") from e
-        else:
-            return default
-
-    @staticmethod
-    def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
-        if value := properties.get(property_name):
-            return strtobool(value)
-        return default
-
-    @staticmethod
-    def get_first_property_value(properties: Properties, *property_names: str) -> Optional[Any]:
-        for property_name in property_names:
-            if property_value := properties.get(property_name):
-                return property_value
-        return None
 
 
 class Transaction:
@@ -493,7 +459,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        manifest_merge_enabled = PropertyUtil.property_as_bool(
+        manifest_merge_enabled = property_as_bool(
             self.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
@@ -3454,17 +3420,17 @@ class MergeAppendFiles(FastAppendFiles):
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
-        self._target_size_bytes = PropertyUtil.property_as_int(
+        self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
         )  # type: ignore
-        self._min_count_to_merge = PropertyUtil.property_as_int(
+        self._min_count_to_merge = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MIN_MERGE_COUNT,
             TableProperties.MANIFEST_MIN_MERGE_COUNT_DEFAULT,
         )  # type: ignore
-        self._merge_enabled = PropertyUtil.property_as_bool(
+        self._merge_enabled = property_as_bool(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
