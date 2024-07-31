@@ -211,7 +211,7 @@ svn ci -m "PyIceberg <VERSION>" /tmp/iceberg-dist-release/
 <!-- prettier-ignore-start -->
 
 !!! note
-    Only a PMC member has the permission to upload an artifact to the release dist.
+    Only a PMC member has the permission to upload an artifact to the SVN release dist.
 
 <!-- prettier-ignore-end -->
 
