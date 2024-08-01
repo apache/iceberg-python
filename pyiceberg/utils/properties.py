@@ -59,7 +59,10 @@ def property_as_bool(
     default: bool,
 ) -> bool:
     if value := properties.get(property_name):
-        return strtobool(value)
+        try:
+            return strtobool(value)
+        except ValueError as e:
+            raise ValueError(f"Could not parse table property {property_name} to a boolean: {value}") from e
     return default
 
 

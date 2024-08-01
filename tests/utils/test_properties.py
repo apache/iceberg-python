@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pytest
+
 from pyiceberg.utils.properties import (
     get_first_property_value,
     property_as_bool,
@@ -33,6 +35,17 @@ def test_property_as_int() -> None:
     assert property_as_int(properties, "missing") is None
 
 
+def test_property_as_int_with_invalid_value() -> None:
+    properties = {
+        "some_int_prop": "invalid",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        property_as_int(properties, "some_int_prop")
+
+        assert "Could not parse table property some_int_prop to an integer: invalid" in str(exc.value)
+
+
 def test_property_as_float() -> None:
     properties = {
         "float": "42.0",
@@ -43,6 +56,17 @@ def test_property_as_float() -> None:
     assert property_as_float(properties, "missing") is None
 
 
+def test_property_as_float_with_invalid_value() -> None:
+    properties = {
+        "some_float_prop": "invalid",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        property_as_float(properties, "some_float_prop")
+
+        assert "Could not parse table property some_float_prop to a float: invalid" in str(exc.value)
+
+
 def test_property_as_bool() -> None:
     properties = {
         "bool": "True",
@@ -51,6 +75,17 @@ def test_property_as_bool() -> None:
     assert property_as_bool(properties, "bool", default=False) is True
     assert property_as_bool(properties, "missing", default=False) is False
     assert property_as_float(properties, "missing") is None
+
+
+def test_property_as_bool_with_invalid_value() -> None:
+    properties = {
+        "some_bool_prop": "invalid",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        property_as_bool(properties, "some_bool_prop", True)
+
+        assert "Could not parse table property some_bool_prop to a boolean: invalid" in str(exc.value)
 
 
 def test_get_first_property_value() -> None:
