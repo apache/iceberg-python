@@ -46,7 +46,6 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
-    strtobool,
 )
 from pyiceberg.utils.datetime import (
     date_str_to_days,
@@ -589,7 +588,7 @@ class StringLiteral(Literal[str]):
     def _(self, type_var: BooleanType) -> Literal[bool]:
         value_upper = self.value.upper()
         if value_upper in ["TRUE", "FALSE"]:
-            return BooleanLiteral(strtobool(value_upper))
+            return BooleanLiteral(value_upper == "TRUE")
         else:
             raise ValueError(f"Could not convert {self.value} into a {type_var}")
 

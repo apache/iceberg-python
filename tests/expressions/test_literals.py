@@ -385,17 +385,23 @@ def test_string_to_decimal_literal() -> None:
 
 
 def test_string_to_boolean_literal() -> None:
-    assert literal(True) == literal("true").to(BooleanType())
-    assert literal(True) == literal("True").to(BooleanType())
-    assert literal(False) == literal("false").to(BooleanType())
-    assert literal(False) == literal("False").to(BooleanType())
+    assert literal("true").to(BooleanType()) == literal(True)
+    assert literal("True").to(BooleanType()) == literal(True)
+    assert literal("false").to(BooleanType()) == literal(False)
+    assert literal("False").to(BooleanType()) == literal(False)
+    assert literal("TRUE").to(BooleanType()) == literal(True)
+    assert literal("FALSE").to(BooleanType()) == literal(False)
 
 
-def test_invalid_string_to_boolean_literal() -> None:
-    invalid_boolean_str = literal("unknown")
+@pytest.mark.parametrize(
+    "val",
+    ["unknown", "off", "on", "0", "1", "y", "yes", "n", "no", "t", "f"],
+)
+def test_invalid_string_to_boolean_literal(val: Any) -> None:
+    invalid_boolean_str = literal(val)
     with pytest.raises(ValueError) as e:
         _ = invalid_boolean_str.to(BooleanType())
-    assert "Could not convert unknown into a boolean" in str(e.value)
+    assert f"Could not convert {val} into a boolean" in str(e.value)
 
 
 # MISC
