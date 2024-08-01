@@ -1197,3 +1197,12 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
     )
     assert len(new_metadata.metadata_log) == 5
     assert new_metadata.metadata_log[-1].metadata_file == "/path/to/metadata/10.json"
+
+    # check invalid value of write.metadata.previous-versions-max
+    new_metadata = update_table_metadata(
+        base_metadata,
+        (SetPropertiesUpdate(updates={"write.metadata.previous-versions-max": "0"}),),
+        False,
+        table_v2.metadata_location,
+    )
+    assert len(new_metadata.metadata_log) == 1
