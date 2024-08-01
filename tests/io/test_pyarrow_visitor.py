@@ -597,8 +597,8 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
     assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
 
 
-def test_pyarrow_schema_ensure_small_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
-    schema_with_large_types = _pyarrow_schema_ensure_small_types(pyarrow_schema_nested_without_ids)
+def test_pyarrow_schema_round_trip_ensure_large_types_and_then_small_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
+    schema_with_large_types = _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids)
     assert _pyarrow_schema_ensure_small_types(schema_with_large_types) == pyarrow_schema_nested_without_ids
 
 

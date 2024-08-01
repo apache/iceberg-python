@@ -883,8 +883,7 @@ def _(obj: Union[pa.ListType, pa.LargeListType, pa.FixedSizeListType], visitor: 
     visitor.before_list_element(obj.value_field)
     result = visit_pyarrow(obj.value_type, visitor)
     visitor.after_list_element(obj.value_field)
-    ret = visitor.list(obj, result)
-    return ret
+    return visitor.list(obj, result)
 
 
 @visit_pyarrow.register(pa.MapType)
@@ -1163,7 +1162,6 @@ class _ConvertToSmallTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
         return field.with_type(field_result)
 
     def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
-        print("DEBUG")
         return pa.list_(element_result)
 
     def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:

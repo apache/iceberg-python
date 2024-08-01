@@ -42,8 +42,6 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
 from pyiceberg.io.pyarrow import (
-    _pyarrow_schema_ensure_large_types,
-    _pyarrow_schema_ensure_small_types,
     pyarrow_to_schema,
 )
 from pyiceberg.schema import Schema
@@ -672,8 +670,8 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_table_scan_with_large_types(catalog: Catalog) -> None:
-    identifier = "default.test_table_scan_with_large_types"
+def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_default_to_large_types"
     arrow_table = pa.Table.from_arrays(
         [pa.array(["a", "b", "c"]), pa.array([b"a", b"b", b"c"]), pa.array([["a", "b"], ["c", "d"], ["e", "f"]])],
         names=["string", "binary", "list"],
@@ -693,13 +691,18 @@ def test_table_scan_with_large_types(catalog: Catalog) -> None:
 
     result_table = tbl.scan().to_arrow()
 
-    assert result_table.schema.equals(_pyarrow_schema_ensure_large_types(arrow_table.schema))
+    expected_schema = pa.schema([
+        pa.field("string", pa.large_string()),
+        pa.field("binary", pa.large_binary()),
+        pa.field("list", pa.large_list(pa.large_string())),
+    ])
+    assert result_table.schema.equals(expected_schema)
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_table_scan_with_small_types(catalog: Catalog) -> None:
-    identifier = "default.test_table_scan_with_small_types"
+def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_override_with_small_types"
     arrow_table = pa.Table.from_arrays(
         [pa.array(["a", "b", "c"]), pa.array([b"a", b"b", b"c"]), pa.array([["a", "b"], ["c", "d"], ["e", "f"]])],
         names=["string", "binary", "list"],
@@ -719,4 +722,10 @@ def test_table_scan_with_small_types(catalog: Catalog) -> None:
 
     tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = False
     result_table = tbl.scan().to_arrow()
-    assert result_table.schema.equals(_pyarrow_schema_ensure_small_types(arrow_table.schema))
+
+    expected_schema = pa.schema([
+        pa.field("string", pa.string()),
+        pa.field("binary", pa.binary()),
+        pa.field("list", pa.list_(pa.string())),
+    ])
+    assert result_table.schema.equals(expected_schema)
