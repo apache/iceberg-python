@@ -63,6 +63,7 @@ from pyiceberg.expressions.literals import (
     StringLiteral,
 )
 from pyiceberg.typedef import L
+from pyiceberg.types import strtobool
 
 ParserElement.enablePackrat()
 
@@ -96,7 +97,7 @@ literal_set = Group(DelimitedList(string) | DelimitedList(decimal) | DelimitedLi
 
 @boolean.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    if "true" == result.boolean.lower():
+    if strtobool(result.boolean):
         return AlwaysTrue()
     else:
         return AlwaysFalse()

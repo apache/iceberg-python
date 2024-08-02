@@ -158,6 +158,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.properties import get_first_property_value, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
@@ -345,14 +346,12 @@ class PyArrowFileIO(FileIO):
         if scheme in {"s3", "s3a", "s3n"}:
             from pyarrow.fs import S3FileSystem
 
-            from pyiceberg.table import PropertyUtil
-
             client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
-                "access_key": PropertyUtil.get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-                "secret_key": PropertyUtil.get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-                "session_token": PropertyUtil.get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-                "region": PropertyUtil.get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+                "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+                "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+                "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+                "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
             }
 
             if proxy_uri := self.properties.get(S3_PROXY_URI):
@@ -2132,10 +2131,10 @@ def data_file_statistics_from_parquet_metadata(
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
-    row_group_size = PropertyUtil.property_as_int(
+    row_group_size = property_as_int(
         properties=table_metadata.properties,
         property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
@@ -2278,7 +2277,7 @@ PYARROW_UNCOMPRESSED_CODEC = "none"
 
 
 def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
-    from pyiceberg.table import PropertyUtil, TableProperties
+    from pyiceberg.table import TableProperties
 
     for key_pattern in [
         TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
@@ -2290,7 +2289,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
             raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
     compression_codec = table_properties.get(TableProperties.PARQUET_COMPRESSION, TableProperties.PARQUET_COMPRESSION_DEFAULT)
-    compression_level = PropertyUtil.property_as_int(
+    compression_level = property_as_int(
         properties=table_properties,
         property_name=TableProperties.PARQUET_COMPRESSION_LEVEL,
         default=TableProperties.PARQUET_COMPRESSION_LEVEL_DEFAULT,
@@ -2301,17 +2300,17 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
     return {
         "compression": compression_codec,
         "compression_level": compression_level,
-        "data_page_size": PropertyUtil.property_as_int(
+        "data_page_size": property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_SIZE_BYTES,
             default=TableProperties.PARQUET_PAGE_SIZE_BYTES_DEFAULT,
         ),
-        "dictionary_pagesize_limit": PropertyUtil.property_as_int(
+        "dictionary_pagesize_limit": property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
             default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
         ),
-        "write_batch_size": PropertyUtil.property_as_int(
+        "write_batch_size": property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
@@ -2331,11 +2330,11 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the table.
     """
-    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, PropertyUtil, TableProperties, WriteTask
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties, WriteTask
 
     counter = counter or itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
-    target_file_size: int = PropertyUtil.property_as_int(  # type: ignore  # The property is set with non-None value.
+    target_file_size: int = property_as_int(  # type: ignore  # The property is set with non-None value.
         properties=table_metadata.properties,
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,

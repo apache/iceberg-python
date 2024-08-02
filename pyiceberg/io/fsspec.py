@@ -76,6 +76,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +119,12 @@ def _file(_: Properties) -> LocalFileSystem:
 def _s3(properties: Properties) -> AbstractFileSystem:
     from s3fs import S3FileSystem
 
-    from pyiceberg.table import PropertyUtil
-
     client_kwargs = {
         "endpoint_url": properties.get(S3_ENDPOINT),
-        "aws_access_key_id": PropertyUtil.get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-        "aws_secret_access_key": PropertyUtil.get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-        "aws_session_token": PropertyUtil.get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-        "region_name": PropertyUtil.get_first_property_value(properties, S3_REGION, AWS_REGION),
+        "aws_access_key_id": get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+        "aws_secret_access_key": get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+        "aws_session_token": get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+        "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
     register_events: Dict[str, Callable[[Properties], None]] = {}
@@ -165,11 +164,11 @@ def _gs(properties: Properties) -> AbstractFileSystem:
         token=properties.get(GCS_TOKEN),
         consistency=properties.get(GCS_CONSISTENCY, "none"),
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
-        requester_pays=properties.get(GCS_REQUESTER_PAYS, False),
+        requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
         session_kwargs=json.loads(properties.get(GCS_SESSION_KWARGS, "{}")),
         endpoint_url=properties.get(GCS_ENDPOINT),
         default_location=properties.get(GCS_DEFAULT_LOCATION),
-        version_aware=properties.get(GCS_VERSION_AWARE, "false").lower() == "true",
+        version_aware=property_as_bool(properties, GCS_VERSION_AWARE, False),
     )
 
 

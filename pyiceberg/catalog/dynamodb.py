@@ -61,6 +61,7 @@ from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.utils.properties import get_first_property_value
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -95,19 +96,17 @@ class DynamoDbCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-        from pyiceberg.table import PropertyUtil
-
         session = boto3.Session(
-            profile_name=PropertyUtil.get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=PropertyUtil.get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
+            profile_name=get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
+            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=PropertyUtil.get_first_property_value(
+            aws_access_key_id=get_first_property_value(
                 properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
             ),
-            aws_secret_access_key=PropertyUtil.get_first_property_value(
+            aws_secret_access_key=get_first_property_value(
                 properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
             ),
-            aws_session_token=PropertyUtil.get_first_property_value(
+            aws_session_token=get_first_property_value(
                 properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
             ),
         )

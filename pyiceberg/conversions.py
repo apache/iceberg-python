@@ -57,6 +57,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    strtobool,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 from pyiceberg.utils.decimal import decimal_to_bytes, unscaled_to_decimal
@@ -99,7 +100,7 @@ def partition_to_py(primitive_type: PrimitiveType, value_str: str) -> Union[int,
 @partition_to_py.register(BooleanType)
 @handle_none
 def _(primitive_type: BooleanType, value_str: str) -> Union[int, float, str, uuid.UUID]:
-    return value_str.lower() == "true"
+    return strtobool(value_str)
 
 
 @partition_to_py.register(IntegerType)

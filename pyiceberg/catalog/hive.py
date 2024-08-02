@@ -81,7 +81,6 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
-    PropertyUtil,
     StagedTable,
     Table,
     TableProperties,
@@ -109,6 +108,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from pyiceberg.utils.properties import property_as_bool, property_as_float
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -259,13 +259,9 @@ class HiveCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
         self._client = _HiveClient(properties["uri"], properties.get("ugi"))
 
-        self._lock_check_min_wait_time = PropertyUtil.property_as_float(
-            properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME
-        )
-        self._lock_check_max_wait_time = PropertyUtil.property_as_float(
-            properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME
-        )
-        self._lock_check_retries = PropertyUtil.property_as_float(
+        self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
+        self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
+        self._lock_check_retries = property_as_float(
             properties,
             LOCK_CHECK_RETRIES,
             DEFAULT_LOCK_CHECK_RETRIES,
@@ -314,7 +310,7 @@ class HiveCatalog(MetastoreCatalog):
             sd=_construct_hive_storage_descriptor(
                 table.schema(),
                 table.location(),
-                PropertyUtil.property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+                property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
             ),
             tableType=EXTERNAL_TABLE,
             parameters=_construct_parameters(table.metadata_location),
