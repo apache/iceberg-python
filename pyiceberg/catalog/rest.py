@@ -71,6 +71,7 @@ from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -257,7 +258,7 @@ class RestCatalog(Catalog):
         self._config_headers(session)
 
         # Configure SigV4 Request Signing
-        if str(self.properties.get(SIGV4, False)).lower() == "true":
+        if property_as_bool(self.properties, SIGV4, False):
             self._init_sigv4(session)
 
         return session
