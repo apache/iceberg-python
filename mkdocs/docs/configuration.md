@@ -137,6 +137,16 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-enable-->
 
+### PyArrow
+
+<!-- markdown-link-check-disable -->
+
+| Key                             | Example | Description                                                                                                                                                                                                                                                                                                        |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| pyarrow.use-large-types-on-read | True    | Use larger PyArrow types for [string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. |
+
+<!-- markdown-link-check-enable-->
+
 ## Catalogs
 
 PyIceberg currently has native catalog type support for REST, SQL, Hive, Glue and DynamoDB.
