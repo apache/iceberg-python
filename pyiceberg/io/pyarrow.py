@@ -154,13 +154,12 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
-    strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.deprecated import deprecated
-from pyiceberg.utils.properties import get_first_property_value, property_as_int
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
 
@@ -1344,9 +1343,7 @@ def project_table(
             # When FsSpec is not installed
             raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
-    use_large_types = (
-        val if isinstance(val := io.properties.get(PYARROW_USE_LARGE_TYPES_ON_READ, "True"), bool) else strtobool(val)
-    )
+    use_large_types = property_as_bool(io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
 
     bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
 
@@ -1440,9 +1437,8 @@ def project_batches(
             # When FsSpec is not installed
             raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
-    use_large_types = (
-        val if isinstance(val := io.properties.get(PYARROW_USE_LARGE_TYPES_ON_READ, "True"), bool) else strtobool(val)
-    )
+    use_large_types = property_as_bool(io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
+
     bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
 
     projected_field_ids = {
