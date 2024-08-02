@@ -720,7 +720,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
 
     tbl.append(arrow_table)
 
-    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = False
+    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
     result_table = tbl.scan().to_arrow()
 
     expected_schema = pa.schema([
