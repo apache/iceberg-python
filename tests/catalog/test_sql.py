@@ -355,7 +355,7 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, pyarrow_table.schema)
-    table.overwrite(pyarrow_table)
+    table.append(pyarrow_table)
 
 
 @pytest.mark.parametrize(

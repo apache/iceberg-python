@@ -71,7 +71,6 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
-    PropertyUtil,
     Table,
 )
 from pyiceberg.table.metadata import TableMetadata
@@ -98,6 +97,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -298,19 +298,17 @@ class GlueCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
 
-        from pyiceberg.table import PropertyUtil
-
         session = boto3.Session(
-            profile_name=PropertyUtil.get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=PropertyUtil.get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
+            profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
+            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=PropertyUtil.get_first_property_value(
+            aws_access_key_id=get_first_property_value(
                 properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
             ),
-            aws_secret_access_key=PropertyUtil.get_first_property_value(
+            aws_secret_access_key=get_first_property_value(
                 properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
             ),
-            aws_session_token=PropertyUtil.get_first_property_value(
+            aws_session_token=get_first_property_value(
                 properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
             ),
         )
@@ -368,7 +366,7 @@ class GlueCatalog(MetastoreCatalog):
             self.glue.update_table(
                 DatabaseName=database_name,
                 TableInput=table_input,
-                SkipArchive=PropertyUtil.property_as_bool(self.properties, GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
+                SkipArchive=property_as_bool(self.properties, GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
                 VersionId=version_id,
             )
         except self.glue.exceptions.EntityNotFoundException as e:

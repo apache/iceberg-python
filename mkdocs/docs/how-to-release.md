@@ -198,15 +198,24 @@ Kind regards,
 ### Copy the artifacts to the release dist
 
 ```
-svn checkout https://dist.apache.org/repos/dist/dev/iceberg /tmp/iceberg-dist-dev
-svn checkout https://dist.apache.org/repos/dist/release/iceberg/ /tmp/iceberg-dist-release
+export RC=rc2
+export VERSION=0.7.0${RC}
+export VERSION_WITHOUT_RC=${VERSION/rc?/}
 
-mkdir -p /tmp/iceberg-dist-release/pyiceberg-<VERSION>
-cp -r /tmp/iceberg-dist-dev/pyiceberg-<VERSION>rcN/* /tmp/iceberg-dist-release/pyiceberg-<VERSION>
+export SVN_DEV_DIR_VERSIONED="https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION}"
+export SVN_RELEASE_DIR_VERSIONED="https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION_WITHOUT_RC}"
 
-svn add /tmp/iceberg-dist-release/
-svn ci -m "PyIceberg <VERSION>" /tmp/iceberg-dist-release/
+svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add release ${VERSION_WITHOUT_RC}"
 ```
+
+<!-- prettier-ignore-start -->
+
+!!! note
+    Only a PMC member has the permission to upload an artifact to the SVN release dist.
+
+<!-- prettier-ignore-end -->
+
+### Upload the accepted release to PyPi
 
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
 
@@ -243,3 +252,17 @@ Make sure to create a PR to update the [GitHub issues template](https://github.c
 ## Update the integration tests
 
 Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
+
+## Create a Github Release Note
+
+Create a [new Release Note](https://github.com/apache/iceberg-python/releases/new) on the iceberg-python Github repository.
+
+Input the tag in **Choose a tag** with the newly approved released version (e.g. `0.7.0`) and set it to **Create new tag** on publish. Pick the target commit version as the commit ID the release was approved on.
+For example:
+![Generate Release Notes](assets/images/gen-release-notes.jpg)
+
+Then, select the previous release version as the **Previous tag** to use the diff between the two versions in generating the release notes.
+
+**Generate release notes**.
+
+**Set as the latest release** and **Publish**.
