@@ -289,7 +289,7 @@ class HiveCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(self.name, table.dbName, table.tableName),
+            identifier=(table.dbName, table.tableName),
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),
@@ -477,7 +477,7 @@ class HiveCatalog(MetastoreCatalog):
                     # Table does not exist, create it.
                     hive_table = self._convert_iceberg_into_hive(
                         StagedTable(
-                            identifier=(self.name, database_name, table_name),
+                            identifier=(database_name, table_name),
                             metadata=updated_staged_table.metadata,
                             metadata_location=updated_staged_table.metadata_location,
                             io=updated_staged_table.io,

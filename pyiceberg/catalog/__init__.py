@@ -613,6 +613,11 @@ class Catalog(ABC):
             ValueError: If removals and updates have overlapping keys.
         """
 
+    @deprecated(
+        deprecated_in="0.8.0",
+        removed_in="0.9.0",
+        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table only using its namespace and its table name.",
+    )
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
 
@@ -823,7 +828,7 @@ class MetastoreCatalog(Catalog, ABC):
         )
         io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(
-            identifier=(self.name, database_name, table_name),
+            identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
             io=io,

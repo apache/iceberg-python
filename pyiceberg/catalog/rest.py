@@ -466,7 +466,7 @@ class RestCatalog(Catalog):
 
     def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
-            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
@@ -477,7 +477,7 @@ class RestCatalog(Catalog):
 
     def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
         return StagedTable(
-            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple if self.name else identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(

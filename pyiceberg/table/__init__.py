@@ -151,7 +151,7 @@ from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
@@ -1351,7 +1351,7 @@ class CommitTableResponse(IcebergBaseModel):
 
 
 class Table:
-    identifier: Identifier = Field()
+    _identifier: Identifier = Field()
     metadata: TableMetadata
     metadata_location: str = Field()
     io: FileIO
@@ -1360,7 +1360,7 @@ class Table:
     def __init__(
         self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
     ) -> None:
-        self.identifier = identifier
+        self._identifier = identifier
         self.metadata = metadata
         self.metadata_location = metadata_location
         self.io = io
@@ -1381,11 +1381,21 @@ class Table:
 
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
-        fresh = self.catalog.load_table(self.identifier[1:])
+        fresh = self.catalog.load_table(self._identifier)
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
         return self
+
+    @property
+    def identifier(self) -> Identifier:
+        """Return the identifier of this table."""
+        deprecation_message(
+            deprecated_in="0.8.0",
+            removed_in="0.9.0",
+            help_message="Table.identifier property is deprecated. Please use Table.name() function instead.",
+        )
+        return (self.catalog.name,) + self._identifier
 
     def name(self) -> Identifier:
         """Return the identifier of this table."""
@@ -1602,7 +1612,7 @@ class Table:
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
             CommitTableRequest(
-                identifier=TableIdentifier(namespace=self.identifier[:-1], name=self.identifier[-1]),
+                identifier=TableIdentifier(namespace=self._identifier[:-1], name=self._identifier[-1]),
                 updates=updates,
                 requirements=requirements,
             )
@@ -1613,16 +1623,14 @@ class Table:
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Table class."""
         return (
-            self.identifier == other.identifier
-            and self.metadata == other.metadata
-            and self.metadata_location == other.metadata_location
+            self.name() == other.name() and self.metadata == other.metadata and self.metadata_location == other.metadata_location
             if isinstance(other, Table)
             else False
         )
 
     def __repr__(self) -> str:
         """Return the string representation of the Table class."""
-        table_name = self.catalog.table_name_from(self.identifier)
+        table_name = self.catalog.table_name_from(self._identifier)
         schema_str = ",\n  ".join(str(column) for column in self.schema().columns if self.schema())
         partition_str = f"partition by: [{', '.join(field.name for field in self.spec().fields if self.spec())}]"
         sort_order_str = f"sort order: [{', '.join(str(field) for field in self.sort_order().fields if self.sort_order())}]"

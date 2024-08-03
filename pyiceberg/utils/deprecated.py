@@ -30,16 +30,33 @@ def deprecated(deprecated_in: str, removed_in: str, help_message: Optional[str] 
     def decorator(func: Callable):  # type: ignore
         @functools.wraps(func)
         def new_func(*args: Any, **kwargs: Any) -> Any:
-            warnings.simplefilter("always", DeprecationWarning)  # turn off filter
+            message = f"Call to {func.__name__}, deprecated in {deprecated_in}, will be removed in {removed_in}.{help_message}"
 
-            warnings.warn(
-                f"Call to {func.__name__}, deprecated in {deprecated_in}, will be removed in {removed_in}.{help_message}",
-                category=DeprecationWarning,
-                stacklevel=2,
-            )
-            warnings.simplefilter("default", DeprecationWarning)  # reset filter
+            _deprecation_warning(message)
+
             return func(*args, **kwargs)
 
         return new_func
 
     return decorator
+
+
+def deprecation_message(deprecated_in: str, removed_in: str, help_message: Optional[str]) -> None:
+    """Mark properties or behaviors as deprecated.
+
+    Adding this will result in a warning being emitted.
+    """
+    message = f"Deprecated in {deprecated_in}, will be removed in {removed_in}. {help_message}"
+
+    _deprecation_warning(message)
+
+
+def _deprecation_warning(message: str) -> None:
+    warnings.simplefilter("always", DeprecationWarning)  # turn off filter
+
+    warnings.warn(
+        message,
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    warnings.simplefilter("default", DeprecationWarning)  # reset filter
