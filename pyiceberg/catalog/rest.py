@@ -758,8 +758,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
 
-        namespaces = ListNamespaceResponse(**response.json())
-        return [namespace_tuple + child_namespace for child_namespace in namespaces.namespaces]
+        return ListNamespaceResponse(**response.json()).namespaces
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:

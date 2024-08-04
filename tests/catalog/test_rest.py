@@ -419,7 +419,7 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces?parent=accounting",
-        json={"namespaces": [["tax"]]},
+        json={"namespaces": [["accounting", "tax"]]},
         status_code=200,
         request_headers=TEST_HEADERS,
     )
