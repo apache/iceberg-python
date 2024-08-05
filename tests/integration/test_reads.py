@@ -47,6 +47,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
     IntegerType,
     NestedField,
@@ -673,8 +674,13 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
     identifier = "default.test_table_scan_default_to_large_types"
     arrow_table = pa.Table.from_arrays(
-        [pa.array(["a", "b", "c"]), pa.array([b"a", b"b", b"c"]), pa.array([["a", "b"], ["c", "d"], ["e", "f"]])],
-        names=["string", "binary", "list"],
+        [
+            pa.array(["a", "b", "c"]),
+            pa.array(["a", "b", "c"]),
+            pa.array([b"a", b"b", b"c"]),
+            pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
+        ],
+        names=["string", "string-to-binary", "binary", "list"],
     )
 
     try:
@@ -689,10 +695,14 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
 
     tbl.append(arrow_table)
 
+    with tbl.update_schema() as update_schema:
+        update_schema.update_column("string-to-binary", BinaryType())
+
     result_table = tbl.scan().to_arrow()
 
     expected_schema = pa.schema([
         pa.field("string", pa.large_string()),
+        pa.field("string-to-binary", pa.large_binary()),
         pa.field("binary", pa.large_binary()),
         pa.field("list", pa.large_list(pa.large_string())),
     ])
@@ -704,8 +714,13 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
 def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     identifier = "default.test_table_scan_override_with_small_types"
     arrow_table = pa.Table.from_arrays(
-        [pa.array(["a", "b", "c"]), pa.array([b"a", b"b", b"c"]), pa.array([["a", "b"], ["c", "d"], ["e", "f"]])],
-        names=["string", "binary", "list"],
+        [
+            pa.array(["a", "b", "c"]),
+            pa.array(["a", "b", "c"]),
+            pa.array([b"a", b"b", b"c"]),
+            pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
+        ],
+        names=["string", "string-to-binary", "binary", "list"],
     )
 
     try:
@@ -720,11 +735,15 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
 
     tbl.append(arrow_table)
 
+    with tbl.update_schema() as update_schema:
+        update_schema.update_column("string-to-binary", BinaryType())
+
     tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
     result_table = tbl.scan().to_arrow()
 
     expected_schema = pa.schema([
         pa.field("string", pa.string()),
+        pa.field("string-to-binary", pa.binary()),
         pa.field("binary", pa.binary()),
         pa.field("list", pa.list_(pa.string())),
     ])
