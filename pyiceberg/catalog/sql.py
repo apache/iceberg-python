@@ -192,7 +192,7 @@ class SqlCatalog(MetastoreCatalog):
         """
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
-        identifier_nocatalog = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_nocatalog = self._identifier_to_tuple_without_catalog(identifier)
         namespace_identifier = Catalog.namespace_from(identifier_nocatalog)
         table_name = Catalog.table_name_from(identifier_nocatalog)
         if not self._namespace_exists(namespace_identifier):
@@ -238,7 +238,7 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If the table already exists
             NoSuchNamespaceError: If namespace does not exist
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         namespace_tuple = Catalog.namespace_from(identifier_tuple)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier_tuple)
@@ -277,7 +277,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         namespace_tuple = Catalog.namespace_from(identifier_tuple)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier_tuple)
@@ -301,7 +301,7 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         namespace_tuple = Catalog.namespace_from(identifier_tuple)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier_tuple)
@@ -348,8 +348,8 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If a table with the new name already exist.
             NoSuchNamespaceError: If the target namespace does not exist.
         """
-        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
-        to_identifier_tuple = self.identifier_to_tuple_without_catalog(to_identifier)
+        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
+        to_identifier_tuple = self._identifier_to_tuple_without_catalog(to_identifier)
         from_namespace_tuple = Catalog.namespace_from(from_identifier_tuple)
         from_namespace = Catalog.namespace_to_string(from_namespace_tuple)
         from_table_name = Catalog.table_name_from(from_identifier_tuple)
@@ -407,7 +407,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(
+        identifier_tuple = self._identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
         namespace_tuple = Catalog.namespace_from(identifier_tuple)

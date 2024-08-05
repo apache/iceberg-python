@@ -129,7 +129,7 @@ class InMemoryCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(
+        identifier_tuple = self._identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
         current_table = self.load_table(identifier_tuple)
@@ -154,14 +154,14 @@ class InMemoryCatalog(MetastoreCatalog):
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
             return self.__tables[identifier_tuple]
         except KeyError as error:
             raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
             self.__tables.pop(identifier_tuple)
         except KeyError as error:
@@ -171,7 +171,7 @@ class InMemoryCatalog(MetastoreCatalog):
         self.drop_table(identifier)
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         try:
             table = self.__tables.pop(identifier_tuple)
         except KeyError as error:
