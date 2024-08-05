@@ -632,7 +632,6 @@ class Catalog(ABC):
             identifier_tuple = identifier_tuple[1:]
         return identifier_tuple
 
-
     def _identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
 
