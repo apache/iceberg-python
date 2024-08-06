@@ -664,6 +664,7 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
         table.transaction().set_properties(lock="xxx").commit_transaction()
         assert table.properties.get("lock") == "xxx"
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_empty_scan_ordered_str(catalog: Catalog) -> None:
