@@ -421,6 +421,17 @@ def set_when_positive(properties: Dict[str, str], num: int, property_name: str) 
         properties[property_name] = str(num)
 
 
+def ancestor_right_before_timestamp(
+    current_snapshot: Optional[Snapshot], table_metadata: TableMetadata, timestamp_ms: int
+) -> Optional[Snapshot]:
+    """Get the ancestor right before the given timestamp."""
+    if current_snapshot:
+        for ancestor in ancestors_of(current_snapshot, table_metadata):
+            if ancestor.timestamp_ms < timestamp_ms:
+                return ancestor
+    return None
+
+
 def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMetadata) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot."""
     snapshot = current_snapshot

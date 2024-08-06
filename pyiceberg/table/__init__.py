@@ -115,13 +115,14 @@ from pyiceberg.table.name_mapping import (
     NameMapping,
     update_mapping,
 )
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
     SnapshotLogEntry,
     SnapshotSummaryCollector,
     Summary,
+    ancestor_right_before_timestamp,
     ancestors_of,
     update_snapshot_summaries,
 )
@@ -255,7 +256,12 @@ class Transaction:
         """Close and commit the transaction."""
         self.commit_transaction()
 
-    def _apply(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...] = ()) -> Transaction:
+    def _apply(
+        self,
+        updates: Tuple[TableUpdate, ...],
+        requirements: Tuple[TableRequirement, ...] = (),
+        commit_transaction_if_autocommit: bool = True,
+    ) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
         for requirement in requirements:
             requirement.validate(self.table_metadata)
@@ -271,7 +277,7 @@ class Transaction:
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
-        if self._autocommit:
+        if self._autocommit and commit_transaction_if_autocommit:
             self.commit_transaction()
             self._updates = ()
             self._requirements = ()
@@ -371,39 +377,6 @@ class Transaction:
 
         requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
         return self._apply(updates, requirements)
-
-    def _set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        ref_name: str,
-        type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
-    ) -> UpdatesAndRequirements:
-        """Update a ref to a snapshot.
-
-        Returns:
-            The updates and requirements for the set-snapshot-ref staged
-        """
-        updates = (
-            SetSnapshotRefUpdate(
-                snapshot_id=snapshot_id,
-                ref_name=ref_name,
-                type=type,
-                max_ref_age_ms=max_ref_age_ms,
-                max_snapshot_age_ms=max_snapshot_age_ms,
-                min_snapshots_to_keep=min_snapshots_to_keep,
-            ),
-        )
-        requirements = (
-            AssertRefSnapshotId(
-                snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
-                ref=ref_name,
-            ),
-        )
-
-        return updates, requirements
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -2089,6 +2062,48 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _commit_if_ref_updates_exist(self) -> None:
+        self._transaction._apply(*self._commit(), commit_transaction_if_autocommit=False)
+        self._updates, self._requirements = (), ()
+
+    def _set_ref_snapshot(
+        self,
+        snapshot_id: int,
+        ref_name: str,
+        type: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
+    ) -> ManageSnapshots:
+        """Update a ref to a snapshot.
+
+        Stages the updates and requirements for the set-snapshot-ref
+
+        Returns:
+            This for method chaining
+        """
+        updates = (
+            SetSnapshotRefUpdate(
+                snapshot_id=snapshot_id,
+                ref_name=ref_name,
+                type=type,
+                max_ref_age_ms=max_ref_age_ms,
+                max_snapshot_age_ms=max_snapshot_age_ms,
+                min_snapshots_to_keep=min_snapshots_to_keep,
+            ),
+        )
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self._transaction.table_metadata.refs[ref_name].snapshot_id
+                if ref_name in self._transaction.table_metadata.refs
+                else None,
+                ref=ref_name,
+            ),
+        )
+        self._updates += updates
+        self._requirements += requirements
+        return self
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -2101,15 +2116,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._transaction._set_ref_snapshot(
+        return self._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
             type="tag",
             max_ref_age_ms=max_ref_age_ms,
         )
-        self._updates += update
-        self._requirements += requirement
-        return self
 
     def create_branch(
         self,
@@ -2131,7 +2143,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Returns:
             This for method chaining
         """
-        update, requirement = self._transaction._set_ref_snapshot(
+        return self._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
             type="branch",
@@ -2139,8 +2151,71 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             max_snapshot_age_ms=max_snapshot_age_ms,
             min_snapshots_to_keep=min_snapshots_to_keep,
         )
-        self._updates += update
-        self._requirements += requirement
+
+    def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
+        """Rollback the table to the given snapshot id.
+
+         The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (int): rollback to this snapshot_id that used to be current.
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+        if self._transaction._table.snapshot_by_id(snapshot_id) is None:
+            raise ValidationError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
+        if snapshot_id not in {
+            ancestor.snapshot_id
+            for ancestor in ancestors_of(self._transaction._table.current_snapshot(), self._transaction.table_metadata)
+        }:
+            raise ValidationError(f"Cannot roll back to snapshot, not an ancestor of the current state: {snapshot_id}")
+        return self._set_ref_snapshot(snapshot_id=snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH))
+
+    def rollback_to_timestamp(self, timestamp: int) -> ManageSnapshots:
+        """Rollback the table to the snapshot right before the given timestamp.
+
+        The snapshot needs to be an ancestor of the current table state.
+
+        Args:
+            timestamp (int): rollback to the snapshot that used to be current right before this timestamp.
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+        if (
+            snapshot := ancestor_right_before_timestamp(
+                self._transaction._table.current_snapshot(), self._transaction.table_metadata, timestamp
+            )
+        ) is None:
+            raise ValidationError(f"Cannot roll back, no valid snapshot older than: {timestamp}")
+        return self._set_ref_snapshot(snapshot_id=snapshot.snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH))
+
+    def set_current_snapshot(self, snapshot_id: Optional[int] = None, ref_name: Optional[str] = None) -> ManageSnapshots:
+        """Set the table to a specific snapshot identified either by its id or the branch/tag its on, not both.
+
+        The snapshot is not required to be an ancestor of the current table state.
+
+        Args:
+            snapshot_id (Optional[int]): id of the snapshot to be set as current
+            ref_name (Optional[str]): branch/tag where the snapshot to be set as current exists.
+        Returns:
+            This for method chaining
+        """
+        self._commit_if_ref_updates_exist()
+        if (not snapshot_id or ref_name) and (snapshot_id or not ref_name):
+            raise ValidationError("Either snapshot_id or ref must be provided")
+        else:
+            if snapshot_id is None:
+                if ref_name not in self._transaction.table_metadata.refs:
+                    raise ValidationError(f"Cannot set snapshot current to unknown ref {ref_name}")
+                target_snapshot_id = self._transaction.table_metadata.refs[ref_name].snapshot_id
+            else:
+                target_snapshot_id = snapshot_id
+            if (snapshot := self._transaction._table.snapshot_by_id(target_snapshot_id)) is None:
+                raise ValidationError(f"Cannot set snapshot current with snapshot id: {snapshot_id} or ref_name: {ref_name}")
+
+            self._set_ref_snapshot(snapshot_id=snapshot.snapshot_id, ref_name=MAIN_BRANCH, type=str(SnapshotRefType.BRANCH))
         return self
 
 
