@@ -1192,7 +1192,7 @@ def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: 
     """
     max_metadata_log_entries = max(
         1,
-        PropertyUtil.property_as_int(
+        property_as_int(
             base_metadata.properties,
             TableProperties.METADATA_PREVIOUS_VERSIONS_MAX,
             TableProperties.METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT,
