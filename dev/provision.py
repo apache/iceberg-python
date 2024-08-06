@@ -389,3 +389,13 @@ for catalog_name, catalog in catalogs.items():
         VALUES (4)
         """
     )
+
+    spark.sql(
+        f"""
+        CREATE OR REPLACE TABLE {catalog_name}.default.test_empty_scan_ordered_str (id string NOT NULL)
+        USING iceberg
+        TBLPROPERTIES ('format-version'='2')
+        """
+    )
+    spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
+    spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
