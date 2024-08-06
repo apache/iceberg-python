@@ -748,3 +748,11 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
         pa.field("list", pa.list_(pa.string())),
     ])
     assert result_table.schema.equals(expected_schema)
+
+    
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_empty_scan_ordered_str(catalog: Catalog) -> None:
+    table_empty_scan_ordered_str = catalog.load_table("default.test_empty_scan_ordered_str")
+    arrow_table = table_empty_scan_ordered_str.scan(EqualTo("id", "b")).to_arrow()
+    assert len(arrow_table) == 0

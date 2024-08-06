@@ -92,8 +92,8 @@ moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.12.2"
 pytest-mock = "3.14.0"
 pyspark = "3.5.1"
-cython = "3.0.10"
-deptry = ">=0.14,<0.18"
+cython = "3.0.11"
+deptry = ">=0.14,<0.19"
 docutils = "!=0.21"
 
 [[tool.mypy.overrides]]
