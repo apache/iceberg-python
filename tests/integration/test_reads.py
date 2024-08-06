@@ -58,18 +58,19 @@ DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 TABLE_NAME = ("default", "t1")
 
 
-def create_table(catalog: Catalog) -> Table:
+TABLE_SCHEMA = Schema(
+    NestedField(field_id=1, name="str", field_type=StringType(), required=False),
+    NestedField(field_id=2, name="int", field_type=IntegerType(), required=True),
+    NestedField(field_id=3, name="bool", field_type=BooleanType(), required=False),
+    NestedField(field_id=4, name="datetime", field_type=TimestampType(), required=False),
+)
+
+
+def create_table(catalog: Catalog, schema: Schema = TABLE_SCHEMA) -> Table:
     try:
         catalog.drop_table(TABLE_NAME)
     except NoSuchTableError:
         pass  # Just to make sure that the table doesn't exist
-
-    schema = Schema(
-        NestedField(field_id=1, name="str", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="int", field_type=IntegerType(), required=True),
-        NestedField(field_id=3, name="bool", field_type=BooleanType(), required=False),
-        NestedField(field_id=4, name="datetime", field_type=TimestampType(), required=False),
-    )
 
     return catalog.create_table(identifier=TABLE_NAME, schema=schema)
 
@@ -663,3 +664,141 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 
         table.transaction().set_properties(lock="xxx").commit_transaction()
         assert table.properties.get("lock") == "xxx"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_simple_field_row_filter_scan(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema([
+        ("id", pa.int32()),
+        ("name", pa.string()),
+    ])
+    table = create_table(catalog, schema)
+
+    arrow_table = pa.Table.from_pydict({"id": [1, 2], "name": ["John", "Katie"]}, schema=schema)
+
+    table.append(arrow_table)
+
+    result_table = table.scan(row_filter="id = 2", selected_fields=("id",)).to_arrow()
+
+    expected_schema = pa.schema([
+        ("id", pa.int32()),
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
+
+    with table.update_schema() as schema_update:
+        schema_update.rename_column("id", "other_id")
+
+    result_table = table.scan(row_filter="other_id = 2", selected_fields=("other_id",)).to_arrow()
+
+    expected_schema = pa.schema([
+        ("other_id", pa.int32()),
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_nested_field_row_filter_scan(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema([
+        ("id", pa.int32()),
+        ("name", pa.string()),
+        (
+            "employment",
+            pa.struct([
+                pa.field("status", pa.string(), nullable=True),
+                pa.field("position", pa.string(), nullable=True),
+            ]),
+        ),
+    ])
+    table = create_table(catalog, schema)
+
+    data = pa.StructArray.from_arrays(
+        [["Employed", "On Leave"], ["Analyst", "Director"]],
+        fields=[
+            pa.field("status", pa.string(), nullable=True),
+            pa.field("position", pa.string(), nullable=True),
+        ],
+    )
+    arrow_table = pa.Table.from_pydict({"id": [1, 2], "name": ["John", "Katie"], "employment": data}, schema=schema)
+
+    table.append(arrow_table)
+
+    result_table = table.scan(row_filter="employment.status = 'Employed'", selected_fields=("employment.status",)).to_arrow()
+
+    expected_schema = pa.schema([
+        (
+            "employment",
+            pa.struct([
+                pa.field("status", pa.large_string(), nullable=True),
+            ]),
+        )
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
+
+    # This is how renaming works for nested columns currently
+    with table.update_schema() as schema_update:
+        schema_update.rename_column("employment.status", "status_renamed")
+
+    result_table = table.scan(
+        row_filter="employment.status_renamed = 'Employed'", selected_fields=("employment.status_renamed",)
+    ).to_arrow()
+
+    expected_schema = pa.schema([
+        (
+            "employment",
+            pa.struct([
+                pa.field("status_renamed", pa.large_string(), nullable=True),
+            ]),
+        )
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_dot_field_row_filter_scan(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema([
+        ("id", pa.int32()),
+        ("name.first", pa.string()),
+    ])
+    table = create_table(catalog, schema)
+
+    arrow_table = pa.Table.from_pydict({"id": [1, 2], "name.first": ["John", "Katie"]}, schema=schema)
+
+    table.append(arrow_table)
+
+    result_table = table.scan(row_filter="name.first = 'John'", selected_fields=("name.first",)).to_arrow()
+
+    expected_schema = pa.schema([
+        ("name.first", pa.large_string()),
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1
+
+    with table.update_schema() as schema_update:
+        schema_update.rename_column("name.first", "name.other_first")
+
+    result_table = table.scan(row_filter="name.other_first = 'John'", selected_fields=("name.other_first",)).to_arrow()
+
+    expected_schema = pa.schema([
+        ("name.other_first", pa.int32()),
+    ])
+
+    assert result_table.schema.equals(expected_schema)
+    assert len(result_table) == 1

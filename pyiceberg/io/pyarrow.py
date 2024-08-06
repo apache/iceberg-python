@@ -571,51 +571,54 @@ def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
+    def _flat_name_to_list(self, name: str) -> List[str]:
+        return name.split(".")
+
     def visit_in(self, term: BoundTerm[Any], literals: Set[Any]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
-        return pc.field(term.ref().field.name).isin(pyarrow_literals)
+        return pc.field(*self._flat_name_to_list(term.ref().name)).isin(pyarrow_literals)
 
     def visit_not_in(self, term: BoundTerm[Any], literals: Set[Any]) -> pc.Expression:
         pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
-        return ~pc.field(term.ref().field.name).isin(pyarrow_literals)
+        return ~pc.field(*self._flat_name_to_list(term.ref().name)).isin(pyarrow_literals)
 
     def visit_is_nan(self, term: BoundTerm[Any]) -> pc.Expression:
-        ref = pc.field(term.ref().field.name)
+        ref = pc.field(*self._flat_name_to_list(term.ref().name))
         return pc.is_nan(ref)
 
     def visit_not_nan(self, term: BoundTerm[Any]) -> pc.Expression:
-        ref = pc.field(term.ref().field.name)
+        ref = pc.field(*self._flat_name_to_list(term.ref().name))
         return ~pc.is_nan(ref)
 
     def visit_is_null(self, term: BoundTerm[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name).is_null(nan_is_null=False)
+        return pc.field(*self._flat_name_to_list(term.ref().name)).is_null(nan_is_null=False)
 
     def visit_not_null(self, term: BoundTerm[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name).is_valid()
+        return pc.field(*self._flat_name_to_list(term.ref().name)).is_valid()
 
     def visit_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) == _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(*self._flat_name_to_list(term.ref().name)) == _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_not_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) != _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(*self._flat_name_to_list(term.ref().name)) != _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_greater_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) >= _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(*self._flat_name_to_list(term.ref().name)) >= _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_greater_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) > _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(*self._flat_name_to_list(term.ref().name)) > _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_less_than(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) < _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(*self._flat_name_to_list(term.ref().name)) < _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_less_than_or_equal(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.field(term.ref().field.name) <= _convert_scalar(literal.value, term.ref().field.field_type)
+        return pc.field(*self._flat_name_to_list(term.ref().name)) <= _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return pc.starts_with(pc.field(term.ref().field.name), literal.value)
+        return pc.starts_with(pc.field(*self._flat_name_to_list(term.ref().name)), literal.value)
 
     def visit_not_starts_with(self, term: BoundTerm[Any], literal: Literal[Any]) -> pc.Expression:
-        return ~pc.starts_with(pc.field(term.ref().field.name), literal.value)
+        return ~pc.starts_with(pc.field(*self._flat_name_to_list(term.ref().name)), literal.value)
 
     def visit_true(self) -> pc.Expression:
         return pc.scalar(True)

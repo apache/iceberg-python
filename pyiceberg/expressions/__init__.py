@@ -23,6 +23,7 @@ from typing import (
     Any,
     Generic,
     Iterable,
+    Optional,
     Set,
     Tuple,
     Type,
@@ -109,10 +110,12 @@ class BoundReference(BoundTerm[L]):
 
     field: NestedField
     accessor: Accessor
+    name: str
 
-    def __init__(self, field: NestedField, accessor: Accessor):
+    def __init__(self, field: NestedField, accessor: Accessor, name: Optional[str] = None):
         self.field = field
         self.accessor = accessor
+        self.name = name if name else field.name
 
     def eval(self, struct: StructProtocol) -> L:
         """Return the value at the referenced field's position in an object that abides by the StructProtocol.
@@ -185,7 +188,7 @@ class Reference(UnboundTerm[Any]):
         """
         field = schema.find_field(name_or_id=self.name, case_sensitive=case_sensitive)
         accessor = schema.accessor_for_field(field.field_id)
-        return self.as_bound(field=field, accessor=accessor)  # type: ignore
+        return self.as_bound(field=field, accessor=accessor, name=self.name)  # type: ignore
 
     @property
     def as_bound(self) -> Type[BoundReference[L]]:
