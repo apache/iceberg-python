@@ -1589,7 +1589,7 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
         return partner
 
     def field_partner(self, partner_struct: Optional[pa.Array], field_id: int, _: str) -> Optional[pa.Array]:
-        if partner_struct:
+        if partner_struct is not None:
             # use the field name from the file schema
             try:
                 name = self.file_schema.find_field(field_id).name
