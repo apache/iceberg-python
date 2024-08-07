@@ -2281,7 +2281,6 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
 
     for key_pattern in [
         TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
-        TableProperties.PARQUET_PAGE_ROW_LIMIT,
         TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES,
         f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
