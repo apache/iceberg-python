@@ -28,14 +28,16 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                               | Options                           | Default | Description                                                                                 |
-| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.row-group-limit`   | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
-| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`    | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+| Key                                    | Options                           | Default | Description                                                                                 |
+| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
+| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+| `write.parquet.row-group-limit`        | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
 
 ### Table behavior options
 
@@ -134,6 +136,16 @@ For the FileIO there are several configuration options available:
 | gcs.endpoint                | http://0.0.0.0:4443 | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
 | gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
 | gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
+
+<!-- markdown-link-check-enable-->
+
+### PyArrow
+
+<!-- markdown-link-check-disable -->
+
+| Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
 <!-- markdown-link-check-enable-->
 

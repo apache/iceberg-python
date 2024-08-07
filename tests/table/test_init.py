@@ -69,6 +69,7 @@ from pyiceberg.table import (
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
+    MetadataLogEntry,
     Operation,
     Snapshot,
     SnapshotLogEntry,
@@ -1156,3 +1157,52 @@ def test_serialize_commit_table_request() -> None:
 
     deserialized_request = CommitTableRequest.model_validate_json(request.model_dump_json())
     assert request == deserialized_request
+
+
+def test_update_metadata_log(table_v2: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),), False, table_v2.metadata_location
+    )
+    assert len(new_metadata.metadata_log) == 2
+
+
+def test_update_metadata_log_overflow(table_v2: Table) -> None:
+    metadata_log = [
+        MetadataLogEntry(
+            timestamp_ms=1602638593590 + i,
+            metadata_file=f"/path/to/metadata/{i}.json",
+        )
+        for i in range(10)
+    ]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"metadata_log": metadata_log, "last_updated_ms": 1602638593600})
+    table_v2.metadata_location = "/path/to/metadata/10.json"
+    assert len(table_v2.metadata.metadata_log) == 10
+
+    base_metadata = table_v2.metadata
+    new_metadata = update_table_metadata(
+        base_metadata,
+        (SetPropertiesUpdate(updates={"write.metadata.previous-versions-max": "5"}),),
+        False,
+        table_v2.metadata_location,
+    )
+    assert len(new_metadata.metadata_log) == 5
+    assert new_metadata.metadata_log[-1].metadata_file == "/path/to/metadata/10.json"
+
+    # check invalid value of write.metadata.previous-versions-max
+    new_metadata = update_table_metadata(
+        base_metadata,
+        (SetPropertiesUpdate(updates={"write.metadata.previous-versions-max": "0"}),),
+        False,
+        table_v2.metadata_location,
+    )
+    assert len(new_metadata.metadata_log) == 1
