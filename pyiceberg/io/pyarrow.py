@@ -129,7 +129,7 @@ from pyiceberg.schema import (
     visit_with_partner,
 )
 from pyiceberg.table.metadata import TableMetadata
-from pyiceberg.table.name_mapping import NameMapping
+from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -817,14 +817,14 @@ def pyarrow_to_schema(
 ) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        visitor = _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        return visit_pyarrow(schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us))
     elif name_mapping is not None:
-        visitor = _ConvertToIceberg(name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        schema_without_ids = _pyarrow_to_schema_without_ids(schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        return apply_name_mapping(schema_without_ids, name_mapping)
     else:
         raise ValueError(
             "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
         )
-    return visit_pyarrow(schema, visitor)
 
 
 def _pyarrow_to_schema_without_ids(schema: pa.Schema, downcast_ns_timestamp_to_us: bool = False) -> Schema:
@@ -998,17 +998,13 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
     _field_names: List[str]
-    _name_mapping: Optional[NameMapping]
 
-    def __init__(self, name_mapping: Optional[NameMapping] = None, downcast_ns_timestamp_to_us: bool = False) -> None:
+    def __init__(self, downcast_ns_timestamp_to_us: bool = False) -> None:
         self._field_names = []
-        self._name_mapping = name_mapping
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
     def _field_id(self, field: pa.Field) -> int:
-        if self._name_mapping:
-            return self._name_mapping.find(*self._field_names).field_id
-        elif (field_id := _get_field_id(field)) is not None:
+        if (field_id := _get_field_id(field)) is not None:
             return field_id
         else:
             raise ValueError(f"Cannot convert {field} to Iceberg Field as field_id is empty.")
