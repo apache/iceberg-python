@@ -1222,10 +1222,6 @@ def _task_to_record_batches(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            # With PyArrow 16.0.0 there is an issue with casting record-batches:
-            # https://github.com/apache/arrow/issues/41884
-            # https://github.com/apache/arrow/issues/43183
-            # Would be good to remove this later on
             schema=_pyarrow_schema_ensure_large_types(physical_schema)
             if use_large_types
             else (_pyarrow_schema_ensure_small_types(physical_schema)),
@@ -1244,12 +1240,7 @@ def _task_to_record_batches(
                 batch = batch.take(indices)
                 # Apply the user filter
                 if pyarrow_filter is not None:
-                    # we need to switch back and forth between RecordBatch and Table
-                    # as Expression filter isn't yet supported in RecordBatch
-                    # https://github.com/apache/arrow/issues/39220
-                    arrow_table = pa.Table.from_batches([batch])
-                    arrow_table = arrow_table.filter(pyarrow_filter)
-                    batch = arrow_table.to_batches()[0]
+                    batch = batch.filter(pyarrow_filter)
             yield _to_requested_schema(
                 projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True, use_large_types=use_large_types
             )
