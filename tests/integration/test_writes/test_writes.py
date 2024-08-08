@@ -1302,7 +1302,6 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
     identifier = "default.lower.table_v1_with_null_nested_namespace"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-    print(session_catalog.list_tables("default"))
     # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
     # that supports HEAD request on table endpoint
 
