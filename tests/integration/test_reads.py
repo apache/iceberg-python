@@ -704,6 +704,7 @@ def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
     batches = list(tbl.scan().to_arrow_batch_reader())
     assert len(batches) == entries
 
+
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
     identifier = "default.test_table_scan_default_to_large_types"
