@@ -707,10 +707,13 @@ def test_commit_table_update_schema(
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_table_metadata = table.metadata
+    original_table_metadata_location = table.metadata_location
+    original_table_last_updated_ms = table.metadata.last_updated_ms
 
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert TABLE_METADATA_LOCATION_REGEX.match(original_table_metadata_location)
+    assert test_catalog._parse_metadata_version(original_table_metadata_location) == 0
     assert original_table_metadata.current_schema_id == 0
+    assert len(original_table_metadata.metadata_log) == 0
 
     transaction = table.transaction()
     update = transaction.update_schema()
@@ -728,6 +731,9 @@ def test_commit_table_update_schema(
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+    assert len(updated_table_metadata.metadata_log) == 1
+    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
+    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
 
     # Ensure schema is also pushed to Glue
     table_info = _glue.get_table(
@@ -841,6 +847,7 @@ def test_commit_overwrite_table_snapshot_properties(
     assert summary is not None
     assert summary["snapshot_prop_a"] is None
     assert summary["snapshot_prop_b"] == "test_prop_b"
+    assert len(updated_table_metadata.metadata_log) == 2
 
 
 @mock_aws
