@@ -254,7 +254,7 @@ def test_create_tables_idempotency(catalog: SqlCatalog) -> None:
     ],
 )
 def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
@@ -279,7 +279,7 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
     ],
 )
 def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested, properties={"format-version": "1"})
@@ -311,7 +311,7 @@ def test_create_table_with_pyarrow_schema(
     iceberg_table_schema_simple: Schema,
     table_identifier: Identifier,
 ) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, pyarrow_schema_simple_without_ids)
@@ -351,7 +351,7 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
             pa.field("large", pa.large_string(), nullable=True),
         ]),
     )
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, pyarrow_table.schema)
@@ -374,7 +374,7 @@ def test_write_pyarrow_schema(catalog: SqlCatalog, table_identifier: Identifier)
     ],
 )
 def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     order = SortOrder(SortField(source_id=2, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST))
@@ -406,7 +406,7 @@ def test_create_table_custom_sort_order(catalog: SqlCatalog, table_schema_nested
 def test_create_table_with_default_warehouse_location(
     warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
@@ -435,7 +435,7 @@ def test_create_table_with_default_warehouse_location(
 def test_create_table_with_given_location_removes_trailing_slash(
     warehouse: Path, catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     table_name = Catalog.table_name_from(table_identifier_nocatalog)
     location = f"file://{warehouse}/{catalog.name}.db/{table_name}-given"
@@ -465,7 +465,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
     ],
 )
 def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
@@ -491,7 +491,7 @@ def test_create_duplicated_table(catalog: SqlCatalog, table_schema_nested: Schem
 def test_create_table_if_not_exists_duplicated_table(
     catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table1 = catalog.create_table(table_identifier, table_schema_nested)
@@ -540,7 +540,7 @@ def test_create_table_without_namespace(catalog: SqlCatalog, table_schema_nested
     ],
 )
 def test_register_table(catalog: SqlCatalog, table_identifier: Identifier, metadata_location: str) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.register_table(table_identifier, metadata_location)
@@ -566,7 +566,7 @@ def test_register_table(catalog: SqlCatalog, table_identifier: Identifier, metad
     ],
 )
 def test_register_existing_table(catalog: SqlCatalog, table_identifier: Identifier, metadata_location: str) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     catalog.register_table(table_identifier, metadata_location)
@@ -615,7 +615,7 @@ def test_register_table_without_namespace(catalog: SqlCatalog, metadata_location
     ],
 )
 def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
@@ -641,7 +641,7 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
     ],
 )
 def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
@@ -670,7 +670,7 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     ],
 )
 def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
@@ -697,7 +697,7 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
     ],
 )
 def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
@@ -757,8 +757,8 @@ def test_drop_table_that_does_not_exist(catalog: SqlCatalog, table_identifier: I
 def test_rename_table(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(from_table_identifier)
-    to_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(to_table_identifier)
+    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
+    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
     from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
     to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
     catalog.create_namespace(from_namespace)
@@ -800,8 +800,8 @@ def test_rename_table(
 def test_rename_table_from_self_identifier(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(from_table_identifier)
-    to_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(to_table_identifier)
+    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
+    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
     from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
     to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
     catalog.create_namespace(from_namespace)
@@ -845,8 +845,8 @@ def test_rename_table_from_self_identifier(
 def test_rename_table_to_existing_one(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(from_table_identifier)
-    to_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(to_table_identifier)
+    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
+    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
     from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
     to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
     catalog.create_namespace(from_namespace)
@@ -884,7 +884,7 @@ def test_rename_table_to_existing_one(
     ],
 )
 def test_rename_missing_table(catalog: SqlCatalog, from_table_identifier: Identifier, to_table_identifier: Identifier) -> None:
-    to_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(to_table_identifier)
+    to_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(to_table_identifier)
     to_namespace = Catalog.namespace_from(to_table_identifier_nocatalog)
     catalog.create_namespace(to_namespace)
     with pytest.raises(NoSuchTableError):
@@ -918,7 +918,7 @@ def test_rename_missing_table(catalog: SqlCatalog, from_table_identifier: Identi
 def test_rename_table_to_missing_namespace(
     catalog: SqlCatalog, table_schema_nested: Schema, from_table_identifier: Identifier, to_table_identifier: Identifier
 ) -> None:
-    from_table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(from_table_identifier)
+    from_table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(from_table_identifier)
     from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
     catalog.create_namespace(from_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
@@ -953,8 +953,8 @@ def test_rename_table_to_missing_namespace(
 def test_list_tables(
     catalog: SqlCatalog, table_schema_nested: Schema, table_identifier_1: Identifier, table_identifier_2: Identifier
 ) -> None:
-    table_identifier_1_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier_1)
-    table_identifier_2_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier_2)
+    table_identifier_1_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier_1)
+    table_identifier_2_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier_2)
     namespace_1 = Catalog.namespace_from(table_identifier_1_nocatalog)
     namespace_2 = Catalog.namespace_from(table_identifier_2_nocatalog)
     catalog.create_namespace(namespace_1)
@@ -1138,7 +1138,7 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
     ],
 )
 def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     assert namespace in catalog.list_namespaces()
@@ -1266,7 +1266,7 @@ def test_update_namespace_properties(catalog: SqlCatalog, namespace: str) -> Non
     ],
 )
 def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
@@ -1316,7 +1316,7 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     ],
 )
 def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_simple)
@@ -1366,7 +1366,7 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_id
     ],
 )
 def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table_a = catalog.create_table(table_identifier, table_schema_simple)
@@ -1510,7 +1510,7 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
 )
 def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
     # table properties can be set to int, but still serialized to string
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     property_with_int = {"property_name": 42}
@@ -1537,7 +1537,7 @@ def test_table_properties_int_value(catalog: SqlCatalog, table_schema_simple: Sc
 def test_table_properties_raise_for_none_value(
     catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier
 ) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     property_with_none = {"property_name": None}
@@ -1562,7 +1562,7 @@ def test_table_properties_raise_for_none_value(
     ],
 )
 def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog.identifier_to_tuple_without_catalog(table_identifier)
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_simple, properties={"format-version": "2"})

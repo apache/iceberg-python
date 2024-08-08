@@ -67,7 +67,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -613,6 +613,11 @@ class Catalog(ABC):
             ValueError: If removals and updates have overlapping keys.
         """
 
+    @deprecated(
+        deprecated_in="0.8.0",
+        removed_in="0.9.0",
+        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+    )
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
 
@@ -624,6 +629,25 @@ class Catalog(ABC):
         """
         identifier_tuple = Catalog.identifier_to_tuple(identifier)
         if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            identifier_tuple = identifier_tuple[1:]
+        return identifier_tuple
+
+    def _identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
+        """Convert an identifier to a tuple and drop this catalog's name from the first element.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            Identifier: a tuple of strings with this catalog's name removed
+        """
+        identifier_tuple = Catalog.identifier_to_tuple(identifier)
+        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+            )
             identifier_tuple = identifier_tuple[1:]
         return identifier_tuple
 
@@ -769,7 +793,7 @@ class MetastoreCatalog(Catalog, ABC):
             return False
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         table = self.load_table(identifier_tuple)
         self.drop_table(identifier_tuple)
         io = load_file_io(self.properties, table.metadata_location)
@@ -823,7 +847,7 @@ class MetastoreCatalog(Catalog, ABC):
         )
         io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(
-            identifier=(self.name, database_name, table_name),
+            identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
             io=io,

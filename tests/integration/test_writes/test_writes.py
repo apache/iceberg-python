@@ -1295,3 +1295,17 @@ def test_rest_catalog_with_empty_catalog_name_append_data(session_catalog: Catal
     )
     tbl = _create_table(test_catalog, identifier, data=[])
     tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.lower.table_v1_with_null_nested_namespace"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+    # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
+    # that supports HEAD request on table endpoint
+
+    # assert session_catalog.table_exists(identifier)
+
+    # We expect no error here
+    session_catalog.drop_table(identifier)

@@ -289,7 +289,7 @@ class HiveCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(self.name, table.dbName, table.tableName),
+            identifier=(table.dbName, table.tableName),
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),
@@ -297,7 +297,7 @@ class HiveCatalog(MetastoreCatalog):
         )
 
     def _convert_iceberg_into_hive(self, table: Table) -> HiveTable:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(table.identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         current_time_millis = int(time.time() * 1000)
 
@@ -431,7 +431,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(
+        identifier_tuple = self._identifier_to_tuple_without_catalog(
             tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
         )
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
@@ -477,7 +477,7 @@ class HiveCatalog(MetastoreCatalog):
                     # Table does not exist, create it.
                     hive_table = self._convert_iceberg_into_hive(
                         StagedTable(
-                            identifier=(self.name, database_name, table_name),
+                            identifier=(database_name, table_name),
                             metadata=updated_staged_table.metadata,
                             metadata_location=updated_staged_table.metadata_location,
                             io=updated_staged_table.io,
@@ -509,7 +509,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
 
         with self._client as open_client:
@@ -526,7 +526,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         try:
             with self._client as open_client:
@@ -554,7 +554,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: When a table with the name does not exist.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
+        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
