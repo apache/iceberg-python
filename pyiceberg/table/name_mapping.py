@@ -334,7 +334,7 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
 
     def field(self, field: NestedField, field_partner: Optional[MappedField], field_result: IcebergType) -> IcebergType:
         if field_partner is None:
-            raise ValueError(f"Field missing from NameMapping: {field}")
+            raise ValueError(f"Field missing from NameMapping: {'.'.join(self.current_path)}")
 
         return NestedField(
             field_id=field_partner.field_id,
