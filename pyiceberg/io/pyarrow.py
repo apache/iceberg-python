@@ -2197,8 +2197,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
     row_group_size = property_as_int(
         properties=table_metadata.properties,
-        property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
-        default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
+        property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
+        default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
     )
 
     def write_parquet(task: WriteTask) -> DataFile:

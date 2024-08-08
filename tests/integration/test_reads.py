@@ -50,6 +50,7 @@ from pyiceberg.types import (
     BinaryType,
     BooleanType,
     IntegerType,
+    LongType,
     NestedField,
     StringType,
     TimestampType,
@@ -670,6 +671,40 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 
 
 @pytest.mark.integration
+def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
+    from pyiceberg.table import TableProperties
+
+    table_name = "default.test_small_row_groups"
+    try:
+        session_catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass  # Just to make sure that the table doesn't exist
+
+    tbl = session_catalog.create_table(
+        table_name,
+        Schema(
+            NestedField(1, "number", LongType()),
+        ),
+        properties={TableProperties.PARQUET_ROW_GROUP_LIMIT: "1"},
+    )
+
+    # Write 10 row groups, that should end up as 10 batches
+    entries = 10
+    tbl.append(
+        pa.Table.from_pylist(
+            [
+                {
+                    "number": number,
+                }
+                for number in range(entries)
+            ],
+        )
+    )
+
+    batches = list(tbl.scan().to_arrow_batch_reader())
+    assert len(batches) == entries
+
+
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
     identifier = "default.test_table_scan_default_to_large_types"
