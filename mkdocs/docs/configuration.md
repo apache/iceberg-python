@@ -28,14 +28,16 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                               | Options                           | Default | Description                                                                                 |
-| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`    | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.parquet.row-group-limit`   | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+| Key                                    | Options                           | Default | Description                                                                                 |
+| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
+| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+| `write.parquet.row-group-limit`        | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
 
 ### Table behavior options
 
