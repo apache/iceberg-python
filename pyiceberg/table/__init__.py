@@ -117,6 +117,7 @@ from pyiceberg.table.name_mapping import (
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
+    MetadataLogEntry,
     Operation,
     Snapshot,
     SnapshotLogEntry,
@@ -175,7 +176,7 @@ class TableProperties:
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
     PARQUET_ROW_GROUP_LIMIT = "write.parquet.row-group-limit"
-    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 128 * 1024 * 1024  # 128 MB
+    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 1048576
 
     PARQUET_PAGE_SIZE_BYTES = "write.parquet.page-size-bytes"
     PARQUET_PAGE_SIZE_BYTES_DEFAULT = 1024 * 1024  # 1 MB
@@ -225,6 +226,9 @@ class TableProperties:
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
     MANIFEST_MERGE_ENABLED_DEFAULT = False
+
+    METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
+    METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
 
 
 class Transaction:
@@ -1139,7 +1143,10 @@ def _(
 
 
 def update_table_metadata(
-    base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...], enforce_validation: bool = False
+    base_metadata: TableMetadata,
+    updates: Tuple[TableUpdate, ...],
+    enforce_validation: bool = False,
+    metadata_location: Optional[str] = None,
 ) -> TableMetadata:
     """Update the table metadata with the given updates in one transaction.
 
@@ -1147,6 +1154,7 @@ def update_table_metadata(
         base_metadata: The base metadata to be updated.
         updates: The updates in one transaction.
         enforce_validation: Whether to trigger validation after applying the updates.
+        metadata_location: Current metadata location of the table
 
     Returns:
         The metadata with the updates applied.
@@ -1158,13 +1166,46 @@ def update_table_metadata(
         new_metadata = _apply_table_update(update, new_metadata, context)
 
     # Update last_updated_ms if it was not updated by update operations
-    if context.has_changes() and base_metadata.last_updated_ms == new_metadata.last_updated_ms:
-        new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
+    if context.has_changes():
+        if metadata_location:
+            new_metadata = _update_table_metadata_log(new_metadata, metadata_location, base_metadata.last_updated_ms)
+        if base_metadata.last_updated_ms == new_metadata.last_updated_ms:
+            new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
     else:
         return new_metadata.model_copy(deep=True)
+
+
+def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: str, last_updated_ms: int) -> TableMetadata:
+    """
+    Update the metadata log of the table.
+
+    Args:
+        base_metadata: The base metadata to be updated.
+        metadata_location: Current metadata location of the table
+        last_updated_ms: The timestamp of the last update of table metadata
+
+    Returns:
+        The metadata with the updates applied to metadata-log.
+    """
+    max_metadata_log_entries = max(
+        1,
+        property_as_int(
+            base_metadata.properties,
+            TableProperties.METADATA_PREVIOUS_VERSIONS_MAX,
+            TableProperties.METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT,
+        ),  # type: ignore
+    )
+    previous_metadata_log = base_metadata.metadata_log
+    if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore
+        remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore
+        previous_metadata_log = base_metadata.metadata_log[remove_index:]
+    metadata_updates: Dict[str, Any] = {
+        "metadata_log": previous_metadata_log + [MetadataLogEntry(metadata_file=metadata_location, timestamp_ms=last_updated_ms)]
+    }
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 class ValidatableTableRequirement(IcebergBaseModel):

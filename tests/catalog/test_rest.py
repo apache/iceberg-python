@@ -24,7 +24,7 @@ from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
+from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -235,7 +235,7 @@ def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     )
     # pylint: disable=W0212
     assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{AUTH_URL: TEST_AUTH_URL})._session.headers[
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_AUTH_URL})._session.headers[
             "Authorization"
         ]
         == f"Bearer {TEST_TOKEN}"
@@ -419,7 +419,7 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces?parent=accounting",
-        json={"namespaces": [["tax"]]},
+        json={"namespaces": [["accounting", "tax"]]},
         status_code=200,
         request_headers=TEST_HEADERS,
     )

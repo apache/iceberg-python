@@ -1271,6 +1271,8 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     last_updated_ms = table.metadata.last_updated_ms
+    original_table_metadata_location = table.metadata_location
+    original_table_last_updated_ms = table.metadata.last_updated_ms
 
     assert catalog._parse_metadata_version(table.metadata_location) == 0
     assert table.metadata.current_schema_id == 0
@@ -1291,6 +1293,9 @@ def test_commit_table(catalog: SqlCatalog, table_schema_nested: Schema, table_id
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
     assert updated_table_metadata.last_updated_ms > last_updated_ms
+    assert len(updated_table_metadata.metadata_log) == 1
+    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
+    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
 
 
 @pytest.mark.parametrize(
@@ -1338,6 +1343,7 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_id
     assert table.metadata.snapshots[0].summary["added-records"] == "1"
     assert table.metadata.snapshots[0].summary["total-data-files"] == "1"
     assert table.metadata.snapshots[0].summary["total-records"] == "1"
+    assert len(table.metadata.metadata_log) == 1
 
     # read back the data
     assert df == table.scan().to_arrow()

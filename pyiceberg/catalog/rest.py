@@ -71,7 +71,8 @@ from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
-from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -120,6 +121,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
+OAUTH2_SERVER_URI = "oauth2-server-uri"
 HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
@@ -291,10 +293,37 @@ class RestCatalog(Catalog):
 
     @property
     def auth_url(self) -> str:
-        if url := self.properties.get(AUTH_URL):
+        if self.properties.get(AUTH_URL):
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message=f"The property {AUTH_URL} is deprecated. Please use {OAUTH2_SERVER_URI} instead",
+            )
+
+        self._warn_oauth_tokens_deprecation()
+
+        if url := get_first_property_value(self.properties, AUTH_URL, OAUTH2_SERVER_URI):
             return url
         else:
             return self.url(Endpoints.get_token, prefixed=False)
+
+    def _warn_oauth_tokens_deprecation(self) -> None:
+        has_oauth_server_uri = OAUTH2_SERVER_URI in self.properties
+        has_credential = CREDENTIAL in self.properties
+        has_init_token = TOKEN in self.properties
+        has_sigv4_enabled = property_as_bool(self.properties, SIGV4, False)
+
+        if not has_oauth_server_uri and (has_init_token or has_credential) and not has_sigv4_enabled:
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="1.0.0",
+                help_message="Iceberg REST client is missing the OAuth2 server URI "
+                f"configuration and defaults to {self.uri}{Endpoints.get_token}. "
+                "This automatic fallback will be removed in a future Iceberg release."
+                f"It is recommended to configure the OAuth2 endpoint using the '{OAUTH2_SERVER_URI}'"
+                "property to be prepared. This warning will disappear if the OAuth2"
+                "endpoint is explicitly configured. See https://github.com/apache/iceberg/issues/10537",
+            )
 
     def _extract_optional_oauth_params(self) -> Dict[str, str]:
         optional_oauth_param = {SCOPE: self.properties.get(SCOPE) or CATALOG_SCOPE}
@@ -758,8 +787,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
 
-        namespaces = ListNamespaceResponse(**response.json())
-        return [namespace_tuple + child_namespace for child_namespace in namespaces.namespaces]
+        return ListNamespaceResponse(**response.json()).namespaces
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:

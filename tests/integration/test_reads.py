@@ -40,12 +40,17 @@ from pyiceberg.expressions import (
     NotEqualTo,
     NotNaN,
 )
-from pyiceberg.io.pyarrow import pyarrow_to_schema
+from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
+from pyiceberg.io.pyarrow import (
+    pyarrow_to_schema,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
     IntegerType,
+    LongType,
     NestedField,
     StringType,
     TimestampType,
@@ -663,3 +668,126 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
 
         table.transaction().set_properties(lock="xxx").commit_transaction()
         assert table.properties.get("lock") == "xxx"
+
+
+@pytest.mark.integration
+def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
+    from pyiceberg.table import TableProperties
+
+    table_name = "default.test_small_row_groups"
+    try:
+        session_catalog.drop_table(table_name)
+    except NoSuchTableError:
+        pass  # Just to make sure that the table doesn't exist
+
+    tbl = session_catalog.create_table(
+        table_name,
+        Schema(
+            NestedField(1, "number", LongType()),
+        ),
+        properties={TableProperties.PARQUET_ROW_GROUP_LIMIT: "1"},
+    )
+
+    # Write 10 row groups, that should end up as 10 batches
+    entries = 10
+    tbl.append(
+        pa.Table.from_pylist(
+            [
+                {
+                    "number": number,
+                }
+                for number in range(entries)
+            ],
+        )
+    )
+
+    batches = list(tbl.scan().to_arrow_batch_reader())
+    assert len(batches) == entries
+
+
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_default_to_large_types"
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array(["a", "b", "c"]),
+            pa.array(["a", "b", "c"]),
+            pa.array([b"a", b"b", b"c"]),
+            pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
+        ],
+        names=["string", "string-to-binary", "binary", "list"],
+    )
+
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=arrow_table.schema,
+    )
+
+    tbl.append(arrow_table)
+
+    with tbl.update_schema() as update_schema:
+        update_schema.update_column("string-to-binary", BinaryType())
+
+    result_table = tbl.scan().to_arrow()
+
+    expected_schema = pa.schema([
+        pa.field("string", pa.large_string()),
+        pa.field("string-to-binary", pa.large_binary()),
+        pa.field("binary", pa.large_binary()),
+        pa.field("list", pa.large_list(pa.large_string())),
+    ])
+    assert result_table.schema.equals(expected_schema)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_override_with_small_types"
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array(["a", "b", "c"]),
+            pa.array(["a", "b", "c"]),
+            pa.array([b"a", b"b", b"c"]),
+            pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
+        ],
+        names=["string", "string-to-binary", "binary", "list"],
+    )
+
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=arrow_table.schema,
+    )
+
+    tbl.append(arrow_table)
+
+    with tbl.update_schema() as update_schema:
+        update_schema.update_column("string-to-binary", BinaryType())
+
+    tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
+    result_table = tbl.scan().to_arrow()
+
+    expected_schema = pa.schema([
+        pa.field("string", pa.string()),
+        pa.field("string-to-binary", pa.binary()),
+        pa.field("binary", pa.binary()),
+        pa.field("list", pa.list_(pa.string())),
+    ])
+    assert result_table.schema.equals(expected_schema)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_empty_scan_ordered_str(catalog: Catalog) -> None:
+    table_empty_scan_ordered_str = catalog.load_table("default.test_empty_scan_ordered_str")
+    arrow_table = table_empty_scan_ordered_str.scan(EqualTo("id", "b")).to_arrow()
+    assert len(arrow_table) == 0

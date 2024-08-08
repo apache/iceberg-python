@@ -766,11 +766,11 @@ class MetastoreCatalog(Catalog, ABC):
 
         for property_name in DEPRECATED_PROPERTY_NAMES:
             if self.properties.get(property_name):
-                deprecated(
+                deprecation_message(
                     deprecated_in="0.7.0",
                     removed_in="0.8.0",
                     help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
-                )(lambda: None)()
+                )
 
     def create_table_transaction(
         self,
@@ -862,6 +862,7 @@ class MetastoreCatalog(Catalog, ABC):
             base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
             updates=table_request.updates,
             enforce_validation=current_table is None,
+            metadata_location=current_table.metadata_location if current_table else None,
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0

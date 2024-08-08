@@ -28,14 +28,16 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                               | Options                           | Default | Description                                                                                 |
-| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`    | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.parquet.row-group-limit`   | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+| Key                                    | Options                           | Default | Description                                                                                 |
+| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
+| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+| `write.parquet.row-group-limit`        | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
 
 ### Table behavior options
 
@@ -137,6 +139,16 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-enable-->
 
+### PyArrow
+
+<!-- markdown-link-check-disable -->
+
+| Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
+
+<!-- markdown-link-check-enable-->
+
 ## Catalogs
 
 PyIceberg currently has native catalog type support for REST, SQL, Hive, Glue and DynamoDB.
@@ -186,19 +198,19 @@ catalog:
 
 <!-- markdown-link-check-disable -->
 
-| Key                    | Example                          | Description                                                                                        |
-| ---------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                    | https://rest-catalog/ws          | URI identifying the REST Server                                                                    |
-| ugi                    | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential             | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token                  | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
-| scope                  | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
-| resource               | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
-| audience               | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled     | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region    | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name      | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| rest.authorization-url | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| uri                 | https://rest-catalog/ws          | URI identifying the REST Server                                                                    |
+| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
+| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
+| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+| oauth2-server-uri   | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
 
 <!-- markdown-link-check-enable-->
 
