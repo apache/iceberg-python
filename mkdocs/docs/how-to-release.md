@@ -38,6 +38,16 @@ For example, the API with the following deprecation tag should be removed when p
 )
 ```
 
+We also have the `deprecation_message` function. We need to change the behavior according to what is noted in the message of that deprecation.
+
+```python
+deprecation_message(
+    deprecated_in="0.1.0",
+    removed_in="0.2.0",
+    help_message="The old_property is deprecated. Please use the something_else property instead.",
+)
+```
+
 ## Running a release candidate
 
 Make sure that the version is correct in `pyproject.toml` and `pyiceberg/__init__.py`. Correct means that it reflects the version that you want to release.
