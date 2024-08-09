@@ -67,6 +67,8 @@ from pyiceberg.io import (
     S3_REGION,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SIGNER_ENDPOINT,
+    S3_SIGNER_ENDPOINT_DEFAULT_VALUE,
     S3_SIGNER_URI,
     ADLFS_ClIENT_SECRET,
     FileIO,
@@ -86,6 +88,8 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
         raise SignError("Signer set, but token is not available")
 
     signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
+    signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT_VALUE)
+
     signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
     signer_body = {
         "method": request.method,
@@ -94,7 +98,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
         "headers": {key: [val] for key, val in request.headers.items()},
     }
 
-    response = requests.post(f"{signer_url}/v1/aws/s3/sign", headers=signer_headers, json=signer_body)
+    response = requests.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
     try:
         response.raise_for_status()
         response_json = response.json()
