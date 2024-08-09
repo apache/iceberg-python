@@ -84,7 +84,7 @@ For the FileIO there are several configuration options available:
 | s3.session-token     | AQoDYXdzEJr...           | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.signer            | bearer                   | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
 | s3.signer.uri        | http://my.signer:8080/s3 | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.singer.uri>/v1/aws/s3/sign`.                                                                |
-| s3.signer.endpoint   | v1/main/s3-sign          | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.singer.uri>/<s3.singer.endpoint>`. Default to v1/aws/s3/sign`.                                                             |
+| s3.signer.endpoint   | v1/main/s3-sign          | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.singer.uri>/<s3.singer.endpoint>`. Default to v1/aws/s3/sign\`.                                                           |
 | s3.region            | us-west-2                | Sets the region of the bucket                                                                                                                                                                                                                             |
 | s3.proxy-uri         | http://my.proxy.com:8080 | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                     | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
@@ -199,19 +199,20 @@ catalog:
 
 <!-- markdown-link-check-disable -->
 
-| Key                 | Example                          | Description                                                                                        |
-| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                 | https://rest-catalog/ws          | URI identifying the REST Server                                                                    |
-| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
-| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
-| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
-| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| oauth2-server-uri   | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| Key                 | Example                          | Description                                                                                                                                                                                             |
+| ------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| uri                 | https://rest-catalog/ws          | URI identifying the REST Server                                                                                                                                                                         |
+| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                                                                                                                             |
+| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                                                                                                                              |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                                                                                                                                    |
+| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                                                                                                                       |
+| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                                                                                                                                  |
+| audience            | rest_catalog                     | Logical name of target resource or service                                                                                                                                                              |
+| access_delegation   | remote-signing                   | A comma-separated list of access mechanisms to signal the server that the client supports delegated access. It will to be sended in `X-Iceberg-Access-Delegation` header. (default: vended-credentials) |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                                                                                                                               |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                                                                                                                          |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                                                                                                                            |
+| oauth2-server-uri   | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens')                                                                                                      |
 
 <!-- markdown-link-check-enable-->
 
