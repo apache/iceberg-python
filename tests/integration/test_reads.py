@@ -700,9 +700,37 @@ def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
     batches = list(tbl.scan().to_arrow_batch_reader())
     assert len(batches) == entries
 
-
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_empty_scan_ordered_str(catalog: Catalog) -> None:
     table_empty_scan_ordered_str = catalog.load_table("default.test_empty_scan_ordered_str")
     arrow_table = table_empty_scan_ordered_str.scan(EqualTo("id", "b")).to_arrow()
     assert len(arrow_table) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_table_scan_empty_table(catalog: Catalog) -> None:
+    identifier = "default.test_table_scan_empty_table"
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array([]),
+        ],
+        schema=pa.schema([pa.field("colA", pa.string())]),
+    )
+
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=arrow_table.schema,
+    )
+
+    tbl.append(arrow_table)
+
+    result_table = tbl.scan().to_arrow()
+
+    assert len(result_table) == 0
