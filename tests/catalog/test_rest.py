@@ -57,6 +57,7 @@ TEST_HEADERS = {
     "X-Client-Version": "0.14.1",
     "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
     "Authorization": f"Bearer {TEST_TOKEN}",
+    "X-Iceberg-Access-Delegation": "vended-credentials",
 }
 OAUTH_TEST_HEADERS = {
     "Content-type": "application/x-www-form-urlencoded",
@@ -646,6 +647,30 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    actual = catalog.load_table(("fokko", "table"))
+    expected = Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    # First compare the dicts
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_load_table_honor_access_delegation(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]
+) -> None:
+    test_headers_with_remote_signing = {**TEST_HEADERS, "X-Iceberg-Access-Delegation": "remote-signing"}
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=test_headers_with_remote_signing,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, access_delegation="remote-signing")
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
         identifier=("fokko", "table"),
