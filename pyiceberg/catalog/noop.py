@@ -113,3 +113,6 @@ class NoopCatalog(Catalog):
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
