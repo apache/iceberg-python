@@ -57,6 +57,7 @@ from pyiceberg.io import (
     GCS_ENDPOINT,
     GCS_PROJECT_ID,
     GCS_REQUESTER_PAYS,
+    GCS_SERVICE_HOST,
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_VERSION_AWARE,
@@ -76,6 +77,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
+from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 logger = logging.getLogger(__name__)
@@ -158,6 +160,14 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
 
+    if (endpoint := properties.get(GCS_ENDPOINT)) and GCS_SERVICE_HOST not in properties:
+        deprecated(
+            deprecated_in="0.8.0",
+            removed_in="0.9.0",
+            help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+        )(lambda: None)()
+        properties[GCS_SERVICE_HOST] = endpoint
+
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
@@ -166,7 +176,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
         session_kwargs=json.loads(properties.get(GCS_SESSION_KWARGS, "{}")),
-        endpoint_url=properties.get(GCS_ENDPOINT),
+        endpoint_url=properties.get(GCS_SERVICE_HOST),
         default_location=properties.get(GCS_DEFAULT_LOCATION),
         version_aware=property_as_bool(properties, GCS_VERSION_AWARE, False),
     )
