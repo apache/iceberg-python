@@ -135,9 +135,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if signer := properties.get("s3.signer"):
         logger.info("Loading signer %s", signer)
-        if singer_func := SIGNERS.get(signer):
-            singer_func_with_properties = partial(singer_func, properties)
-            register_events["before-sign.s3"] = singer_func_with_properties
+        if signer_func := SIGNERS.get(signer):
+            signer_func_with_properties = partial(signer_func, properties)
+            register_events["before-sign.s3"] = signer_func_with_properties
 
             # Disable the AWS Signer
             config_kwargs["signature_version"] = UNSIGNED
