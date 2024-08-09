@@ -38,12 +38,13 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import In
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import IntegerType, LongType, NestedField
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType
 from utils import _create_table
 
 
@@ -1293,3 +1294,41 @@ def test_rest_catalog_with_empty_catalog_name_append_data(session_catalog: Catal
     )
     tbl = _create_table(test_catalog, identifier, data=[])
     tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.lower.table_v1_with_null_nested_namespace"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+    # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
+    # that supports HEAD request on table endpoint
+
+    # assert session_catalog.table_exists(identifier)
+
+    # We expect no error here
+    session_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_overwrite_all_data_with_filter(session_catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", StringType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+
+    data = pa.Table.from_pylist(
+        [
+            {"id": "1", "name": "Amsterdam"},
+            {"id": "2", "name": "San Francisco"},
+            {"id": "3", "name": "Drachten"},
+        ],
+        schema=schema.as_arrow(),
+    )
+
+    identifier = "default.test_overwrite_all_data_with_filter"
+    tbl = _create_table(session_catalog, identifier, data=[data], schema=schema)
+    tbl.overwrite(data, In("id", ["1", "2", "3"]))
+
+    assert len(tbl.scan().to_arrow()) == 3

@@ -622,7 +622,9 @@ class Transaction:
                 filtered_df = df.filter(preserve_row_filter)
 
                 # Only rewrite if there are records being deleted
-                if len(df) != len(filtered_df):
+                if len(filtered_df) == 0:
+                    replaced_files.append((original_file.file, []))
+                elif len(df) != len(filtered_df):
                     replaced_files.append((
                         original_file.file,
                         list(
