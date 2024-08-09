@@ -1206,3 +1206,13 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_table_update_have_corresponding_dispatch() -> None:
+    from pyiceberg.table import TableUpdate, _apply_table_update
+
+    # every TableUpdate class should have corresponding `_apply_table_update` dispatch function
+    table_update_class = set(TableUpdate.__origin__.__args__)  # type: ignore
+    dispatch_function_class = set(_apply_table_update.registry.keys())
+    missing_dispatch_function = table_update_class - dispatch_function_class
+    assert len(missing_dispatch_function) == 0, f"Missing dispatch function for {missing_dispatch_function}"
