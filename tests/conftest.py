@@ -111,23 +111,23 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--s3.secret-access-key", action="store", default="password", help="The AWS secret access key ID for tests marked as s3"
     )
-    # ADLFS options
+    # ADLS options
     # Azurite provides default account name and key.  Those can be customized using env variables.
     # For more information, see README file at https://github.com/azure/azurite#default-storage-account
     parser.addoption(
-        "--adlfs.endpoint",
+        "--adls.endpoint",
         action="store",
         default="http://127.0.0.1:10000",
-        help="The ADLS endpoint URL for tests marked as adlfs",
+        help="The ADLS endpoint URL for tests marked as adls",
     )
     parser.addoption(
-        "--adlfs.account-name", action="store", default="devstoreaccount1", help="The ADLS account key for tests marked as adlfs"
+        "--adls.account-name", action="store", default="devstoreaccount1", help="The ADLS account key for tests marked as adls"
     )
     parser.addoption(
-        "--adlfs.account-key",
+        "--adls.account-key",
         action="store",
         default="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-        help="The ADLS secret account key for tests marked as adlfs",
+        help="The ADLS secret account key for tests marked as adls",
     )
     parser.addoption(
         "--gcs.endpoint", action="store", default="http://0.0.0.0:4443", help="The GCS endpoint URL for tests marked gcs"
@@ -1958,13 +1958,13 @@ def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, No
 def adlfs_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
     from azure.storage.blob import BlobServiceClient
 
-    azurite_url = request.config.getoption("--adlfs.endpoint")
-    azurite_account_name = request.config.getoption("--adlfs.account-name")
-    azurite_account_key = request.config.getoption("--adlfs.account-key")
+    azurite_url = request.config.getoption("--adls.endpoint")
+    azurite_account_name = request.config.getoption("--adls.account-name")
+    azurite_account_key = request.config.getoption("--adls.account-key")
     azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
     properties = {
-        "adlfs.connection-string": azurite_connection_string,
-        "adlfs.account-name": azurite_account_name,
+        "adls.connection-string": azurite_connection_string,
+        "adls.account-name": azurite_account_name,
     }
 
     bbs = BlobServiceClient.from_connection_string(conn_str=azurite_connection_string)
