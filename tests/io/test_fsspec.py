@@ -767,7 +767,7 @@ def test_s3v4_rest_signer_endpoint(requests_mock: Mocker) -> None:
         "retries": {"attempt": 1, "invocation-id": "75d143fb-0219-439b-872c-18213d1c8d54"},
     }
 
-    signed_request = s3v4_rest_signer({"token": "abc", "uri": TEST_URI, "endpoint": endpoint}, request)
+    signed_request = s3v4_rest_signer({"token": "abc", "uri": TEST_URI, "s3.signer.endpoint": endpoint}, request)
 
     assert signed_request.url == new_uri
     assert dict(signed_request.headers) == {
