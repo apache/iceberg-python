@@ -100,7 +100,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
         "headers": {key: [val] for key, val in request.headers.items()},
     }
 
-    response = requests.post(f"{signer_url}/{signer_endpoint.lstrip()}", headers=signer_headers, json=signer_body)
+    response = requests.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
     try:
         response.raise_for_status()
         response_json = response.json()
