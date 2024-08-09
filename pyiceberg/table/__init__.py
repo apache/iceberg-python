@@ -1110,6 +1110,23 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if (existing_ref := base_metadata.refs.get(update.ref_name, None)) is None:
+        return base_metadata
+
+    if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
+        raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
+
+    if update.ref_name == MAIN_BRANCH:
+        raise ValueError("Cannot remove main branch")
+
+    metadata_refs = {**base_metadata.refs}
+    metadata_refs.pop(update.ref_name, None)
+    context.add_update(update)
+    return base_metadata.model_copy(update={"refs": metadata_refs})
+
+
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
@@ -2140,6 +2157,30 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
+        """Remove a snapshot ref.
+
+        Args:
+            ref_name: branch / tag name to remove
+
+        Stages the updates and requirements for the remove-snapshot-ref.
+
+        Returns
+            This method for chaining
+        """
+        updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self._transaction.table_metadata.refs[ref_name].snapshot_id
+                if ref_name in self._transaction.table_metadata.refs
+                else None,
+                ref=ref_name,
+            ),
+        )
+        self._updates += updates
+        self._requirements += requirements
+        return self
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -2161,6 +2202,18 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates += update
         self._requirements += requirement
         return self
+
+    def remove_tag(self, tag_name: str) -> ManageSnapshots:
+        """
+        Remove a tag.
+
+        Args:
+            tag_name (str): name of tag to remove
+
+        Returns:
+            This for method chaining
+        """
+        return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
         self,
@@ -2193,6 +2246,17 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates += update
         self._requirements += requirement
         return self
+
+    def remove_branch(self, branch_name: str) -> ManageSnapshots:
+        """
+        Remove a branch.
+
+        Args:
+            branch_name (str): name of branch to remove
+        Returns:
+            This for method chaining
+        """
+        return self._remove_ref_snapshot(ref_name=branch_name)
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
