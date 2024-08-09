@@ -1205,9 +1205,11 @@ def _task_to_record_batches(
             columns=[col.name for col in file_project_schema.columns],
         )
 
-        current_index = 0
+        next_index = 0
         batches = fragment_scanner.to_batches()
         for batch in batches:
+            next_index = next_index + len(batch)
+            current_index = next_index - len(batch)
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
@@ -1219,9 +1221,10 @@ def _task_to_record_batches(
                     # https://github.com/apache/arrow/issues/39220
                     arrow_table = pa.Table.from_batches([batch])
                     arrow_table = arrow_table.filter(pyarrow_filter)
+                    if len(arrow_table) == 0:
+                        continue
                     batch = arrow_table.to_batches()[0]
             yield _to_requested_schema(projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True)
-            current_index += len(batch)
 
 
 def _task_to_table(
