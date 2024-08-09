@@ -20,11 +20,12 @@ from pyiceberg.schema import Schema
 from pyiceberg.table.name_mapping import (
     MappedField,
     NameMapping,
+    apply_name_mapping,
     create_mapping_from_schema,
     parse_mapping_from_json,
     update_mapping,
 )
-from pyiceberg.types import NestedField, StringType
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, MapType, NestedField, StringType, StructType
 
 
 @pytest.fixture(scope="session")
@@ -321,3 +322,52 @@ def test_update_mapping(table_name_mapping_nested: NameMapping) -> None:
         MappedField(field_id=18, names=["add_18"]),
     ])
     assert update_mapping(table_name_mapping_nested, updates, adds) == expected
+
+
+def test_mapping_using_by_visitor(table_schema_nested: Schema, table_name_mapping_nested: NameMapping) -> None:
+    schema_without_ids = Schema(
+        NestedField(field_id=0, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=0, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=0, name="baz", field_type=BooleanType(), required=False),
+        NestedField(
+            field_id=0,
+            name="qux",
+            field_type=ListType(element_id=0, element_type=StringType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=0,
+            name="quux",
+            field_type=MapType(
+                key_id=0,
+                key_type=StringType(),
+                value_id=0,
+                value_type=MapType(key_id=0, key_type=StringType(), value_id=0, value_type=IntegerType(), value_required=True),
+                value_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=0,
+            name="location",
+            field_type=ListType(
+                element_id=0,
+                element_type=StructType(
+                    NestedField(field_id=0, name="latitude", field_type=FloatType(), required=False),
+                    NestedField(field_id=0, name="longitude", field_type=FloatType(), required=False),
+                ),
+                element_required=True,
+            ),
+            required=True,
+        ),
+        NestedField(
+            field_id=0,
+            name="person",
+            field_type=StructType(
+                NestedField(field_id=0, name="name", field_type=StringType(), required=False),
+                NestedField(field_id=0, name="age", field_type=IntegerType(), required=True),
+            ),
+            required=False,
+        ),
+    )
+    assert apply_name_mapping(schema_without_ids, table_name_mapping_nested).fields == table_schema_nested.fields
