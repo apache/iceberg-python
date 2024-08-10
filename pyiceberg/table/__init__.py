@@ -621,6 +621,24 @@ class Transaction:
         if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
             warnings.warn("Delete operation did not match any records")
 
+    def has_duplicates(self, file_paths: List[str]) -> bool:
+        unique_files = set(file_paths)
+        return len(unique_files) != len(file_paths)
+
+    def find_referenced_files(self, file_paths: List[str]) -> list[str]:
+        referenced_files = set()
+        if self._table.current_snapshot():
+            current_snapshot = self._table.current_snapshot()
+
+            # Retrieve the manifests from the current snapshot
+            manifests = current_snapshot.manifests(self._table.io)
+
+            for manifest in manifests:
+                for manifest_entry in manifest.fetch_manifest_entry(io=self._table.io):
+                    if manifest_entry.data_file.file_path in file_paths:
+                        referenced_files.add(manifest_entry.data_file.file_path)
+        return list(referenced_files)
+
     def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
@@ -630,7 +648,15 @@ class Transaction:
 
         Raises:
             FileNotFoundError: If the file does not exist.
+            ValueError: Raises a ValueError in case file_paths is not unique
+            ValueError: Raises a ValueError in case file already referenced in table
         """
+        if self.has_duplicates(file_paths):
+            raise ValueError("File paths must be unique")
+        referenced_files = self.find_referenced_files(file_paths)
+        if referenced_files:
+            raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
+
         if self.table_metadata.name_mapping() is None:
             self.set_properties(**{
                 TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()
