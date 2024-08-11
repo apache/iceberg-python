@@ -244,6 +244,51 @@ def test_pyarrow_limit(catalog: Catalog) -> None:
     full_result = table_test_limit.scan(selected_fields=("idx",), limit=999).to_arrow()
     assert len(full_result) == 10
 
+    # test `to_arrow_batch_reader`
+    limited_result = table_test_limit.scan(selected_fields=("idx",), limit=1).to_arrow_batch_reader().read_all()
+    assert len(limited_result) == 1
+
+    empty_result = table_test_limit.scan(selected_fields=("idx",), limit=0).to_arrow_batch_reader().read_all()
+    assert len(empty_result) == 0
+
+    full_result = table_test_limit.scan(selected_fields=("idx",), limit=999).to_arrow_batch_reader().read_all()
+    assert len(full_result) == 10
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
+    table_name = "default.test_pyarrow_limit_with_multiple_files"
+    try:
+        catalog.drop_table(table_name)
+    except:
+        pass
+    reference_table = catalog.load_table("default.test_limit")
+    data = reference_table.scan().to_arrow()
+    table_test_limit = catalog.create_table(table_name, schema=reference_table.schema())
+    table_test_limit.append(data)
+    table_test_limit.append(data)
+    assert len(table_test_limit.inspect.files()) == 2
+
+    # # test with multiple files
+    limited_result = table_test_limit.scan(selected_fields=("idx",), limit=1).to_arrow()
+    assert len(limited_result) == 1
+
+    empty_result = table_test_limit.scan(selected_fields=("idx",), limit=0).to_arrow()
+    assert len(empty_result) == 0
+
+    full_result = table_test_limit.scan(selected_fields=("idx",), limit=999).to_arrow()
+    assert len(full_result) == 10 * 2
+
+    # test `to_arrow_batch_reader`
+    limited_result = table_test_limit.scan(selected_fields=("idx",), limit=1).to_arrow_batch_reader().read_all()
+    assert len(limited_result) == 1
+
+    empty_result = table_test_limit.scan(selected_fields=("idx",), limit=0).to_arrow_batch_reader().read_all()
+    assert len(empty_result) == 0
+
+    full_result = table_test_limit.scan(selected_fields=("idx",), limit=999).to_arrow_batch_reader().read_all()
+    assert len(full_result) == 10 * 2
+
 
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore")
