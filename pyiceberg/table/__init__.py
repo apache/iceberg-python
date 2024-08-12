@@ -621,13 +621,6 @@ class Transaction:
         if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
             warnings.warn("Delete operation did not match any records")
 
-    def find_referenced_files(self, file_paths: List[str]) -> list[str]:
-        import pyarrow.compute as pc
-
-        expr = pc.field("file_path").isin(file_paths)
-        referenced_files = self._table.inspect.files().filter(expr)
-        return [file["file_path"] for file in referenced_files.to_pylist()]
-
     def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
@@ -643,7 +636,11 @@ class Transaction:
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
 
-        referenced_files = self.find_referenced_files(file_paths)
+        import pyarrow.compute as pc
+
+        expr = pc.field("file_path").isin(file_paths)
+        referenced_files = [file["file_path"] for file in self._table.inspect.files().filter(expr).to_pylist()]
+
         if referenced_files:
             raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
