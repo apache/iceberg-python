@@ -68,7 +68,7 @@ from pyiceberg.io import (
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     S3_SIGNER_ENDPOINT,
-    S3_SIGNER_ENDPOINT_DEFAULT_VALUE,
+    S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
     ADLFS_ClIENT_SECRET,
     FileIO,
@@ -88,7 +88,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
         raise SignError("Signer set, but token is not available")
 
     signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
-    signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT_VALUE)
+    signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
     signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
     signer_body = {
@@ -135,9 +135,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if signer := properties.get("s3.signer"):
         logger.info("Loading signer %s", signer)
-        if singer_func := SIGNERS.get(signer):
-            singer_func_with_properties = partial(singer_func, properties)
-            register_events["before-sign.s3"] = singer_func_with_properties
+        if signer_func := SIGNERS.get(signer):
+            signer_func_with_properties = partial(signer_func, properties)
+            register_events["before-sign.s3"] = signer_func_with_properties
 
             # Disable the AWS Signer
             config_kwargs["signature_version"] = UNSIGNED
