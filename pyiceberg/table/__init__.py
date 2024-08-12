@@ -621,23 +621,12 @@ class Transaction:
         if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
             warnings.warn("Delete operation did not match any records")
 
-    def has_duplicates(self, file_paths: List[str]) -> bool:
-        unique_files = set(file_paths)
-        return len(unique_files) != len(file_paths)
-
     def find_referenced_files(self, file_paths: List[str]) -> list[str]:
-        referenced_files = set()
-        if self._table.current_snapshot():
-            current_snapshot = self._table.current_snapshot()
+        import pyarrow.compute as pc
 
-            # Retrieve the manifests from the current snapshot
-            manifests = current_snapshot.manifests(self._table.io)
-
-            for manifest in manifests:
-                for manifest_entry in manifest.fetch_manifest_entry(io=self._table.io):
-                    if manifest_entry.data_file.file_path in file_paths:
-                        referenced_files.add(manifest_entry.data_file.file_path)
-        return list(referenced_files)
+        expr = pc.field("file_path").isin(file_paths)
+        referenced_files = self._table.inspect.files().filter(expr)
+        return [file["file_path"] for file in referenced_files.to_pylist()]
 
     def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -648,11 +637,12 @@ class Transaction:
 
         Raises:
             FileNotFoundError: If the file does not exist.
-            ValueError: Raises a ValueError in case file_paths is not unique
-            ValueError: Raises a ValueError in case file already referenced in table
+            ValueError: Raises a ValueError given file_paths contains duplicate files
+            ValueError: Raises a ValueError given file_paths already referenced by table
         """
-        if self.has_duplicates(file_paths):
+        if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
+
         referenced_files = self.find_referenced_files(file_paths)
         if referenced_files:
             raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
@@ -2296,7 +2286,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
+            # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
