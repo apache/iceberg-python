@@ -77,7 +77,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 logger = logging.getLogger(__name__)
