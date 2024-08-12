@@ -805,4 +805,3 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
     ).collect()
 
     assert [row.added_data_files_count for row in rows] == [5, 1, 5]
-
