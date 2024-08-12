@@ -1455,6 +1455,9 @@ def project_batches(
     total_row_count = 0
 
     for task in tasks:
+        # stop early if limit is satisfied
+        if limit is not None and total_row_count >= limit:
+            break
         batches = _task_to_record_batches(
             fs,
             task,
@@ -1468,9 +1471,10 @@ def project_batches(
         )
         for batch in batches:
             if limit is not None:
-                if total_row_count + len(batch) >= limit:
-                    yield batch.slice(0, limit - total_row_count)
+                if total_row_count >= limit:
                     break
+                elif total_row_count + len(batch) >= limit:
+                    batch = batch.slice(0, limit - total_row_count)
             yield batch
             total_row_count += len(batch)
 
