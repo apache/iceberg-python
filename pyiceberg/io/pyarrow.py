@@ -1369,18 +1369,18 @@ class PyArrowProjector:
     def project_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
         deletes_per_file = _read_all_delete_files(self._fs, tasks)
         executor = ExecutorFactory.get_or_create()
+
+        def _project_table_from_scan_task(task: FileScanTask) -> pa.Table:
+            batches = list(self._project_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
+            if len(batches) > 0:
+                return pa.Table.from_batches(batches)
+            else:
+                return None
+
         futures = [
             executor.submit(
-                _task_to_table,
-                self._fs,
+                _project_table_from_scan_task,
                 task,
-                self._bound_row_filter,
-                self._projected_schema,
-                self._projected_field_ids,
-                deletes_per_file.get(task.file.file_path),
-                self._case_sensitive,
-                self._table_metadata.name_mapping(),
-                self._use_large_types,
             )
             for task in tasks
         ]
@@ -1414,6 +1414,11 @@ class PyArrowProjector:
 
     def project_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
         deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        return self._project_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+
+    def _project_batches_from_scan_tasks_and_deletes(
+        self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
+    ) -> Iterator[pa.RecordBatch]:
         limit = self._limit
         for task in tasks:
             batches = _task_to_record_batches(
