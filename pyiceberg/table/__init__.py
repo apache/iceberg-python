@@ -1648,7 +1648,9 @@ class Table:
         with self.transaction() as tx:
             tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def add_files(
+        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+    ) -> None:
         """
         Shorthand API for adding files as data files to the table.
 
@@ -1659,7 +1661,9 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         with self.transaction() as tx:
-            tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
+            tx.add_files(
+                file_paths=file_paths, snapshot_properties=snapshot_properties, check_duplicate_files=check_duplicate_files
+            )
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)

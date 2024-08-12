@@ -776,3 +776,33 @@ def test_add_files_that_referenced_by_current_snapshot(
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=[referenced_file])
     assert f"Cannot add files that are already referenced by table, files: {referenced_file}" in str(exc_info.value)
+
+
+@pytest.mark.integration
+def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_files_false(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.test_table_add_referenced_file_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
+    referenced_file = f"s3://warehouse/default/unpartitioned/v{format_version}/test-1.parquet"
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+    tbl.add_files(file_paths=[referenced_file], check_duplicate_files=False)
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    assert [row.added_data_files_count for row in rows] == [5, 1, 5]
+
