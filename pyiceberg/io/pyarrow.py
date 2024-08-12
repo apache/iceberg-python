@@ -108,6 +108,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    _parse_location,
 )
 from pyiceberg.manifest import (
     DataFile,
@@ -1199,7 +1200,7 @@ def _task_to_record_batches(
     name_mapping: Optional[NameMapping] = None,
     use_large_types: bool = True,
 ) -> Iterator[pa.RecordBatch]:
-    _, _, path = PyArrowFileIO.parse_location(task.file.file_path)
+    _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
     with fs.open_input_file(path) as fin:
         fragment = arrow_format.make_fragment(fin)
@@ -1306,6 +1307,133 @@ def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dic
                     deletes_per_file[file] = [arr]
 
     return deletes_per_file
+
+
+def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
+    scheme, netloc, _ = _parse_location(file_path)
+    if isinstance(io, PyArrowFileIO):
+        return io.fs_by_scheme(scheme, netloc)
+    else:
+        try:
+            from pyiceberg.io.fsspec import FsspecFileIO
+
+            if isinstance(io, FsspecFileIO):
+                from pyarrow.fs import PyFileSystem
+
+                return PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
+            else:
+                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
+        except ModuleNotFoundError as e:
+            # When FsSpec is not installed
+            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
+
+
+class PyArrowProjector:
+    _table_metadata: TableMetadata
+    _io: FileIO
+    _fs: FileSystem
+    _projected_schema: Schema
+    _bound_row_filter: BooleanExpression
+    _case_sensitive: bool
+    _limit: Optional[int]
+
+    def __init__(
+        self,
+        table_metadata: TableMetadata,
+        io: FileIO,
+        projected_schema: Schema,
+        row_filter: BooleanExpression,
+        case_sensitive: bool = True,
+        limit: Optional[int] = None,
+    ) -> None:
+        self._table_metadata = table_metadata
+        self._io = io
+        self._fs = _fs_from_file_path(table_metadata.location, io)  # TODO: use different FileSystem per file
+        self._projected_schema = projected_schema
+        self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+        self._case_sensitive = case_sensitive
+        self._limit = limit
+
+    @property
+    def _use_large_types(self) -> bool:
+        return property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
+
+    @property
+    def _projected_field_ids(self) -> Set[int]:
+        return {
+            id
+            for id in self._projected_schema.field_ids
+            if not isinstance(self._projected_schema.find_type(id), (MapType, ListType))
+        }.union(extract_field_ids(self._bound_row_filter))
+
+    def project_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
+        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        executor = ExecutorFactory.get_or_create()
+        futures = [
+            executor.submit(
+                _task_to_table,
+                self._fs,
+                task,
+                self._bound_row_filter,
+                self._projected_schema,
+                self._projected_field_ids,
+                deletes_per_file.get(task.file.file_path),
+                self._case_sensitive,
+                self._table_metadata.name_mapping(),
+                self._use_large_types,
+            )
+            for task in tasks
+        ]
+        total_row_count = 0
+        # for consistent ordering, we need to maintain future order
+        futures_index = {f: i for i, f in enumerate(futures)}
+        completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
+        for future in concurrent.futures.as_completed(futures):
+            completed_futures.add(future)
+            if table_result := future.result():
+                total_row_count += len(table_result)
+            # stop early if limit is satisfied
+            if self._limit is not None and total_row_count >= self._limit:
+                break
+
+        # by now, we've either completed all tasks or satisfied the limit
+        if self._limit is not None:
+            _ = [f.cancel() for f in futures if not f.done()]
+
+        tables = [f.result() for f in completed_futures if f.result()]
+
+        if len(tables) < 1:
+            return pa.Table.from_batches([], schema=schema_to_pyarrow(self._projected_schema, include_field_ids=False))
+
+        result = pa.concat_tables(tables, promote_options="permissive")
+
+        if self._limit is not None:
+            return result.slice(0, self._limit)
+
+        return result
+
+    def project_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
+        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        limit = self._limit
+        for task in tasks:
+            batches = _task_to_record_batches(
+                self._fs,
+                task,
+                self._bound_row_filter,
+                self._projected_schema,
+                self._projected_field_ids,
+                deletes_per_file.get(task.file.file_path),
+                self._case_sensitive,
+                self._table_metadata.name_mapping(),
+                self._use_large_types,
+            )
+            for batch in batches:
+                if limit is not None:
+                    if len(batch) >= limit:
+                        yield batch.slice(0, limit)
+                        break
+                    limit -= len(batch)
+                yield batch
 
 
 def project_table(

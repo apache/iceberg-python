@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -36,6 +37,7 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Tuple,
     Type,
     Union,
     runtime_checkable,
@@ -354,3 +356,14 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = 
         raise ModuleNotFoundError(
             'Could not load a FileIO, please consider installing one: pip3 install "pyiceberg[pyarrow]", for more options refer to the docs.'
         ) from e
+
+
+def _parse_location(location: str) -> Tuple[str, str, str]:
+    """Return the path without the scheme."""
+    uri = urlparse(location)
+    if not uri.scheme:
+        return "file", uri.netloc, os.path.abspath(location)
+    elif uri.scheme in ("hdfs", "viewfs"):
+        return uri.scheme, uri.netloc, uri.path
+    else:
+        return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
