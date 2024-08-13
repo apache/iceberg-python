@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -38,13 +39,20 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import In
+from pyiceberg.expressions import GreaterThanOrEqual, In, Not
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import IntegerType, LongType, NestedField, StringType
+from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.types import (
+    DateType,
+    DoubleType,
+    IntegerType,
+    LongType,
+    NestedField,
+    StringType,
+)
 from utils import _create_table
 
 
@@ -1333,3 +1341,71 @@ def test_overwrite_all_data_with_filter(session_catalog: Catalog) -> None:
     tbl.overwrite(data, In("id", ["1", "2", "3"]))
 
     assert len(tbl.scan().to_arrow()) == 3
+
+
+@pytest.mark.integration
+def test_delete_threshold() -> None:
+    catalog = load_catalog(
+        "local",
+        **{
+            "type": "rest",
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
+
+    schema = Schema(
+        NestedField(field_id=101, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=103, name="created_at", field_type=DateType(), required=False),
+        NestedField(field_id=104, name="relevancy_score", field_type=DoubleType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(PartitionField(source_id=103, field_id=2000, transform=DayTransform(), name="created_at_day"))
+
+    try:
+        catalog.drop_table(
+            identifier="default.scores",
+        )
+    except NoSuchTableError:
+        pass
+
+    catalog.create_table(
+        identifier="default.scores",
+        schema=schema,
+        partition_spec=partition_spec,
+    )
+
+    # Parameters
+    num_rows = 100  # Number of rows in the dataframe
+    id_min, id_max = 1, 10000
+    date_start, date_end = date(2024, 1, 1), date(2024, 2, 1)
+
+    # Generate the 'id' column
+    id_column = np.random.randint(id_min, id_max, num_rows)
+
+    # Generate the 'created_at' column as dates only
+    date_range = pd.date_range(start=date_start, end=date_end, freq="D")  # Daily frequency for dates
+    created_at_column = np.random.choice(date_range, num_rows)  # Convert to string (YYYY-MM-DD format)
+
+    # Generate the 'relevancy_score' column with a peak around 0.1
+    relevancy_score_column = np.random.beta(a=2, b=20, size=num_rows)  # Adjusting parameters to peak around 0.1
+
+    # Create the dataframe
+    df = pd.DataFrame({"id": id_column, "created_at": created_at_column, "relevancy_score": relevancy_score_column})
+
+    iceberg_table = catalog.load_table("default.scores")
+
+    # Convert the pandas DataFrame to a PyArrow Table with the Iceberg schema
+    arrow_schema = iceberg_table.schema().as_arrow()
+    docs_table = pa.Table.from_pandas(df, schema=arrow_schema)
+
+    # Append the data to the Iceberg table
+    iceberg_table.append(docs_table)
+
+    delete_condition = GreaterThanOrEqual("relevancy_score", 0.1)
+    lower_before = len(iceberg_table.scan(row_filter=Not(delete_condition)).to_arrow())
+    assert len(iceberg_table.scan(row_filter=Not(delete_condition)).to_arrow()) == lower_before
+    iceberg_table.delete(delete_condition)
+    assert len(iceberg_table.scan().to_arrow()) == lower_before
