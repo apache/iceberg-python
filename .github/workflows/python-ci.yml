@@ -51,3 +51,5 @@ jobs:
       run: make lint
     - name: Tests
       run: make test-coverage
+    - name: Run Unit Tests
+      run: make test
