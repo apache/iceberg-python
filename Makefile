@@ -73,6 +73,27 @@ test-coverage:
 	poetry run coverage xml
 
 
+unit-test-coverage:
+	poetry run coverage run  --data-file=cov/unit --source=pyiceberg/ -m pytest tests/ ${PYTEST_ARGS} -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+
+
+integration-test-coverage:
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml up -d
+	sh ./dev/run-azurite.sh
+	sh ./dev/run-gcs-server.sh
+	sleep 10
+	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
+	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+	poetry run coverage run --data-file=cov/integration --source=pyiceberg/ -m pytest tests/ -m integration ${PYTEST_ARGS}
+
+combine-coverage:
+	poetry run coverage combine cov/unit cov/integration
+	poetry run coverage report -m --fail-under=90
+	poetry run coverage html
+	poetry run coverage xml
+
 clean:
 	@echo "Cleaning up Cython and Python cached files"
 	@rm -rf build dist *.egg-info

@@ -47,9 +47,18 @@ jobs:
         cache-dependency-path: ./poetry.lock
     - name: Install
       run: make install-dependencies
+
     - name: Linters
       run: make lint
-    - name: Tests
-      run: make test-coverage
-    - name: Run Unit Tests
-      run: make test
+
+    - name: Create Directory for coverage
+      run: mkdir -p cov
+
+    - name: Run unit test coverage
+      run: make unit-test-coverage
+
+    - name: Run integration test coverage
+      run: make integration-test-coverage
+
+    - name: Combine Coverage
+      run: make combine-coverage
