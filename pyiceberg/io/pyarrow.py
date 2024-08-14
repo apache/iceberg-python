@@ -1464,8 +1464,10 @@ class PyArrowProjector:
     def _project_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
     ) -> Iterator[pa.RecordBatch]:
-        limit = self._limit
+        total_row_count = 0
         for task in tasks:
+            if self._limit is not None and total_row_count >= self._limit:
+                break
             batches = _task_to_record_batches(
                 self._fs,
                 task,
@@ -1478,12 +1480,13 @@ class PyArrowProjector:
                 self._use_large_types,
             )
             for batch in batches:
-                if limit is not None:
-                    if len(batch) >= limit:
-                        yield batch.slice(0, limit)
+                if self._limit is not None:
+                    if total_row_count >= self._limit:
                         break
-                    limit -= len(batch)
+                    elif total_row_count + len(batch) >= self._limit:
+                        batch = batch.slice(0, self._limit - total_row_count)
                 yield batch
+                total_row_count += len(batch)
 
 
 @deprecated(
