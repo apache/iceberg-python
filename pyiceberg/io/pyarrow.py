@@ -1265,21 +1265,27 @@ def _task_to_table(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     use_large_types: bool = True,
+    limit: Optional[int] = None,
 ) -> Optional[pa.Table]:
-    batches = list(
-        _task_to_record_batches(
-            fs,
-            task,
-            bound_row_filter,
-            projected_schema,
-            projected_field_ids,
-            positional_deletes,
-            case_sensitive,
-            name_mapping,
-            use_large_types,
-        )
+    batches_iterator = _task_to_record_batches(
+        fs,
+        task,
+        bound_row_filter,
+        projected_schema,
+        projected_field_ids,
+        positional_deletes,
+        case_sensitive,
+        name_mapping,
+        use_large_types,
     )
 
+    total_row_count = 0
+    batches = []
+    for batch in batches_iterator:
+        total_row_count += len(batch)
+        batches.append(batch)
+        if limit is not None and total_row_count >= limit:
+            break
     if len(batches) > 0:
         return pa.Table.from_batches(batches)
     else:
@@ -1366,6 +1372,7 @@ def project_table(
             case_sensitive,
             table_metadata.name_mapping(),
             use_large_types,
+            limit,
         )
         for task in tasks
     ]
