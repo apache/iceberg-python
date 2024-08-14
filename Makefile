@@ -58,7 +58,10 @@ test-gcs:
 	sh ./dev/run-gcs-server.sh
 	poetry run  pytest tests/ -m gcs ${PYTEST_ARGS}
 
-test-coverage:
+test-coverage-unit:
+	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+
+test-coverage-integration:
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d
@@ -67,7 +70,10 @@ test-coverage:
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
-	poetry run coverage run --source=pyiceberg/ -m pytest tests/ ${PYTEST_ARGS}
+	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
+
+test-coverage: | test-coverage-unit test-coverage-integration
+	poetry run coverage combine .coverage.unit .coverage.integration
 	poetry run coverage report -m --fail-under=90
 	poetry run coverage html
 	poetry run coverage xml

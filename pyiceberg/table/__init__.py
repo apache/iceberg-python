@@ -62,7 +62,7 @@ from pyiceberg.expressions import (
     Reference,
 )
 from pyiceberg.expressions.visitors import (
-    ROWS_CANNOT_MATCH,
+    ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
     _StrictMetricsEvaluator,
@@ -3369,13 +3369,14 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
                         existing_entries = []
                         for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
                             if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                # Based on the metadata, it can be dropped right away
                                 deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
                                 self._deleted_data_files.add(entry.data_file)
-                            elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
-                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
                             else:
-                                # Based on the metadata, it is unsure to say if the file can be deleted
-                                partial_rewrites_needed = True
+                                # Based on the metadata, we cannot determine if it can be deleted
+                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                                if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
+                                    partial_rewrites_needed = True
 
                         if len(deleted_entries) > 0:
                             total_deleted_entries += deleted_entries
@@ -3392,8 +3393,6 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
                                     for existing_entry in existing_entries:
                                         writer.add_entry(existing_entry)
                                 existing_manifests.append(writer.to_manifest_file())
-                            # else:
-                            # deleted_manifests.append()
                         else:
                             existing_manifests.append(manifest_file)
                 else:
