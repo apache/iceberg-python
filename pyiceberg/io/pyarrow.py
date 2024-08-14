@@ -1336,6 +1336,17 @@ class PyArrowProjector:
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
     _limit: Optional[int]
+    """Projects an Iceberg Table to a PyArrow construct.
+
+    Attributes:
+        _table_metadata: Current table metadata of the Iceberg table
+        _io: PyIceberg FileIO implementation from which to fetch the io properties
+        _fs: PyArrow FileSystem to use to read the files
+        _projected_schema: Iceberg Schema to project onto the data files
+        _bound_row_filter: Schema bound row expression to filter the data with
+        _case_sensitive: Case sensitivity when looking up column names
+        _limit: Limit the number of records.
+    """
 
     def __init__(
         self,
@@ -1356,10 +1367,15 @@ class PyArrowProjector:
 
     @property
     def _use_large_types(self) -> bool:
+        """Whether to represent data as large arrow types.
+
+        Defaults to True.
+        """
         return property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
 
     @property
     def _projected_field_ids(self) -> Set[int]:
+        """Set of field IDs that should be projected from the data files."""
         return {
             id
             for id in self._projected_schema.field_ids
@@ -1367,6 +1383,22 @@ class PyArrowProjector:
         }.union(extract_field_ids(self._bound_row_filter))
 
     def project_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
+        """Project the Iceberg table to a pa.Table.
+
+        Returns a pa.Table with data from the Iceberg table by resolving the
+        right columns that match the current table schema. Only data that
+        matches the provided row_filter expression is returned.
+
+        Args:
+            tasks: FileScanTasks representing the data files and delete files to read from.
+
+        Returns:
+            A PyArrow table. Result is capped at the limit, if specified.
+
+        Raises:
+            ResolveError: When a required field cannot be found in the file
+            ValueError: When a field type in the file cannot be projected to the schema type
+        """
         deletes_per_file = _read_all_delete_files(self._fs, tasks)
         executor = ExecutorFactory.get_or_create()
 
@@ -1413,6 +1445,23 @@ class PyArrowProjector:
         return result
 
     def project_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
+        """Project the Iceberg table to an Iterator[pa.RecordBatch].
+
+        Returns an Iterator of pa.RecordBatch with data from the Iceberg table
+        by resolving the right columns that match the current table schema.
+        Only data that matches the provided row_filter expression is returned.
+
+        Args:
+            tasks: FileScanTasks representing the data files and delete files to read from.
+
+        Returns:
+            An Iterator of PyArrow RecordBatches. Result is capped at the limit,
+            if specified.
+
+        Raises:
+            ResolveError: When a required field cannot be found in the file
+            ValueError: When a field type in the file cannot be projected to the schema type
+        """
         deletes_per_file = _read_all_delete_files(self._fs, tasks)
         return self._project_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
@@ -1441,6 +1490,11 @@ class PyArrowProjector:
                 yield batch
 
 
+@deprecated(
+    deprecated_in="0.8.0",
+    removed_in="0.9.0",
+    help_message="project_table is deprecated. Use PyArrowProjector instead.",
+)
 def project_table(
     tasks: Iterable[FileScanTask],
     table_metadata: TableMetadata,
@@ -1535,6 +1589,11 @@ def project_table(
     return result
 
 
+@deprecated(
+    deprecated_in="0.8.0",
+    removed_in="0.9.0",
+    help_message="project_table is deprecated. Use PyArrowProjector instead.",
+)
 def project_batches(
     tasks: Iterable[FileScanTask],
     table_metadata: TableMetadata,
