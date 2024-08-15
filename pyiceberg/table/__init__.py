@@ -2031,21 +2031,21 @@ class DataScan(TableScan):
         ]
 
     def to_arrow(self) -> pa.Table:
-        from pyiceberg.io.pyarrow import PyArrowProjector
+        from pyiceberg.io.pyarrow import ArrowScan
 
-        return PyArrowProjector(
+        return ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).project_table(self.plan_files())
+        ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
         import pyarrow as pa
 
-        from pyiceberg.io.pyarrow import PyArrowProjector, schema_to_pyarrow
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
         target_schema = schema_to_pyarrow(self.projection())
-        batches = PyArrowProjector(
+        batches = ArrowScan(
             self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
-        ).project_batches(self.plan_files())
+        ).to_record_batches(self.plan_files())
 
         return pa.RecordBatchReader.from_batches(
             target_schema,

@@ -1324,7 +1324,7 @@ def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
             raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
 
 
-class PyArrowProjector:
+class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
     _fs: FileSystem
@@ -1332,7 +1332,7 @@ class PyArrowProjector:
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
     _limit: Optional[int]
-    """Projects an Iceberg Table to a PyArrow construct.
+    """Scan the Iceberg Table and create an Arrow construct.
 
     Attributes:
         _table_metadata: Current table metadata of the Iceberg table
@@ -1378,8 +1378,8 @@ class PyArrowProjector:
             if not isinstance(self._projected_schema.find_type(id), (MapType, ListType))
         }.union(extract_field_ids(self._bound_row_filter))
 
-    def project_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
-        """Project the Iceberg table to a pa.Table.
+    def to_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
+        """Scan the Iceberg table and return a pa.Table.
 
         Returns a pa.Table with data from the Iceberg table by resolving the
         right columns that match the current table schema. Only data that
@@ -1389,7 +1389,7 @@ class PyArrowProjector:
             tasks: FileScanTasks representing the data files and delete files to read from.
 
         Returns:
-            A PyArrow table. Result is capped at the limit, if specified.
+            A PyArrow table. Total number of rows will be capped if specified.
 
         Raises:
             ResolveError: When a required field cannot be found in the file
@@ -1398,8 +1398,8 @@ class PyArrowProjector:
         deletes_per_file = _read_all_delete_files(self._fs, tasks)
         executor = ExecutorFactory.get_or_create()
 
-        def _project_table_from_scan_task(task: FileScanTask) -> pa.Table:
-            batches = list(self._project_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
+        def _table_from_scan_task(task: FileScanTask) -> pa.Table:
+            batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
             if len(batches) > 0:
                 return pa.Table.from_batches(batches)
             else:
@@ -1407,7 +1407,7 @@ class PyArrowProjector:
 
         futures = [
             executor.submit(
-                _project_table_from_scan_task,
+                _table_from_scan_task,
                 task,
             )
             for task in tasks
@@ -1440,8 +1440,8 @@ class PyArrowProjector:
 
         return result
 
-    def project_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
-        """Project the Iceberg table to an Iterator[pa.RecordBatch].
+    def to_record_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
+        """Scan the Iceberg table and retun an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
         by resolving the right columns that match the current table schema.
@@ -1451,17 +1451,17 @@ class PyArrowProjector:
             tasks: FileScanTasks representing the data files and delete files to read from.
 
         Returns:
-            An Iterator of PyArrow RecordBatches. Result is capped at the limit,
-            if specified.
+            An Iterator of PyArrow RecordBatches.
+            Total number of rows will be capped if specified.
 
         Raises:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         deletes_per_file = _read_all_delete_files(self._fs, tasks)
-        return self._project_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+        return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
-    def _project_batches_from_scan_tasks_and_deletes(
+    def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
@@ -1492,7 +1492,7 @@ class PyArrowProjector:
 @deprecated(
     deprecated_in="0.8.0",
     removed_in="0.9.0",
-    help_message="project_table is deprecated. Use PyArrowProjector instead.",
+    help_message="project_table is deprecated. Use ArrowScan.project_table instead.",
 )
 def project_table(
     tasks: Iterable[FileScanTask],
@@ -1591,7 +1591,7 @@ def project_table(
 @deprecated(
     deprecated_in="0.8.0",
     removed_in="0.9.0",
-    help_message="project_table is deprecated. Use PyArrowProjector instead.",
+    help_message="project_table is deprecated. Use ArrowScan instead.",
 )
 def project_batches(
     tasks: Iterable[FileScanTask],
