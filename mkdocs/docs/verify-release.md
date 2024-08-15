@@ -105,13 +105,7 @@ First step is to install the package:
 make install
 ```
 
-And then run the tests:
-
-```sh
-make test
-```
-
-To run the full test coverage:
+To run the full test coverage, with both unit tests and integration tests:
 
 ```sh
 make test-coverage
