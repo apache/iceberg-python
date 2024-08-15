@@ -105,7 +105,7 @@ First step is to install the package:
 make install
 ```
 
-To run the full test coverage, with run both unit tests and integration tests:
+To run the full test coverage, with both unit tests and integration tests:
 
 ```sh
 make test-coverage
