@@ -541,7 +541,7 @@ class Catalog(ABC):
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List views under the given namespace in the catalog.
 
-        If namespace not provided, will list all views in the catalog.
+        If namespace is not provided, lists all views in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
