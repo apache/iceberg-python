@@ -98,7 +98,7 @@ class Endpoints:
     rename_table: str = "tables/rename"
 
 
-ACCESS_DELEGATION = "access_delegation"
+ACCESS_DELEGATION = "access-delegation"
 ACCESS_DELEGATION_DEFAULT = "vended-credentials"
 AUTHORIZATION_HEADER = "Authorization"
 BEARER_PREFIX = "Bearer"

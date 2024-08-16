@@ -670,7 +670,7 @@ def test_load_table_honor_access_delegation(
         status_code=200,
         request_headers=test_headers_with_remote_signing,
     )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, access_delegation="remote-signing")
+    catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "access-delegation": "remote-signing"})
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
         identifier=("fokko", "table"),
