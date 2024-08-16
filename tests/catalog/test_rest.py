@@ -29,12 +29,13 @@ from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
+    NoSuchIdentifierError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    NoSuchViewError,
     OAuthError,
     ServerError,
     TableAlreadyExistsError,
-    NoSuchIdentifierError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -1308,3 +1309,41 @@ def test_table_identifier_in_commit_table_request(rest_mock: Mocker, example_tab
         rest_mock.last_request.text
         == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
     )
+
+
+def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:
+    view = "view"
+    with pytest.raises(NoSuchIdentifierError) as e:
+        # Missing namespace
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(view)
+
+    assert f"Missing namespace or invalid identifier: {view}" in str(e.value)
+
+
+def test_drop_view_404(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/some_namespace/views/does_not_exists",
+        json={
+            "error": {
+                "message": "The given view does not exist",
+                "type": "NoSuchViewException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchViewError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "does_not_exists"))
+    assert "The given view does not exist" in str(e.value)
+
+
+def test_drop_view_204(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/some_namespace/views/some_view",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
