@@ -1441,7 +1441,7 @@ class ArrowScan:
         return result
 
     def to_record_batches(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
-        """Scan the Iceberg table and retun an Iterator[pa.RecordBatch].
+        """Scan the Iceberg table and return an Iterator[pa.RecordBatch].
 
         Returns an Iterator of pa.RecordBatch with data from the Iceberg table
         by resolving the right columns that match the current table schema.
@@ -1492,7 +1492,7 @@ class ArrowScan:
 @deprecated(
     deprecated_in="0.8.0",
     removed_in="0.9.0",
-    help_message="project_table is deprecated. Use ArrowScan.project_table instead.",
+    help_message="project_table is deprecated. Use ArrowScan.to_table instead.",
 )
 def project_table(
     tasks: Iterable[FileScanTask],
@@ -1591,7 +1591,7 @@ def project_table(
 @deprecated(
     deprecated_in="0.8.0",
     removed_in="0.9.0",
-    help_message="project_table is deprecated. Use ArrowScan instead.",
+    help_message="project_table is deprecated. Use ArrowScan.to_record_batches instead.",
 )
 def project_batches(
     tasks: Iterable[FileScanTask],
