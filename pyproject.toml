@@ -49,7 +49,7 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.8, <4.0, !=3.9.7"
+python = ">=3.8, <3.12, !=3.9.7"
 mmh3 = ">=4.0.0,<5.0.0"
 requests = ">=2.20.0,<3.0.0"
 click = ">=7.1.1,<9.0.0"
@@ -91,10 +91,10 @@ requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.12.2"
 pytest-mock = "3.14.0"
-pyspark = "3.5.1"
+pyspark = "3.5.2"
 cython = "3.0.11"
 deptry = ">=0.14,<0.20"
-docutils = "!=0.21"
+docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
 
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
