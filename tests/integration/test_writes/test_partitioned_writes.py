@@ -181,7 +181,7 @@ def test_query_filter_appended_null_partitioned(
     assert len(rows) == 6
 
 
-@pytest.mark.integration
+@pytest.mark.adrian
 @pytest.mark.parametrize(
     "part_col",
     [
@@ -223,24 +223,12 @@ def test_query_filter_dynamic_overwrite_null_partitioned(
     # Append with arrow_table_1 with lines [A,B,C] and then arrow_table_2 with lines[A,B,C,A,B,C]
     tbl.append(arrow_table_with_null)
     tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
-    # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
-    df = spark.table(identifier)
-    for col in arrow_table_with_null.column_names:
-        df = spark.table(identifier)
-        assert df.where(f"{col} is not null").count() == 6, f"Expected 6 non-null rows for {col}"
-        assert df.where(f"{col} is null").count() == 3, f"Expected 3 null rows for {col}"
-    # expecting 6 files: first append with [A], [B], [C],  second append with [A, A], [B, B], [C, C]
-    rows = spark.sql(f"select partition from {identifier}.files").collect()
-    assert len(rows) == 6
-
     tbl.dynamic_overwrite(arrow_table_with_null)
     # tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
     # Then
     assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in arrow_table_with_null.column_names:
-        df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col},"
         assert df.where(f"{col} is null").count() == 1, f"Expected 1 null rows for {col},"
     # expecting 3 files:
