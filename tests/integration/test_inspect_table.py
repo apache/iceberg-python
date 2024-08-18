@@ -79,7 +79,7 @@ def test_inspect_snapshots(
     identifier = "default.table_metadata_snapshots"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
     # should produce a DELETE entry
     tbl.overwrite(arrow_table_with_null)
     # Since we don't rewrite, this should produce a new manifest with an ADDED entry
@@ -295,7 +295,7 @@ def test_inspect_refs(
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
     # write data to create snapshot
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
 
     # create a test branch
     spark.sql(
@@ -667,7 +667,7 @@ def test_inspect_files(
 
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
 
-    tbl.overwrite(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
 
     # append more data
     tbl.append(arrow_table_with_null)

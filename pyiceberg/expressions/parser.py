@@ -63,6 +63,8 @@ from pyiceberg.expressions.literals import (
     StringLiteral,
 )
 from pyiceberg.typedef import L
+from pyiceberg.types import strtobool
+from pyiceberg.utils.deprecated import deprecation_message
 
 ParserElement.enablePackrat()
 
@@ -83,6 +85,14 @@ like_regex = r"(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)"
 
 @column.set_parse_action
 def _(result: ParseResults) -> Reference:
+    if len(result.column) > 1:
+        deprecation_message(
+            deprecated_in="0.8.0",
+            removed_in="0.9.0",
+            help_message="Parsing expressions with table name is deprecated. Only provide field names in the row_filter.",
+        )
+    # TODO: Once this is removed, we will no longer take just the last index of parsed column result
+    # And introduce support for parsing filter expressions with nested fields.
     return Reference(result.column[-1])
 
 
@@ -96,7 +106,7 @@ literal_set = Group(DelimitedList(string) | DelimitedList(decimal) | DelimitedLi
 
 @boolean.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    if "true" == result.boolean.lower():
+    if strtobool(result.boolean):
         return AlwaysTrue()
     else:
         return AlwaysFalse()

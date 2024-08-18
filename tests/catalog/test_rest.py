@@ -24,7 +24,7 @@ from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
+from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
@@ -37,7 +37,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
+from pyiceberg.table import CommitTableRequest, Table, TableIdentifier
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -235,7 +235,7 @@ def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     )
     # pylint: disable=W0212
     assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{AUTH_URL: TEST_AUTH_URL})._session.headers[
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_AUTH_URL})._session.headers[
             "Authorization"
         ]
         == f"Bearer {TEST_TOKEN}"
@@ -419,7 +419,7 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces?parent=accounting",
-        json={"namespaces": [["tax"]]},
+        json={"namespaces": [["accounting", "tax"]]},
         status_code=200,
         request_headers=TEST_HEADERS,
     )
@@ -648,7 +648,7 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
-        identifier=("rest", "fokko", "table"),
+        identifier=("fokko", "table"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -672,7 +672,7 @@ def test_load_table_from_self_identifier_200(
     table = catalog.load_table(("pdames", "table"))
     actual = catalog.load_table(table.identifier)
     expected = Table(
-        identifier=("rest", "pdames", "table"),
+        identifier=("pdames", "table"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -771,7 +771,7 @@ def test_create_table_200(
         properties={"owner": "fokko"},
     )
     expected = Table(
-        identifier=("rest", "fokko", "fokko2"),
+        identifier=("fokko", "fokko2"),
         metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -934,7 +934,7 @@ def test_register_table_200(
         identifier=("default", "registered_table"), metadata_location="s3://warehouse/database/table/metadata.json"
     )
     expected = Table(
-        identifier=("rest", "default", "registered_table"),
+        identifier=("default", "registered_table"),
         metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -1029,7 +1029,7 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
     to_identifier = ("pdames", "destination")
     actual = catalog.rename_table(from_identifier, to_identifier)
     expected = Table(
-        identifier=("rest", "pdames", "destination"),
+        identifier=("pdames", "destination"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -1069,7 +1069,7 @@ def test_rename_table_from_self_identifier_200(
     )
     actual = catalog.rename_table(table.identifier, to_identifier)
     expected = Table(
-        identifier=("rest", "pdames", "destination"),
+        identifier=("pdames", "destination"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -1226,3 +1226,25 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
 
     catalog = cast(RestCatalog, load_catalog("production", uri="https://other-service.io/api"))
     assert catalog.uri == "https://other-service.io/api"
+
+
+def test_table_identifier_in_commit_table_request(rest_mock: Mocker, example_table_metadata_v2: Dict[str, Any]) -> None:
+    test_table_request = CommitTableRequest(
+        identifier=TableIdentifier(namespace=("catalog_name", "namespace"), name="table_name"),
+        updates=[],
+        requirements=[],
+    )
+    rest_mock.post(
+        url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata": example_table_metadata_v2,
+            "metadata-location": "test",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)._commit_table(test_table_request)
+    assert (
+        rest_mock.last_request.text
+        == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
+    )

@@ -46,6 +46,10 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
+AWS_REGION = "client.region"
+AWS_ACCESS_KEY_ID = "client.access-key-id"
+AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
+AWS_SESSION_TOKEN = "client.session-token"
 S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
@@ -54,6 +58,8 @@ S3_REGION = "s3.region"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
 S3_SIGNER_URI = "s3.signer.uri"
+S3_SIGNER_ENDPOINT = "s3.signer.endpoint"
+S3_SIGNER_ENDPOINT_DEFAULT = "v1/aws/s3/sign"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -76,6 +82,7 @@ GCS_SESSION_KWARGS = "gcs.session-kwargs"
 GCS_ENDPOINT = "gcs.endpoint"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
+PYARROW_USE_LARGE_TYPES_ON_READ = "pyarrow.use-large-types-on-read"
 
 
 @runtime_checkable

@@ -23,6 +23,8 @@ def test_version_format() -> None:
 
     installed_version = metadata.version("pyiceberg")
 
-    assert (
-        __version__ == installed_version
-    ), f"{__version__} <> {installed_version}, the installed version does not match with the current codebase"
+    assert __version__ == installed_version, (
+        f"The installed version ({installed_version}) does not match the current codebase version ({__version__})."
+        "This failure could be due to a recent version bump in the Pyiceberg library. "
+        "Please ensure you have the latest version installed by rerunning `make install` command."
+    )

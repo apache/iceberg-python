@@ -18,6 +18,7 @@
 
 import os
 import tempfile
+import uuid
 from datetime import date
 from typing import Any, List, Optional
 from unittest.mock import MagicMock, patch
@@ -60,7 +61,7 @@ from pyiceberg.io.pyarrow import (
     PyArrowFile,
     PyArrowFileIO,
     StatsAggregator,
-    _check_schema_compatible,
+    _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
@@ -77,7 +78,7 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import UTF8, Record
+from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -98,6 +99,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
@@ -346,6 +348,52 @@ def test_deleting_hdfs_file_not_found() -> None:
             PyArrowFileIO().delete("hdfs://foo/bar.txt")
 
         assert "Cannot delete file, does not exist:" in str(exc_info.value)
+
+
+def test_pyarrow_s3_session_properties() -> None:
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "s3.region": "us-east-1",
+        "s3.session-token": "s3.session-token",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="admin",
+            secret_key="password",
+            region="us-east-1",
+            session_token="s3.session-token",
+        )
+
+
+def test_pyarrow_unified_session_properties() -> None:
+    session_properties: Properties = {
+        "s3.endpoint": "http://localhost:9000",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = PyArrowFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        mock_s3fs.assert_called_with(
+            endpoint_override="http://localhost:9000",
+            access_key="client.access-key-id",
+            secret_key="client.secret-access-key",
+            region="client.region",
+            session_token="client.session-token",
+        )
 
 
 def test_schema_to_pyarrow_schema_include_field_ids(table_schema_nested: Schema) -> None:
@@ -1742,7 +1790,7 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
@@ -1763,7 +1811,20 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+
+
+def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None:
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+        pa.field("baz", pa.bool_(), nullable=False),
+    ))
+
+    try:
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
@@ -1783,21 +1844,114 @@ def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
 """
 
     with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+
+
+def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Schema) -> None:
+    schema = table_schema_nested.as_arrow()
+    schema = schema.remove(6).insert(
+        6,
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("age", pa.int32(), nullable=False),
+            ]),
+            nullable=True,
+        ),
+    )
+    try:
+        _check_pyarrow_schema_compatible(table_schema_nested, schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
+
+
+def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Schema) -> None:
+    other_schema = table_schema_nested.as_arrow()
+    other_schema = other_schema.remove(6).insert(
+        6,
+        pa.field(
+            "person",
+            pa.struct([
+                pa.field("name", pa.string(), nullable=True),
+            ]),
+            nullable=True,
+        ),
+    )
+    expected = """Mismatch in fields:
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    ┃ Table field                        ┃ Dataframe field                    ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✅ │ 1: foo: optional string            │ 1: foo: optional string            │
+│ ✅ │ 2: bar: required int               │ 2: bar: required int               │
+│ ✅ │ 3: baz: optional boolean           │ 3: baz: optional boolean           │
+│ ✅ │ 4: qux: required list<string>      │ 4: qux: required list<string>      │
+│ ✅ │ 5: element: required string        │ 5: element: required string        │
+│ ✅ │ 6: quux: required map<string,      │ 6: quux: required map<string,      │
+│    │ map<string, int>>                  │ map<string, int>>                  │
+│ ✅ │ 7: key: required string            │ 7: key: required string            │
+│ ✅ │ 8: value: required map<string,     │ 8: value: required map<string,     │
+│    │ int>                               │ int>                               │
+│ ✅ │ 9: key: required string            │ 9: key: required string            │
+│ ✅ │ 10: value: required int            │ 10: value: required int            │
+│ ✅ │ 11: location: required             │ 11: location: required             │
+│    │ list<struct<13: latitude: optional │ list<struct<13: latitude: optional │
+│    │ float, 14: longitude: optional     │ float, 14: longitude: optional     │
+│    │ float>>                            │ float>>                            │
+│ ✅ │ 12: element: required struct<13:   │ 12: element: required struct<13:   │
+│    │ latitude: optional float, 14:      │ latitude: optional float, 14:      │
+│    │ longitude: optional float>         │ longitude: optional float>         │
+│ ✅ │ 13: latitude: optional float       │ 13: latitude: optional float       │
+│ ✅ │ 14: longitude: optional float      │ 14: longitude: optional float      │
+│ ✅ │ 15: person: optional struct<16:    │ 15: person: optional struct<16:    │
+│    │ name: optional string, 17: age:    │ name: optional string>             │
+│    │ required int>                      │                                    │
+│ ✅ │ 16: name: optional string          │ 16: name: optional string          │
+│ ❌ │ 17: age: required int              │ Missing                            │
+└────┴────────────────────────────────────┴────────────────────────────────────┘
+"""
+
+    with pytest.raises(ValueError, match=expected):
+        _check_pyarrow_schema_compatible(table_schema_nested, other_schema)
+
+
+def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
+    try:
+        _check_pyarrow_schema_compatible(table_schema_nested, table_schema_nested.as_arrow())
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
     other_schema = pa.schema((
         pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
         pa.field("baz", pa.bool_(), nullable=True),
         pa.field("new_field", pa.date32(), nullable=True),
     ))
 
-    expected = r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
+    with pytest.raises(
+        ValueError, match=r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
+    ):
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
 
-    with pytest.raises(ValueError, match=expected):
-        _check_schema_compatible(table_schema_simple, other_schema)
+
+def test_schema_compatible(table_schema_simple: Schema) -> None:
+    try:
+        _check_pyarrow_schema_compatible(table_schema_simple, table_schema_simple.as_arrow())
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
+
+
+def test_schema_projection(table_schema_simple: Schema) -> None:
+    # remove optional `baz` field from `table_schema_simple`
+    other_schema = pa.schema((
+        pa.field("foo", pa.string(), nullable=True),
+        pa.field("bar", pa.int32(), nullable=False),
+    ))
+    try:
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    except Exception:
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_schema_downcast(table_schema_simple: Schema) -> None:
@@ -1809,9 +1963,9 @@ def test_schema_downcast(table_schema_simple: Schema) -> None:
     ))
 
     try:
-        _check_schema_compatible(table_schema_simple, other_schema)
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
     except Exception:
-        pytest.fail("Unexpected Exception raised when calling `_check_schema`")
+        pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
 def test_partition_for_demo() -> None:

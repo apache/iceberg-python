@@ -71,6 +71,8 @@ from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
+from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -119,6 +121,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
+OAUTH2_SERVER_URI = "oauth2-server-uri"
 HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
@@ -257,7 +260,7 @@ class RestCatalog(Catalog):
         self._config_headers(session)
 
         # Configure SigV4 Request Signing
-        if str(self.properties.get(SIGV4, False)).lower() == "true":
+        if property_as_bool(self.properties, SIGV4, False):
             self._init_sigv4(session)
 
         return session
@@ -290,10 +293,37 @@ class RestCatalog(Catalog):
 
     @property
     def auth_url(self) -> str:
-        if url := self.properties.get(AUTH_URL):
+        if self.properties.get(AUTH_URL):
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message=f"The property {AUTH_URL} is deprecated. Please use {OAUTH2_SERVER_URI} instead",
+            )
+
+        self._warn_oauth_tokens_deprecation()
+
+        if url := get_first_property_value(self.properties, AUTH_URL, OAUTH2_SERVER_URI):
             return url
         else:
             return self.url(Endpoints.get_token, prefixed=False)
+
+    def _warn_oauth_tokens_deprecation(self) -> None:
+        has_oauth_server_uri = OAUTH2_SERVER_URI in self.properties
+        has_credential = CREDENTIAL in self.properties
+        has_init_token = TOKEN in self.properties
+        has_sigv4_enabled = property_as_bool(self.properties, SIGV4, False)
+
+        if not has_oauth_server_uri and (has_init_token or has_credential) and not has_sigv4_enabled:
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="1.0.0",
+                help_message="Iceberg REST client is missing the OAuth2 server URI "
+                f"configuration and defaults to {self.uri}{Endpoints.get_token}. "
+                "This automatic fallback will be removed in a future Iceberg release."
+                f"It is recommended to configure the OAuth2 endpoint using the '{OAUTH2_SERVER_URI}'"
+                "property to be prepared. This warning will disappear if the OAuth2"
+                "endpoint is explicitly configured. See https://github.com/apache/iceberg/issues/10537",
+            )
 
     def _extract_optional_oauth_params(self) -> Dict[str, str]:
         optional_oauth_param = {SCOPE: self.properties.get(SCOPE) or CATALOG_SCOPE}
@@ -354,7 +384,10 @@ class RestCatalog(Catalog):
 
     def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+            if identifier.namespace.root[0] == self.name:
+                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+            else:
+                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), "table": identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), "table": identifier_tuple[-1]}
 
@@ -462,7 +495,7 @@ class RestCatalog(Catalog):
 
     def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
-            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
@@ -473,7 +506,7 @@ class RestCatalog(Catalog):
 
     def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
         return StagedTable(
-            identifier=(self.name,) + identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple if self.name else identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
@@ -631,7 +664,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.get(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
@@ -645,7 +678,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
             self.url(
                 Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier_tuple)
@@ -662,7 +695,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
+        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         payload = {
             "source": self._split_identifier_for_json(from_identifier_tuple),
             "destination": self._split_identifier_for_json(to_identifier),
@@ -674,6 +707,17 @@ class RestCatalog(Catalog):
             self._handle_non_200_response(exc, {404: NoSuchTableError, 409: TableAlreadyExistsError})
 
         return self.load_table(to_identifier)
+
+    def _remove_catalog_name_from_table_request_identifier(self, table_request: CommitTableRequest) -> CommitTableRequest:
+        if table_request.identifier.namespace.root[0] == self.name:
+            return table_request.model_copy(
+                update={
+                    "identifier": TableIdentifier(
+                        namespace=table_request.identifier.namespace.root[1:], name=table_request.identifier.name
+                    )
+                }
+            )
+        return table_request
 
     @retry(**_RETRY_ARGS)
     def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
@@ -692,7 +736,7 @@ class RestCatalog(Catalog):
         """
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=table_request.model_dump_json().encode(UTF8),
+            data=self._remove_catalog_name_from_table_request_identifier(table_request).model_dump_json().encode(UTF8),
         )
         try:
             response.raise_for_status()
@@ -743,8 +787,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
 
-        namespaces = ListNamespaceResponse(**response.json())
-        return [namespace_tuple + child_namespace for child_namespace in namespaces.namespaces]
+        return ListNamespaceResponse(**response.json()).namespaces
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
@@ -787,7 +830,7 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the table exists, False otherwise.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )

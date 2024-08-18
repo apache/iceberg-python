@@ -64,7 +64,7 @@ from pyiceberg.expressions import (
     Reference,
 )
 from pyiceberg.expressions.visitors import (
-    ROWS_CANNOT_MATCH,
+    ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
     _StrictMetricsEvaluator,
@@ -74,7 +74,6 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, OutputFile, load_file_io
-from pyiceberg.io.pyarrow import _check_schema_compatible, _dataframe_to_data_files, expression_to_pyarrow, project_table
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -120,6 +119,7 @@ from pyiceberg.table.name_mapping import (
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
+    MetadataLogEntry,
     Operation,
     Snapshot,
     SnapshotLogEntry,
@@ -147,13 +147,15 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    strtobool,
     transform_dict_value_to_str,
 )
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -176,7 +178,7 @@ class TableProperties:
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
     PARQUET_ROW_GROUP_LIMIT = "write.parquet.row-group-limit"
-    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 128 * 1024 * 1024  # 128 MB
+    PARQUET_ROW_GROUP_LIMIT_DEFAULT = 1048576
 
     PARQUET_PAGE_SIZE_BYTES = "write.parquet.page-size-bytes"
     PARQUET_PAGE_SIZE_BYTES_DEFAULT = 1024 * 1024  # 1 MB
@@ -227,33 +229,8 @@ class TableProperties:
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
     MANIFEST_MERGE_ENABLED_DEFAULT = False
 
-
-class PropertyUtil:
-    @staticmethod
-    def property_as_int(properties: Dict[str, str], property_name: str, default: Optional[int] = None) -> Optional[int]:
-        if value := properties.get(property_name):
-            try:
-                return int(value)
-            except ValueError as e:
-                raise ValueError(f"Could not parse table property {property_name} to an integer: {value}") from e
-        else:
-            return default
-
-    @staticmethod
-    def property_as_float(properties: Dict[str, str], property_name: str, default: Optional[float] = None) -> Optional[float]:
-        if value := properties.get(property_name):
-            try:
-                return float(value)
-            except ValueError as e:
-                raise ValueError(f"Could not parse table property {property_name} to a float: {value}") from e
-        else:
-            return default
-
-    @staticmethod
-    def property_as_bool(properties: Dict[str, str], property_name: str, default: bool) -> bool:
-        if value := properties.get(property_name):
-            return value.lower() == "true"
-        return default
+    METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
+    METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
 
 
 class Transaction:
@@ -327,10 +304,10 @@ class Transaction:
         if format_version not in {1, 2}:
             raise ValueError(f"Unsupported table format version: {format_version}")
 
-        if format_version < self._table.metadata.format_version:
-            raise ValueError(f"Cannot downgrade v{self._table.metadata.format_version} table to v{format_version}")
+        if format_version < self.table_metadata.format_version:
+            raise ValueError(f"Cannot downgrade v{self.table_metadata.format_version} table to v{format_version}")
 
-        if format_version > self._table.metadata.format_version:
+        if format_version > self.table_metadata.format_version:
             return self._apply((UpgradeFormatVersionUpdate(format_version=format_version),))
 
         return self
@@ -448,7 +425,7 @@ class Transaction:
             self,
             allow_incompatible_changes=allow_incompatible_changes,
             case_sensitive=case_sensitive,
-            name_mapping=self._table.name_mapping(),
+            name_mapping=self.table_metadata.name_mapping(),
         )
 
     def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
@@ -472,6 +449,8 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
@@ -482,11 +461,11 @@ class Transaction:
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_schema_compatible(
-            self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        manifest_merge_enabled = PropertyUtil.property_as_bool(
+        manifest_merge_enabled = property_as_bool(
             self.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
@@ -498,7 +477,7 @@ class Transaction:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self._table.metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -596,6 +575,8 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
@@ -606,8 +587,8 @@ class Transaction:
                 f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
             )
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_schema_compatible(
-            self._table.schema(), other_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
@@ -624,7 +605,7 @@ class Transaction:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self._table.metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -642,6 +623,12 @@ class Transaction:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
+        from pyiceberg.io.pyarrow import (
+            _dataframe_to_data_files,
+            _expression_to_complementary_pyarrow,
+            project_table,
+        )
+
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
             == TableProperties.DELETE_MODE_MERGE_ON_READ
@@ -656,8 +643,8 @@ class Transaction:
 
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
-            bound_delete_filter = bind(self._table.schema(), delete_filter, case_sensitive=True)
-            preserve_row_filter = expression_to_pyarrow(Not(bound_delete_filter))
+            bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive=True)
+            preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
             files = self._scan(row_filter=delete_filter).plan_files()
 
@@ -675,7 +662,7 @@ class Transaction:
             for original_file in files:
                 df = project_table(
                     tasks=[original_file],
-                    table_metadata=self._table.metadata,
+                    table_metadata=self.table_metadata,
                     io=self._table.io,
                     row_filter=AlwaysTrue(),
                     projected_schema=self.table_metadata.schema(),
@@ -683,14 +670,16 @@ class Transaction:
                 filtered_df = df.filter(preserve_row_filter)
 
                 # Only rewrite if there are records being deleted
-                if len(df) != len(filtered_df):
+                if len(filtered_df) == 0:
+                    replaced_files.append((original_file.file, []))
+                elif len(df) != len(filtered_df):
                     replaced_files.append((
                         original_file.file,
                         list(
                             _dataframe_to_data_files(
                                 io=self._table.io,
                                 df=filtered_df,
-                                table_metadata=self._table.metadata,
+                                table_metadata=self.table_metadata,
                                 write_uuid=commit_uuid,
                                 counter=counter,
                             )
@@ -719,11 +708,13 @@ class Transaction:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        if self._table.name_mapping() is None:
-            self.set_properties(**{TableProperties.DEFAULT_NAME_MAPPING: self._table.schema().name_mapping.model_dump_json()})
+        if self.table_metadata.name_mapping() is None:
+            self.set_properties(**{
+                TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()
+            })
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
-                table_metadata=self._table.metadata, file_paths=file_paths, io=self._table.io
+                table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
             )
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
@@ -971,6 +962,9 @@ class _TableMetadataUpdateContext:
         return any(
             update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
+
+    def has_changes(self) -> bool:
+        return len(self._updates) > 0
 
 
 @singledispatch
@@ -1228,7 +1222,10 @@ def _(
 
 
 def update_table_metadata(
-    base_metadata: TableMetadata, updates: Tuple[TableUpdate, ...], enforce_validation: bool = False
+    base_metadata: TableMetadata,
+    updates: Tuple[TableUpdate, ...],
+    enforce_validation: bool = False,
+    metadata_location: Optional[str] = None,
 ) -> TableMetadata:
     """Update the table metadata with the given updates in one transaction.
 
@@ -1236,6 +1233,7 @@ def update_table_metadata(
         base_metadata: The base metadata to be updated.
         updates: The updates in one transaction.
         enforce_validation: Whether to trigger validation after applying the updates.
+        metadata_location: Current metadata location of the table
 
     Returns:
         The metadata with the updates applied.
@@ -1246,10 +1244,47 @@ def update_table_metadata(
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
 
+    # Update last_updated_ms if it was not updated by update operations
+    if context.has_changes():
+        if metadata_location:
+            new_metadata = _update_table_metadata_log(new_metadata, metadata_location, base_metadata.last_updated_ms)
+        if base_metadata.last_updated_ms == new_metadata.last_updated_ms:
+            new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
+
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
     else:
         return new_metadata.model_copy(deep=True)
+
+
+def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: str, last_updated_ms: int) -> TableMetadata:
+    """
+    Update the metadata log of the table.
+
+    Args:
+        base_metadata: The base metadata to be updated.
+        metadata_location: Current metadata location of the table
+        last_updated_ms: The timestamp of the last update of table metadata
+
+    Returns:
+        The metadata with the updates applied to metadata-log.
+    """
+    max_metadata_log_entries = max(
+        1,
+        property_as_int(
+            base_metadata.properties,
+            TableProperties.METADATA_PREVIOUS_VERSIONS_MAX,
+            TableProperties.METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT,
+        ),  # type: ignore
+    )
+    previous_metadata_log = base_metadata.metadata_log
+    if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore
+        remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore
+        previous_metadata_log = base_metadata.metadata_log[remove_index:]
+    metadata_updates: Dict[str, Any] = {
+        "metadata_log": previous_metadata_log + [MetadataLogEntry(metadata_file=metadata_location, timestamp_ms=last_updated_ms)]
+    }
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 class ValidatableTableRequirement(IcebergBaseModel):
@@ -1436,7 +1471,7 @@ class CommitTableResponse(IcebergBaseModel):
 
 
 class Table:
-    identifier: Identifier = Field()
+    _identifier: Identifier = Field()
     metadata: TableMetadata
     metadata_location: str = Field()
     io: FileIO
@@ -1445,7 +1480,7 @@ class Table:
     def __init__(
         self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
     ) -> None:
-        self.identifier = identifier
+        self._identifier = identifier
         self.metadata = metadata
         self.metadata_location = metadata_location
         self.io = io
@@ -1466,11 +1501,21 @@ class Table:
 
     def refresh(self) -> Table:
         """Refresh the current table metadata."""
-        fresh = self.catalog.load_table(self.identifier[1:])
+        fresh = self.catalog.load_table(self._identifier)
         self.metadata = fresh.metadata
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
         return self
+
+    @property
+    def identifier(self) -> Identifier:
+        """Return the identifier of this table."""
+        deprecation_message(
+            deprecated_in="0.8.0",
+            removed_in="0.9.0",
+            help_message="Table.identifier property is deprecated. Please use Table.name() function instead.",
+        )
+        return (self.catalog.name,) + self._identifier
 
     def name(self) -> Identifier:
         """Return the identifier of this table."""
@@ -1698,7 +1743,7 @@ class Table:
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog._commit_table(  # pylint: disable=W0212
             CommitTableRequest(
-                identifier=TableIdentifier(namespace=self.identifier[:-1], name=self.identifier[-1]),
+                identifier=TableIdentifier(namespace=self._identifier[:-1], name=self._identifier[-1]),
                 updates=updates,
                 requirements=requirements,
             )
@@ -1709,16 +1754,14 @@ class Table:
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Table class."""
         return (
-            self.identifier == other.identifier
-            and self.metadata == other.metadata
-            and self.metadata_location == other.metadata_location
+            self.name() == other.name() and self.metadata == other.metadata and self.metadata_location == other.metadata_location
             if isinstance(other, Table)
             else False
         )
 
     def __repr__(self) -> str:
         """Return the string representation of the Table class."""
-        table_name = self.catalog.table_name_from(self.identifier)
+        table_name = self.catalog.table_name_from(self._identifier)
         schema_str = ",\n  ".join(str(column) for column in self.schema().columns if self.schema())
         partition_str = f"partition by: [{', '.join(field.name for field in self.spec().fields if self.spec())}]"
         sort_order_str = f"sort order: [{', '.join(str(field) for field in self.sort_order().fields if self.sort_order())}]"
@@ -2027,7 +2070,10 @@ class DataScan(TableScan):
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
         metrics_evaluator = _InclusiveMetricsEvaluator(
-            self.table_metadata.schema(), self.row_filter, self.case_sensitive, self.options.get("include_empty_files") == "true"
+            self.table_metadata.schema(),
+            self.row_filter,
+            self.case_sensitive,
+            strtobool(self.options.get("include_empty_files", "false")),
         ).eval
 
         min_sequence_number = _min_sequence_number(manifests)
@@ -3200,16 +3246,22 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             # Check if we need to mark the files as deleted
             deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
-                with write_manifest(
-                    format_version=self._transaction.table_metadata.format_version,
-                    spec=self._transaction.table_metadata.spec(),
-                    schema=self._transaction.table_metadata.schema(),
-                    output_file=self.new_manifest_output(),
-                    snapshot_id=self._snapshot_id,
-                ) as writer:
-                    for delete_entry in deleted_entries:
-                        writer.add_entry(delete_entry)
-                return [writer.to_manifest_file()]
+                deleted_manifests = []
+                partition_groups: Dict[int, List[ManifestEntry]] = defaultdict(list)
+                for deleted_entry in deleted_entries:
+                    partition_groups[deleted_entry.data_file.spec_id].append(deleted_entry)
+                for spec_id, entries in partition_groups.items():
+                    with write_manifest(
+                        format_version=self._transaction.table_metadata.format_version,
+                        spec=self._transaction.table_metadata.specs()[spec_id],
+                        schema=self._transaction.table_metadata.schema(),
+                        output_file=self.new_manifest_output(),
+                        snapshot_id=self._snapshot_id,
+                    ) as writer:
+                        for entry in entries:
+                            writer.add_entry(entry)
+                    deleted_manifests.append(writer.to_manifest_file())
+                return deleted_manifests
             else:
                 return []
 
@@ -3415,13 +3467,14 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
                         existing_entries = []
                         for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
                             if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                # Based on the metadata, it can be dropped right away
                                 deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
                                 self._deleted_data_files.add(entry.data_file)
-                            elif inclusive_metrics_evaluator(entry.data_file) == ROWS_CANNOT_MATCH:
-                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
                             else:
-                                # Based on the metadata, it is unsure to say if the file can be deleted
-                                partial_rewrites_needed = True
+                                # Based on the metadata, we cannot determine if it can be deleted
+                                existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
+                                if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
+                                    partial_rewrites_needed = True
 
                         if len(deleted_entries) > 0:
                             total_deleted_entries += deleted_entries
@@ -3438,8 +3491,6 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
                                     for existing_entry in existing_entries:
                                         writer.add_entry(existing_entry)
                                 existing_manifests.append(writer.to_manifest_file())
-                            # else:
-                            # deleted_manifests.append()
                         else:
                             existing_manifests.append(manifest_file)
                 else:
@@ -3507,17 +3558,17 @@ class MergeAppendFiles(FastAppendFiles):
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
-        self._target_size_bytes = PropertyUtil.property_as_int(
+        self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
         )  # type: ignore
-        self._min_count_to_merge = PropertyUtil.property_as_int(
+        self._min_count_to_merge = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MIN_MERGE_COUNT,
             TableProperties.MANIFEST_MIN_MERGE_COUNT_DEFAULT,
         )  # type: ignore
-        self._merge_enabled = PropertyUtil.property_as_bool(
+        self._merge_enabled = property_as_bool(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,

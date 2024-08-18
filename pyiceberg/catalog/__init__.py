@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import re
 import uuid
@@ -66,6 +67,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -76,6 +78,7 @@ _ENV_CONFIG = Config()
 
 TOKEN = "token"
 TYPE = "type"
+PY_CATALOG_IMPL = "py-catalog-impl"
 ICEBERG = "iceberg"
 TABLE_TYPE = "table_type"
 WAREHOUSE_LOCATION = "warehouse"
@@ -99,6 +102,21 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     """,
     re.X,
 )
+
+DEPRECATED_PROFILE_NAME = "profile_name"
+DEPRECATED_REGION = "region_name"
+DEPRECATED_BOTOCORE_SESSION = "botocore_session"
+DEPRECATED_ACCESS_KEY_ID = "aws_access_key_id"
+DEPRECATED_SECRET_ACCESS_KEY = "aws_secret_access_key"
+DEPRECATED_SESSION_TOKEN = "aws_session_token"
+DEPRECATED_PROPERTY_NAMES = {
+    DEPRECATED_PROFILE_NAME,
+    DEPRECATED_REGION,
+    DEPRECATED_BOTOCORE_SESSION,
+    DEPRECATED_ACCESS_KEY_ID,
+    DEPRECATED_SECRET_ACCESS_KEY,
+    DEPRECATED_SESSION_TOKEN,
+}
 
 
 class CatalogType(Enum):
@@ -217,6 +235,19 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     catalog_type: Optional[CatalogType]
     provided_catalog_type = conf.get(TYPE)
 
+    if catalog_impl := properties.get(PY_CATALOG_IMPL):
+        if provided_catalog_type:
+            raise ValueError(
+                "Must not set both catalog type and py-catalog-impl configurations, "
+                f"but found type {provided_catalog_type} and py-catalog-impl {catalog_impl}"
+            )
+
+        if catalog := _import_catalog(name, catalog_impl, properties):
+            logger.info("Loaded Catalog: %s", catalog_impl)
+            return catalog
+        else:
+            raise ValueError(f"Could not initialize Catalog: {catalog_impl}")
+
     catalog_type = None
     if provided_catalog_type and isinstance(provided_catalog_type, str):
         catalog_type = CatalogType[provided_catalog_type.upper()]
@@ -265,6 +296,20 @@ def delete_data_files(io: FileIO, manifests_to_delete: List[ManifestFile]) -> No
                 except OSError as exc:
                     logger.warning(msg=f"Failed to delete data file {path}", exc_info=exc)
                 deleted_files[path] = True
+
+
+def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Optional[Catalog]:
+    try:
+        path_parts = catalog_impl.split(".")
+        if len(path_parts) < 2:
+            raise ValueError(f"py-catalog-impl should be full path (module.CustomCatalog), got: {catalog_impl}")
+        module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
+        module = importlib.import_module(module_name)
+        class_ = getattr(module, class_name)
+        return class_(name, **properties)
+    except ModuleNotFoundError:
+        logger.warning("Could not initialize Catalog: %s", catalog_impl)
+        return None
 
 
 @dataclass
@@ -568,6 +613,11 @@ class Catalog(ABC):
             ValueError: If removals and updates have overlapping keys.
         """
 
+    @deprecated(
+        deprecated_in="0.8.0",
+        removed_in="0.9.0",
+        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+    )
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
 
@@ -579,6 +629,25 @@ class Catalog(ABC):
         """
         identifier_tuple = Catalog.identifier_to_tuple(identifier)
         if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            identifier_tuple = identifier_tuple[1:]
+        return identifier_tuple
+
+    def _identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
+        """Convert an identifier to a tuple and drop this catalog's name from the first element.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            Identifier: a tuple of strings with this catalog's name removed
+        """
+        identifier_tuple = Catalog.identifier_to_tuple(identifier)
+        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+            )
             identifier_tuple = identifier_tuple[1:]
         return identifier_tuple
 
@@ -692,6 +761,17 @@ class Catalog(ABC):
 
 
 class MetastoreCatalog(Catalog, ABC):
+    def __init__(self, name: str, **properties: str):
+        super().__init__(name, **properties)
+
+        for property_name in DEPRECATED_PROPERTY_NAMES:
+            if self.properties.get(property_name):
+                deprecation_message(
+                    deprecated_in="0.7.0",
+                    removed_in="0.8.0",
+                    help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
+                )
+
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],
@@ -713,7 +793,7 @@ class MetastoreCatalog(Catalog, ABC):
             return False
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         table = self.load_table(identifier_tuple)
         self.drop_table(identifier_tuple)
         io = load_file_io(self.properties, table.metadata_location)
@@ -767,7 +847,7 @@ class MetastoreCatalog(Catalog, ABC):
         )
         io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(
-            identifier=(self.name, database_name, table_name),
+            identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
             io=io,
@@ -782,6 +862,7 @@ class MetastoreCatalog(Catalog, ABC):
             base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
             updates=table_request.updates,
             enforce_validation=current_table is None,
+            metadata_location=current_table.metadata_location if current_table else None,
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
