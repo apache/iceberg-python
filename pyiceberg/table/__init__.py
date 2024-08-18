@@ -541,7 +541,7 @@ class Transaction:
             delete_filter = self._build_partition_predicate(partition_records=overlapping_partitions)
             delete_snapshot.delete_by_predicate(delete_filter)
 
-        manifest_merge_enabled = PropertyUtil.property_as_bool(
+        manifest_merge_enabled = property_as_bool(
             self.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
@@ -597,7 +597,7 @@ class Transaction:
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-        manifest_merge_enabled = PropertyUtil.property_as_bool(
+        manifest_merge_enabled = property_as_bool(
             self.table_metadata.properties,
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
