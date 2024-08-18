@@ -59,7 +59,6 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     IsNull,
-    Not,
     Or,
     Reference,
 )
@@ -514,13 +513,15 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
         if self.table_metadata.spec().is_unpartitioned():
             raise ValueError("Cannot apply dynamic overwrite on an unpartitioned table.")
 
-        _check_schema_compatible(self._table.schema(), other_schema=df.schema)
+        _check_pyarrow_schema_compatible(self._table.schema(), other_schema=df.schema)
 
         # If dataframe does not have data, there is no need to overwrite
         if df.shape[0] == 0:
@@ -533,8 +534,8 @@ class Transaction:
             )
         )
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            deleted_partitions = [data_file.partition for data_file in data_files]
-            delete_filter = self._build_partition_predicate(partition_records=deleted_partitions)
+            overlapping_partitions = [data_file.partition for data_file in data_files]
+            delete_filter = self._build_partition_predicate(partition_records=overlapping_partitions)
             delete_snapshot.delete_by_predicate(delete_filter)
 
         manifest_merge_enabled = PropertyUtil.property_as_bool(
