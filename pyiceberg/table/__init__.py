@@ -549,7 +549,8 @@ class Transaction:
         update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
         append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
 
-        with append_method(commit_uuid=append_snapshot_commit_uuid) as append_files:
+        with append_method() as append_files:
+            append_files.commit_uuid = append_snapshot_commit_uuid
             for data_file in data_files:
                 append_files.append_data_file(data_file)
 
@@ -609,7 +610,7 @@ class Transaction:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -691,9 +692,8 @@ class Transaction:
                     ))
 
             if len(replaced_files) > 0:
-                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite(
-                    commit_uuid=commit_uuid
-                ) as overwrite_snapshot:
+                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as overwrite_snapshot:
+                    overwrite_snapshot.commit_uuid = commit_uuid
                     for original_data_file, replaced_data_files in replaced_files:
                         overwrite_snapshot.delete_data_file(original_data_file)
                         for replaced_data_file in replaced_data_files:
@@ -3684,27 +3684,24 @@ class UpdateSnapshot:
         self._io = io
         self._snapshot_properties = snapshot_properties
 
-    def fast_append(self, commit_uuid: Optional[uuid.UUID] = None) -> FastAppendFiles:
+    def fast_append(self) -> FastAppendFiles:
         return FastAppendFiles(
             operation=Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
-            commit_uuid=commit_uuid,
         )
 
-    def merge_append(self, commit_uuid: Optional[uuid.UUID] = None) -> MergeAppendFiles:
+    def merge_append(self) -> MergeAppendFiles:
         return MergeAppendFiles(
-            commit_uuid=commit_uuid,
             operation=Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
             snapshot_properties=self._snapshot_properties,
         )
 
-    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> OverwriteFiles:
+    def overwrite(self) -> OverwriteFiles:
         return OverwriteFiles(
-            commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
             if self._transaction.table_metadata.current_snapshot() is not None
             else Operation.APPEND,
