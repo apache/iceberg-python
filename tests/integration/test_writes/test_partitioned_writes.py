@@ -181,7 +181,7 @@ def test_query_filter_appended_null_partitioned(
     assert len(rows) == 6
 
 
-@pytest.mark.adrian
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "part_col",
     [
@@ -224,7 +224,7 @@ def test_query_filter_dynamic_overwrite_null_partitioned(
     tbl.append(arrow_table_with_null)
     tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
     tbl.dynamic_overwrite(arrow_table_with_null)
-    # tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
+    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
     # Then
     assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)

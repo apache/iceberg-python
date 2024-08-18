@@ -521,7 +521,10 @@ class Transaction:
         if self.table_metadata.spec().is_unpartitioned():
             raise ValueError("Cannot apply dynamic overwrite on an unpartitioned table.")
 
-        _check_pyarrow_schema_compatible(self._table.schema(), other_schema=df.schema)
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
 
         # If dataframe does not have data, there is no need to overwrite
         if df.shape[0] == 0:
