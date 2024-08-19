@@ -536,10 +536,10 @@ class Transaction:
                 table_metadata=self._table.metadata, write_uuid=append_snapshot_commit_uuid, df=df, io=self._table.io
             )
         )
-        with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            overlapping_partitions = [data_file.partition for data_file in data_files]
-            delete_filter = self._build_partition_predicate(partition_records=overlapping_partitions)
-            delete_snapshot.delete_by_predicate(delete_filter)
+
+        overlapping_partitions = [data_file.partition for data_file in data_files]
+        delete_filter = self._build_partition_predicate(partition_records=overlapping_partitions)
+        self.delete(delete_filter=delete_filter)
 
         manifest_merge_enabled = property_as_bool(
             self.table_metadata.properties,
