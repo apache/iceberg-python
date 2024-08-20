@@ -146,6 +146,8 @@ catalog.create_table(
 )
 ```
 
+When the table is created, all IDs in the schema are re-assigned to ensure uniqueness.
+
 To create a table using a pyarrow schema:
 
 ```python
