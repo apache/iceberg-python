@@ -230,7 +230,9 @@ svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add 
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
 
 ```bash
-twine upload /tmp/iceberg-dist-release/pyiceberg-<VERSION>/*
+svn checkout https://dist.apache.org/repos/dist/release/iceberg /tmp/iceberg-dist-release/
+cd /tmp/iceberg-dist-release/pyiceberg-${VERSION_WITHOUT_RC}
+twine upload pyiceberg-*.whl pyiceberg-*.tar.gz
 ```
 
 Send out an announcement on the dev mail list:
