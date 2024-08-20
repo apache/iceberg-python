@@ -800,9 +800,9 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
         FROM {identifier}.all_manifests
     """
     ).collect()
-    assert [row.added_data_files_count for row in rows] == [5,1,5]
-    assert [row.existing_data_files_count for row in rows] == [0,0,0]
-    assert [row.deleted_data_files_count for row in rows] == [0,0,0]
+    assert [row.added_data_files_count for row in rows] == [5, 1, 5]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0]
 
 
 @pytest.mark.integration
