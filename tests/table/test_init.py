@@ -512,6 +512,29 @@ def test_add_column(table_v2: Table) -> None:
     assert apply_schema.highest_field_id == 4
 
 
+def test_update_column_doc(table_v1: Table, table_v2: Table) -> None:
+    COMMENT2 = "comment2"
+    for table in [table_v1, table_v2]:
+        original_schema = table.schema()
+        # update existing doc to a new doc
+        assert original_schema.find_field("y").doc == "comment"
+        new_schema = table.transaction().update_schema().update_column("y", doc=COMMENT2)._apply()
+        assert new_schema.find_field("y").doc == COMMENT2, "failed to update existing field doc"
+
+        # update existing doc to an emtpy string
+        assert new_schema.find_field("y").doc == COMMENT2
+        new_schema2 = table.transaction().update_schema().update_column("y", doc="")._apply()
+        assert new_schema2.find_field("y").doc == "", "failed to remove existing field doc"
+
+        # assert the above two updates also works with union_by_name
+        assert (
+            table.update_schema().union_by_name(new_schema)._apply() == new_schema
+        ), "failed to update existing field doc with union_by_name"
+        assert (
+            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
+        ), "failed to remove existing field doc with union_by_name"
+
+
 def test_add_primitive_type_column(table_v2: Table) -> None:
     primitive_type: Dict[str, PrimitiveType] = {
         "boolean": BooleanType(),
