@@ -2499,6 +2499,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 name=updated.name,
                 field_type=field_type or updated.field_type,
                 doc=doc if doc is not None else updated.doc,
+                # will raise ValidatorError
+                # if trying to change an identifier field from required to optional upon commit
                 required=required or updated.required,
             )
         else:
@@ -2507,6 +2509,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 name=field.name,
                 field_type=field_type or field.field_type,
                 doc=doc if doc is not None else field.doc,
+                # will raise ValidatorError
+                # if trying to change an identifier field from required to optional upon commit
                 required=required or field.required,
             )
 
