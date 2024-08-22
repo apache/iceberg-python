@@ -61,7 +61,7 @@ fsspec = ">=2023.1.0,<2025.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<10.0.0"
-pyarrow = { version = ">=9.0.0,<18.0.0", optional = true }
+pyarrow = { version = ">=14.0.0,<18.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
@@ -95,7 +95,6 @@ pyspark = "3.5.2"
 cython = "3.0.11"
 deptry = ">=0.14,<0.20"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
-
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
 ignore_missing_imports = true
