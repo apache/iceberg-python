@@ -834,4 +834,15 @@ class RestCatalog(Catalog):
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
-        return response.status_code in (200, 204)
+
+        if response.status_code == 404:
+            return False
+        elif response.status_code == 204:
+            return True
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {})
+
+        return False
