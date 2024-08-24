@@ -17,7 +17,7 @@
 
 
 help:  ## Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 install-poetry:  ## Install poetry if the user has not done that yet.
 	 @if ! command -v poetry &> /dev/null; then \
@@ -45,7 +45,7 @@ test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-minio.sh
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
-test-integration: ## run all integration tests with potentially arguments like PYTEST_ARGS="-vv"
+test-integration: ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d
@@ -88,7 +88,7 @@ test-coverage: | test-coverage-unit test-coverage-integration ## Run all tests w
 	poetry run coverage xml
 
 
-clean: ## clean up the project Python working environment
+clean: ## Clean up the project Python working environment
 	@echo "Cleaning up Cython and Python cached files"
 	@rm -rf build dist *.egg-info
 	@find . -name "*.so" -exec echo Deleting {} \; -delete
