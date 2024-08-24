@@ -2501,7 +2501,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=doc if doc is not None else updated.doc,
                 # will raise ValidatorError
                 # if trying to change an identifier field from required to optional upon commit
-                required=required or updated.required,
+                required=updated.required,
             )
         else:
             self._updates[field.field_id] = NestedField(
@@ -2511,7 +2511,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=doc if doc is not None else field.doc,
                 # will raise ValidatorError
                 # if trying to change an identifier field from required to optional upon commit
-                required=required or field.required,
+                required=field.required,
             )
 
         if required is not None:
