@@ -2492,12 +2492,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 except ResolveError as e:
                     raise ValidationError(f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
 
+        # if other updates for the same field exist in one transaction:
         if updated := self._updates.get(field.field_id):
             self._updates[field.field_id] = NestedField(
                 field_id=updated.field_id,
                 name=updated.name,
                 field_type=field_type or updated.field_type,
-                doc=doc or updated.doc,
+                doc=doc if doc is not None else updated.doc,
                 required=updated.required,
             )
         else:
@@ -2505,7 +2506,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_id=field.field_id,
                 name=field.name,
                 field_type=field_type or field.field_type,
-                doc=doc or field.doc,
+                doc=doc if doc is not None else field.doc,
                 required=field.required,
             )
 
@@ -2878,7 +2879,7 @@ class UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         if field.field_type.is_primitive and field.field_type != existing_field.field_type:
             self.update_schema.update_column(full_name, field_type=field.field_type)
 
-        if field.doc is not None and not field.doc != existing_field.doc:
+        if field.doc is not None and field.doc != existing_field.doc:
             self.update_schema.update_column(full_name, doc=field.doc)
 
     def _find_field_type(self, field_id: int) -> IcebergType:
