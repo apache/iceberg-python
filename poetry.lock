@@ -1416,17 +1416,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.3.0"
+version = "0.3.1"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.3.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:1912c3498e79de21f58d9481a7ec2f1e5086d14668a68f09c947612fdae4367d"},
-    {file = "getdaft-0.3.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:aa5169f116c474c86b07c00d1105854c12c0f43db6455d299e65374f07d26dbc"},
-    {file = "getdaft-0.3.0-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2585c132fb6a2c11399d63b79444d3d622a8d8d0f9614a2f1dad376a2fba9224"},
-    {file = "getdaft-0.3.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2bee8ff4f340ab9d869a01a7b633d20c1c7061beacbe93583e339431b3f0fd6c"},
-    {file = "getdaft-0.3.0-cp38-abi3-win_amd64.whl", hash = "sha256:3cc2b19b3caf2ffcf488ed0bbbbc494f64b4a55c1ce0c0dcc2ab06a14eb055da"},
-    {file = "getdaft-0.3.0.tar.gz", hash = "sha256:6743b12bfbcc241db56ac89c71ef1857722c5f8ed120311bc434006a8423bdee"},
+    {file = "getdaft-0.3.1-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9fd346e504426ee0b1b1a0a148859eba0d6c88111560792c182c20535aa0a76a"},
+    {file = "getdaft-0.3.1-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:a8123206967e394b9098bb9f94e30074f631a97ddfe3ec5215a13d9a7c0d7046"},
+    {file = "getdaft-0.3.1-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1bcbc62864922380c5bede3ccd6b472e1d9831037df59376dc158a89400f8f39"},
+    {file = "getdaft-0.3.1-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:30b044102d30b633fe081545e83171f2403c94f0cefdc7cbfc636b0070b80ddc"},
+    {file = "getdaft-0.3.1-cp38-abi3-win_amd64.whl", hash = "sha256:8b41e6ac7c36cb86cc2965a99e49b5e22ab9a4e61172b144c67cef562c8269a5"},
+    {file = "getdaft-0.3.1.tar.gz", hash = "sha256:3e6d4441927979c20737b41beb6f8f108282d8c585e3ad1fcc1c13c00a541c30"},
 ]
 
 [package.dependencies]
@@ -2703,8 +2703,8 @@ files = [
 [package.dependencies]
 numpy = [
     {version = ">=1.20.3", markers = "python_version < \"3.10\""},
-    {version = ">=1.21.0", markers = "python_version >= \"3.10\" and python_version < \"3.11\""},
     {version = ">=1.23.2", markers = "python_version >= \"3.11\""},
+    {version = ">=1.21.0", markers = "python_version >= \"3.10\" and python_version < \"3.11\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
