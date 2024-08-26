@@ -621,7 +621,9 @@ class Transaction:
         if not delete_snapshot.files_affected and not delete_snapshot.rewrites_needed:
             warnings.warn("Delete operation did not match any records")
 
-    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def add_files(
+        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+    ) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
 
@@ -630,7 +632,21 @@ class Transaction:
 
         Raises:
             FileNotFoundError: If the file does not exist.
+            ValueError: Raises a ValueError given file_paths contains duplicate files
+            ValueError: Raises a ValueError given file_paths already referenced by table
         """
+        if len(file_paths) != len(set(file_paths)):
+            raise ValueError("File paths must be unique")
+
+        if check_duplicate_files:
+            import pyarrow.compute as pc
+
+            expr = pc.field("file_path").isin(file_paths)
+            referenced_files = [file["file_path"] for file in self._table.inspect.files().filter(expr).to_pylist()]
+
+            if referenced_files:
+                raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
+
         if self.table_metadata.name_mapping() is None:
             self.set_properties(**{
                 TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()
@@ -1632,7 +1648,9 @@ class Table:
         with self.transaction() as tx:
             tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
-    def add_files(self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def add_files(
+        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+    ) -> None:
         """
         Shorthand API for adding files as data files to the table.
 
@@ -1643,7 +1661,9 @@ class Table:
             FileNotFoundError: If the file does not exist.
         """
         with self.transaction() as tx:
-            tx.add_files(file_paths=file_paths, snapshot_properties=snapshot_properties)
+            tx.add_files(
+                file_paths=file_paths, snapshot_properties=snapshot_properties, check_duplicate_files=check_duplicate_files
+            )
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
@@ -2260,7 +2280,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),  # type: ignore
+            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
+            # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
