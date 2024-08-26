@@ -732,3 +732,98 @@ def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalo
     for column in written_arrow_table.column_names:
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
             assert left == right
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_add_files_with_duplicate_files_in_file_paths(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.test_table_duplicate_add_files_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+    file_path = "s3://warehouse/default/unpartitioned/v{format_version}/test-1.parquet"
+    file_paths = [file_path, file_path]
+
+    # add the parquet files as data files
+    with pytest.raises(ValueError) as exc_info:
+        tbl.add_files(file_paths=file_paths)
+    assert "File paths must be unique" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_add_files_that_referenced_by_current_snapshot(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.test_table_add_referenced_file_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
+
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+    existing_files_in_table = tbl.inspect.files().to_pylist().pop()["file_path"]
+
+    with pytest.raises(ValueError) as exc_info:
+        tbl.add_files(file_paths=[existing_files_in_table])
+    assert f"Cannot add files that are already referenced by table, files: {existing_files_in_table}" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_files_false(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.test_table_add_referenced_file_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+    existing_files_in_table = tbl.inspect.files().to_pylist().pop()["file_path"]
+    tbl.add_files(file_paths=[existing_files_in_table], check_duplicate_files=False)
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+    assert [row.added_data_files_count for row in rows] == [5, 1, 5]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_files_true(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.test_table_add_referenced_file_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/unpartitioned/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+    existing_files_in_table = tbl.inspect.files().to_pylist().pop()["file_path"]
+    with pytest.raises(ValueError) as exc_info:
+        tbl.add_files(file_paths=[existing_files_in_table], check_duplicate_files=True)
+    assert f"Cannot add files that are already referenced by table, files: {existing_files_in_table}" in str(exc_info.value)
