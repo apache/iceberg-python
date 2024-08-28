@@ -549,7 +549,7 @@ def test_write_parquet_unsupported_properties(
     identifier = "default.write_parquet_unsupported_properties"
 
     tbl = _create_table(session_catalog, identifier, properties, [])
-    with pytest.raises(NotImplementedError):
+    with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
 
 
