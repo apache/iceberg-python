@@ -93,7 +93,7 @@ typing-extensions = "4.12.2"
 pytest-mock = "3.14.0"
 pyspark = "3.5.2"
 cython = "3.0.11"
-deptry = ">=0.14,<0.20"
+deptry = ">=0.14,<0.21"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
 [[tool.mypy.overrides]]
 module = "pytest_mock.*"
