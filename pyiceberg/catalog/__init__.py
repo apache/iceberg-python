@@ -51,11 +51,12 @@ from pyiceberg.schema import Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
-    CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
     StagedTable,
     Table,
+    TableRequirement,
+    TableUpdate,
     update_table_metadata,
 )
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
@@ -502,11 +503,15 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update one or more tables.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -854,13 +859,19 @@ class MetastoreCatalog(Catalog, ABC):
             catalog=self,
         )
 
-    def _update_and_stage_table(self, current_table: Optional[Table], table_request: CommitTableRequest) -> StagedTable:
-        for requirement in table_request.requirements:
+    def _update_and_stage_table(
+        self,
+        current_table: Optional[Table],
+        table_identifier: Identifier,
+        requirements: Tuple[TableRequirement, ...],
+        updates: Tuple[TableUpdate, ...],
+    ) -> StagedTable:
+        for requirement in requirements:
             requirement.validate(current_table.metadata if current_table else None)
 
         updated_metadata = update_table_metadata(
             base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
-            updates=table_request.updates,
+            updates=updates,
             enforce_validation=current_table is None,
             metadata_location=current_table.metadata_location if current_table else None,
         )
@@ -869,7 +880,7 @@ class MetastoreCatalog(Catalog, ABC):
         new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
 
         return StagedTable(
-            identifier=tuple(table_request.identifier.namespace.root + [table_request.identifier.name]),
+            identifier=table_identifier,
             metadata=updated_metadata,
             metadata_location=new_metadata_location,
             io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
