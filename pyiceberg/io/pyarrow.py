@@ -32,6 +32,7 @@ import logging
 import os
 import re
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from copy import copy
@@ -2544,7 +2545,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> Dict[str, Any]:
         f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
         if unsupported_keys := fnmatch.filter(table_properties, key_pattern):
-            raise NotImplementedError(f"Parquet writer option(s) {unsupported_keys} not implemented")
+            warnings.warn(f"Parquet writer option(s) {unsupported_keys} not implemented")
 
     compression_codec = table_properties.get(TableProperties.PARQUET_COMPRESSION, TableProperties.PARQUET_COMPRESSION_DEFAULT)
     compression_level = property_as_int(
