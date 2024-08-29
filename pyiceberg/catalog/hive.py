@@ -440,7 +440,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self.identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
         database_name, table_name = table_identifier
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
@@ -452,9 +452,7 @@ class HiveCatalog(MetastoreCatalog):
                     if lock.state == LockState.WAITING:
                         self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
                     else:
-                        raise CommitFailedException(
-                            f"Failed to acquire lock for {table_identifier.identifier}, state: {lock.state}"
-                        )
+                        raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
 
                 hive_table: Optional[HiveTable]
                 current_table: Optional[Table]
@@ -495,7 +493,7 @@ class HiveCatalog(MetastoreCatalog):
                     )
                     self._create_hive_table(open_client, hive_table)
             except WaitingForLockException as e:
-                raise CommitFailedException(f"Failed to acquire lock for {table.identifier}, state: {lock.state}") from e
+                raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}") from e
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 

@@ -412,7 +412,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self.identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
         namespace_tuple = Catalog.namespace_from(table_identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(table_identifier)

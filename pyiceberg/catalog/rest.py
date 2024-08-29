@@ -750,8 +750,9 @@ class RestCatalog(Catalog):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
-        identifier = TableIdentifier(namespace=table.identifier[1:-1], name=table.identifier[-1])
-        table_request = CommitTableRequest(identifier=identifier, requirements=requirements, updates=updates)
+        identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = TableIdentifier(namespace=identifier[0:-1], name=identifier[-1])
+        table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
             data=table_request.model_dump_json().encode(UTF8),
