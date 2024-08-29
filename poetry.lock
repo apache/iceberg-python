@@ -25,24 +25,24 @@ tests = ["arrow", "dask[dataframe]", "docker", "pytest", "pytest-mock"]
 
 [[package]]
 name = "aiobotocore"
-version = "2.13.3"
+version = "2.14.0"
 description = "Async client for aws services using botocore and aiohttp"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "aiobotocore-2.13.3-py3-none-any.whl", hash = "sha256:1272f765fd9414e1a68f8add71978367db94e17e36c3bf629cf1153eb5141fb9"},
-    {file = "aiobotocore-2.13.3.tar.gz", hash = "sha256:ac5620f93cc3e7c2aef7c67ba2bb74035ff8d49ee2325821daed13b3dd82a473"},
+    {file = "aiobotocore-2.14.0-py3-none-any.whl", hash = "sha256:721c52f5d1221daa4851cfa9ab5db14440477f33d763da9019691c4f67163873"},
+    {file = "aiobotocore-2.14.0.tar.gz", hash = "sha256:680dcbcde9cb0dcefbcddc180d273c2d048940f87f2bdb0eebe0f4c30c1e39b9"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.9.2,<4.0.0"
 aioitertools = ">=0.5.1,<1.0.0"
-botocore = ">=1.34.70,<1.34.163"
+botocore = ">=1.35.0,<1.35.8"
 wrapt = ">=1.10.10,<2.0.0"
 
 [package.extras]
-awscli = ["awscli (>=1.32.70,<1.33.45)"]
-boto3 = ["boto3 (>=1.34.70,<1.34.163)"]
+awscli = ["awscli (>=1.34.0,<1.34.8)"]
+boto3 = ["boto3 (>=1.35.0,<1.35.8)"]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -371,17 +371,17 @@ files = [
 
 [[package]]
 name = "boto3"
-version = "1.34.162"
+version = "1.35.7"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "boto3-1.34.162-py3-none-any.whl", hash = "sha256:d6f6096bdab35a0c0deff469563b87d184a28df7689790f7fe7be98502b7c590"},
-    {file = "boto3-1.34.162.tar.gz", hash = "sha256:873f8f5d2f6f85f1018cbb0535b03cceddc7b655b61f66a0a56995238804f41f"},
+    {file = "boto3-1.35.7-py3-none-any.whl", hash = "sha256:bfbdf7c8f2e3eb70e4309cdcf5c9c7940e1fed4f645cdfb52581e7e67d3c8cab"},
+    {file = "boto3-1.35.7.tar.gz", hash = "sha256:05bd349cf260ba177924f38d721e427e2b3a6dd0fa8a18fa4ffc1b889633b181"},
 ]
 
 [package.dependencies]
-botocore = ">=1.34.162,<1.35.0"
+botocore = ">=1.35.7,<1.36.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.10.0,<0.11.0"
 
@@ -390,13 +390,13 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.34.162"
+version = "1.35.7"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "botocore-1.34.162-py3-none-any.whl", hash = "sha256:2d918b02db88d27a75b48275e6fb2506e9adaaddbec1ffa6a8a0898b34e769be"},
-    {file = "botocore-1.34.162.tar.gz", hash = "sha256:adc23be4fb99ad31961236342b7cbf3c0bfc62532cd02852196032e8c0d682f3"},
+    {file = "botocore-1.35.7-py3-none-any.whl", hash = "sha256:324e58518a92f2946bc6653e5e1272bc88d4b6313413f938bdc51cb90d34cbba"},
+    {file = "botocore-1.35.7.tar.gz", hash = "sha256:85e4b58f2c6e54dfbf52eaee72ebc9b70188fd1716d47f626874abadcee45512"},
 ]
 
 [package.dependencies]
@@ -1033,23 +1033,23 @@ files = [
 
 [[package]]
 name = "deptry"
-version = "0.19.1"
+version = "0.20.0"
 description = "A command line utility to check for unused, missing and transitive dependencies in a Python project."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "deptry-0.19.1-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3a20ef0dd1c737fb05553d1b9c2fa9f185d0c9d3d881d255334cef401ffdc599"},
-    {file = "deptry-0.19.1-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:2c6b2df353e5113fd2f787c2f7e694657548d388929e988e8644bd178e19fc5c"},
-    {file = "deptry-0.19.1-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a407bab3486e3844f93d702f1a381942873b2a46056c693b5634bbde219bb056"},
-    {file = "deptry-0.19.1-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:43f33789b97b47313609e92b62fabf8a71bba0d35a7476806da5d3d152e32345"},
-    {file = "deptry-0.19.1-cp38-abi3-win_amd64.whl", hash = "sha256:0bad85a77b31360d0f52383b14783fdae4a201b597c0158fe10e91a779c67079"},
-    {file = "deptry-0.19.1-cp38-abi3-win_arm64.whl", hash = "sha256:c59142d9dca8873325692fbb7aa1d2902fde87020dcc8102f75120ba95515172"},
-    {file = "deptry-0.19.1-pp310-pypy310_pp73-macosx_10_12_x86_64.whl", hash = "sha256:a1abc119f9c8536b8ab1ee2122d4130665f33225d00d8615256ce354eb2c11ba"},
-    {file = "deptry-0.19.1-pp310-pypy310_pp73-macosx_11_0_arm64.whl", hash = "sha256:7344c6cea032b549d86e156aa1e679fb94cd44deb7e93f25cb6d9c0ded5ea06f"},
-    {file = "deptry-0.19.1-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ff7d8954265c48ea334fdd508339c51d3fba05e2d4a8be47712c69d1c8d35c94"},
-    {file = "deptry-0.19.1-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:023073247e5dac21254bf7b600ca2e2b71560652d2dfbe11535445ee912ca059"},
-    {file = "deptry-0.19.1-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:af8a0a9c42f8f92dfbc048e724fa89b9131f032f7e245812260560c214395abf"},
-    {file = "deptry-0.19.1.tar.gz", hash = "sha256:1c12fea1d2301f42c7035c5636e4b9421457fde256fe7a241245662d20b4c841"},
+    {file = "deptry-0.20.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:41434d95124851b83cb05524d1a09ad6fea62006beafed2ef90a6b501c1b237f"},
+    {file = "deptry-0.20.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:b3b4b22d1406147de5d606a24042126cd74d52fdfdb0232b9c5fd0270d601610"},
+    {file = "deptry-0.20.0-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:012fb106dbea6ca95196cdcd75ac90c516c8f01292f7934f2e802a7cf025a660"},
+    {file = "deptry-0.20.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8ce3920e2bd6d2b4427ab31ab8efb94bbef897001c2d395782bc30002966d12d"},
+    {file = "deptry-0.20.0-cp38-abi3-win_amd64.whl", hash = "sha256:0c90ce64e637d0e902bc97c5a020adecfee9e9f09ee0bf4c61554994139bebdb"},
+    {file = "deptry-0.20.0-cp38-abi3-win_arm64.whl", hash = "sha256:6886ff44aaf26fd83093f14f844ebc84589d90df9bbad9a1625e8a080e6f1be2"},
+    {file = "deptry-0.20.0-pp310-pypy310_pp73-macosx_10_12_x86_64.whl", hash = "sha256:ace3b39b1d0763f357c79bab003d1b135bea2eb61102be539992621a42d1ac7b"},
+    {file = "deptry-0.20.0-pp310-pypy310_pp73-macosx_11_0_arm64.whl", hash = "sha256:d1a00f8c9e6c0829a4a523edd5e526e3df06d2b50e0a99446f09f9723df2efad"},
+    {file = "deptry-0.20.0-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e233859f150df70ffff76e95f9b7326fc25494b9beb26e776edae20f0f515e7d"},
+    {file = "deptry-0.20.0-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9f92e7e97ef42477717747b190bc6796ab94b35655af126d8c577f7eae0eb3a9"},
+    {file = "deptry-0.20.0-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:f6cee6005997791bb77155667be055333fb63ae9a24f0f103f25faf1e7affe34"},
+    {file = "deptry-0.20.0.tar.gz", hash = "sha256:62e9aaf3aea9e2ca66c85da98a0ba0290b4d3daea4e1d0ad937d447bd3c36402"},
 ]
 
 [package.dependencies]
@@ -4596,4 +4596,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8, <3.12, !=3.9.7"
-content-hash = "0a8536c15a0d263a02b1ee6837e9ad3cb9aba608951e35bfee58e3a482b8fcaf"
+content-hash = "8ff5fd3b92929835dce8fa9201ddd132da38637da9af47b6f713fb8dfd1f5e94"

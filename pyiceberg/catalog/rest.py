@@ -98,6 +98,7 @@ class Endpoints:
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
+    list_views: str = "namespaces/{namespace}/views"
 
 
 AUTHORIZATION_HEADER = "Authorization"
@@ -202,8 +203,17 @@ class ListTableResponseEntry(IcebergBaseModel):
     namespace: Identifier = Field()
 
 
+class ListViewResponseEntry(IcebergBaseModel):
+    name: str = Field()
+    namespace: Identifier = Field()
+
+
 class ListTablesResponse(IcebergBaseModel):
     identifiers: List[ListTableResponseEntry] = Field()
+
+
+class ListViewsResponse(IcebergBaseModel):
+    identifiers: List[ListViewResponseEntry] = Field()
 
 
 class ErrorResponseMessage(IcebergBaseModel):
@@ -721,6 +731,7 @@ class RestCatalog(Catalog):
             )
         return table_request
 
+    @retry(**_RETRY_ARGS)
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -758,6 +769,17 @@ class RestCatalog(Catalog):
                 },
             )
         return CommitTableResponse(**response.json())
+
+    @retry(**_RETRY_ARGS)
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        namespace_tuple = self._check_valid_namespace_identifier(namespace)
+        namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
 
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
