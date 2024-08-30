@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from enum import Enum
 from json import JSONDecodeError
 from typing import (
     TYPE_CHECKING,
@@ -100,6 +101,11 @@ class Endpoints:
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
+
+
+class IdentifierKind(Enum):
+    TABLE = "table"
+    VIEW = "view"
 
 
 AUTHORIZATION_HEADER = "Authorization"
@@ -395,15 +401,17 @@ class RestCatalog(Catalog):
             raise NoSuchIdentifierError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
         return identifier_tuple
 
-    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier], kind: str = "table") -> Properties:
+    def _split_identifier_for_path(
+        self, identifier: Union[str, Identifier, TableIdentifier], kind: IdentifierKind = IdentifierKind.TABLE
+    ) -> Properties:
         if isinstance(identifier, TableIdentifier):
             if identifier.namespace.root[0] == self.name:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
+                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), kind.value: identifier.name}
             else:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), "table": identifier.name}
+                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
 
-        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind: identifier_tuple[-1]}
+        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
 
     def _split_identifier_for_json(self, identifier: Union[str, Identifier]) -> Dict[str, Union[Identifier, str]]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
@@ -876,7 +884,9 @@ class RestCatalog(Catalog):
     def drop_view(self, identifier: Union[str]) -> None:
         identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
-            self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier_tuple, kind="view")),
+            self.url(
+                Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier_tuple, IdentifierKind.VIEW)
+            ),
         )
         try:
             response.raise_for_status()
