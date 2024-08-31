@@ -18,6 +18,7 @@
 <!-- prettier-ignore-start -->
 
 <!-- markdown-link-check-disable -->
+# Summary
 
 - [Getting started](index.md)
 - [Configuration](configuration.md)
@@ -26,8 +27,8 @@
 - [Contributing](contributing.md)
 - [Community](community.md)
 - Releases
-    - [Verify a release](verify-release.md)
-    - [How to release](how-to-release.md)
+  - [Verify a release](verify-release.md)
+  - [How to release](how-to-release.md)
 - [Code Reference](reference/)
 
 <!-- markdown-link-check-enable-->

@@ -22,6 +22,8 @@ hide:
   - under the License.
   -->
 
+# Configuration
+
 ## Tables
 
 Iceberg tables support table properties to configure table behavior.
@@ -77,15 +79,15 @@ For the FileIO there are several configuration options available:
 
 | Key                  | Example                  | Description                                                                                                                                                                                                                                               |
 | -------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| s3.endpoint          | https://10.0.19.25/      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud. |
+| s3.endpoint          | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud. |
 | s3.access-key-id     | admin                    | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
 | s3.secret-access-key | password                 | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...           | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.signer            | bearer                   | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
-| s3.signer.uri        | http://my.signer:8080/s3 | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                          |
+| s3.signer.uri        | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                          |
 | s3.signer.endpoint   | v1/main/s3-sign          | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                            |
 | s3.region            | us-west-2                | Sets the region of the bucket                                                                                                                                                                                                                             |
-| s3.proxy-uri         | http://my.proxy.com:8080 | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
+| s3.proxy-uri         | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                     | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
 
 <!-- markdown-link-check-enable-->
@@ -96,7 +98,7 @@ For the FileIO there are several configuration options available:
 
 | Key                  | Example             | Description                                      |
 | -------------------- | ------------------- | ------------------------------------------------ |
-| hdfs.host            | https://10.0.19.25/ | Configure the HDFS host to connect to            |
+| hdfs.host            | <https://10.0.19.25/> | Configure the HDFS host to connect to            |
 | hdfs.port            | 9000                | Configure the HDFS port to connect to.           |
 | hdfs.user            | user                | Configure the HDFS username used for connection. |
 | hdfs.kerberos_ticket | kerberos_ticket     | Configure the path to the Kerberos ticket cache. |
@@ -109,7 +111,7 @@ For the FileIO there are several configuration options available:
 
 | Key                     | Example                                                                                   | Description                                                                                                                                                                                                                                                                            |
 | ----------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| adlfs.connection-string | AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=http://localhost/ | A [connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string). This could be used to use FileIO with any adlfs-compatible object storage service that has a different endpoint (like [azurite](https://github.com/azure/azurite)). |
+| adlfs.connection-string | AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=<http://localhost/> | A [connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string). This could be used to use FileIO with any adlfs-compatible object storage service that has a different endpoint (like [azurite](https://github.com/azure/azurite)). |
 | adlfs.account-name      | devstoreaccount1                                                                          | The account that you want to connect to                                                                                                                                                                                                                                                |
 | adlfs.account-key       | Eby8vdM02xNOcqF...                                                                        | The key to authentication against the account.                                                                                                                                                                                                                                         |
 | adlfs.sas-token         | NuHOuuzdQN7VRM%2FOpOeqBlawRCA845IY05h9eu1Yte4%3D                                          | The shared access signature                                                                                                                                                                                                                                                            |
@@ -133,7 +135,7 @@ For the FileIO there are several configuration options available:
 | gcs.cache-timeout           | 60                  | Configure the cache expiration time in seconds for object metadata cache                                                                                                                                                                            |
 | gcs.requester-pays          | False               | Configure whether to use requester-pays requests                                                                                                                                                                                                    |
 | gcs.session-kwargs          | {}                  | Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.                                                                                                                                       |
-| gcs.endpoint                | http://0.0.0.0:4443 | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
+| gcs.endpoint                | <http://0.0.0.0:4443> | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
 | gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
 | gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
 
@@ -200,7 +202,7 @@ catalog:
 
 | Key                 | Example                          | Description                                                                                        |
 | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                 | https://rest-catalog/ws          | URI identifying the REST Server                                                                    |
+| uri                 | <https://rest-catalog/ws>          | URI identifying the REST Server                                                                    |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 | credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
 | token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
@@ -210,7 +212,7 @@ catalog:
 | rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
 | rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| oauth2-server-uri   | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
 
 <!-- markdown-link-check-enable-->
 
@@ -325,7 +327,7 @@ catalog:
 | ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
 | glue.id                | 111111111111                         | Configure the 12-digit ID of the Glue Catalog                                   |
 | glue.skip-archive      | true                                 | Configure whether to skip the archival of older table versions. Default to true |
-| glue.endpoint          | https://glue.us-east-1.amazonaws.com | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
+| glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
 | glue.profile-name      | default                              | Configure the static profile used to access the Glue Catalog                    |
 | glue.region            | us-east-1                            | Set the region of the Glue Catalog                                              |
 | glue.access-key-id     | admin                                | Configure the static access key id used to access the Glue Catalog              |
