@@ -20,3 +20,7 @@ default: true
 
 # MD013/line-length - Line length
 MD013: false
+
+# MD007/ul-indent - Unordered list indentation
+MD007:
+  indent: 4
