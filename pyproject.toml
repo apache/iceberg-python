@@ -30,6 +30,7 @@ classifiers = [
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 packages = [
   { include = "pyiceberg" },
@@ -78,7 +79,10 @@ gcsfs = { version = ">=2023.1.0,<2024.1.0", optional = true }
 psycopg2-binary = { version = ">=2.9.6", optional = true }
 sqlalchemy = { version = "^2.0.18", optional = true }
 getdaft = { version = ">=0.2.12", optional = true }
-numpy = { version = "^1.22.4", optional = true }
+numpy = [
+    { version = "1.26.0", python = ">=3.9,<3.13", optional = true },
+    { version = "1.24.4", python = ">=3.8,<3.9", optional = true }
+]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.4.4"
@@ -611,6 +615,8 @@ filterwarnings = [
   "ignore:unclosed <socket.socket",
   # Remove this in a future release of PySpark.
   "ignore:distutils Version classes are deprecated. Use packaging.version instead.",
+  "ignore:datetime.datetime.utcnow\\(\\) is deprecated and scheduled for removal in a future version.",
+  "ignore:datetime.datetime.utcfromtimestamp\\(\\) is deprecated and scheduled for removal in a future version.",
 ]
 
 [tool.black]
