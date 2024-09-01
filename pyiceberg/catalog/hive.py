@@ -441,7 +441,7 @@ class HiveCatalog(MetastoreCatalog):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
         table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
-        database_name, table_name = table_identifier
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
         with self._client as open_client:

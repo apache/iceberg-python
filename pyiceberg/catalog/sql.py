@@ -423,7 +423,7 @@ class SqlCatalog(MetastoreCatalog):
         except NoSuchTableError:
             current_table = None
 
-        updated_staged_table = self._update_and_stage_table(current_table, table.identifier[1:], requirements, updates)
+        updated_staged_table = self._update_and_stage_table(current_table, table.identifier, requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)

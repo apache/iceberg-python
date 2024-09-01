@@ -732,6 +732,17 @@ class RestCatalog(Catalog):
         return table_request
 
     @retry(**_RETRY_ARGS)
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        namespace_tuple = self._check_valid_namespace_identifier(namespace)
+        namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
+
+    @retry(**_RETRY_ARGS)
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -751,7 +762,7 @@ class RestCatalog(Catalog):
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
         identifier = self._identifier_to_tuple_without_catalog(table.identifier)
-        table_identifier = TableIdentifier(namespace=identifier[0:-1], name=identifier[-1])
+        table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
@@ -770,17 +781,6 @@ class RestCatalog(Catalog):
                 },
             )
         return CommitTableResponse(**response.json())
-
-    @retry(**_RETRY_ARGS)
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        namespace_tuple = self._check_valid_namespace_identifier(namespace)
-        namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
 
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:

@@ -670,7 +670,7 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
     )
 
     # When
-    response = given_table.catalog.commit_table(  # pylint: disable=W0212
+    response = given_table.catalog.commit_table(
         given_table,
         updates=(
             AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
