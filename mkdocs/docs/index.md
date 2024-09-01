@@ -148,7 +148,7 @@ print(table.scan().to_arrow())
 
 And the new column is there:
 
-```
+```python
 taxi_dataset(
   1: VendorID: optional long,
   2: tpep_pickup_datetime: optional timestamp,

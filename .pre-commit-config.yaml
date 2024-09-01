@@ -46,17 +46,11 @@ repos:
     hooks:
       - id: pycln
         args: [--config=pyproject.toml]
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.17
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
     hooks:
-      - id: mdformat
-        additional_dependencies:
-          - mdformat-black==0.1.1
-          - mdformat-config==0.1.3
-          - mdformat-beautysh==0.1.1
-          - mdformat-admon==1.0.1
-          - mdformat-mkdocs==1.0.1
-          - mdformat-frontmatter==2.0.1
+      - id: markdownlint
+        args: ["--fix"]
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.3.0
     hooks:
