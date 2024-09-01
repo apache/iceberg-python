@@ -53,8 +53,8 @@ from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
-    GCS_ENDPOINT,
     GCS_PROJECT_ID,
+    GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
     fsspec,
@@ -1873,7 +1873,7 @@ def fsspec_fileio(request: pytest.FixtureRequest) -> FsspecFileIO:
 @pytest.fixture
 def fsspec_fileio_gcs(request: pytest.FixtureRequest) -> FsspecFileIO:
     properties = {
-        GCS_ENDPOINT: request.config.getoption("--gcs.endpoint"),
+        GCS_SERVICE_HOST: request.config.getoption("--gcs.endpoint"),
         GCS_TOKEN: request.config.getoption("--gcs.oauth2.token"),
         GCS_PROJECT_ID: request.config.getoption("--gcs.project-id"),
     }
@@ -1885,7 +1885,7 @@ def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     properties = {
-        GCS_ENDPOINT: request.config.getoption("--gcs.endpoint"),
+        GCS_SERVICE_HOST: request.config.getoption("--gcs.endpoint"),
         GCS_TOKEN: request.config.getoption("--gcs.oauth2.token"),
         GCS_PROJECT_ID: request.config.getoption("--gcs.project-id"),
         GCS_TOKEN_EXPIRES_AT_MS: datetime_to_millis(datetime.now()) + 60 * 1000,
