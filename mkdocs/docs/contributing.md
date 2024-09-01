@@ -70,7 +70,7 @@ pip3 install -e ".[s3fs,hive]"
 
 Install it directly for GitHub (not recommended), but sometimes handy:
 
-```
+```shell
 pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyarrow]"
 ```
 
@@ -121,13 +121,13 @@ make test-adlfs
 
 To pass additional arguments to pytest, you can use `PYTEST_ARGS`.
 
-_Run pytest in verbose mode_
+### Run pytest in verbose mode
 
 ```sh
 make test PYTEST_ARGS="-v"
 ```
 
-_Run pytest with pdb enabled_
+### Run pytest with pdb enabled
 
 ```sh
 make test PYTEST_ARGS="--pdb"
@@ -176,7 +176,7 @@ def load_something():
 
 Which will warn:
 
-```
+```text
 Call to load_something, deprecated in 0.1.0, will be removed in 0.2.0. Please use load_something_else() instead.
 ```
 
@@ -194,7 +194,7 @@ deprecation_message(
 
 Which will warn:
 
-```
+```text
 Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
 

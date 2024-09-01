@@ -81,7 +81,7 @@ export GIT_TAG_HASH=${GIT_TAG_REF:0:40}
 export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 ```
 
-The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57.
+The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
 If you have not published your GPG key in [KEYS](https://dist.apache.org/repos/dist/dev/iceberg/KEYS) yet, you must publish it before sending the vote email by doing:
 
 ```bash
@@ -193,7 +193,7 @@ cat release-announcement-email.txt
 
 Once the vote has been passed, you can close the vote thread by concluding it:
 
-```
+```text
 Thanks everyone for voting! The 72 hours have passed, and a minimum of 3 binding votes have been cast:
 
 +1 Foo Bar (non-binding)
@@ -207,7 +207,7 @@ Kind regards,
 
 ### Copy the artifacts to the release dist
 
-```
+```bash
 export RC=rc2
 export VERSION=0.7.0${RC}
 export VERSION_WITHOUT_RC=${VERSION/rc?/}
@@ -237,7 +237,7 @@ twine upload pyiceberg-*.whl pyiceberg-*.tar.gz
 
 Send out an announcement on the dev mail list:
 
-```
+```text
 To: dev@iceberg.apache.org
 Subject: [ANNOUNCE] Apache PyIceberg release <VERSION>
 

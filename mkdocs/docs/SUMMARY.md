@@ -18,6 +18,7 @@
 <!-- prettier-ignore-start -->
 
 <!-- markdown-link-check-disable -->
+# Summary
 
 - [Getting started](index.md)
 - [Configuration](configuration.md)
