@@ -845,16 +845,8 @@ readable_metrics: [
 [6.0989]]
 ```
 
-<!-- prettier-ignore-start -->
-
 !!! info
-    Content refers to type of content stored by the data file:
-
-    - 0  Data
-    - 1  Position Deletes
-    - 2  Equality Deletes
-
-<!-- prettier-ignore-end -->
+    Content refers to type of content stored by the data file: `0` - `Data`, `1` - `Position Deletes`, `2` - `Equality Deletes`
 
 To show only data files or delete files in the current snapshot, use `table.inspect.data_files()` and `table.inspect.delete_files()` respectively.
 
