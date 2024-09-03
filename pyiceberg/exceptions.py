@@ -40,6 +40,14 @@ class NoSuchIcebergTableError(NoSuchTableError):
     """Raises when the table found in the REST catalog is not an iceberg table."""
 
 
+class NoSuchViewError(Exception):
+    """Raises when the view can't be found in the REST catalog."""
+
+
+class NoSuchIdentifierError(Exception):
+    """Raises when the identifier can't be found in the REST catalog."""
+
+
 class NoSuchNamespaceError(Exception):
     """Raised when a referenced name-space is not found."""
 
