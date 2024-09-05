@@ -1673,13 +1673,7 @@ class Table:
         return self.metadata.refs
 
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
-        response = self.catalog._commit_table(  # pylint: disable=W0212
-            CommitTableRequest(
-                identifier=TableIdentifier(namespace=self._identifier[:-1], name=self._identifier[-1]),
-                updates=updates,
-                requirements=requirements,
-            )
-        )  # pylint: disable=W0212
+        response = self.catalog.commit_table(self, requirements, updates)
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location
 
