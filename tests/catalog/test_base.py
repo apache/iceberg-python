@@ -259,6 +259,9 @@ class InMemoryCatalog(MetastoreCatalog):
     def list_views(self, namespace: Optional[Union[str, Identifier]] = None) -> List[Identifier]:
         raise NotImplementedError
 
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
 
 @pytest.fixture
 def catalog(tmp_path: PosixPath) -> InMemoryCatalog:

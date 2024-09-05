@@ -120,3 +120,6 @@ class NoopCatalog(Catalog):
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
