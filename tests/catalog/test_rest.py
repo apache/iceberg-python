@@ -1289,22 +1289,28 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
     assert catalog.uri == "https://other-service.io/api"
 
 
-def test_table_identifier_in_commit_table_request(rest_mock: Mocker, example_table_metadata_v2: Dict[str, Any]) -> None:
-    test_table_request = CommitTableRequest(
-        identifier=TableIdentifier(namespace=("catalog_name", "namespace"), name="table_name"),
-        updates=[],
-        requirements=[],
-    )
+def test_table_identifier_in_commit_table_request(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_v2: Dict[str, Any]
+) -> None:
+    metadata_location = "s3://some_bucket/metadata.json"
     rest_mock.post(
         url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
         json={
             "metadata": example_table_metadata_v2,
-            "metadata-location": "test",
+            "metadata-location": metadata_location,
         },
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)._commit_table(test_table_request)
+    catalog = RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)
+    table = Table(
+        identifier=("namespace", "table_name"),
+        metadata=None,  # type: ignore
+        metadata_location=metadata_location,
+        io=None,  # type: ignore
+        catalog=catalog,
+    )
+    catalog.commit_table(table, (), ())
     assert (
         rest_mock.last_request.text
         == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
