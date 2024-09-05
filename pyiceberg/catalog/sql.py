@@ -20,6 +20,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -60,7 +61,7 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableResponse, Table, TableRequirement, TableUpdate
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
@@ -394,11 +395,15 @@ class SqlCatalog(MetastoreCatalog):
                 raise TableAlreadyExistsError(f"Table {to_namespace}.{to_table_name} already exists") from e
         return self.load_table(to_identifier)
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update one or more tables.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -407,20 +412,18 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(
-            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        )
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        namespace_tuple = Catalog.namespace_from(table_identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(table_identifier)
 
         current_table: Optional[Table]
         try:
-            current_table = self.load_table(identifier_tuple)
+            current_table = self.load_table(table_identifier)
         except NoSuchTableError:
             current_table = None
 
-        updated_staged_table = self._update_and_stage_table(current_table, table_request)
+        updated_staged_table = self._update_and_stage_table(current_table, table.identifier, requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)

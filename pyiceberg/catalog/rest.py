@@ -69,6 +69,8 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableIdentifier,
+    TableRequirement,
+    TableUpdate,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
@@ -753,11 +755,15 @@ class RestCatalog(Catalog):
         return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
 
     @retry(**_RETRY_ARGS)
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update the table.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -767,9 +773,12 @@ class RestCatalog(Catalog):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
+        identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
+        table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=self._remove_catalog_name_from_table_request_identifier(table_request).model_dump_json().encode(UTF8),
+            data=table_request.model_dump_json().encode(UTF8),
         )
         try:
             response.raise_for_status()
