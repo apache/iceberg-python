@@ -649,7 +649,10 @@ def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> 
 
     import duckdb
 
+    query = "SELECT * FROM duckdb_extensions() WHERE extension_name = 'iceberg'"
+    print(f"Before: \n{duckdb.sql(query)}")
     duckdb.sql("INSTALL iceberg; LOAD iceberg;")
+    print(f"After: \n{duckdb.sql(query)}")
     result = duckdb.sql(
         f"""
     SELECT *
