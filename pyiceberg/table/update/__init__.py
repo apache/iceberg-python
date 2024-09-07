@@ -1,45 +1,36 @@
 from __future__ import annotations
 
+import uuid
+from abc import ABC, abstractmethod
 from copy import copy
 from datetime import datetime
-from abc import ABC, abstractmethod
-from typing import TypeVar, Any, TYPE_CHECKING, Generic, Literal, List, Dict, Union, Optional, Tuple
-from typing_extensions import Annotated
-from pydantic import Field, ValidationError, field_validator
-import uuid
 from functools import singledispatch
+from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+
+from pydantic import Field, field_validator
+from typing_extensions import Annotated
+
 from pyiceberg.exceptions import CommitFailedException
-from pyiceberg.table.metadata import TableMetadata, SUPPORTED_TABLE_FORMAT_VERSION, TableMetadataUtil
-from pyiceberg.table.refs import SnapshotRef, MAIN_BRANCH
-from pyiceberg.table.snapshots import (
-    Operation,
-    Snapshot,
-    SnapshotLogEntry,
-    SnapshotSummaryCollector,
-    Summary,
-    update_snapshot_summaries,
-    MetadataLogEntry,
-)
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.utils.datetime import datetime_to_millis
-from pyiceberg.utils.properties import property_as_int
+from pyiceberg.table.metadata import SUPPORTED_TABLE_FORMAT_VERSION, TableMetadata, TableMetadataUtil
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.snapshots import (
+    MetadataLogEntry,
+    Snapshot,
+    SnapshotLogEntry,
+)
 from pyiceberg.table.sorting import SortOrder
+from pyiceberg.typedef import (
+    IcebergBaseModel,
+    Properties,
+)
 from pyiceberg.types import (
-    IcebergType,
-    ListType,
-    MapType,
-    NestedField,
-    PrimitiveType,
-    StructType,
-    strtobool,
     transform_dict_value_to_str,
 )
-from pyiceberg.typedef import (
-    EMPTY_DICT,
-    Properties,
-    IcebergBaseModel,
-)
+from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.properties import property_as_int
+
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
@@ -65,6 +56,7 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def __enter__(self) -> U:
         """Update the table."""
         return self  # type: ignore
+
 
 class AssignUUIDUpdate(IcebergBaseModel):
     action: Literal["assign-uuid"] = Field(default="assign-uuid")

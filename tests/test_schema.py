@@ -31,7 +31,7 @@ from pyiceberg.schema import (
     prune_columns,
     sanitize_column_names,
 )
-from pyiceberg.table import UpdateSchema
+from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
     BinaryType,

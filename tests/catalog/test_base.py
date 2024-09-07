@@ -45,16 +45,18 @@ from pyiceberg.io import WAREHOUSE, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSchemaUpdate,
     CommitTableResponse,
-    SetCurrentSchemaUpdate,
     Table,
+)
+from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    AddSchemaUpdate,
+    SetCurrentSchemaUpdate,
     TableRequirement,
     TableUpdate,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import IntegerType, LongType, NestedField

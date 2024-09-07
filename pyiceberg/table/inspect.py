@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, Dict, Tuple, Any, TYPE_CHECKING, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from pyiceberg.types import PrimitiveType
-from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, PartitionFieldSummary
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
+from pyiceberg.types import PrimitiveType
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Table
     import pyarrow as pa
+
+    from pyiceberg.table import Table
+
 
 class InspectTable:
     tbl: Table
@@ -146,8 +148,12 @@ class InspectTable:
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
                         # Makes them readable
-                        "lower_bound": from_bytes(field.field_type, lower_bound) if (lower_bound := lower_bounds.get(field.field_id)) else None,
-                        "upper_bound": from_bytes(field.field_type, upper_bound) if (upper_bound := upper_bounds.get(field.field_id)) else None,
+                        "lower_bound": from_bytes(field.field_type, lower_bound)
+                        if (lower_bound := lower_bounds.get(field.field_id))
+                        else None,
+                        "upper_bound": from_bytes(field.field_type, upper_bound)
+                        if (upper_bound := upper_bounds.get(field.field_id))
+                        else None,
                     }
                     for field in self.tbl.metadata.schema().fields
                 }

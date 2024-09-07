@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import itertools
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-import itertools
-from typing import Set, List, Dict, TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
+
+from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.schema import (
     PartnerAccessor,
     Schema,
@@ -15,42 +17,26 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.exceptions import ValidationError, ResolveError
-from pyiceberg.table.update import (
-    AssertCurrentSchemaId,
-    AddPartitionSpecUpdate,
-    AddSchemaUpdate,
-    AddSnapshotUpdate,
-    AddSortOrderUpdate,
-    AssertCreate,
-    AssertLastAssignedPartitionId,
-    AssertRefSnapshotId,
-    AssertTableUUID,
-    AssignUUIDUpdate,
-    RemovePropertiesUpdate,
-    SetCurrentSchemaUpdate,
-    SetDefaultSortOrderUpdate,
-    SetDefaultSpecUpdate,
-    SetLocationUpdate,
-    SetPropertiesUpdate,
-    SetSnapshotRefUpdate,
-    TableRequirement,
-    TableUpdate,
-    U,
-    UpdatesAndRequirements,
-    UpdateTableMetadata,
-    UpgradeFormatVersionUpdate,
-    update_table_metadata,
-)
-from pyiceberg.types import NestedField, IcebergType, MapType, ListType, PrimitiveType, StructType
 from pyiceberg.table.name_mapping import (
     NameMapping,
     update_mapping,
 )
+from pyiceberg.table.update import (
+    AddSchemaUpdate,
+    AssertCurrentSchemaId,
+    SetCurrentSchemaUpdate,
+    SetPropertiesUpdate,
+    TableRequirement,
+    TableUpdate,
+    UpdatesAndRequirements,
+    UpdateTableMetadata,
+)
+from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Transaction, TableProperties
     import pyarrow as pa
+
+    from pyiceberg.table import Transaction
 
 TABLE_ROOT_ID = -1
 
@@ -67,6 +53,7 @@ class Move:
     full_name: str
     op: MoveOperation
     other_field_id: Optional[int] = None
+
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _schema: Schema
@@ -517,6 +504,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
+        from pyiceberg.table import TableProperties
+
         new_schema = self._apply()
 
         existing_schema_id = next(
