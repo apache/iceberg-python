@@ -55,12 +55,14 @@ from pyiceberg.table import (
     CreateTableTransaction,
     StagedTable,
     Table,
+)
+from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
     Identifier,
