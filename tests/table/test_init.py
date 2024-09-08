@@ -42,29 +42,11 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSnapshotUpdate,
-    AddSortOrderUpdate,
-    AssertCreate,
-    AssertCurrentSchemaId,
-    AssertDefaultSortOrderId,
-    AssertDefaultSpecId,
-    AssertLastAssignedFieldId,
-    AssertLastAssignedPartitionId,
-    AssertRefSnapshotId,
-    AssertTableUUID,
     CommitTableRequest,
-    RemovePropertiesUpdate,
-    SetDefaultSortOrderUpdate,
-    SetPropertiesUpdate,
-    SetSnapshotRefUpdate,
     StaticTable,
     Table,
     TableIdentifier,
-    UpdateSchema,
-    _apply_table_update,
     _match_deletes_to_data_file,
-    _TableMetadataUpdateContext,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import SnapshotRef
@@ -82,6 +64,26 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
+from pyiceberg.table.update import (
+    AddSnapshotUpdate,
+    AddSortOrderUpdate,
+    AssertCreate,
+    AssertCurrentSchemaId,
+    AssertDefaultSortOrderId,
+    AssertDefaultSpecId,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
+    AssertRefSnapshotId,
+    AssertTableUUID,
+    RemovePropertiesUpdate,
+    SetDefaultSortOrderUpdate,
+    SetPropertiesUpdate,
+    SetSnapshotRefUpdate,
+    _apply_table_update,
+    _TableMetadataUpdateContext,
+    update_table_metadata,
+)
+from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,

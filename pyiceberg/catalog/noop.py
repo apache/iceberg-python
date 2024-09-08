@@ -30,10 +30,12 @@ from pyiceberg.table import (
     CommitTableResponse,
     CreateTableTransaction,
     Table,
+)
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 
 if TYPE_CHECKING:

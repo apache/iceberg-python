@@ -72,11 +72,13 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableResponse,
     Table,
-    TableRequirement,
-    TableUpdate,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
