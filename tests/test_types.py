@@ -148,6 +148,18 @@ def test_struct_type() -> None:
     assert type_var != StructType(NestedField(1, "optional_field", IntegerType(), required=True))
     assert type_var == pickle.loads(pickle.dumps(type_var))
 
+def test_struct_field_by_name() -> None:
+    lower_field = NestedField(1, "lower_case_field", IntegerType(), required=True),
+    upper_field = NestedField(2, "UPPER_CASE_FIELD", IntegerType(), required=True),
+    type_var = StructType(lower_field, upper_field, mixed_field)
+
+    assert type_var.field_by_name("lower_case_field", case_sensitive=False) == lower_field
+    assert type_var.field_by_name("upper_case_field", case_sensitive=False) == upper_field
+    assert type_var.field_by_name("nonexistent_field", case_sensitive=False) is None
+
+    assert type_var.field_by_name("lower_case_field", case_sensitive=True) == lower_field
+    assert type_var.field_by_name("upper_case_field", case_sensitive=True) is None
+    assert type_var.field_by_name("nonexistent_field", case_sensitive=True) is None
 
 def test_list_type() -> None:
     type_var = ListType(
