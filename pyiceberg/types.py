@@ -377,13 +377,13 @@ class StructType(IcebergType):
 
     def field_by_name(self, name: str, case_sensitive: bool = True) -> Optional[NestedField]:
         if case_sensitive:
+            for field in self.fields:
+                if field.name == name:
+                    return field
+        else:
             name_lower = name.lower()
             for field in self.fields:
                 if field.name.lower() == name_lower:
-                    return field
-        else:
-            for field in self.fields:
-                if field.name == name:
                     return field
         return None
 
