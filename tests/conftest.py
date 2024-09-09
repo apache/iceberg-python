@@ -1955,7 +1955,7 @@ def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, No
 
 
 @pytest.fixture
-def adlfs_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
+def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
     from azure.storage.blob import BlobServiceClient
 
     azurite_url = request.config.getoption("--adls.endpoint")

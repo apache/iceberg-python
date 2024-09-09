@@ -185,7 +185,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     )
 
 
-def _adlfs(properties: Properties) -> AbstractFileSystem:
+def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
     for property_name in properties:
@@ -241,8 +241,8 @@ SCHEME_TO_FS = {
     "s3": _s3,
     "s3a": _s3,
     "s3n": _s3,
-    "abfs": _adlfs,
-    "abfss": _adlfs,
+    "abfs": _adls,
+    "abfss": _adls,
     "gs": _gs,
     "gcs": _gs,
 }
