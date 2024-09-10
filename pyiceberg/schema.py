@@ -111,9 +111,6 @@ class Schema(IcebergBaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Schema class."""
-        if not other:
-            return False
-
         if not isinstance(other, Schema):
             return False
 
