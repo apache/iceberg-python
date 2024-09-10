@@ -33,7 +33,7 @@ from sqlalchemy import (
     union,
     update,
 )
-from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -126,20 +126,8 @@ class SqlCatalog(MetastoreCatalog):
 
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
-        self._ensure_tables_exist()
-
-    def _ensure_tables_exist(self) -> None:
-        with Session(self.engine) as session:
-            for table in [IcebergTables, IcebergNamespaceProperties]:
-                stmt = select(1).select_from(table)
-                try:
-                    session.scalar(stmt)
-                except (
-                    OperationalError,
-                    ProgrammingError,
-                ):  # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
-                    self.create_tables()
-                    return
+        # Only creates tables that do not exist
+        self.create_tables()
 
     def create_tables(self) -> None:
         SqlCatalogBaseTable.metadata.create_all(self.engine)
