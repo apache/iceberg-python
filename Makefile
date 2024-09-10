@@ -59,9 +59,9 @@ test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
-test-adlfs: ## Run tests marked with adlfs, can add arguments with PYTEST_ARGS="-vv"
+test-adls: ## Run tests marked with adls, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-azurite.sh
-	poetry run pytest tests/ -m adlfs ${PYTEST_ARGS}
+	poetry run pytest tests/ -m adls ${PYTEST_ARGS}
 
 test-gcs: ## Run tests marked with gcs, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-gcs-server.sh
