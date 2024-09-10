@@ -616,7 +616,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         When the database doesn't exist, it will just return an empty list.
 
@@ -631,7 +631,13 @@ class HiveCatalog(MetastoreCatalog):
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
-            return [(database_name, table_name) for table_name in open_client.get_all_tables(db_name=database_name)]
+            return [
+                (database_name, table.tableName)
+                for table in open_client.get_table_objects_by_name(
+                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                )
+                if table.parameters[TABLE_TYPE].lower() == ICEBERG
+            ]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.

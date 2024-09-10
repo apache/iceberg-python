@@ -448,12 +448,25 @@ def test_list_tables(
 ) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
+
+    non_iceberg_table_name = "non_iceberg_table"
+    glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
+    glue_client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": non_iceberg_table_name,
+            "TableType": "EXTERNAL_TABLE",
+            "Parameters": {"table_type": "noniceberg"},
+        },
+    )
+
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
     loaded_table_list = test_catalog.list_tables(database_name)
+
+    assert (database_name, non_iceberg_table_name) not in loaded_table_list
     for table_name in table_list:
         assert (database_name, table_name) in loaded_table_list
-
 
 @mock_aws
 def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: List[str]) -> None:

@@ -393,7 +393,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
