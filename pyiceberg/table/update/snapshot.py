@@ -545,7 +545,7 @@ class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
                     if any(entry.data_file not in found_deleted_data_files for entry in entries):
                         with write_manifest(
                             format_version=self._transaction.table_metadata.format_version,
-                            spec=self._transaction.table_metadata.spec(),
+                            spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
                             schema=self._transaction.table_metadata.schema(),
                             output_file=self.new_manifest_output(),
                             snapshot_id=self._snapshot_id,
