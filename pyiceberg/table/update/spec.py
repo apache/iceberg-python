@@ -280,7 +280,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             for field_key in historical_fields:
                 if field_key[0] == source_id and field_key[2] == repr(transform):
                     if name is None or field_key[3] == name:
-                        return PartitionField(source_id, field_key[1], transform, name)
+                        return PartitionField(source_id, field_key[1], transform, field_key[3])
 
         new_field_id = self._new_field_id()
         if name is None:
