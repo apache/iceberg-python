@@ -1402,7 +1402,7 @@ def test_delete_threshold(session_catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-def test_writes_jasper(session_catalog: Catalog) -> None:
+def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) -> None:
     np.random.seed(876)
     N = 1440
     d = {
