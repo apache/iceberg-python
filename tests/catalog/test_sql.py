@@ -24,12 +24,22 @@ import pytest
 from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
 from sqlalchemy.exc import ArgumentError, IntegrityError
+from sqlalchemy import create_engine, inspect, Engine, Inspector
 
 from pyiceberg.catalog import (
     Catalog,
     load_catalog,
+    
 )
-from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
+from pyiceberg.catalog.sql import (
+    DEFAULT_ECHO_VALUE, 
+    DEFAULT_POOL_PRE_PING_VALUE, 
+    SqlCatalog,
+    IcebergTables,
+    IcebergNamespaceProperties,
+    SqlCatalogBaseTable
+)
+
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceAlreadyExistsError,
@@ -131,6 +141,9 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
     yield catalog
     catalog.destroy_tables()
 
+@pytest.fixture(scope="function")
+def alchemy_engine():
+    return create_engine("sqlite:///:memory:")
 
 @pytest.fixture(scope="module")
 def catalog_sqlite_without_rowcount(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
@@ -223,6 +236,91 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
         ),
         SqlCatalog,
     )
+
+
+def confirm_no_tables_exist(alchemy_engine: Engine):
+
+    inspector = inspect(alchemy_engine)
+    catalog_tables = [c.__tablename__ for c  in SqlCatalogBaseTable.__subclasses__()]
+    any_table_exists = any(t for t in inspector.get_table_names() if t in catalog_tables)
+    if any_table_exists:
+        pytest.raises(TableAlreadyExistsError, "Tables exist, but should not have been created yet")
+    
+    return inspector, catalog_tables
+
+
+def confirm_all_tables_exist(inspector: Inspector, catalog_tables: list, catalog: SqlCatalog):
+
+    # Make sure both tables exist after catalog created
+    all_tables_exists = all([t for t in inspector.get_table_names() if t in catalog_tables])
+    assert all_tables_exists, "Tables should have been created"
+    assert isinstance(catalog, SqlCatalog), "Catalog should be a SQLCatalog"
+
+
+def test_creation_when_no_tables_exist(alchemy_engine: Engine, catalog_name: str, warehouse: Path) -> None:
+    
+    # Make sure none of the tables exist
+    inspector, catalog_tables = confirm_no_tables_exist(alchemy_engine)
+    
+    # Create catalog
+    catalog = load_catalog(
+            catalog_name,
+            **{
+                "type": "sql",
+                "uri": "sqlite:///:memory:",
+                "warehouse": f"file://{warehouse}",
+            },
+        )
+    
+    # Make sure both tables exist after catalog created
+    confirm_all_tables_exist(inspector, catalog_tables, catalog)
+
+
+def test_creation_when_one_tables_exists(alchemy_engine: Engine, catalog_name: str, warehouse: Path) -> None:
+    
+    # Make sure none of the tables exist
+    inspector, catalog_tables = confirm_no_tables_exist(alchemy_engine)
+    
+    # Create one table
+    IcebergTables.__table__.create(bind = alchemy_engine)
+    inspector.clear_cache()
+    assert IcebergTables.__tablename__ in [t for t in inspector.get_table_names() if t in catalog_tables]
+    
+    catalog = load_catalog(
+            catalog_name,
+            **{
+                "type": "sql",
+                "uri": "sqlite:///:memory:",
+                "warehouse": f"file://{warehouse}",
+            },
+        )
+    
+    # Make sure both tables exist after catalog created
+    confirm_all_tables_exist(inspector, catalog_tables, catalog)
+
+
+def test_creation_when_all_tables_exists(alchemy_engine: Engine, catalog_name: str, warehouse: Path) -> None:
+    
+    # Make sure none of the tables exist
+    inspector, catalog_tables = confirm_no_tables_exist(alchemy_engine)
+    
+    # Create all tables
+    SqlCatalogBaseTable.metadata.create_all(bind = alchemy_engine)
+    inspector.clear_cache()
+    for c in catalog_tables:
+        assert c in [t for t in inspector.get_table_names() if t in catalog_tables]
+    
+    catalog = load_catalog(
+            catalog_name,
+            **{
+                "type": "sql",
+                "uri": "sqlite:///:memory:",
+                "warehouse": f"file://{warehouse}",
+            },
+        )
+    
+    # Make sure both tables exist after catalog created
+    confirm_all_tables_exist(inspector, catalog_tables, catalog)
 
 
 @pytest.mark.parametrize(
