@@ -209,6 +209,38 @@ def test_remove_identity_v2(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_remove_and_add_identity(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_identity("id").commit()
+    table.update_spec().remove_field("id").commit()
+    table.update_spec().add_identity("id").commit()
+
+    assert len(table.specs()) == 4
+    assert table.spec().spec_id == 3
+    assert table.spec() == PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="id_1000"),
+        PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="id"),
+        spec_id=3,
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_remove_and_add_identity_v2(catalog: Catalog) -> None:
+    table_v2 = _table_v2(catalog)
+    table_v2.update_spec().add_identity("id").commit()
+    table_v2.update_spec().remove_field("id").commit()
+    table_v2.update_spec().add_identity("id").commit()
+
+    assert len(table_v2.specs()) == 2
+    assert table_v2.spec().spec_id == 1
+    assert table_v2.spec() == PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"), spec_id=1
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_remove_bucket(catalog: Catalog) -> None:
     table = _table(catalog)
     with table.update_spec() as update:
