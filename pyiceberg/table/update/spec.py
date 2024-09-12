@@ -275,12 +275,12 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             historical_fields = []
             for spec in self._transaction.table_metadata.specs().values():
                 for field in spec.fields:
-                    historical_fields.append((field.source_id, field.field_id, repr(field.transform), field.name))
+                    historical_fields.append(field)
 
-            for field_key in historical_fields:
-                if field_key[0] == source_id and field_key[2] == repr(transform):
-                    if name is None or field_key[3] == name:
-                        return PartitionField(source_id, field_key[1], transform, name)
+            for field in historical_fields:
+                if field.source_id == source_id and repr(field.transform) == repr(transform):
+                    if name is None or field.name == name:
+                        return PartitionField(source_id, field.field_id, transform, field.name)
 
         new_field_id = self._new_field_id()
         if name is None:
