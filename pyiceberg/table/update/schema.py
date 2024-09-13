@@ -57,17 +57,17 @@ if TYPE_CHECKING:
 TABLE_ROOT_ID = -1
 
 
-class MoveOperation(Enum):
+class _MoveOperation(Enum):
     First = 1
     Before = 2
     After = 3
 
 
 @dataclass
-class Move:
+class _Move:
     field_id: int
     full_name: str
-    op: MoveOperation
+    op: _MoveOperation
     other_field_id: Optional[int] = None
 
 
@@ -79,7 +79,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _adds: Dict[int, List[NestedField]] = {}
     _updates: Dict[int, NestedField] = {}
     _deletes: Set[int] = set()
-    _moves: Dict[int, List[Move]] = {}
+    _moves: Dict[int, List[_Move]] = {}
 
     _added_name_to_id: Dict[str, int] = {}
     # Part of https://github.com/apache/iceberg/pull/8393
@@ -146,7 +146,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         visit_with_partner(
             Catalog._convert_schema_if_needed(new_schema),
             -1,
-            UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
+            _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
             # type: ignore
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
@@ -410,13 +410,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self._added_name_to_id.get(name)
 
-    def _move(self, move: Move) -> None:
+    def _move(self, move: _Move) -> None:
         if parent_name := self._id_to_parent.get(move.field_id):
             parent_field = self._schema.find_field(parent_name, case_sensitive=self._case_sensitive)
             if not parent_field.field_type.is_struct:
                 raise ValueError(f"Cannot move fields in non-struct type: {parent_field.field_type}")
 
-            if move.op == MoveOperation.After or move.op == MoveOperation.Before:
+            if move.op == _MoveOperation.After or move.op == _MoveOperation.Before:
                 if move.other_field_id is None:
                     raise ValueError("Expected other field when performing before/after move")
 
@@ -426,7 +426,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             self._moves[parent_field.field_id] = self._moves.get(parent_field.field_id, []) + [move]
         else:
             # In the top level field
-            if move.op == MoveOperation.After or move.op == MoveOperation.Before:
+            if move.op == _MoveOperation.After or move.op == _MoveOperation.Before:
                 if move.other_field_id is None:
                     raise ValueError("Expected other field when performing before/after move")
 
@@ -451,7 +451,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         if field_id is None:
             raise ValueError(f"Cannot move missing column: {full_name}")
 
-        self._move(Move(field_id=field_id, full_name=full_name, op=MoveOperation.First))
+        self._move(_Move(field_id=field_id, full_name=full_name, op=_MoveOperation.First))
 
         return self
 
@@ -485,7 +485,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         if field_id == before_field_id:
             raise ValueError(f"Cannot move {full_name} before itself")
 
-        self._move(Move(field_id=field_id, full_name=full_name, other_field_id=before_field_id, op=MoveOperation.Before))
+        self._move(_Move(field_id=field_id, full_name=full_name, other_field_id=before_field_id, op=_MoveOperation.Before))
 
         return self
 
@@ -514,7 +514,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         if field_id == after_field_id:
             raise ValueError(f"Cannot move {full_name} after itself")
 
-        self._move(Move(field_id=field_id, full_name=full_name, other_field_id=after_field_id, op=MoveOperation.After))
+        self._move(_Move(field_id=field_id, full_name=full_name, other_field_id=after_field_id, op=_MoveOperation.After))
 
         return self
 
@@ -592,10 +592,14 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
     _adds: Dict[int, List[NestedField]]
     _updates: Dict[int, NestedField]
     _deletes: Set[int]
-    _moves: Dict[int, List[Move]]
+    _moves: Dict[int, List[_Move]]
 
     def __init__(
-        self, adds: Dict[int, List[NestedField]], updates: Dict[int, NestedField], deletes: Set[int], moves: Dict[int, List[Move]]
+        self,
+        adds: Dict[int, List[NestedField]],
+        updates: Dict[int, NestedField],
+        deletes: Set[int],
+        moves: Dict[int, List[_Move]],
     ) -> None:
         self._adds = adds
         self._updates = updates
@@ -715,7 +719,7 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
         return primitive
 
 
-class UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
+class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
     update_schema: UpdateSchema
     existing_schema: Schema
     case_sensitive: bool
@@ -873,7 +877,7 @@ def _add_fields(fields: Tuple[NestedField, ...], adds: Optional[List[NestedField
     return fields + tuple(adds)
 
 
-def _move_fields(fields: Tuple[NestedField, ...], moves: List[Move]) -> Tuple[NestedField, ...]:
+def _move_fields(fields: Tuple[NestedField, ...], moves: List[_Move]) -> Tuple[NestedField, ...]:
     reordered = list(copy(fields))
     for move in moves:
         # Find the field that we're about to move
@@ -881,12 +885,12 @@ def _move_fields(fields: Tuple[NestedField, ...], moves: List[Move]) -> Tuple[Ne
         # Remove the field that we're about to move from the list
         reordered = [field for field in reordered if field.field_id != move.field_id]
 
-        if move.op == MoveOperation.First:
+        if move.op == _MoveOperation.First:
             reordered = [field] + reordered
-        elif move.op == MoveOperation.Before or move.op == MoveOperation.After:
+        elif move.op == _MoveOperation.Before or move.op == _MoveOperation.After:
             other_field_id = move.other_field_id
             other_field_pos = next(i for i, field in enumerate(reordered) if field.field_id == other_field_id)
-            if move.op == MoveOperation.Before:
+            if move.op == _MoveOperation.Before:
                 reordered.insert(other_field_pos, field)
             else:
                 reordered.insert(other_field_pos + 1, field)
@@ -897,7 +901,7 @@ def _move_fields(fields: Tuple[NestedField, ...], moves: List[Move]) -> Tuple[Ne
 
 
 def _add_and_move_fields(
-    fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[Move]
+    fields: Tuple[NestedField, ...], adds: List[NestedField], moves: List[_Move]
 ) -> Optional[Tuple[NestedField, ...]]:
     if len(adds) > 0:
         # always apply adds first so that added fields can be moved
