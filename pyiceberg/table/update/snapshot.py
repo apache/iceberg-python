@@ -307,7 +307,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
 
 
-class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
+class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     """Will delete manifest entries from the current snapshot based on the predicate.
 
     This will produce a DELETE snapshot:
@@ -443,7 +443,7 @@ class DeleteFiles(_SnapshotProducer["DeleteFiles"]):
         return len(self._deleted_entries()) > 0
 
 
-class FastAppendFiles(_SnapshotProducer["FastAppendFiles"]):
+class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
     def _existing_manifests(self) -> List[ManifestFile]:
         """To determine if there are any existing manifest files.
 
@@ -472,7 +472,7 @@ class FastAppendFiles(_SnapshotProducer["FastAppendFiles"]):
         return []
 
 
-class MergeAppendFiles(FastAppendFiles):
+class _MergeAppendFiles(_FastAppendFiles):
     _target_size_bytes: int
     _min_count_to_merge: int
     _merge_enabled: bool
@@ -507,7 +507,7 @@ class MergeAppendFiles(FastAppendFiles):
     def _process_manifests(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
         """To perform any post-processing on the manifests before writing them to the new snapshot.
 
-        In MergeAppendFiles, we merge manifests based on the target size and the minimum count to merge
+        In _MergeAppendFiles, we merge manifests based on the target size and the minimum count to merge
         if automatic merge is enabled.
         """
         unmerged_data_manifests = [manifest for manifest in manifests if manifest.content == ManifestContent.DATA]
@@ -523,7 +523,7 @@ class MergeAppendFiles(FastAppendFiles):
         return data_manifest_merge_manager.merge_manifests(unmerged_data_manifests) + unmerged_deletes_manifests
 
 
-class OverwriteFiles(_SnapshotProducer["OverwriteFiles"]):
+class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
     """Overwrites data from the table. This will produce an OVERWRITE snapshot.
 
     Data and delete files were added and removed in a logical overwrite operation.
@@ -610,18 +610,18 @@ class UpdateSnapshot:
         self._io = io
         self._snapshot_properties = snapshot_properties
 
-    def fast_append(self) -> FastAppendFiles:
-        return FastAppendFiles(
+    def fast_append(self) -> _FastAppendFiles:
+        return _FastAppendFiles(
             operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
         )
 
-    def merge_append(self) -> MergeAppendFiles:
-        return MergeAppendFiles(
+    def merge_append(self) -> _MergeAppendFiles:
+        return _MergeAppendFiles(
             operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
         )
 
-    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> OverwriteFiles:
-        return OverwriteFiles(
+    def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> _OverwriteFiles:
+        return _OverwriteFiles(
             commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
             if self._transaction.table_metadata.current_snapshot() is not None
@@ -631,8 +631,8 @@ class UpdateSnapshot:
             snapshot_properties=self._snapshot_properties,
         )
 
-    def delete(self) -> DeleteFiles:
-        return DeleteFiles(
+    def delete(self) -> _DeleteFiles:
+        return _DeleteFiles(
             operation=Operation.DELETE,
             transaction=self._transaction,
             io=self._io,
