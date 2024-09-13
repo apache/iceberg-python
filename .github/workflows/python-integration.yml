@@ -42,6 +42,7 @@ jobs:
       with:
         fetch-depth: 2
     - name: Setup Docker on macOS
+      if: startsWith(matrix.os, 'macos')
       uses: douglascamata/setup-docker-macos-action@v1-alpha
     - name: Install
       run: make install
