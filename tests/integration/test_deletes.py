@@ -28,7 +28,6 @@ from pyiceberg.expressions import AlwaysTrue, EqualTo
 from pyiceberg.manifest import ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, TimestampType
@@ -295,8 +294,8 @@ def test_delete_partitioned_table_positional_deletes_empty_batch(spark: SparkSes
 
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore:Merge on read is not yet supported, falling back to copy-on-write")
-def test_read_table_with_multiple_files_with_position_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
-    identifier = "default.test_read_table_with_multiple_files_with_position_deletes"
+def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
+    identifier = "default.test_read_multiple_batches_in_task_with_position_deletes"
 
     run_spark_commands(
         spark,
@@ -304,7 +303,6 @@ def test_read_table_with_multiple_files_with_position_deletes(spark: SparkSessio
             f"DROP TABLE IF EXISTS {identifier}",
             f"""
             CREATE TABLE {identifier} (
-                id                  int,
                 number              int
             )
             USING iceberg
@@ -312,8 +310,7 @@ def test_read_table_with_multiple_files_with_position_deletes(spark: SparkSessio
                 'format-version' = 2,
                 'write.delete.mode'='merge-on-read',
                 'write.update.mode'='merge-on-read',
-                'write.merge.mode'='merge-on-read',
-                'write.parquet.row-group-limit'=1
+                'write.merge.mode'='merge-on-read'
             )
         """,
         ],
@@ -321,73 +318,31 @@ def test_read_table_with_multiple_files_with_position_deletes(spark: SparkSessio
 
     tbl = session_catalog.load_table(identifier)
 
-    def append_data(tbl: Table) -> None:
-        arrow_table = pa.Table.from_arrays(
-            [
-                pa.array(list(range(1, 101))),
-            ],
-            schema=pa.schema([pa.field("number", pa.int32())]),
-        )
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array(list(range(1, 1001)) * 100),
+        ],
+        schema=pa.schema([pa.field("number", pa.int32())]),
+    )
 
-        for _ in range(2):
-            tbl.append(arrow_table)
-
-    append_data(tbl)
+    tbl.append(arrow_table)
 
     run_spark_commands(
         spark,
         [
             f"""
-            DELETE FROM {identifier} WHERE number in (2, 3, 4, 99)
+            DELETE FROM {identifier} WHERE number in (1, 2, 3, 4)
         """,
         ],
     )
 
     tbl.refresh()
 
-    spark_count = spark.sql(f"SELECT count(1) as total_count from {identifier} WHERE number < 40").first()[0]
-    reader = tbl.scan(row_filter="number < 40").to_arrow_batch_reader()
+    reader = tbl.scan(row_filter="number <= 50").to_arrow_batch_reader()
     assert isinstance(reader, pa.RecordBatchReader)
     pyiceberg_count = len(reader.read_all())
-    assert pyiceberg_count == spark_count, f"Failing check on first. {pyiceberg_count} != {spark_count}"
-
-    append_data(tbl)
-
-    run_spark_commands(
-        spark,
-        [
-            f"""
-            DELETE FROM {identifier} WHERE number in (500, 566)
-        """,
-        ],
-    )
-
-    tbl.refresh()
-
-    spark_count = spark.sql(f"SELECT count(1) as total_count from {identifier} WHERE number < 40").first()[0]
-    reader = tbl.scan(row_filter="number < 40").to_arrow_batch_reader()
-    assert isinstance(reader, pa.RecordBatchReader)
-    pyiceberg_count = len(reader.read_all())
-    assert pyiceberg_count == spark_count, f"Failing check on 2. {pyiceberg_count} != {spark_count}"
-
-    append_data(tbl)
-
-    run_spark_commands(
-        spark,
-        [
-            f"""
-            DELETE FROM {identifier} WHERE number in (1, 100, 999, 5)
-        """,
-        ],
-    )
-
-    tbl.refresh()
-
-    spark_count = spark.sql(f"SELECT count(1) as total_count from {identifier} WHERE number < 40").first()[0]
-    reader = tbl.scan(row_filter="number < 40").to_arrow_batch_reader()
-    assert isinstance(reader, pa.RecordBatchReader)
-    pyiceberg_count = len(reader.read_all())
-    assert pyiceberg_count == spark_count, f"Failing check on 3. {pyiceberg_count} != {spark_count}"
+    expected_count = 46 * 100
+    assert pyiceberg_count == expected_count, f"Failing check. {pyiceberg_count} != {expected_count}"
 
 
 @pytest.mark.integration
