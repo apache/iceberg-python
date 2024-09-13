@@ -409,10 +409,7 @@ class RestCatalog(Catalog):
         self, identifier: Union[str, Identifier, TableIdentifier], kind: IdentifierKind = IdentifierKind.TABLE
     ) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            if identifier.namespace.root[0] == self.name:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), kind.value: identifier.name}
-            else:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
 
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
@@ -578,6 +575,7 @@ class RestCatalog(Catalog):
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
+        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:
             location = location.rstrip("/")
@@ -659,6 +657,7 @@ class RestCatalog(Catalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
             name=namespace_and_table["table"],
