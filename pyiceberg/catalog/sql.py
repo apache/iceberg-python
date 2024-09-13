@@ -576,8 +576,6 @@ class SqlCatalog(MetastoreCatalog):
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
 
-        If namespace not provided, will list all tables in the catalog.
-
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
