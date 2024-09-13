@@ -102,6 +102,13 @@ def test_add_month(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_month_generates_default_name(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_field("event_ts", MonthTransform()).commit()
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, MonthTransform(), "event_ts_month"))
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_day(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", DayTransform(), "day_transform").commit()
