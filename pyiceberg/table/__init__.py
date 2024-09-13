@@ -42,6 +42,7 @@ from sortedcontainers import SortedList
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.expressions import (
+    AlwaysFalse,
     AlwaysTrue,
     And,
     BooleanExpression,
