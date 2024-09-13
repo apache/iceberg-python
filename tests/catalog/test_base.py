@@ -24,6 +24,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -44,17 +45,18 @@ from pyiceberg.io import WAREHOUSE, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSchemaUpdate,
-    CommitTableRequest,
     CommitTableResponse,
-    Namespace,
-    SetCurrentSchemaUpdate,
     Table,
-    TableIdentifier,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    AddSchemaUpdate,
+    SetCurrentSchemaUpdate,
+    TableRequirement,
+    TableUpdate,
+    update_table_metadata,
+)
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import IntegerType, LongType, NestedField
@@ -128,17 +130,17 @@ class InMemoryCatalog(MetastoreCatalog):
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         raise NotImplementedError
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(
-            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        )
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
         current_table = self.load_table(identifier_tuple)
         base_metadata = current_table.metadata
 
-        for requirement in table_request.requirements:
+        for requirement in requirements:
             requirement.validate(base_metadata)
 
-        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        updated_metadata = update_table_metadata(base_metadata, updates)
         if updated_metadata == base_metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
@@ -255,6 +257,12 @@ class InMemoryCatalog(MetastoreCatalog):
         return PropertiesUpdateSummary(
             removed=list(removed or []), updated=list(updates.keys() if updates else []), missing=list(expected_to_change)
         )
+
+    def list_views(self, namespace: Optional[Union[str, Identifier]] = None) -> List[Identifier]:
+        raise NotImplementedError
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
 
 
 @pytest.fixture
@@ -667,14 +675,13 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
     )
 
     # When
-    response = given_table.catalog._commit_table(  # pylint: disable=W0212
-        CommitTableRequest(
-            identifier=TableIdentifier(namespace=Namespace(given_table._identifier[:-1]), name=given_table._identifier[-1]),
-            updates=[
-                AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
-                SetCurrentSchemaUpdate(schema_id=-1),
-            ],
-        )
+    response = given_table.catalog.commit_table(
+        given_table,
+        updates=(
+            AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
+            SetCurrentSchemaUpdate(schema_id=-1),
+        ),
+        requirements=(),
     )
 
     # Then

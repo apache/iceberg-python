@@ -18,7 +18,7 @@
 import math
 import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 import pytz
@@ -39,12 +40,12 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import GreaterThanOrEqual, In, Not
+from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
-from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
     DateType,
     DoubleType,
@@ -549,7 +550,7 @@ def test_write_parquet_unsupported_properties(
     identifier = "default.write_parquet_unsupported_properties"
 
     tbl = _create_table(session_catalog, identifier, properties, [])
-    with pytest.raises(NotImplementedError):
+    with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
 
 
@@ -1353,18 +1354,7 @@ def test_overwrite_all_data_with_filter(session_catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-def test_delete_threshold() -> None:
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
+def test_delete_threshold(session_catalog: Catalog) -> None:
     schema = Schema(
         NestedField(field_id=101, name="id", field_type=LongType(), required=True),
         NestedField(field_id=103, name="created_at", field_type=DateType(), required=False),
@@ -1374,13 +1364,13 @@ def test_delete_threshold() -> None:
     partition_spec = PartitionSpec(PartitionField(source_id=103, field_id=2000, transform=DayTransform(), name="created_at_day"))
 
     try:
-        catalog.drop_table(
+        session_catalog.drop_table(
             identifier="default.scores",
         )
     except NoSuchTableError:
         pass
 
-    catalog.create_table(
+    session_catalog.create_table(
         identifier="default.scores",
         schema=schema,
         partition_spec=partition_spec,
@@ -1404,7 +1394,7 @@ def test_delete_threshold() -> None:
     # Create the dataframe
     df = pd.DataFrame({"id": id_column, "created_at": created_at_column, "relevancy_score": relevancy_score_column})
 
-    iceberg_table = catalog.load_table("default.scores")
+    iceberg_table = session_catalog.load_table("default.scores")
 
     # Convert the pandas DataFrame to a PyArrow Table with the Iceberg schema
     arrow_schema = iceberg_table.schema().as_arrow()
@@ -1418,3 +1408,52 @@ def test_delete_threshold() -> None:
     assert len(iceberg_table.scan(row_filter=Not(delete_condition)).to_arrow()) == lower_before
     iceberg_table.delete(delete_condition)
     assert len(iceberg_table.scan().to_arrow()) == lower_before
+
+
+@pytest.mark.integration
+def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) -> None:
+    np.random.seed(876)
+    N = 1440
+    d = {
+        "timestamp": pa.array([datetime(2023, 1, 1, 0, 0, 0) + timedelta(minutes=i) for i in range(N)]),
+        "category": pa.array([np.random.choice(["A", "B", "C"]) for _ in range(N)]),
+        "value": pa.array(np.random.normal(size=N)),
+    }
+    data = pa.Table.from_pydict(d)
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.test_error_table",
+        )
+    except NoSuchTableError:
+        pass
+
+    table = session_catalog.create_table(
+        "default.test_error_table",
+        schema=data.schema,
+    )
+
+    with table.update_spec() as update:
+        update.add_field("timestamp", transform=HourTransform())
+
+    table.append(data)
+
+    with table.update_spec() as update:
+        update.add_field("category", transform=IdentityTransform())
+
+    data_ = data.filter(
+        (pc.field("category") == "A")
+        & (pc.field("timestamp") >= datetime(2023, 1, 1, 0))
+        & (pc.field("timestamp") < datetime(2023, 1, 1, 1))
+    )
+
+    table.overwrite(
+        df=data_,
+        overwrite_filter=And(
+            And(
+                GreaterThanOrEqual("timestamp", datetime(2023, 1, 1, 0).isoformat()),
+                LessThan("timestamp", datetime(2023, 1, 1, 1).isoformat()),
+            ),
+            EqualTo("category", "A"),
+        ),
+    )

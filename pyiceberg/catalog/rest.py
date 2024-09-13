@@ -14,6 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from enum import Enum
 from json import JSONDecodeError
 from typing import (
     TYPE_CHECKING,
@@ -48,8 +49,10 @@ from pyiceberg.exceptions import (
     ForbiddenError,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
+    NoSuchIdentifierError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    NoSuchViewError,
     OAuthError,
     RESTError,
     ServerError,
@@ -69,6 +72,10 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
@@ -96,6 +103,13 @@ class Endpoints:
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
+    list_views: str = "namespaces/{namespace}/views"
+    drop_view: str = "namespaces/{namespace}/views/{view}"
+
+
+class IdentifierKind(Enum):
+    TABLE = "table"
+    VIEW = "view"
 
 
 AUTHORIZATION_HEADER = "Authorization"
@@ -200,8 +214,17 @@ class ListTableResponseEntry(IcebergBaseModel):
     namespace: Identifier = Field()
 
 
+class ListViewResponseEntry(IcebergBaseModel):
+    name: str = Field()
+    namespace: Identifier = Field()
+
+
 class ListTablesResponse(IcebergBaseModel):
     identifiers: List[ListTableResponseEntry] = Field()
+
+
+class ListViewsResponse(IcebergBaseModel):
+    identifiers: List[ListViewResponseEntry] = Field()
 
 
 class ErrorResponseMessage(IcebergBaseModel):
@@ -379,17 +402,17 @@ class RestCatalog(Catalog):
     def _identifier_to_validated_tuple(self, identifier: Union[str, Identifier]) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
         if len(identifier_tuple) <= 1:
-            raise NoSuchTableError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
+            raise NoSuchIdentifierError(f"Missing namespace or invalid identifier: {'.'.join(identifier_tuple)}")
         return identifier_tuple
 
-    def _split_identifier_for_path(self, identifier: Union[str, Identifier, TableIdentifier]) -> Properties:
+    def _split_identifier_for_path(
+        self, identifier: Union[str, Identifier, TableIdentifier], kind: IdentifierKind = IdentifierKind.TABLE
+    ) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            if identifier.namespace.root[0] == self.name:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), "table": identifier.name}
-            else:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), "table": identifier.name}
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
-        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), "table": identifier_tuple[-1]}
+
+        return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
 
     def _split_identifier_for_json(self, identifier: Union[str, Identifier]) -> Dict[str, Union[Identifier, str]]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
@@ -552,6 +575,7 @@ class RestCatalog(Catalog):
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
+        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:
             location = location.rstrip("/")
@@ -633,6 +657,7 @@ class RestCatalog(Catalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
             name=namespace_and_table["table"],
@@ -720,11 +745,26 @@ class RestCatalog(Catalog):
         return table_request
 
     @retry(**_RETRY_ARGS)
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update the table.
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        namespace_tuple = self._check_valid_namespace_identifier(namespace)
+        namespace_concat = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        response = self._session.get(self.url(Endpoints.list_views, namespace=namespace_concat))
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
+
+    @retry(**_RETRY_ARGS)
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -734,9 +774,12 @@ class RestCatalog(Catalog):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
+        identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
+        table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=self._remove_catalog_name_from_table_request_identifier(table_request).model_dump_json().encode(UTF8),
+            data=table_request.model_dump_json().encode(UTF8),
         )
         try:
             response.raise_for_status()
@@ -834,4 +877,28 @@ class RestCatalog(Catalog):
         response = self._session.head(
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
-        return response.status_code in (200, 204)
+
+        if response.status_code == 404:
+            return False
+        elif response.status_code == 204:
+            return True
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {})
+
+        return False
+
+    @retry(**_RETRY_ARGS)
+    def drop_view(self, identifier: Union[str]) -> None:
+        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        response = self._session.delete(
+            self.url(
+                Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier_tuple, IdentifierKind.VIEW)
+            ),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {404: NoSuchViewError})

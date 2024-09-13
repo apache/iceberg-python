@@ -146,6 +146,8 @@ catalog.create_table(
 )
 ```
 
+When the table is created, all IDs in the schema are re-assigned to ensure uniqueness.
+
 To create a table using a pyarrow schema:
 
 ```python
@@ -278,7 +280,7 @@ tbl.overwrite(df)
 
 The data is written to the table, and when the table is read using `tbl.scan().to_arrow()`:
 
-```
+```python
 pyarrow.Table
 city: string
 lat: double
@@ -301,7 +303,7 @@ tbl.append(df)
 
 When reading the table `tbl.scan().to_arrow()` you can see that `Groningen` is now also part of the table:
 
-```
+```python
 pyarrow.Table
 city: string
 lat: double
@@ -340,7 +342,7 @@ tbl.delete(delete_filter="city == 'Paris'")
 In the above example, any records where the city field value equals to `Paris` will be deleted.
 Running `tbl.scan().to_arrow()` will now yield:
 
-```
+```python
 pyarrow.Table
 city: string
 lat: double
@@ -360,7 +362,6 @@ To explore the table metadata, tables can be inspected.
 !!! tip "Time Travel"
     To inspect a tables's metadata with the time travel feature, call the inspect table method with the `snapshot_id` argument.
     Time travel is supported on all metadata tables except `snapshots` and `refs`.
-
     ```python
     table.inspect.entries(snapshot_id=805611270568163028)
     ```
@@ -375,7 +376,7 @@ Inspect the snapshots of the table:
 table.inspect.snapshots()
 ```
 
-```
+```python
 pyarrow.Table
 committed_at: timestamp[ms] not null
 snapshot_id: int64 not null
@@ -403,7 +404,7 @@ Inspect the partitions of the table:
 table.inspect.partitions()
 ```
 
-```
+```python
 pyarrow.Table
 partition: struct<dt_month: int32, dt_day: date32[day]> not null
   child 0, dt_month: int32
@@ -444,7 +445,7 @@ To show all the table's current manifest entries for both data and delete files.
 table.inspect.entries()
 ```
 
-```
+```python
 pyarrow.Table
 status: int8 not null
 snapshot_id: int64 not null
@@ -602,7 +603,7 @@ To show a table's known snapshot references:
 table.inspect.refs()
 ```
 
-```
+```python
 pyarrow.Table
 name: string not null
 type: string not null
@@ -627,7 +628,7 @@ To show a table's current file manifests:
 table.inspect.manifests()
 ```
 
-```
+```python
 pyarrow.Table
 content: int8 not null
 path: string not null
@@ -677,7 +678,7 @@ To show table metadata log entries:
 table.inspect.metadata_log_entries()
 ```
 
-```
+```python
 pyarrow.Table
 timestamp: timestamp[ms] not null
 file: string not null
@@ -700,7 +701,7 @@ To show a table's history:
 table.inspect.history()
 ```
 
-```
+```python
 pyarrow.Table
 made_current_at: timestamp[ms] not null
 snapshot_id: int64 not null
@@ -721,7 +722,7 @@ Inspect the data files in the current snapshot of the table:
 table.inspect.files()
 ```
 
-```
+```python
 pyarrow.Table
 content: int8 not null
 file_path: string not null
@@ -848,7 +849,7 @@ readable_metrics: [
 
 Expert Iceberg users may choose to commit existing parquet files to the Iceberg table as data files, without rewriting them.
 
-```
+```python
 # Given that these parquet files have schema consistent with the Iceberg table
 
 file_paths = [
@@ -928,7 +929,7 @@ with table.update_schema() as update:
 
 Now the table has the union of the two schemas `print(table.schema())`:
 
-```
+```python
 table {
   1: city: optional string
   2: lat: optional double
@@ -1178,7 +1179,7 @@ table.scan(
 
 This will return a PyArrow table:
 
-```
+```python
 pyarrow.Table
 VendorID: int64
 tpep_pickup_datetime: timestamp[us, tz=+00:00]
@@ -1220,7 +1221,7 @@ table.scan(
 
 This will return a Pandas dataframe:
 
-```
+```python
         VendorID      tpep_pickup_datetime     tpep_dropoff_datetime
 0              2 2021-04-01 00:28:05+00:00 2021-04-01 00:47:59+00:00
 1              1 2021-04-01 00:39:01+00:00 2021-04-01 00:57:39+00:00
@@ -1293,7 +1294,7 @@ ray_dataset = table.scan(
 
 This will return a Ray dataset:
 
-```
+```python
 Dataset(
     num_blocks=1,
     num_rows=1168798,
@@ -1344,7 +1345,7 @@ df = df.select("VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime")
 
 This returns a Daft Dataframe which is lazily materialized. Printing `df` will display the schema:
 
-```
+```python
 ╭──────────┬───────────────────────────────┬───────────────────────────────╮
 │ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
 │ ---      ┆ ---                           ┆ ---                           │
@@ -1362,7 +1363,7 @@ This is correctly optimized to take advantage of Iceberg features such as hidden
 df.show(2)
 ```
 
-```
+```python
 ╭──────────┬───────────────────────────────┬───────────────────────────────╮
 │ VendorID ┆ tpep_pickup_datetime          ┆ tpep_dropoff_datetime         │
 │ ---      ┆ ---                           ┆ ---                           │
