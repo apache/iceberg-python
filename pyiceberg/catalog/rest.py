@@ -409,10 +409,7 @@ class RestCatalog(Catalog):
         self, identifier: Union[str, Identifier, TableIdentifier], kind: IdentifierKind = IdentifierKind.TABLE
     ) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            if identifier.namespace.root[0] == self.name:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), kind.value: identifier.name}
-            else:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
 
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
