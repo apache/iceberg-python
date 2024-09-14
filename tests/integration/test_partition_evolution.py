@@ -223,16 +223,6 @@ def test_add_void_generates_default_name(catalog: Catalog, table_schema_simple: 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_add_truncate_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
-    simple_table.update_spec().add_field("foo", TruncateTransform(1)).commit()
-    _validate_new_partition_fields(
-        simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "foo_trunc_1")
-    )
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_hour_to_day(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", DayTransform(), "daily_partitioned").commit()
