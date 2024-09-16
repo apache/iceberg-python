@@ -202,7 +202,7 @@ def test_query_filter_appended_null_partitioned(
     "format_version",
     [1, 2],
 )
-def test_query_filter_dynamic_overwrite_null_partitioned(
+def test_query_filter_dynamic_partition_overwrite_null_partitioned(
     session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
 ) -> None:
     # Given
@@ -223,8 +223,8 @@ def test_query_filter_dynamic_overwrite_null_partitioned(
     # Append with arrow_table_1 with lines [A,B,C] and then arrow_table_2 with lines[A,B,C,A,B,C]
     tbl.append(arrow_table_with_null)
     tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
-    tbl.dynamic_overwrite(arrow_table_with_null)
-    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
+    tbl.dynamic_partition_overwrite(arrow_table_with_null)
+    tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 2))
     # Then
     assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
@@ -307,10 +307,10 @@ def test_query_filter_v1_v2_append_null(
         (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=HourTransform(), name="date_hour"))),
     ],
 )
-def test_dynamic_overwrite_non_identity_transform(
+def test_dynamic_partition_overwrite_non_identity_transform(
     session_catalog: Catalog, arrow_table_with_null: pa.Table, spec: PartitionSpec
 ) -> None:
-    identifier = "default.dynamic_overwrite_non_identity_transform"
+    identifier = "default.dynamic_partition_overwrite_non_identity_transform"
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
@@ -326,7 +326,7 @@ def test_dynamic_overwrite_non_identity_transform(
         ValueError,
         match="For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: *",
     ):
-        tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 1))
+        tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 1))
 
 
 @pytest.mark.integration
@@ -350,7 +350,7 @@ def test_dynamic_overwrite_non_identity_transform(
     "format_version",
     [1, 2],
 )
-def test_dynamic_overwrite_unpartitioned_evolve_to_identity_transform(
+def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, part_col: str, format_version: int
 ) -> None:
     identifier = f"default.unpartitioned_table_v{format_version}_evolve_into_identity_transformed_partition_field_{part_col}"
@@ -364,7 +364,7 @@ def test_dynamic_overwrite_unpartitioned_evolve_to_identity_transform(
     tbl.append(arrow_table_with_null)
     # each column should be [a, null, b, a, null, b]
     # dynamic overwrite a non-null row a, resulting in [null, b, null, b, a]
-    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 1))
+    tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 1))
     df = spark.table(identifier)
     assert df.where(f"{part_col} is not null").count() == 3, f"Expected 3 non-null rows for {part_col},"
     assert df.where(f"{part_col} is null").count() == 2, f"Expected 2 null rows for {part_col},"
@@ -387,9 +387,9 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
 
     tbl.append(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
-    tbl.dynamic_overwrite(arrow_table_with_null)
+    tbl.dynamic_partition_overwrite(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
-    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
+    tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 2))
 
     rows = spark.sql(
         f"""
@@ -528,10 +528,10 @@ def test_data_files_with_table_partitioned_with_null(
     # tldr:
     # APPEND               ML1 = [M1]
     # APPEND               ML2 = [M1, M2]
-    # DYNAMIC_OVERWRITE    ML3 = [M3]
+    # DYNAMIC_PARTITION_OVERWRITE    ML3 = [M3]
     #                      ML4 = [M4]
     # APPEND               ML5 = [M5, M4]
-    # DYNAMIC_OVERWRITE    ML6 = [M6, M7, M8]
+    # DYNAMIC_PARTITION_OVERWRITE    ML6 = [M6, M7, M8]
     #                      ML7 = [M9, M7, M8]
 
     identifier = "default.arrow_data_files"
@@ -552,9 +552,9 @@ def test_data_files_with_table_partitioned_with_null(
 
     tbl.append(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
-    tbl.dynamic_overwrite(arrow_table_with_null)
+    tbl.dynamic_partition_overwrite(arrow_table_with_null)
     tbl.append(arrow_table_with_null)
-    tbl.dynamic_overwrite(arrow_table_with_null.slice(0, 2))
+    tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 2))
     rows = spark.sql(
         f"""
         SELECT *

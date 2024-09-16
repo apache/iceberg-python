@@ -470,17 +470,17 @@ class Transaction:
         for partition_record in partition_records:
             match_partition_expression: BooleanExpression = AlwaysTrue()
 
-            for pos in range(len(partition_fields)):
+            for pos, partition_field in enumerate(partition_fields):
                 predicate = (
-                    EqualTo(Reference(partition_fields[pos]), partition_record[pos])
+                    EqualTo(Reference(partition_field), partition_record[pos])
                     if partition_record[pos] is not None
-                    else IsNull(Reference(partition_fields[pos]))
+                    else IsNull(Reference(partition_field))
                 )
                 match_partition_expression = And(match_partition_expression, predicate)
             expr = Or(expr, match_partition_expression)
         return expr
 
-    def dynamic_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand for adding a table dynamic overwrite with a PyArrow table to the transaction.
 
@@ -1053,7 +1053,7 @@ class Table:
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties)
 
-    def dynamic_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 
         Old partitions are auto detected and replaced with data files created for input arrow table.
@@ -1062,7 +1062,7 @@ class Table:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         with self.transaction() as tx:
-            tx.dynamic_overwrite(df=df, snapshot_properties=snapshot_properties)
+            tx.dynamic_partition_overwrite(df=df, snapshot_properties=snapshot_properties)
 
     def overwrite(
         self,
