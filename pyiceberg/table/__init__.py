@@ -120,6 +120,7 @@ from pyiceberg.table.update.snapshot import (
     _OverwriteFiles,
 )
 from pyiceberg.table.update.spec import UpdateSpec
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -499,6 +500,12 @@ class Transaction:
 
         if self.table_metadata.spec().is_unpartitioned():
             raise ValueError("Cannot apply dynamic overwrite on an unpartitioned table.")
+
+        for field in self.table_metadata.spec().fields:
+            if not isinstance(field.transform, IdentityTransform):
+                raise ValueError(
+                    f"For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: {field}"
+                )
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
