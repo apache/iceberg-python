@@ -461,7 +461,7 @@ class Transaction:
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
 
-    def _build_partition_predicate(self, partition_records: List[Record]) -> BooleanExpression:
+    def _build_partition_predicate(self, partition_records: Set[Record]) -> BooleanExpression:
         partition_spec = self.table_metadata.spec()
         schema = self.table_metadata.schema()
         partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
@@ -523,8 +523,8 @@ class Transaction:
             )
         )
 
-        overlapping_partitions = [data_file.partition for data_file in data_files]
-        delete_filter = self._build_partition_predicate(partition_records=overlapping_partitions)
+        partitions_to_overwrite = {data_file.partition for data_file in data_files}
+        delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
         self.delete(delete_filter=delete_filter)
 
         manifest_merge_enabled = property_as_bool(
