@@ -276,6 +276,7 @@ def test_query_filter_v1_v2_append_null(
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 non-null rows for {col}"
         assert df.where(f"{col} is null").count() == 2, f"Expected 2 null rows for {col}"
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "spec",
