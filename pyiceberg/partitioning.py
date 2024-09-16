@@ -46,6 +46,7 @@ from pyiceberg.transforms import (
     DayTransform,
     HourTransform,
     IdentityTransform,
+    MonthTransform,
     Transform,
     TruncateTransform,
     UnknownTransform,
@@ -359,6 +360,8 @@ def _visit_partition_field(schema: Schema, field: PartitionField, visitor: Parti
         return visitor.day(field.field_id, source_name, field.source_id)
     elif isinstance(transform, HourTransform):
         return visitor.hour(field.field_id, source_name, field.source_id)
+    elif isinstance(transform, MonthTransform):
+        return visitor.month(field.field_id, source_name, field.source_id)
     elif isinstance(transform, YearTransform):
         return visitor.year(field.field_id, source_name, field.source_id)
     elif isinstance(transform, VoidTransform):
