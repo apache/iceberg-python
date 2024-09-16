@@ -94,10 +94,26 @@ def test_add_year(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_year_generates_default_name(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_field("event_ts", YearTransform()).commit()
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, YearTransform(), "event_ts_year"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_month(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", MonthTransform(), "month_transform").commit()
     _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, MonthTransform(), "month_transform"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_month_generates_default_name(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_field("event_ts", MonthTransform()).commit()
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, MonthTransform(), "event_ts_month"))
 
 
 @pytest.mark.integration
@@ -110,10 +126,26 @@ def test_add_day(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_day_generates_default_name(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_field("event_ts", DayTransform()).commit()
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, DayTransform(), "event_ts_day"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_hour(catalog: Catalog) -> None:
     table = _table(catalog)
     table.update_spec().add_field("event_ts", HourTransform(), "hour_transform").commit()
     _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "hour_transform"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_hour_generates_default_name(catalog: Catalog) -> None:
+    table = _table(catalog)
+    table.update_spec().add_field("event_ts", HourTransform()).commit()
+    _validate_new_partition_fields(table, 1000, 1, 1000, PartitionField(2, 1000, HourTransform(), "event_ts_hour"))
 
 
 @pytest.mark.integration
@@ -126,12 +158,28 @@ def test_add_bucket(catalog: Catalog, table_schema_simple: Schema) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_bucket_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table.update_spec().add_field("foo", BucketTransform(12)).commit()
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, BucketTransform(12), "foo_bucket_12"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_truncate(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
     simple_table.update_spec().add_field("foo", TruncateTransform(1), "truncate_transform").commit()
     _validate_new_partition_fields(
         simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "truncate_transform")
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_truncate_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table.update_spec().add_field("foo", TruncateTransform(1)).commit()
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "foo_trunc_1"))
 
 
 @pytest.mark.integration
@@ -150,6 +198,22 @@ def test_multiple_adds(catalog: Catalog) -> None:
         PartitionField(2, 1001, HourTransform(), "hourly_partitioned"),
         PartitionField(3, 1002, TruncateTransform(2), "truncate_str"),
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_void(catalog: Catalog, table_schema_simple: Schema) -> None:
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table.update_spec().add_field("foo", VoidTransform(), "void_transform").commit()
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, VoidTransform(), "void_transform"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_add_void_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table.update_spec().add_field("foo", VoidTransform()).commit()
+    _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, VoidTransform(), "foo_null"))
 
 
 @pytest.mark.integration
