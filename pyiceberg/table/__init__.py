@@ -482,7 +482,11 @@ class Transaction:
 
     def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
-        Shorthand for adding a table dynamic overwrite with a PyArrow table to the transaction.
+        Shorthand for overwriting existing partitions with a PyArrow table.
+
+        The function detects partition values in the provided arrow table that using the current table
+        partition spec, and deletes existing partitions matching these values. Finally, the
+        data in the table is appended to the table.
 
         Args:
             df: The Arrow dataframe that will be used to overwrite the table
