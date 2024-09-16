@@ -1243,6 +1243,7 @@ def _task_to_record_batches(
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 batch = batch.take(indices)
+                output_batches = iter([batch])
 
                 # Apply the user filter
                 if pyarrow_filter is not None:
@@ -1254,8 +1255,6 @@ def _task_to_record_batches(
                     if len(arrow_table) == 0:
                         continue
                     output_batches = arrow_table.to_batches()
-                else:
-                    output_batches = iter([batch])
             for output_batch in output_batches:
                 yield _to_requested_schema(
                     projected_schema,
