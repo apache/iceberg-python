@@ -353,6 +353,71 @@ lat: [[52.371807,37.773972,53.11254],[53.21917]]
 long: [[4.896029,-122.431297,6.0989],[6.56667]]
 ```
 
+### Partial overwrites
+
+You can use overwrite with an overwrite filter `tbl.overwrite(df,overwrite_filter)` to delete partial table data which matches the filter before appending new data.
+
+For example, with an iceberg table created as:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+And with initial data populating the table:
+
+```python
+import pyarrow as pa
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+You can overwrite the record of `Paris` with a record of `New York`:
+
+```python
+from pyiceberg.expressions import EqualTo
+df = pa.Table.from_pylist(
+    [
+        {"city": "New York", "lat": 40.7128, "long": 74.0060},
+    ]
+)
+tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
+```
+
+This results in such data if data is printed by `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["New York"],["Amsterdam","Drachten","Paris"]]
+lat: [[40.7128],[52.371807,53.11254,48.864716]]
+long: [[74.006],[4.896029,6.0989,2.349014]]
+```
+
+If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically.
+
 ## Inspecting tables
 
 To explore the table metadata, tables can be inspected.
