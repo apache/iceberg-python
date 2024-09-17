@@ -58,6 +58,7 @@ from pyiceberg.expressions.literals import literal
 from pyiceberg.io import InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
+    ArrowScan,
     PyArrowFile,
     PyArrowFileIO,
     StatsAggregator,
@@ -69,7 +70,6 @@ from pyiceberg.io.pyarrow import (
     _to_requested_schema,
     bin_pack_arrow_table,
     expression_to_pyarrow,
-    ArrowScan,
     schema_to_pyarrow,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -1424,9 +1424,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         io=load_file_io(),
         projected_schema=table_schema_simple,
         row_filter=AlwaysTrue(),
-    ).to_table(
-        tasks=[example_task_with_delete]
-    )
+    ).to_table(tasks=[example_task_with_delete])
 
     assert (
         str(with_deletes)
@@ -1463,9 +1461,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         io=load_file_io(),
         projected_schema=table_schema_simple,
         row_filter=AlwaysTrue(),
-    ).to_table(
-        tasks=[example_task_with_delete]
-    )
+    ).to_table(tasks=[example_task_with_delete])
 
     assert (
         str(with_deletes)
@@ -1496,9 +1492,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         case_sensitive=True,
         projected_schema=table_schema_simple,
         row_filter=AlwaysTrue(),
-    ).to_table(
-        tasks=[example_task]
-    )
+    ).to_table(tasks=[example_task])
 
     assert (
         str(projection)

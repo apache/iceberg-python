@@ -523,9 +523,9 @@ class Transaction:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         from pyiceberg.io.pyarrow import (
+            ArrowScan,
             _dataframe_to_data_files,
             _expression_to_complementary_pyarrow,
-            ArrowScan,
         )
 
         if (
@@ -564,9 +564,7 @@ class Transaction:
                     io=self._table.io,
                     projected_schema=self.table_metadata.schema(),
                     row_filter=AlwaysTrue(),
-                ).to_table(
-                    tasks=[original_file]
-                )
+                ).to_table(tasks=[original_file])
                 filtered_df = df.filter(preserve_row_filter)
 
                 # Only rewrite if there are records being deleted
