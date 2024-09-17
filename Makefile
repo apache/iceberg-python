@@ -52,7 +52,7 @@ test-integration: ## Run all integration tests, can add arguments with PYTEST_AR
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
-	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS} -k test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform -s -vv
+	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml kill
