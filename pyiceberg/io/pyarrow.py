@@ -1379,6 +1379,7 @@ class ArrowScan:
             if not isinstance(self._projected_schema.find_type(id), (MapType, ListType))
         }.union(extract_field_ids(self._bound_row_filter))
 
+
     def to_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
         """Scan the Iceberg table and return a pa.Table.
 

@@ -69,6 +69,7 @@ from pyiceberg.io.pyarrow import (
     _to_requested_schema,
     bin_pack_arrow_table,
     expression_to_pyarrow,
+    ArrowScan,
     project_table,
     schema_to_pyarrow,
 )
@@ -952,7 +953,19 @@ def file_map(schema_map: Schema, tmpdir: str) -> str:
 def project(
     schema: Schema, files: List[str], expr: Optional[BooleanExpression] = None, table_schema: Optional[Schema] = None
 ) -> pa.Table:
-    return project_table(
+    return ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[table_schema or schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=expr or AlwaysTrue(),
+        case_sensitive=True,
+    ).to_table(
         tasks=[
             FileScanTask(
                 DataFile(
@@ -965,18 +978,7 @@ def project(
                 )
             )
             for file in files
-        ],
-        table_metadata=TableMetadataV2(
-            location="file://a/b/",
-            last_column_id=1,
-            format_version=2,
-            schemas=[table_schema or schema],
-            partition_specs=[PartitionSpec()],
-        ),
-        io=PyArrowFileIO(),
-        row_filter=expr or AlwaysTrue(),
-        projected_schema=schema,
-        case_sensitive=True,
+        ]
     )
 
 
