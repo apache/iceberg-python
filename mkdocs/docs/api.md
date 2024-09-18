@@ -417,6 +417,62 @@ long: [[74.006],[4.896029,6.0989,2.349014]]
 ```
 
 If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically.
+To try out it, you could firstly create a same PyIceberg table with partition specified on `"city"` field:
+
+```python
+from pyiceberg.schema import Schema
+from pyiceberg.types import DoubleType, NestedField, StringType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table(
+    "default.cities",
+    schema=schema,
+    partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="city_identity"))
+)
+```
+
+And then suppose the data for the partition of `"paris"` is wrong:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": -48.864716, "long": -2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+Then you could use dynamic overwrite on this partition:
+
+```python
+df_corrected = pa.Table.from_pylist([
+    {"city": "Paris", "lat": 48.864716, "long": 2.349014}
+])
+tbl.dynamic_partition_overwrite(df_corrected)
+```
+
+This results in such data if data is printed by `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["Paris"],["Amsterdam"],["Drachten"],["San Francisco"]]
+lat: [[48.864716],[52.371807],[53.11254],[37.773972]]
+long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
+```
 
 ## Inspecting tables
 
