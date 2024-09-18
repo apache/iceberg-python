@@ -468,6 +468,7 @@ def test_list_tables(
     for table_name in table_list:
         assert (database_name, table_name) in loaded_table_list
 
+
 @mock_aws
 def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: List[str]) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
