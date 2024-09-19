@@ -484,7 +484,7 @@ class Transaction:
         """
         Shorthand for overwriting existing partitions with a PyArrow table.
 
-        The function detects partition values in the provided arrow table that using the current table
+        The function detects partition values in the provided arrow table using the current
         partition spec, and deletes existing partitions matching these values. Finally, the
         data in the table is appended to the table.
 

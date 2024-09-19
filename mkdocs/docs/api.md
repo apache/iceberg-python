@@ -355,7 +355,7 @@ long: [[4.896029,-122.431297,6.0989],[6.56667]]
 
 ### Partial overwrites
 
-You can use overwrite with an overwrite filter `tbl.overwrite(df,overwrite_filter)` to delete partial table data which matches the filter before appending new data.
+When using the `overwrite` API, you can use an `overwrite_filter` to delete data that matches the filter before appending new data into the table.
 
 For example, with an iceberg table created as:
 
@@ -403,7 +403,7 @@ df = pa.Table.from_pylist(
 tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
 ```
 
-This results in such data if data is printed by `tbl.scan().to_arrow()`:
+This produces the following result with `tbl.scan().to_arrow()`:
 
 ```python
 pyarrow.Table
@@ -416,8 +416,8 @@ lat: [[40.7128],[52.371807,53.11254,48.864716]]
 long: [[74.006],[4.896029,6.0989,2.349014]]
 ```
 
-If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically.
-To try out it, you could firstly create a same PyIceberg table with partition specified on `"city"` field:
+If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
+For example, with an iceberg table with a partition specified on `"city"` field:
 
 ```python
 from pyiceberg.schema import Schema
@@ -436,7 +436,7 @@ tbl = catalog.create_table(
 )
 ```
 
-And then suppose the data for the partition of `"paris"` is wrong:
+And we want to overwrite the data for the partition of `"Paris"`:
 
 ```python
 import pyarrow as pa
@@ -452,7 +452,7 @@ df = pa.Table.from_pylist(
 tbl.append(df)
 ```
 
-Then you could use dynamic overwrite on this partition:
+Then we can call `dynamic_partition_overwrite` with this arrow table:
 
 ```python
 df_corrected = pa.Table.from_pylist([
@@ -461,7 +461,7 @@ df_corrected = pa.Table.from_pylist([
 tbl.dynamic_partition_overwrite(df_corrected)
 ```
 
-This results in such data if data is printed by `tbl.scan().to_arrow()`:
+This produces the following result with `tbl.scan().to_arrow()`:
 
 ```python
 pyarrow.Table
