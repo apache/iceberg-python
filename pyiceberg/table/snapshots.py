@@ -19,7 +19,6 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from enum import Enum
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
 from pydantic import Field, PrivateAttr, model_serializer
@@ -231,13 +230,6 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         )
 
 
-@lru_cache
-def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
-    """Return the manifests from the manifest list."""
-    file = io.new_input(manifest_list)
-    return list(read_manifest_list(file))
-
-
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
@@ -249,6 +241,8 @@ class Snapshot(IcebergBaseModel):
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
 
+    _manifest_cache: Optional[List[ManifestFile]] = None  # Cache for manifests
+
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
         operation = f"{self.summary.operation}: " if self.summary else ""
@@ -258,10 +252,14 @@ class Snapshot(IcebergBaseModel):
         return result_str
 
     def manifests(self, io: FileIO) -> List[ManifestFile]:
-        """Return the manifests for the given snapshot."""
-        if self.manifest_list:
-            return _manifests(io, self.manifest_list)
-        return []
+        """Return the manifests for the given snapshot, using instance-level caching."""
+        if self._manifest_cache is None:
+            if self.manifest_list:
+                file = io.new_input(self.manifest_list)
+                self._manifest_cache = list(read_manifest_list(file))
+            else:
+                self._manifest_cache = []
+        return self._manifest_cache
 
 
 class MetadataLogEntry(IcebergBaseModel):
