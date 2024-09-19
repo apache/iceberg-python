@@ -380,7 +380,7 @@ def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
     # this makes strict metric evaluator determine the file evaluate as ROWS_MIGHT_NOT_MATCH
     # this further causes the partitioned data file to be overwriten rather than deleted
     if part_col == "string_long":
-        expected_operations = ["append", "append", "delete", "append"]
+        expected_operations = ["append", "append", "overwrite", "append"]
     assert tbl.inspect.snapshots().to_pydict()["operation"] == expected_operations
 
 
