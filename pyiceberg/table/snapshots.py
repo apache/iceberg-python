@@ -241,7 +241,8 @@ class Snapshot(IcebergBaseModel):
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
 
-    _manifest_cache: Optional[List[ManifestFile]] = None  # Cache for manifests
+    # Private attribute for caching the manifests
+    _manifest_cache: Optional[List[ManifestFile]] = PrivateAttr(default=None)
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
