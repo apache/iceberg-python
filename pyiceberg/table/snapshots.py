@@ -19,7 +19,7 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from enum import Enum
-from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from cachetools import LRUCache, cached
 from cachetools.keys import hashkey
@@ -233,10 +233,10 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
 
 
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
-def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
-    """Return the manifests from the manifest list."""
+def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     file = io.new_input(manifest_list)
-    return list(read_manifest_list(file))
+    return tuple(read_manifest_list(file))
 
 
 class Snapshot(IcebergBaseModel):
@@ -261,7 +261,7 @@ class Snapshot(IcebergBaseModel):
     def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
         if self.manifest_list:
-            return _manifests(io, self.manifest_list)
+            return list(_manifests(io, self.manifest_list))
         return []
 
 
