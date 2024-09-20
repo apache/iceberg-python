@@ -439,7 +439,7 @@ virtualenv = ["virtualenv (>=20.0.35)"]
 name = "cachetools"
 version = "5.5.0"
 description = "Extensible memoizing collections and decorators"
-optional = true
+optional = false
 python-versions = ">=3.7"
 files = [
     {file = "cachetools-5.5.0-py3-none-any.whl", hash = "sha256:02134e8439cdc2ffb62023ce1debca2944c3f289d66bb17ead3ab3dede74b292"},
@@ -4636,5 +4636,5 @@ zstandard = ["zstandard"]
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.8, <3.13, !=3.9.7"
-content-hash = "086f6774fe006d24ded1141068f63f2aa22c356c75979b2b44781d43dc10d977"
+python-versions = ">=3.8, <3.12, !=3.9.7"
+content-hash = "6e6b9103b932742d810fc3789b65f7c87c970dc6d55d8bff567feaf6acfafcc0"

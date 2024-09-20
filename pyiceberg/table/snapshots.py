@@ -19,9 +19,10 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from enum import Enum
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
+from cachetools import cached
+from cachetools.keys import hashkey
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
@@ -231,7 +232,7 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         )
 
 
-@lru_cache
+@cached(cache={}, key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
     """Return the manifests from the manifest list."""
     file = io.new_input(manifest_list)
