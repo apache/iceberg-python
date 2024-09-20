@@ -523,9 +523,9 @@ class Transaction:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         from pyiceberg.io.pyarrow import (
+            ArrowScan,
             _dataframe_to_data_files,
             _expression_to_complementary_pyarrow,
-            project_table,
         )
 
         if (
@@ -559,13 +559,12 @@ class Transaction:
             #   - Apply the latest partition-spec
             #   - And sort order when added
             for original_file in files:
-                df = project_table(
-                    tasks=[original_file],
+                df = ArrowScan(
                     table_metadata=self.table_metadata,
                     io=self._table.io,
-                    row_filter=AlwaysTrue(),
                     projected_schema=self.table_metadata.schema(),
-                )
+                    row_filter=AlwaysTrue(),
+                ).to_table(tasks=[original_file])
                 filtered_df = df.filter(preserve_row_filter)
 
                 # Only rewrite if there are records being deleted
