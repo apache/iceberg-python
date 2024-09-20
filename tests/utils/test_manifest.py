@@ -38,10 +38,16 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary, _manifests
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
+
+
+@pytest.fixture(autouse=True)
+def clear_global_manifests_cache() -> None:
+    # Clear the global cache before each test
+    _manifests.cache_clear()  # type: ignore
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, str]) -> None:
