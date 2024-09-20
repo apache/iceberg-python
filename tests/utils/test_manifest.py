@@ -308,8 +308,8 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
 
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
+    # Mock the read_manifest_list function relative to the module path
     with patch("pyiceberg.table.snapshots.read_manifest_list") as mocked_read_manifest_list:
-        # Mock the read_manifest_list function relative to the module path
         io = load_file_io()
 
         snapshot = Snapshot(
