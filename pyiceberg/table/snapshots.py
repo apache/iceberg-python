@@ -19,14 +19,12 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from enum import Enum
-from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
-from cachetools import LRUCache, cached
-from cachetools.keys import hashkey
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
@@ -230,13 +228,6 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
             if isinstance(other, Summary)
             else False
         )
-
-
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
-def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
-    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
-    file = io.new_input(manifest_list)
-    return tuple(read_manifest_list(file))
 
 
 class Snapshot(IcebergBaseModel):

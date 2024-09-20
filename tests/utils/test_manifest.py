@@ -32,13 +32,14 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
+    _manifests,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.snapshots import Operation, Snapshot, Summary, _manifests
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
@@ -314,8 +315,7 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 
 
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
-    # Mock the read_manifest_list function relative to the module path
-    with patch("pyiceberg.table.snapshots.read_manifest_list") as mocked_read_manifest_list:
+    with patch("pyiceberg.manifest.read_manifest_list") as mocked_read_manifest_list:
         io = load_file_io()
 
         snapshot = Snapshot(
