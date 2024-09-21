@@ -15,20 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Use the same Python executable for these commands
+PIP = python -m pip
+POETRY = python -m poetry
 
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 install-poetry:  ## Install poetry if the user has not done that yet.
-	 @if ! command -v poetry &> /dev/null; then \
+	@if ! $(POETRY) --version &> /dev/null; then \
          echo "Poetry could not be found. Installing..."; \
-         pip install --user poetry==1.8.3; \
+         ${PIP} install poetry==1.8.3; \
      else \
          echo "Poetry is already installed."; \
      fi
 
 install-dependencies: ## Install dependencies including dev and all extras
-	poetry install --all-extras
+	$(POETRY) install --all-extras
 
 install: | install-poetry install-dependencies
 
@@ -36,14 +39,14 @@ check-license: ## Check license headers
 	./dev/check-license
 
 lint: ## lint
-	poetry run pre-commit run --all-files
+	$(POETRY) run pre-commit run --all-files
 
 test: ## Run all unit tests, can add arguments with PYTEST_ARGS="-vv"
-	poetry run pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+	$(POETRY) run pytest tests/ -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
 test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-minio.sh
-	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
+	$(POETRY) run pytest tests/ -m s3 ${PYTEST_ARGS}
 
 test-integration: ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -52,7 +55,7 @@ test-integration: ## Run all integration tests, can add arguments with PYTEST_AR
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
-	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
+	$(POETRY) run pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -61,14 +64,14 @@ test-integration-rebuild:
 
 test-adls: ## Run tests marked with adls, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-azurite.sh
-	poetry run pytest tests/ -m adls ${PYTEST_ARGS}
+	$(POETRY) run pytest tests/ -m adls ${PYTEST_ARGS}
 
 test-gcs: ## Run tests marked with gcs, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-gcs-server.sh
-	poetry run  pytest tests/ -m gcs ${PYTEST_ARGS}
+	$(POETRY) run  pytest tests/ -m gcs ${PYTEST_ARGS}
 
 test-coverage-unit: # Run test with coverage for unit tests, can add arguments with PYTEST_ARGS="-vv"
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
+	$(POETRY) run coverage run --source=pyiceberg/ --data-file=.coverage.unit -m pytest tests/ -v -m "(unmarked or parametrize) and not integration" ${PYTEST_ARGS}
 
 test-coverage-integration: # Run test with coverage for integration tests, can add arguments with PYTEST_ARGS="-vv"
 	docker compose -f dev/docker-compose-integration.yml kill
@@ -79,13 +82,13 @@ test-coverage-integration: # Run test with coverage for integration tests, can a
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
-	poetry run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
+	$(POETRY) run coverage run --source=pyiceberg/ --data-file=.coverage.integration -m pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-coverage: | test-coverage-unit test-coverage-integration ## Run all tests with coverage including unit and integration tests
-	poetry run coverage combine .coverage.unit .coverage.integration
-	poetry run coverage report -m --fail-under=90
-	poetry run coverage html
-	poetry run coverage xml
+	$(POETRY) run coverage combine .coverage.unit .coverage.integration
+	$(POETRY) run coverage report -m --fail-under=90
+	$(POETRY) run coverage html
+	$(POETRY) run coverage xml
 
 
 clean: ## Clean up the project Python working environment
