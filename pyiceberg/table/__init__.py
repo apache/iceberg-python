@@ -529,7 +529,7 @@ class Transaction:
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
         delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
-        self.delete(delete_filter=delete_filter)
+        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
         manifest_merge_enabled = property_as_bool(
             self.table_metadata.properties,
