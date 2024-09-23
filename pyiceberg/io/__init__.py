@@ -149,6 +149,10 @@ class OutputStream(Protocol):  # pragma: no cover
     ) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
 
+    @abstractmethod
+    def tell(self) -> int:
+        """Return the total number number of bytes written to the stream."""
+
 
 class InputFile(ABC):
     """A base class for InputFile implementations.

@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict
+from typing import Dict, Generator
 
 import fastavro
 import pytest
@@ -30,7 +30,9 @@ from pyiceberg.manifest import (
     ManifestContent,
     ManifestEntryStatus,
     ManifestFile,
+    ManifestWriter,
     PartitionFieldSummary,
+    RollingManifestWriter,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -494,6 +496,75 @@ def test_write_manifest(
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize(
+    "target_number_of_rows,target_file_size_in_bytes,expected_number_of_files",
+    [
+        (19514, 388873, 1),  # should not roll over
+        (19513, 388873, 2),  # should roll over due to target_rows
+        (4000, 388872, 2),  # should roll over due target_bytes
+        (4000, 388872, 2),  # should roll over due to target_rows and target_bytes
+    ],
+)
+def test_rolling_manifest_writer(
+    generated_manifest_file_file_v1: str,
+    generated_manifest_file_file_v2: str,
+    format_version: TableVersion,
+    target_number_of_rows: int,
+    target_file_size_in_bytes: int,
+    expected_number_of_files: int,
+) -> None:
+    io = load_file_io()
+    snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v1 if format_version == 1 else generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    demo_manifest_file = snapshot.manifests(io)[0]
+    manifest_entries = demo_manifest_file.fetch_manifest_entry(io)
+    test_schema = Schema(
+        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", IntegerType(), False)
+    )
+    test_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1, transform=IdentityTransform(), name="VendorID"),
+        PartitionField(source_id=2, field_id=2, transform=IdentityTransform(), name="tpep_pickup_datetime"),
+        spec_id=demo_manifest_file.partition_spec_id,
+    )
+
+    with TemporaryDirectory() as tmpdir:
+
+        def supplier() -> Generator[ManifestWriter, None, None]:
+            i = 0
+            while True:
+                tmp_avro_file = tmpdir + f"/test_write_manifest-{i}.avro"
+                output = io.new_output(tmp_avro_file)
+                yield write_manifest(
+                    format_version=format_version,
+                    spec=test_spec,
+                    schema=test_schema,
+                    output_file=output,
+                    snapshot_id=8744736658442914487,
+                )
+                i += 1
+
+        with RollingManifestWriter(
+            supplier=supplier(),
+            target_file_size_in_bytes=target_file_size_in_bytes,
+            target_number_of_rows=target_number_of_rows,
+        ) as writer:
+            for entry in manifest_entries:
+                writer.add_entry(entry)
+
+        manifest_files = writer.to_manifest_files()
+        assert len(manifest_files) == expected_number_of_files
+        with pytest.raises(RuntimeError):
+            # It is already closed
+            writer.add_entry(manifest_entries[0])
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest_list(
     generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
 ) -> None:
@@ -560,3 +631,5 @@ def test_write_manifest_list(
         assert entry.file_sequence_number == 0 if format_version == 1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
+
+

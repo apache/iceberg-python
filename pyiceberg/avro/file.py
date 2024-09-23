@@ -228,6 +228,7 @@ class AvroOutputFile(Generic[D]):
     encoder: BinaryEncoder
     sync_bytes: bytes
     writer: Writer
+    closed: bool
 
     def __init__(
         self,
@@ -247,6 +248,7 @@ class AvroOutputFile(Generic[D]):
             else resolve_writer(record_schema=record_schema, file_schema=self.file_schema)
         )
         self.metadata = metadata
+        self.closed = False
 
     def __enter__(self) -> AvroOutputFile[D]:
         """
@@ -267,6 +269,7 @@ class AvroOutputFile(Generic[D]):
     ) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
         self.output_stream.close()
+        self.closed = True
 
     def _write_header(self) -> None:
         json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.file_schema, schema_name=self.schema_name))
@@ -285,3 +288,9 @@ class AvroOutputFile(Generic[D]):
         self.encoder.write_int(len(block_content))
         self.encoder.write(block_content)
         self.encoder.write(self.sync_bytes)
+
+    def __len__(self) -> int:
+        """Return the total number number of bytes written."""
+        if self.closed:
+            return len(self.output_file)
+        return self.output_stream.tell()

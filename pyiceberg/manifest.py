@@ -840,6 +840,81 @@ class ManifestWriter(ABC):
         return self
 
 
+    def __len__(self) -> int:
+        """Return the total number number of bytes written."""
+        return len(self._writer)
+
+
+class RollingManifestWriter:
+    closed: bool
+    _supplier: Generator[ManifestWriter, None, None]
+    _manifest_files: list[ManifestFile]
+    _target_file_size_in_bytes: int
+    _target_number_of_rows: int
+    _current_writer: Optional[ManifestWriter]
+    _current_file_rows: int
+
+    def __init__(
+        self, supplier: Generator[ManifestWriter, None, None], target_file_size_in_bytes, target_number_of_rows
+    ) -> None:
+        self._closed = False
+        self._manifest_files = []
+        self._supplier = supplier
+        self._target_file_size_in_bytes = target_file_size_in_bytes
+        self._target_number_of_rows = target_number_of_rows
+        self._current_writer = None
+        self._current_file_rows = 0
+
+    def __enter__(self) -> RollingManifestWriter:
+        self._get_current_writer().__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        self._close_current_writer()
+        self._closed = True
+
+    def _get_current_writer(self) -> ManifestWriter:
+        if self._should_roll_to_new_file():
+            self._close_current_writer()
+        if not self._current_writer:
+            self._current_writer = next(self._supplier)
+            self._current_writer.__enter__()
+            return self._current_writer
+        return self._current_writer
+
+    def _should_roll_to_new_file(self) -> bool:
+        if not self._current_writer:
+            return False
+        return (
+            self._current_file_rows >= self._target_number_of_rows or len(self._current_writer) >= self._target_file_size_in_bytes
+        )
+
+    def _close_current_writer(self):
+        if self._current_writer:
+            self._current_writer.__exit__(None, None, None)
+            current_file = self._current_writer.to_manifest_file()
+            self._manifest_files.append(current_file)
+            self._current_writer = None
+            self._current_file_rows = 0
+
+    def to_manifest_files(self) -> list[ManifestFile]:
+        if not self._closed:
+            raise RuntimeError("Cannot create manifest files from unclosed writer")
+        return self._manifest_files
+
+    def add_entry(self, entry: ManifestEntry) -> RollingManifestWriter:
+        if self._closed:
+            raise RuntimeError("Cannot add entry to closed manifest writer")
+        self._get_current_writer().add_entry(entry)
+        self._current_file_rows += entry.data_file.record_count
+        return self
+
+
 class ManifestWriterV1(ManifestWriter):
     def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
         super().__init__(
