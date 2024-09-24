@@ -1218,8 +1218,8 @@ def test_create_hive_client_multiple_uris():
 
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
-        mock_hive_client.assert_any_call("thrift://localhost:10000", "user")
-        mock_hive_client.assert_any_call("thrift://localhost:10001", "user")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10001", "user")
         assert client is not None
 
 def test_create_hive_client_failure():
