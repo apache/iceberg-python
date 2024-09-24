@@ -282,7 +282,7 @@ class HiveCatalog(MetastoreCatalog):
         if last_exception is not None:
             raise e
         else:
-            raise ValueError(f"Unable to connect to hive using uri: {properties["uri"]}")
+            raise ValueError(f"Unable to connect to hive using uri: {properties['uri']}")
     
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
