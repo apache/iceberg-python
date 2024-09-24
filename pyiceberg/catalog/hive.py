@@ -279,7 +279,7 @@ class HiveCatalog(MetastoreCatalog):
                 return _HiveClient(uri, properties.get("ugi"))
             except BaseException as e:
                 last_exception = e
-        if last_exception not None:
+        if last_exception is not None:
             raise e
         else:
             raise ValueError(f"Unable to connect to hive using uri: {properties["uri"]}")
