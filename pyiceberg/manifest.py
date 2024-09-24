@@ -28,9 +28,12 @@ from typing import (
     List,
     Literal,
     Optional,
+    Tuple,
     Type,
 )
 
+from cachetools import LRUCache, cached
+from cachetools.keys import hashkey
 from pydantic_core import to_json
 
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
@@ -618,6 +621,13 @@ class ManifestFile(Record):
                 for entry in reader
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
+
+
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
+def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
+    file = io.new_input(manifest_list)
+    return tuple(read_manifest_list(file))
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
