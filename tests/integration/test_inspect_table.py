@@ -282,7 +282,7 @@ def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catal
 
     df = session_catalog.load_table(identifier).inspect.entries()
 
-    assert df.to_pydict()["data_file"][0]["partition"] == {"dt_day": date(2021, 2, 1), "dt_month": None}
+    assert df.to_pydict()["data_file"][0]["partition"] == {"dt_day": 18659, "dt_month": None}
     assert df.to_pydict()["data_file"][1]["partition"] == {"dt_day": None, "dt_month": 612}
 
 
