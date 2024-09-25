@@ -450,9 +450,7 @@ def test_append_ymd_transform_partitioned(
     [
         pytest.param(YearTransform(), {53, 54, None}, id="year_transform"),
         pytest.param(MonthTransform(), {647, 648, 649, None}, id="month_transform"),
-        pytest.param(
-            DayTransform(), {19722, 19723, 19753, 19754, None}, id="day_transform"
-        ),
+        pytest.param(DayTransform(), {19722, 19723, 19753, 19754, None}, id="day_transform"),
         pytest.param(HourTransform(), {473328, 473352, 474072, 474096, 474102, None}, id="hour_transform"),
     ],
 )
