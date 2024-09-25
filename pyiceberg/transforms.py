@@ -491,7 +491,7 @@ class DayTransform(TimeTransform[S]):
     """Transforms a datetime value into a day value.
 
     Example:
-        >>> transform = MonthTransform()
+        >>> transform = DayTransform()
         >>> transform.transform(DateType())(17501)
         17501
     """
@@ -516,9 +516,6 @@ class DayTransform(TimeTransform[S]):
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (DateType, TimestampType, TimestamptzType))
-
-    def result_type(self, source: IcebergType) -> IcebergType:
-        return DateType()
 
     @property
     def granularity(self) -> TimeResolution:
