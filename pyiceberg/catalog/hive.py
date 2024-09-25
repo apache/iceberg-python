@@ -261,7 +261,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
+        self._client = self._create_hive_client(properties)
 
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
@@ -270,6 +270,19 @@ class HiveCatalog(MetastoreCatalog):
             LOCK_CHECK_RETRIES,
             DEFAULT_LOCK_CHECK_RETRIES,
         )
+
+    @staticmethod
+    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+        last_exception = None
+        for uri in properties["uri"].split(","):
+            try:
+                return _HiveClient(uri, properties.get("ugi"))
+            except BaseException as e:
+                last_exception = e
+        if last_exception is not None:
+            raise last_exception
+        else:
+            raise ValueError(f"Unable to connect to hive using uri: {properties['uri']}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
