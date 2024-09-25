@@ -1068,20 +1068,13 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
-        elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
+        elif isinstance(primitive, pa.Time64Type) and primitive.unit in ["us", "ns"]:
             return TimeType()
         elif pa.types.is_timestamp(primitive):
             primitive = cast(pa.TimestampType, primitive)
-            if primitive.unit in ("s", "ms", "us"):
+            if primitive.unit in ("s", "ms", "us", "ns"):
                 # Supported types, will be upcast automatically to 'us'
                 pass
-            elif primitive.unit == "ns":
-                if self._downcast_ns_timestamp_to_us:
-                    logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
-                else:
-                    raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
-                    )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
 
