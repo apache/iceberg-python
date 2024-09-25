@@ -23,6 +23,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
     cast,
 )
@@ -69,12 +70,15 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
-    CommitTableRequest,
     CommitTableResponse,
     Table,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
@@ -449,11 +453,15 @@ class GlueCatalog(MetastoreCatalog):
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
         return self.load_table(identifier=identifier)
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update the table.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -462,10 +470,8 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(
-            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        )
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple)
+        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
         current_glue_table: Optional[TableTypeDef]
         glue_table_version_id: Optional[str]
@@ -479,7 +485,7 @@ class GlueCatalog(MetastoreCatalog):
             glue_table_version_id = None
             current_table = None
 
-        updated_staged_table = self._update_and_stage_table(current_table, table_request)
+        updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
@@ -769,3 +775,9 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.update_database(Name=database_name, DatabaseInput=_construct_database_input(database_name, updated_properties))
 
         return properties_update_summary
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError

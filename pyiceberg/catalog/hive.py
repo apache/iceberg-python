@@ -26,6 +26,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Type,
     Union,
 )
@@ -79,13 +80,16 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
-    CommitTableRequest,
     CommitTableResponse,
     StagedTable,
     Table,
     TableProperties,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
@@ -257,7 +261,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
+        self._client = self._create_hive_client(properties)
 
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
@@ -266,6 +270,19 @@ class HiveCatalog(MetastoreCatalog):
             LOCK_CHECK_RETRIES,
             DEFAULT_LOCK_CHECK_RETRIES,
         )
+
+    @staticmethod
+    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+        last_exception = None
+        for uri in properties["uri"].split(","):
+            try:
+                return _HiveClient(uri, properties.get("ugi"))
+            except BaseException as e:
+                last_exception = e
+        if last_exception is not None:
+            raise last_exception
+        else:
+            raise ValueError(f"Unable to connect to hive using uri: {properties['uri']}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -389,6 +406,9 @@ class HiveCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
         lock_component: LockComponent = LockComponent(
             level=LockLevel.TABLE, type=LockType.EXCLUSIVE, dbname=database_name, tablename=table_name, isTransactional=True
@@ -418,11 +438,15 @@ class HiveCatalog(MetastoreCatalog):
 
         return _do_wait_for_lock()
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update the table.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -431,10 +455,8 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(
-            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        )
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
         with self._client as open_client:
@@ -445,7 +467,7 @@ class HiveCatalog(MetastoreCatalog):
                     if lock.state == LockState.WAITING:
                         self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
                     else:
-                        raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+                        raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
 
                 hive_table: Optional[HiveTable]
                 current_table: Optional[Table]
@@ -456,7 +478,7 @@ class HiveCatalog(MetastoreCatalog):
                     hive_table = None
                     current_table = None
 
-                updated_staged_table = self._update_and_stage_table(current_table, table_request)
+                updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
                 if current_table and updated_staged_table.metadata == current_table.metadata:
                     # no changes, do nothing
                     return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
@@ -486,7 +508,7 @@ class HiveCatalog(MetastoreCatalog):
                     )
                     self._create_hive_table(open_client, hive_table)
             except WaitingForLockException as e:
-                raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}") from e
+                raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}") from e
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
@@ -704,3 +726,6 @@ class HiveCatalog(MetastoreCatalog):
         expected_to_change = (removals or set()).difference(removed)
 
         return PropertiesUpdateSummary(removed=list(removed or []), updated=list(updated or []), missing=list(expected_to_change))
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
