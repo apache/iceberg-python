@@ -452,7 +452,9 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
 
     def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
         lhs = df.to_pandas().sort_values("spec_id")
-        rhs = spark_df.toPandas().sort_values("spec_id")
+        # Spark does not store day partition values in the right type so we need to convert them
+        spark_df_arrow = pa.Table.from_pandas(spark_df.toPandas(), schema=df.schema)
+        rhs = spark_df_arrow.to_pandas().sort_values("spec_id")
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
                 assert left == right, f"Difference in column {column}: {left} != {right}"
