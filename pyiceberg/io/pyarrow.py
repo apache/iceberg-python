@@ -1238,10 +1238,13 @@ def _task_to_record_batches(
         for batch in batches:
             next_index = next_index + len(batch)
             current_index = next_index - len(batch)
+            output_batches = iter([batch])
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 batch = batch.take(indices)
+                output_batches = iter([batch])
+
                 # Apply the user filter
                 if pyarrow_filter is not None:
                     # we need to switch back and forth between RecordBatch and Table
@@ -1251,10 +1254,15 @@ def _task_to_record_batches(
                     arrow_table = arrow_table.filter(pyarrow_filter)
                     if len(arrow_table) == 0:
                         continue
-                    batch = arrow_table.to_batches()[0]
-            yield _to_requested_schema(
-                projected_schema, file_project_schema, batch, downcast_ns_timestamp_to_us=True, use_large_types=use_large_types
-            )
+                    output_batches = arrow_table.to_batches()
+            for output_batch in output_batches:
+                yield _to_requested_schema(
+                    projected_schema,
+                    file_project_schema,
+                    output_batch,
+                    downcast_ns_timestamp_to_us=True,
+                    use_large_types=use_large_types,
+                )
 
 
 def _task_to_table(
