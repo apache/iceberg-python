@@ -146,7 +146,13 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
         return False
 
     @abstractmethod
-    def result_type(self, source: IcebergType) -> IcebergType: ...
+    def result_type(self, source: IcebergType) -> IcebergType:
+        """
+        Return the type of the result of the transform.
+
+        This type does not need to conform to the Iceberg spec, as long as it is converted to the correct type in the stored metadata.
+        """
+        ...
 
     @abstractmethod
     def project(self, name: str, pred: BoundPredicate[L]) -> Optional[UnboundPredicate[Any]]: ...
@@ -491,7 +497,7 @@ class DayTransform(TimeTransform[S]):
     """Transforms a datetime value into a day value.
 
     Example:
-        >>> transform = MonthTransform()
+        >>> transform = DayTransform()
         >>> transform.transform(DateType())(17501)
         17501
     """
