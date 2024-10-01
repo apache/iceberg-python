@@ -1069,7 +1069,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif pa.types.is_date32(primitive):
             return DateType()
         elif isinstance(primitive, pa.Time64Type):
-            if primitive.unit =="us":
+            if primitive.unit == "us":
                 return TimeType()
             elif primitive.unit == "ns":
                 if self._downcast_ns_timestamp_to_us:
