@@ -148,6 +148,8 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     @abstractmethod
     def result_type(self, source: IcebergType) -> IcebergType:
         """
+        Returns the `IcebergType` produced by this transform given a source type.
+
         This method defines both the physical and display representation of the partition field.
 
         The physical representation must conform to the Iceberg spec. The display representation
