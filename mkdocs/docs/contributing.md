@@ -42,7 +42,7 @@ To get started, you can run `make install`, which installs Poetry and all the de
 
 If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
 
-To set up IDEA with Poetry ([also on Loom](https://www.loom.com/share/6d36464d45f244729d91003e7f671fd2)):
+To set up IDEA with Poetry:
 
 - Open up the Python project in IntelliJ
 - Make sure that you're on latest main (that includes Poetry)
