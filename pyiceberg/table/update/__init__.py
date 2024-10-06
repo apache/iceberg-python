@@ -44,6 +44,7 @@ from pyiceberg.types import (
     transform_dict_value_to_str,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
+from pyiceberg.utils.deprecated import deprecation_notice
 from pyiceberg.utils.properties import property_as_int
 
 if TYPE_CHECKING:
@@ -89,6 +90,14 @@ class AddSchemaUpdate(IcebergBaseModel):
     # This field is required: https://github.com/apache/iceberg/pull/7445
     last_column_id: int = Field(alias="last-column-id")
 
+    initial_change: bool = Field(
+        default=False,
+        exclude=True,
+        deprecated=deprecation_notice(
+            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+        ),
+    )
+
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
     action: Literal["set-current-schema"] = Field(default="set-current-schema")
@@ -101,6 +110,14 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
+    initial_change: bool = Field(
+        default=False,
+        exclude=True,
+        deprecated=deprecation_notice(
+            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+        ),
+    )
+
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -112,6 +129,14 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
+
+    initial_change: bool = Field(
+        default=False,
+        exclude=True,
+        deprecated=deprecation_notice(
+            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+        ),
+    )
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):

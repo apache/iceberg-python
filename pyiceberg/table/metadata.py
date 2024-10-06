@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, ValidationInfo, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
