@@ -28,7 +28,7 @@ from typing import (
     Union,
 )
 
-from pydantic import Field, field_serializer, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Annotated
 
@@ -478,7 +478,7 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
     """
 
     @model_validator(mode="before")
-    def cleanup_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def cleanup_snapshot_id(cls, data: Dict[str, Any], info: ValidationInfo) -> Dict[str, Any]:
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
@@ -490,7 +490,7 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
         return check_partition_specs(table_metadata)
 
     @model_validator(mode="after")
-    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
+    def check_sort_orders(cls, table_metadata: TableMetadata, info: ValidationInfo) -> TableMetadata:
         return check_sort_orders(table_metadata)
 
     @model_validator(mode="after")
@@ -586,6 +586,22 @@ class TableMetadataUtil:
             return TableMetadataV2(**data)
         else:
             raise ValidationError(f"Unknown format version: {format_version}")
+
+    @staticmethod
+    def _construct_without_validation(table_metadata: TableMetadata) -> TableMetadata:
+        """Construct table metadata from an existing table without performing validation.
+
+        This method is useful during a sequence of table updates when the model needs to be re-constructed but is not yet ready for validation.
+        """
+        if table_metadata.format_version is None:
+            raise ValidationError(f"Missing format-version in TableMetadata: {table_metadata}")
+
+        if table_metadata.format_version == 1:
+            return TableMetadataV1.model_construct(**dict(table_metadata))
+        elif table_metadata.format_version == 2:
+            return TableMetadataV2.model_construct(**dict(table_metadata))
+        else:
+            raise ValidationError(f"Unknown format version: {table_metadata.format_version}")
 
 
 TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2], Field(discriminator="format_version")]  # type: ignore

@@ -41,7 +41,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
@@ -1490,6 +1490,65 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
     tbl = catalog.load_table(identifier=identifier)
     assert tbl.format_version == format_version
     assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [lazy_fixture("catalog_memory"), lazy_fixture("catalog_sqlite")],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_create_table_transaction_with_non_default_values(
+    catalog: SqlCatalog, table_schema_with_all_types: Schema, format_version: int
+) -> None:
+    identifier = f"default.create_table_transaction_with_non_default_values_{format_version}"
+    identifier_ref = f"default.create_table_with_non_default_values_ref_{format_version}"
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier_ref)
+    except NoSuchTableError:
+        pass
+
+    iceberg_spec = PartitionSpec(*[
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="integer_partition")
+    ])
+
+    sort_order = SortOrder(*[SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC)])
+
+    txn = catalog.create_table_transaction(
+        identifier=identifier,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+    txn.commit_transaction()
+
+    tbl = catalog.load_table(identifier)
+
+    tbl_ref = catalog.create_table(
+        identifier=identifier_ref,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+
+    assert tbl.format_version == tbl_ref.format_version
+    assert tbl.schema() == tbl.schema()
+    assert tbl.schemas() == tbl_ref.schemas()
+    assert tbl.spec() == tbl_ref.spec()
+    assert tbl.specs() == tbl_ref.specs()
+    assert tbl.sort_order() == tbl_ref.sort_order()
+    assert tbl.sort_orders() == tbl_ref.sort_orders()
 
 
 @pytest.mark.parametrize(

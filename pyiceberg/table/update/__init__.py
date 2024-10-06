@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
-from copy import copy
 from datetime import datetime
 from functools import singledispatch
 from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
@@ -90,8 +89,6 @@ class AddSchemaUpdate(IcebergBaseModel):
     # This field is required: https://github.com/apache/iceberg/pull/7445
     last_column_id: int = Field(alias="last-column-id")
 
-    initial_change: bool = Field(default=False, exclude=True)
-
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
     action: Literal["set-current-schema"] = Field(default="set-current-schema")
@@ -104,8 +101,6 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
-    initial_change: bool = Field(default=False, exclude=True)
-
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -117,8 +112,6 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
-
-    initial_change: bool = Field(default=False, exclude=True)
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
@@ -267,11 +260,10 @@ def _(
     elif update.format_version == base_metadata.format_version:
         return base_metadata
 
-    updated_metadata_data = copy(base_metadata.model_dump())
-    updated_metadata_data["format-version"] = update.format_version
+    updated_metadata = base_metadata.model_copy(update={"format_version": update.format_version})
 
     context.add_update(update)
-    return TableMetadataUtil.parse_obj(updated_metadata_data)
+    return TableMetadataUtil._construct_without_validation(updated_metadata)
 
 
 @_apply_table_update.register(SetPropertiesUpdate)
@@ -306,7 +298,7 @@ def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMeta
 
     metadata_updates: Dict[str, Any] = {
         "last_column_id": update.last_column_id,
-        "schemas": [update.schema_] if update.initial_change else base_metadata.schemas + [update.schema_],
+        "schemas": base_metadata.schemas + [update.schema_],
     }
 
     context.add_update(update)
@@ -336,11 +328,11 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 @_apply_table_update.register(AddPartitionSpecUpdate)
 def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     for spec in base_metadata.partition_specs:
-        if spec.spec_id == update.spec.spec_id and not update.initial_change:
+        if spec.spec_id == update.spec.spec_id:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
 
     metadata_updates: Dict[str, Any] = {
-        "partition_specs": [update.spec] if update.initial_change else base_metadata.partition_specs + [update.spec],
+        "partition_specs": base_metadata.partition_specs + [update.spec],
         "last_partition_id": max(
             max([field.field_id for field in update.spec.fields], default=0),
             base_metadata.last_partition_id or PARTITION_FIELD_ID_START - 1,
@@ -448,7 +440,7 @@ def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableM
     context.add_update(update)
     return base_metadata.model_copy(
         update={
-            "sort_orders": [update.sort_order] if update.initial_change else base_metadata.sort_orders + [update.sort_order],
+            "sort_orders": base_metadata.sort_orders + [update.sort_order],
         }
     )
 
