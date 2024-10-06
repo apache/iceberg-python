@@ -478,7 +478,7 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
     """
 
     @model_validator(mode="before")
-    def cleanup_snapshot_id(cls, data: Dict[str, Any], info: ValidationInfo) -> Dict[str, Any]:
+    def cleanup_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         return cleanup_snapshot_id(data)
 
     @model_validator(mode="after")
@@ -490,7 +490,7 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
         return check_partition_specs(table_metadata)
 
     @model_validator(mode="after")
-    def check_sort_orders(cls, table_metadata: TableMetadata, info: ValidationInfo) -> TableMetadata:
+    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
         return check_sort_orders(table_metadata)
 
     @model_validator(mode="after")
