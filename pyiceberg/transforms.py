@@ -147,8 +147,7 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
 
     @abstractmethod
     def result_type(self, source: IcebergType) -> IcebergType:
-        """
-        Returns the `IcebergType` produced by this transform given a source type.
+        """Return the `IcebergType` produced by this transform given a source type.
 
         This method defines both the physical and display representation of the partition field.
 
@@ -527,10 +526,10 @@ class DayTransform(TimeTransform[S]):
         return isinstance(source, (DateType, TimestampType, TimestamptzType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
-        """
-        The physical representation conforms to the Iceberg spec as DateType is internally
-        converted to int. The DateType returned here provides a more human-readable way to
-        display the partition field.
+        """Return the result type of a day transform.
+
+        The physical representation conforms to the Iceberg spec as DateType is internally converted to int.
+        The DateType returned here provides a more human-readable way to display the partition field.
         """
         return DateType()
 
