@@ -1413,17 +1413,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.3.2"
+version = "0.3.5"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.3.2-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:b0c609407d9bb1c3265516d73e2ce016a0db24e8562b26234ea982e0c76648b3"},
-    {file = "getdaft-0.3.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:67ba8c0b7a2f7d4d6e2c8862f6e925cbdff8e9dbe75b463d5defa37c09ce849e"},
-    {file = "getdaft-0.3.2-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:480271f55c3c330bacc75b4fc1bba4cdd3684a96c8d4ad08550793aac0341f4b"},
-    {file = "getdaft-0.3.2-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d6719dcbdd5c3939649fdc24b42675dd1814e2aa7b69c1fed1ef5c5458d0f3d1"},
-    {file = "getdaft-0.3.2-cp38-abi3-win_amd64.whl", hash = "sha256:7626ff5f4bbb744649595cbde54b06c500acee8722efb999b0eecfcdc67f3b9c"},
-    {file = "getdaft-0.3.2.tar.gz", hash = "sha256:84e1f374f9c693a42689ae495908acf1c785215469809830902e760859ba64b9"},
+    {file = "getdaft-0.3.5-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:263879c3ee252da6ad8e274f96f7b750278f9a9e3847c14d1fc2381e1ef82e9f"},
+    {file = "getdaft-0.3.5-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:10e2afd2742d790da836803aa03d4c11c8c9a1aaf950ca00e0920726392d2515"},
+    {file = "getdaft-0.3.5-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:17ef27e651832af9c231a148167c1cb815052b9fdc2feb611ff567b26300ee47"},
+    {file = "getdaft-0.3.5-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:92fc754eca0c9cd9590817cb2c8d158bf4116b9f14cf310146518e93b0a6e97b"},
+    {file = "getdaft-0.3.5-cp38-abi3-win_amd64.whl", hash = "sha256:34e9656f6111d02a0c72330da1d4d68d66af4fd155445c4130361f5f87ccfc92"},
+    {file = "getdaft-0.3.5.tar.gz", hash = "sha256:69a09b2d150a4ea0f3cf2e6d18af72a197516b3ef37c07677f84a7ad5a6b2652"},
 ]
 
 [package.dependencies]
