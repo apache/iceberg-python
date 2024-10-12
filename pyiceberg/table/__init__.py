@@ -78,7 +78,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.name_mapping import (
     NameMapping,
 )
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
     SnapshotLogEntry,
@@ -402,21 +402,22 @@ class Transaction:
             name_mapping=self.table_metadata.name_mapping(),
         )
 
-    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
+    def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
 
         Returns:
             A new UpdateSnapshot
         """
-        return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
+        return UpdateSnapshot(self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties)
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
 
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the overwrite operation
         """
         try:
             import pyarrow as pa
@@ -444,7 +445,7 @@ class Transaction:
             TableProperties.MANIFEST_MERGE_ENABLED,
             TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
         )
-        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
+        update_snapshot = self.update_snapshot(branch=branch, snapshot_properties=snapshot_properties)
         append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
 
         with append_method() as append_files:
@@ -461,6 +462,7 @@ class Transaction:
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -476,6 +478,7 @@ class Transaction:
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the overwrite operation
         """
         try:
             import pyarrow as pa
@@ -500,7 +503,7 @@ class Transaction:
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+        with self.update_snapshot(branch=branch, snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
@@ -509,7 +512,12 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def delete(
+        self,
+        delete_filter: Union[str, BooleanExpression],
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str = MAIN_BRANCH,
+    ) -> None:
         """
         Shorthand for deleting record from a table.
 
@@ -537,7 +545,7 @@ class Transaction:
         if isinstance(delete_filter, str):
             delete_filter = _parse_row_filter(delete_filter)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
+        with self.update_snapshot(branch=branch, snapshot_properties=snapshot_properties).delete() as delete_snapshot:
             delete_snapshot.delete_by_predicate(delete_filter)
 
         # Check if there are any files that require an actual rewrite of a data file
@@ -585,7 +593,7 @@ class Transaction:
                     ))
 
             if len(replaced_files) > 0:
-                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite(
+                with self.update_snapshot(branch=branch, snapshot_properties=snapshot_properties).overwrite(
                     commit_uuid=commit_uuid
                 ) as overwrite_snapshot:
                     for original_data_file, replaced_data_files in replaced_files:
@@ -1003,7 +1011,7 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
-    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT,branch: str = MAIN_BRANCH) -> None:
+    def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.
 
@@ -1012,7 +1020,7 @@ class Table:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         with self.transaction() as tx:
-            tx.append(df=df, snapshot_properties=snapshot_properties,branch=branch)
+            tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
 
     def overwrite(
         self,
@@ -1037,7 +1045,7 @@ class Table:
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         with self.transaction() as tx:
-            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties,branch=branch)
+            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties, branch=branch)
 
     def delete(
         self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT

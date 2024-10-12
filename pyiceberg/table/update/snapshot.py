@@ -55,6 +55,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
+from pyiceberg.table.refs import SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -103,12 +104,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _added_data_files: List[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: Set[DataFile]
+    _branch: str
 
     def __init__(
         self,
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
@@ -117,7 +120,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._io = io
         self._operation = operation
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
-        # Since we only support the main branch for now
+        self._branch = branch
         self._parent_snapshot_id = (
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
         )
@@ -272,10 +275,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
+                    snapshot_id=self._snapshot_id,
+                    parent_snapshot_id=self._parent_snapshot_id,
+                    ref_name=self._branch,
+                    type=SnapshotRefType.BRANCH,
                 ),
             ),
-            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
+            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=self._branch),),
         )
 
     @property
@@ -324,10 +330,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, branch, commit_uuid, snapshot_properties)
         self._predicate = AlwaysFalse()
 
     def _commit(self) -> UpdatesAndRequirements:
@@ -482,12 +489,13 @@ class _MergeAppendFiles(_FastAppendFiles):
         operation: Operation,
         transaction: Transaction,
         io: FileIO,
+        branch: str,
         commit_uuid: Optional[uuid.UUID] = None,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         from pyiceberg.table import TableProperties
 
-        super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
+        super().__init__(operation, transaction, io, branch, commit_uuid, snapshot_properties)
         self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
@@ -603,21 +611,33 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
+    _branch: str
     _snapshot_properties: Dict[str, str]
 
-    def __init__(self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def __init__(
+        self, transaction: Transaction, io: FileIO, branch: str, snapshot_properties: Dict[str, str] = EMPTY_DICT
+    ) -> None:
         self._transaction = transaction
         self._io = io
         self._snapshot_properties = snapshot_properties
+        self._branch = branch
 
     def fast_append(self) -> _FastAppendFiles:
         return _FastAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            branch=self._branch,
+            snapshot_properties=self._snapshot_properties,
         )
 
     def merge_append(self) -> _MergeAppendFiles:
         return _MergeAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            branch=self._branch,
+            snapshot_properties=self._snapshot_properties,
         )
 
     def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> _OverwriteFiles:
@@ -628,6 +648,7 @@ class UpdateSnapshot:
             else Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 
@@ -636,6 +657,7 @@ class UpdateSnapshot:
             operation=Operation.DELETE,
             transaction=self._transaction,
             io=self._io,
+            branch=self._branch,
             snapshot_properties=self._snapshot_properties,
         )
 
