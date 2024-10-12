@@ -84,7 +84,7 @@ cd pyiceberg-${PYICEBERG_RELEASE_VERSION}
 
 Run RAT checks to validate license header:
 
-```
+```shell
 ./dev/check-license
 ```
 
@@ -94,9 +94,8 @@ This section explains how to run the tests of the source distribution.
 
 <!-- prettier-ignore-start -->
 
-!!! note "Clean environment"
-    To make sure that your environment is fresh is to run the tests in a new Docker container:
-    `docker run -t -i -v $(pwd):/pyiceberg/ python:3.9 bash`. And change directory: `cd /pyiceberg/`.
+!!! note "Python Version"
+    Make sure you're using [a supported Python version](https://github.com/apache/iceberg-python/blob/main/pyproject.toml#L29-L32)
 
 <!-- prettier-ignore-end -->
 
@@ -106,13 +105,7 @@ First step is to install the package:
 make install
 ```
 
-And then run the tests:
-
-```sh
-make test
-```
-
-To run the full test coverage:
+To run the full test coverage, with both unit tests and integration tests:
 
 ```sh
 make test-coverage
@@ -124,8 +117,10 @@ This will spin up Docker containers to faciliate running test coverage.
 
 Votes are cast by replying to the release candidate announcement email on the dev mailing list with either `+1`, `0`, or `-1`. For example :
 
-> \[ \] +1 Release this as PyIceberg 0.3.0 <br>
-> \[ \] +0 <br>
-> \[ \] -1 Do not release this because… <br>
+> [ ] +1 Release this as PyIceberg 0.3.0
+>
+> [ ] +0
+>
+> [ ] -1 Do not release this because…
 
 In addition to your vote, it’s customary to specify if your vote is binding or non-binding. Only members of the Project Management Committee have formally binding votes. If you’re unsure, you can specify that your vote is non-binding. To read more about voting in the Apache framework, checkout the [Voting](https://www.apache.org/foundation/voting.html) information page on the Apache foundation’s website.

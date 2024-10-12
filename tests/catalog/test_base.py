@@ -24,6 +24,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -44,17 +45,18 @@ from pyiceberg.io import WAREHOUSE, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSchemaUpdate,
-    CommitTableRequest,
     CommitTableResponse,
-    Namespace,
-    SetCurrentSchemaUpdate,
     Table,
-    TableIdentifier,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    AddSchemaUpdate,
+    SetCurrentSchemaUpdate,
+    TableRequirement,
+    TableUpdate,
+    update_table_metadata,
+)
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import IntegerType, LongType, NestedField
@@ -128,17 +130,17 @@ class InMemoryCatalog(MetastoreCatalog):
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         raise NotImplementedError
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(
-            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        )
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
         current_table = self.load_table(identifier_tuple)
         base_metadata = current_table.metadata
 
-        for requirement in table_request.requirements:
+        for requirement in requirements:
             requirement.validate(base_metadata)
 
-        updated_metadata = update_table_metadata(base_metadata, table_request.updates)
+        updated_metadata = update_table_metadata(base_metadata, updates)
         if updated_metadata == base_metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
@@ -154,28 +156,28 @@ class InMemoryCatalog(MetastoreCatalog):
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
-            return self.__tables[identifier]
+            return self.__tables[identifier_tuple]
         except KeyError as error:
-            raise NoSuchTableError(f"Table does not exist: {identifier}") from error
+            raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
-            self.__tables.pop(identifier)
+            self.__tables.pop(identifier_tuple)
         except KeyError as error:
-            raise NoSuchTableError(f"Table does not exist: {identifier}") from error
+            raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         self.drop_table(identifier)
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        from_identifier = self.identifier_to_tuple_without_catalog(from_identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         try:
-            table = self.__tables.pop(from_identifier)
+            table = self.__tables.pop(identifier_tuple)
         except KeyError as error:
-            raise NoSuchTableError(f"Table does not exist: {from_identifier}") from error
+            raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
 
         to_identifier = Catalog.identifier_to_tuple(to_identifier)
         to_namespace = Catalog.namespace_from(to_identifier)
@@ -255,6 +257,12 @@ class InMemoryCatalog(MetastoreCatalog):
         return PropertiesUpdateSummary(
             removed=list(removed or []), updated=list(updates.keys() if updates else []), missing=list(expected_to_change)
         )
+
+    def list_views(self, namespace: Optional[Union[str, Identifier]] = None) -> List[Identifier]:
+        raise NotImplementedError
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
 
 
 @pytest.fixture
@@ -438,7 +446,7 @@ def test_load_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
     given_table = given_catalog_has_a_table(catalog)
     # When
     intermediate = catalog.load_table(TEST_TABLE_IDENTIFIER)
-    table = catalog.load_table(intermediate.identifier)
+    table = catalog.load_table(intermediate._identifier)
     # Then
     assert table == given_table
 
@@ -473,10 +481,10 @@ def test_drop_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
     # Given
     table = given_catalog_has_a_table(catalog)
     # When
-    catalog.drop_table(table.identifier)
+    catalog.drop_table(table._identifier)
     # Then
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
-        catalog.load_table(table.identifier)
+        catalog.load_table(table._identifier)
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
         catalog.load_table(TEST_TABLE_IDENTIFIER)
 
@@ -505,11 +513,11 @@ def test_rename_table(catalog: InMemoryCatalog) -> None:
     table = catalog.rename_table(TEST_TABLE_IDENTIFIER, new_table)
 
     # Then
-    assert table.identifier == Catalog.identifier_to_tuple(new_table)
+    assert table._identifier == Catalog.identifier_to_tuple(new_table)
 
     # And
     table = catalog.load_table(new_table)
-    assert table.identifier == Catalog.identifier_to_tuple(new_table)
+    assert table._identifier == Catalog.identifier_to_tuple(new_table)
 
     # And
     assert ("new", "namespace") in catalog.list_namespaces()
@@ -525,21 +533,21 @@ def test_rename_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
 
     # When
     new_table_name = "new.namespace.new_table"
-    new_table = catalog.rename_table(table.identifier, new_table_name)
+    new_table = catalog.rename_table(table._identifier, new_table_name)
 
     # Then
-    assert new_table.identifier == Catalog.identifier_to_tuple(new_table_name)
+    assert new_table._identifier == Catalog.identifier_to_tuple(new_table_name)
 
     # And
-    new_table = catalog.load_table(new_table.identifier)
-    assert new_table.identifier == Catalog.identifier_to_tuple(new_table_name)
+    new_table = catalog.load_table(new_table._identifier)
+    assert new_table._identifier == Catalog.identifier_to_tuple(new_table_name)
 
     # And
     assert ("new", "namespace") in catalog.list_namespaces()
 
     # And
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
-        catalog.load_table(table.identifier)
+        catalog.load_table(table._identifier)
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
         catalog.load_table(TEST_TABLE_IDENTIFIER)
 
@@ -667,14 +675,13 @@ def test_commit_table(catalog: InMemoryCatalog) -> None:
     )
 
     # When
-    response = given_table.catalog._commit_table(  # pylint: disable=W0212
-        CommitTableRequest(
-            identifier=TableIdentifier(namespace=Namespace(given_table.identifier[:-1]), name=given_table.identifier[-1]),
-            updates=[
-                AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
-                SetCurrentSchemaUpdate(schema_id=-1),
-            ],
-        )
+    response = given_table.catalog.commit_table(
+        given_table,
+        updates=(
+            AddSchemaUpdate(schema=new_schema, last_column_id=new_schema.highest_field_id),
+            SetCurrentSchemaUpdate(schema_id=-1),
+        ),
+        requirements=(),
     )
 
     # Then

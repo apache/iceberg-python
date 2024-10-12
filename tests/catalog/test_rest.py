@@ -24,20 +24,23 @@ from requests_mock import Mocker
 
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
-from pyiceberg.catalog.rest import AUTH_URL, RestCatalog
+from pyiceberg.catalog.rest import OAUTH2_SERVER_URI, RestCatalog
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
+    NoSuchIdentifierError,
     NoSuchNamespaceError,
     NoSuchTableError,
+    NoSuchViewError,
     OAuthError,
+    ServerError,
     TableAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import CommitTableRequest, Table, TableIdentifier
+from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -235,7 +238,7 @@ def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     )
     # pylint: disable=W0212
     assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{AUTH_URL: TEST_AUTH_URL})._session.headers[
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_AUTH_URL})._session.headers[
             "Authorization"
         ]
         == f"Bearer {TEST_TOKEN}"
@@ -401,6 +404,52 @@ def test_list_tables_404(rest_mock: Mocker) -> None:
     assert "Namespace does not exist" in str(e.value)
 
 
+def test_list_views_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
+
+
+def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_views(namespace) == [
+        ("examples", "fooshare")
+    ]
+    assert rest_mock.called
+
+
+def test_list_views_404(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "error": {
+                "message": "Namespace does not exist: personal in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    with pytest.raises(NoSuchNamespaceError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert "Namespace does not exist" in str(e.value)
+
+
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces",
@@ -419,7 +468,7 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces?parent=accounting",
-        json={"namespaces": [["tax"]]},
+        json={"namespaces": [["accounting", "tax"]]},
         status_code=200,
         request_headers=TEST_HEADERS,
     )
@@ -648,7 +697,7 @@ def test_load_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     actual = catalog.load_table(("fokko", "table"))
     expected = Table(
-        identifier=("rest", "fokko", "table"),
+        identifier=("fokko", "table"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -672,7 +721,7 @@ def test_load_table_from_self_identifier_200(
     table = catalog.load_table(("pdames", "table"))
     actual = catalog.load_table(table.identifier)
     expected = Table(
-        identifier=("rest", "pdames", "table"),
+        identifier=("pdames", "table"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -701,17 +750,17 @@ def test_load_table_404(rest_mock: Mocker) -> None:
     assert "Table does not exist" in str(e.value)
 
 
-def test_table_exist_200(rest_mock: Mocker) -> None:
+def test_table_exists_200(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=200,
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    assert catalog.table_exists(("fokko", "table"))
+    assert not catalog.table_exists(("fokko", "table"))
 
 
-def test_table_exist_204(rest_mock: Mocker) -> None:
+def test_table_exists_204(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=204,
@@ -721,14 +770,26 @@ def test_table_exist_204(rest_mock: Mocker) -> None:
     assert catalog.table_exists(("fokko", "table"))
 
 
-def test_table_exist_500(rest_mock: Mocker) -> None:
+def test_table_exists_404(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.table_exists(("fokko", "table"))
+
+
+def test_table_exists_500(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko/tables/table",
         status_code=500,
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    assert not catalog.table_exists(("fokko", "table"))
+
+    with pytest.raises(ServerError):
+        catalog.table_exists(("fokko", "table"))
 
 
 def test_drop_table_404(rest_mock: Mocker) -> None:
@@ -771,7 +832,7 @@ def test_create_table_200(
         properties={"owner": "fokko"},
     )
     expected = Table(
-        identifier=("rest", "fokko", "fokko2"),
+        identifier=("fokko", "fokko2"),
         metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -934,7 +995,7 @@ def test_register_table_200(
         identifier=("default", "registered_table"), metadata_location="s3://warehouse/database/table/metadata.json"
     )
     expected = Table(
-        identifier=("rest", "default", "registered_table"),
+        identifier=("default", "registered_table"),
         metadata_location=example_table_metadata_no_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -1029,7 +1090,7 @@ def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapsho
     to_identifier = ("pdames", "destination")
     actual = catalog.rename_table(from_identifier, to_identifier)
     expected = Table(
-        identifier=("rest", "pdames", "destination"),
+        identifier=("pdames", "destination"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -1069,7 +1130,7 @@ def test_rename_table_from_self_identifier_200(
     )
     actual = catalog.rename_table(table.identifier, to_identifier)
     expected = Table(
-        identifier=("rest", "pdames", "destination"),
+        identifier=("pdames", "destination"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
         metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
         io=load_file_io(),
@@ -1099,7 +1160,7 @@ def test_delete_table_404(rest_mock: Mocker) -> None:
 
 def test_create_table_missing_namespace(rest_mock: Mocker, table_schema_simple: Schema) -> None:
     table = "table"
-    with pytest.raises(NoSuchTableError) as e:
+    with pytest.raises(NoSuchIdentifierError) as e:
         # Missing namespace
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_table(table, table_schema_simple)
     assert f"Missing namespace or invalid identifier: {table}" in str(e.value)
@@ -1107,7 +1168,7 @@ def test_create_table_missing_namespace(rest_mock: Mocker, table_schema_simple: 
 
 def test_load_table_invalid_namespace(rest_mock: Mocker) -> None:
     table = "table"
-    with pytest.raises(NoSuchTableError) as e:
+    with pytest.raises(NoSuchIdentifierError) as e:
         # Missing namespace
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).load_table(table)
     assert f"Missing namespace or invalid identifier: {table}" in str(e.value)
@@ -1115,7 +1176,7 @@ def test_load_table_invalid_namespace(rest_mock: Mocker) -> None:
 
 def test_drop_table_invalid_namespace(rest_mock: Mocker) -> None:
     table = "table"
-    with pytest.raises(NoSuchTableError) as e:
+    with pytest.raises(NoSuchIdentifierError) as e:
         # Missing namespace
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(table)
     assert f"Missing namespace or invalid identifier: {table}" in str(e.value)
@@ -1123,7 +1184,7 @@ def test_drop_table_invalid_namespace(rest_mock: Mocker) -> None:
 
 def test_purge_table_invalid_namespace(rest_mock: Mocker) -> None:
     table = "table"
-    with pytest.raises(NoSuchTableError) as e:
+    with pytest.raises(NoSuchIdentifierError) as e:
         # Missing namespace
         RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).purge_table(table)
     assert f"Missing namespace or invalid identifier: {table}" in str(e.value)
@@ -1228,23 +1289,67 @@ def test_catalog_from_parameters_empty_env(rest_mock: Mocker) -> None:
     assert catalog.uri == "https://other-service.io/api"
 
 
-def test_table_identifier_in_commit_table_request(rest_mock: Mocker, example_table_metadata_v2: Dict[str, Any]) -> None:
-    test_table_request = CommitTableRequest(
-        identifier=TableIdentifier(namespace=("catalog_name", "namespace"), name="table_name"),
-        updates=[],
-        requirements=[],
-    )
+def test_table_identifier_in_commit_table_request(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_v2: Dict[str, Any]
+) -> None:
+    metadata_location = "s3://some_bucket/metadata.json"
     rest_mock.post(
         url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
         json={
             "metadata": example_table_metadata_v2,
-            "metadata-location": "test",
+            "metadata-location": metadata_location,
         },
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)._commit_table(test_table_request)
+    catalog = RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)
+    table = Table(
+        identifier=("namespace", "table_name"),
+        metadata=None,  # type: ignore
+        metadata_location=metadata_location,
+        io=None,  # type: ignore
+        catalog=catalog,
+    )
+    catalog.commit_table(table, (), ())
     assert (
         rest_mock.last_request.text
         == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
     )
+
+
+def test_drop_view_invalid_namespace(rest_mock: Mocker) -> None:
+    view = "view"
+    with pytest.raises(NoSuchIdentifierError) as e:
+        # Missing namespace
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(view)
+
+    assert f"Missing namespace or invalid identifier: {view}" in str(e.value)
+
+
+def test_drop_view_404(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/some_namespace/views/does_not_exists",
+        json={
+            "error": {
+                "message": "The given view does not exist",
+                "type": "NoSuchViewException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchViewError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "does_not_exists"))
+    assert "The given view does not exist" in str(e.value)
+
+
+def test_drop_view_204(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/some_namespace/views/some_view",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
