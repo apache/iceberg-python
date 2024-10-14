@@ -417,7 +417,7 @@ class Transaction:
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
-            branch: Branch Reference to run the overwrite operation
+            branch: Branch Reference to run the append operation
         """
         try:
             import pyarrow as pa
@@ -529,6 +529,7 @@ class Transaction:
         Args:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the delete operation
         """
         from pyiceberg.io.pyarrow import (
             ArrowScan,

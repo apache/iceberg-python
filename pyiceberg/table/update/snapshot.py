@@ -281,7 +281,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                     type=SnapshotRefType.BRANCH,
                 ),
             ),
-            (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref=self._branch),),
+            (
+                AssertRefSnapshotId(
+                    snapshot_id=self._transaction.table_metadata.refs[self._branch].snapshot_id
+                    if self._branch in self._transaction.table_metadata.refs
+                    else self._transaction.table_metadata.current_snapshot_id,
+                    ref=self._branch,
+                ),
+            ),
         )
 
     @property
