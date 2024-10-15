@@ -501,7 +501,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties,branch=branch)
 
         with self.update_snapshot(branch=branch, snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -554,7 +554,7 @@ class Transaction:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive=True)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
-            files = self._scan(row_filter=delete_filter).plan_files()
+            files = self._scan(row_filter=delete_filter).use_ref(branch).plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -1019,6 +1019,7 @@ class Table:
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the delete operation
         """
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
@@ -1044,12 +1045,16 @@ class Table:
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the delete operation
         """
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties, branch=branch)
 
     def delete(
-        self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        branch: str = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
@@ -1057,9 +1062,10 @@ class Table:
         Args:
             delete_filter: The predicate that used to remove rows
             snapshot_properties: Custom properties to be added to the snapshot summary
+            branch: Branch Reference to run the delete operation
         """
         with self.transaction() as tx:
-            tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
+            tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
 
     def add_files(
         self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True

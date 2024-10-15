@@ -122,7 +122,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
         self._branch = branch
         self._parent_snapshot_id = (
-            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.current_snapshot()) else None
+            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._branch)) else None
         )
         self._added_data_files = []
         self._deleted_data_files = set()
@@ -548,7 +548,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         """Determine if there are any existing manifest files."""
         existing_files = []
 
-        if snapshot := self._transaction.table_metadata.current_snapshot():
+        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._branch):
             for manifest_file in snapshot.manifests(io=self._io):
                 entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
                 found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
