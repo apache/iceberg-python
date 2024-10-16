@@ -592,6 +592,7 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(...)
+    ref_type: SnapshotRefType = Field(...)
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
@@ -607,6 +608,8 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 raise CommitFailedException(
                     f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
                 )
+            elif ref_type != self.ref_type:
+                raise CommitFailedException(f"Requirement failed: {ref_type} {self.ref} can't be changed to type {self.ref_type}")
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 

@@ -349,7 +349,7 @@ class Transaction:
             ),
         )
 
-        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=ref_name),)
+        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref=ref_name, ref_type=type),)
         return self._apply(updates, requirements)
 
     def _set_ref_snapshot(
@@ -380,6 +380,7 @@ class Transaction:
             AssertRefSnapshotId(
                 snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
                 ref=ref_name,
+                ref_type=type,
             ),
         )
 
