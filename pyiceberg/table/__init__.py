@@ -501,7 +501,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties,branch=branch)
+        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties, branch=branch)
 
         with self.update_snapshot(branch=branch, snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty

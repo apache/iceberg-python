@@ -55,7 +55,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
-from pyiceberg.table.refs import SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -622,7 +622,7 @@ class UpdateSnapshot:
     _snapshot_properties: Dict[str, str]
 
     def __init__(
-        self, transaction: Transaction, io: FileIO, branch: str, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self, transaction: Transaction, io: FileIO, snapshot_properties: Dict[str, str] = EMPTY_DICT, branch: str = MAIN_BRANCH
     ) -> None:
         self._transaction = transaction
         self._io = io
