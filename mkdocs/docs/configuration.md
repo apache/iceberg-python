@@ -47,6 +47,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.metadata.previous-versions-max` | Integer                                | 100             | Maximum number of previous version metadata files to keep before deletion after commit.     |
 | `write.summary.partition-limit`        | Integer                                | 0               | The limit on the number of partition summaries written with each commit.                    |
 | `write.delete.mode`                    | `{copy-on-write, merge-on-read}`       | `copy-on-write` | Configures the delete mode (either Copy-on-Write or Merge-on-Read).                         |
+
 ### Table behavior options
 
 | Key                                  | Options             | Default       | Description                                                 |
