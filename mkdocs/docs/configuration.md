@@ -44,9 +44,9 @@ Iceberg tables support table properties to configure table behavior.
 | `write.target-file-size-bytes`         | Size in bytes                          | 512 MB          | Target size (in bytes) for each output data file.                                           |
 | `write.metadata.metrics.default`       | `{none, full, truncate(N)}`            | `truncate(16)`  | Default metrics mode to use when writing files.                                             |
 | `write.metadata.metrics.column`        | Column names and modes                 | N/A             | Per-column metrics configuration.                                                           |
+| `write.metadata.previous-versions-max` | Integer                                | 100             | Maximum number of previous version metadata files to keep before deletion after commit.     |
 | `write.summary.partition-limit`        | Integer                                | 0               | The limit on the number of partition summaries written with each commit.                    |
 | `write.delete.mode`                    | `{copy-on-write, merge-on-read}`       | `copy-on-write` | Configures the delete mode (either Copy-on-Write or Merge-on-Read).                         |
-| `write.metadata.previous-versions-max` | Integer                                | 100             | Maximum number of previous version metadata files to keep before deletion after commit.     |
 ### Table behavior options
 
 | Key                                  | Options             | Default       | Description                                                 |
