@@ -46,8 +46,6 @@ Iceberg tables support table properties to configure table behavior.
 | `write.metadata.metrics.column`        | Column names and modes                 | N/A             | Per-column metrics configuration.                                                           |
 | `write.summary.partition-limit`        | Integer                                | 0               | The limit on the number of partition summaries written with each commit.                    |
 | `write.delete.mode`                    | `{copy-on-write, merge-on-read}`       | `copy-on-write` | Configures the delete mode (either Copy-on-Write or Merge-on-Read).                         |
-| `schema.name-mapping.default`          | Name mapping strategy                  | N/A             | Default name mapping for schema evolution.                                                  |
-| `format-version`                       | `{1, 2}`                               | 2               | The version of the Iceberg table format to use.                                             |
 | `write.metadata.previous-versions-max` | Integer                                | 100             | Maximum number of previous version metadata files to keep before deletion after commit.     |
 ### Table behavior options
 
@@ -56,6 +54,8 @@ Iceberg tables support table properties to configure table behavior.
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
 | `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
 | `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+| `schema.name-mapping.default`          | Name mapping strategy                  | N/A             | Default name mapping for schema evolution.                                                  |
+| `format-version`                       | `{1, 2}`                               | 2               | The version of the Iceberg table format to use.                                             |
 
 <!-- prettier-ignore-start -->
 
