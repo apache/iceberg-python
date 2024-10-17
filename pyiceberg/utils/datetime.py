@@ -31,6 +31,7 @@ EPOCH_TIMESTAMP = datetime.fromisoformat("1970-01-01T00:00:00.000000")
 ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,6})?")
 EPOCH_TIMESTAMPTZ = datetime.fromisoformat("1970-01-01T00:00:00.000000+00:00")
 ISO_TIMESTAMPTZ = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,6})?[-+]\d{2}:\d{2}")
+ADDITIONAL_DATE_FORMAT = re.compile(r"\d{8}")  # For format YYYYMMDD
 
 
 def micros_to_days(timestamp: int) -> int:
@@ -48,8 +49,15 @@ def micros_to_time(micros: int) -> time:
 
 
 def date_str_to_days(date_str: str) -> int:
-    """Convert an ISO-8601 formatted date to days from 1970-01-01."""
-    return (date.fromisoformat(date_str) - EPOCH_DATE).days
+    """Convert an ISO-8601 or additional formatted date to days from 1970-01-01."""
+    if ADDITIONAL_DATE_FORMAT.fullmatch(date_str):
+        # Parse the YYYYMMDD format
+        date_val = datetime.strptime(date_str, "%Y%m%d").date()
+        return (date_val - EPOCH_DATE).days
+    else:
+        # Existing logic for ISO-8601 format
+        return (date.fromisoformat(date_str) - EPOCH_DATE).days
+
 
 
 def date_to_days(date_val: date) -> int:
