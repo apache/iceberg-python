@@ -1413,17 +1413,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.3.2"
+version = "0.3.8"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.3.2-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:b0c609407d9bb1c3265516d73e2ce016a0db24e8562b26234ea982e0c76648b3"},
-    {file = "getdaft-0.3.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:67ba8c0b7a2f7d4d6e2c8862f6e925cbdff8e9dbe75b463d5defa37c09ce849e"},
-    {file = "getdaft-0.3.2-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:480271f55c3c330bacc75b4fc1bba4cdd3684a96c8d4ad08550793aac0341f4b"},
-    {file = "getdaft-0.3.2-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d6719dcbdd5c3939649fdc24b42675dd1814e2aa7b69c1fed1ef5c5458d0f3d1"},
-    {file = "getdaft-0.3.2-cp38-abi3-win_amd64.whl", hash = "sha256:7626ff5f4bbb744649595cbde54b06c500acee8722efb999b0eecfcdc67f3b9c"},
-    {file = "getdaft-0.3.2.tar.gz", hash = "sha256:84e1f374f9c693a42689ae495908acf1c785215469809830902e760859ba64b9"},
+    {file = "getdaft-0.3.8-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ae40cbbfdc6b33f5dd80c9b9890890bcd837ccfeb178098abff6270c824aaf98"},
+    {file = "getdaft-0.3.8-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:e2bbf1b604c2d5f004f5a734acca3d3a7e7d36b29b0a447be4d99bd99f10361e"},
+    {file = "getdaft-0.3.8-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:bf36435df2a42eac7fb9415558112109800d96c67eedc64a44a2634d48a02e91"},
+    {file = "getdaft-0.3.8-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9aa863c41412ecbf0e657cc05e2d94602c0b33c8cd2a234043312bea7e0578e0"},
+    {file = "getdaft-0.3.8-cp38-abi3-win_amd64.whl", hash = "sha256:127d8434c2d951d7ade329847c67acb4f9c635de3115e65dea36000ab9dc704e"},
+    {file = "getdaft-0.3.8.tar.gz", hash = "sha256:6a43235549125f856b388707acb1042781d8078a379b974fcf843e47ecaf713c"},
 ]
 
 [package.dependencies]
@@ -2224,13 +2224,13 @@ test = ["mypy (>=1.0)", "pytest (>=7.0.0)"]
 
 [[package]]
 name = "moto"
-version = "5.0.14"
+version = "5.0.17"
 description = ""
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "moto-5.0.14-py2.py3-none-any.whl", hash = "sha256:c738ffe85d3844ef37b865951736c4faf2e0f3e4f05db87bdad97a6c01b88174"},
-    {file = "moto-5.0.14.tar.gz", hash = "sha256:0f849243269fd03372426c302b18cb605302da32620d7f0266be6a40735b2acd"},
+    {file = "moto-5.0.17-py2.py3-none-any.whl", hash = "sha256:6b56b7bb5675d60e79890c9867e446f29d7a5be02051238b8df079f649270130"},
+    {file = "moto-5.0.17.tar.gz", hash = "sha256:165a291ac0b983f53a09f67f9841f72214c5a1b0c56392d88f7035a6a8718fca"},
 ]
 
 [package.dependencies]
@@ -2260,7 +2260,7 @@ werkzeug = ">=0.5,<2.2.0 || >2.2.0,<2.2.1 || >2.2.1"
 xmltodict = "*"
 
 [package.extras]
-all = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "graphql-core", "joserfc (>=0.9.0)", "jsondiff (>=1.1.2)", "jsonpath-ng", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.6)", "pyparsing (>=3.0.7)", "setuptools"]
+all = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "graphql-core", "joserfc (>=0.9.0)", "jsondiff (>=1.1.2)", "jsonpath-ng", "jsonschema", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.6)", "pyparsing (>=3.0.7)", "setuptools"]
 apigateway = ["PyYAML (>=5.1)", "joserfc (>=0.9.0)", "openapi-spec-validator (>=0.5.0)"]
 apigatewayv2 = ["PyYAML (>=5.1)", "openapi-spec-validator (>=0.5.0)"]
 appsync = ["graphql-core"]
@@ -2274,6 +2274,7 @@ events = ["jsonpath-ng"]
 glue = ["pyparsing (>=3.0.7)"]
 iotdata = ["jsondiff (>=1.1.2)"]
 proxy = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=2.5.1)", "graphql-core", "joserfc (>=0.9.0)", "jsondiff (>=1.1.2)", "jsonpath-ng", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.6)", "pyparsing (>=3.0.7)", "setuptools"]
+quicksight = ["jsonschema"]
 resourcegroupstaggingapi = ["PyYAML (>=5.1)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "graphql-core", "joserfc (>=0.9.0)", "jsondiff (>=1.1.2)", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.5.6)", "pyparsing (>=3.0.7)"]
 s3 = ["PyYAML (>=5.1)", "py-partiql-parser (==0.5.6)"]
 s3crc32c = ["PyYAML (>=5.1)", "crc32c", "py-partiql-parser (==0.5.6)"]
