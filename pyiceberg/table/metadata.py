@@ -587,5 +587,21 @@ class TableMetadataUtil:
         else:
             raise ValidationError(f"Unknown format version: {format_version}")
 
+    @staticmethod
+    def _construct_without_validation(table_metadata: TableMetadata) -> TableMetadata:
+        """Construct table metadata from an existing table without performing validation.
+
+        This method is useful during a sequence of table updates when the model needs to be re-constructed but is not yet ready for validation.
+        """
+        if table_metadata.format_version is None:
+            raise ValidationError(f"Missing format-version in TableMetadata: {table_metadata}")
+
+        if table_metadata.format_version == 1:
+            return TableMetadataV1.model_construct(**dict(table_metadata))
+        elif table_metadata.format_version == 2:
+            return TableMetadataV2.model_construct(**dict(table_metadata))
+        else:
+            raise ValidationError(f"Unknown format version: {table_metadata.format_version}")
+
 
 TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2], Field(discriminator="format_version")]  # type: ignore
