@@ -231,7 +231,7 @@ catalog:
 
 ### SQL Catalog
 
-The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
+The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
 
 For PostgreSQL:
 
@@ -240,6 +240,7 @@ catalog:
   default:
     type: sql
     uri: postgresql+psycopg2://username:password@localhost/mydatabase
+    init_catalog_tables: false
 ```
 
 In the case of SQLite:
@@ -256,6 +257,7 @@ catalog:
   default:
     type: sql
     uri: sqlite:////tmp/pyiceberg.db
+    init_catalog_tables: false
 ```
 
 | Key           | Example                                                      | Default | Description                                                                                                                                                                                    |

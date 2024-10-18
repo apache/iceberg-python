@@ -17,19 +17,26 @@
 
 import os
 from pathlib import Path
-from typing import Any, Generator, List
+from typing import Any, Generator, List, cast
 
 import pyarrow as pa
 import pytest
 from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
+from sqlalchemy import Engine, create_engine, inspect
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
 from pyiceberg.catalog import (
     Catalog,
     load_catalog,
 )
-from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
+from pyiceberg.catalog.sql import (
+    DEFAULT_ECHO_VALUE,
+    DEFAULT_POOL_PRE_PING_VALUE,
+    IcebergTables,
+    SqlCatalog,
+    SqlCatalogBaseTable,
+)
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceAlreadyExistsError,
@@ -53,6 +60,8 @@ from pyiceberg.table.sorting import (
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import IntegerType, strtobool
+
+CATALOG_TABLES = [c.__tablename__ for c in SqlCatalogBaseTable.__subclasses__()]
 
 
 @pytest.fixture(scope="module")
@@ -130,6 +139,16 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_uri(warehouse: Path) -> str:
+    return f"sqlite:////{warehouse}/sql-catalog.db"
+
+
+@pytest.fixture(scope="module")
+def alchemy_engine(catalog_uri: str) -> Engine:
+    return create_engine(catalog_uri)
 
 
 @pytest.fixture(scope="module")
@@ -223,6 +242,69 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
         ),
         SqlCatalog,
     )
+
+
+def confirm_no_tables_exist(alchemy_engine: Engine) -> None:
+    inspector = inspect(alchemy_engine)
+    for c in SqlCatalogBaseTable.__subclasses__():
+        if inspector.has_table(c.__tablename__):
+            c.__table__.drop(alchemy_engine)
+
+    any_table_exists = any(t for t in inspector.get_table_names() if t in CATALOG_TABLES)
+    if any_table_exists:
+        pytest.raises(TableAlreadyExistsError, "Tables exist, but should not have been created yet")
+
+
+def confirm_all_tables_exist(catalog: SqlCatalog) -> None:
+    all_tables_exists = True
+    for t in CATALOG_TABLES:
+        if t not in inspect(catalog.engine).get_table_names():
+            all_tables_exists = False
+
+    assert isinstance(catalog, SqlCatalog), "Catalog should be a SQLCatalog"
+    assert all_tables_exists, "Tables should have been created"
+
+
+def load_catalog_for_catalog_table_creation(catalog_name: str, catalog_uri: str) -> SqlCatalog:
+    catalog = load_catalog(
+        catalog_name,
+        type="sql",
+        uri=catalog_uri,
+        init_catalog_tables="true",
+    )
+
+    return cast(SqlCatalog, catalog)
+
+
+def test_creation_when_no_tables_exist(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
+    confirm_no_tables_exist(alchemy_engine)
+    catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
+    confirm_all_tables_exist(catalog)
+
+
+def test_creation_when_one_tables_exists(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
+    confirm_no_tables_exist(alchemy_engine)
+
+    # Create one table
+    inspector = inspect(alchemy_engine)
+    IcebergTables.__table__.create(bind=alchemy_engine)
+    assert IcebergTables.__tablename__ in [t for t in inspector.get_table_names() if t in CATALOG_TABLES]
+
+    catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
+    confirm_all_tables_exist(catalog)
+
+
+def test_creation_when_all_tables_exists(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
+    confirm_no_tables_exist(alchemy_engine)
+
+    # Create all tables
+    inspector = inspect(alchemy_engine)
+    SqlCatalogBaseTable.metadata.create_all(bind=alchemy_engine)
+    for c in CATALOG_TABLES:
+        assert c in [t for t in inspector.get_table_names() if t in CATALOG_TABLES]
+
+    catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
+    confirm_all_tables_exist(catalog)
 
 
 @pytest.mark.parametrize(
