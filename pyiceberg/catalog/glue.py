@@ -670,7 +670,7 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.delete_database(Name=database_name)
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
@@ -698,7 +698,7 @@ class GlueCatalog(MetastoreCatalog):
 
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
-        return [(database_name, table["Name"]) for table in table_list]
+        return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
@@ -781,3 +781,7 @@ class GlueCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    @staticmethod
+    def __is_iceberg_table(table: TableTypeDef) -> bool:
+        return table["Parameters"] is not None and table["Parameters"][TABLE_TYPE].lower() == ICEBERG
