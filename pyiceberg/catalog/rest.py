@@ -105,6 +105,7 @@ class Endpoints:
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
+    view_exists: str = "namespaces/{namespace}/views/{view}"
 
 
 class IdentifierKind(Enum):
@@ -878,6 +879,34 @@ class RestCatalog(Catalog):
             self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
         )
 
+        if response.status_code == 404:
+            return False
+        elif response.status_code == 204:
+            return True
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {})
+
+        return False
+
+    @retry(**_RETRY_ARGS)
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a view exists.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            bool: True if the view exists, False otherwise.
+        """
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
+        response = self._session.head(
+            self.url(
+                Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier_tuple, IdentifierKind.VIEW)
+            ),
+        )
         if response.status_code == 404:
             return False
         elif response.status_code == 204:
