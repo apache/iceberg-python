@@ -449,7 +449,7 @@ class Catalog(ABC):
         Returns:
             bool: True if the table exists, False otherwise.
         """
-    
+
     @abstractmethod
     def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         """Check if a view exists.
