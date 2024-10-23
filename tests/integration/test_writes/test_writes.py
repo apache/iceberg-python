@@ -1448,3 +1448,26 @@ def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) ->
             EqualTo("category", "A"),
         ),
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_abort_table_transaction_on_exception(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_test_abort_table_transaction_on_exception"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # Pre-populate some data
+    tbl.append(arrow_table_with_null)
+    assert len(tbl.scan().to_pandas()) == 3
+
+    # try to commit a transaction that raises exception at the middle
+    with pytest.raises(ValueError):
+        with tbl.transaction() as txn:
+            txn.append(arrow_table_with_null)
+            raise ValueError
+            txn.append(arrow_table_with_null)  # type: ignore
+
+    # Validate the transaction is aborted
+    assert len(tbl.scan().to_pandas()) == 3  # type: ignore

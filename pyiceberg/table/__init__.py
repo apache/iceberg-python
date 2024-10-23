@@ -23,6 +23,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
+from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -33,6 +34,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    Type,
     TypeVar,
     Union,
 )
@@ -231,9 +233,12 @@ class Transaction:
         """Start a transaction to update the table."""
         return self
 
-    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
-        """Close and commit the transaction."""
-        self.commit_transaction()
+    def __exit__(
+        self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
+    ) -> None:
+        """Close and commit the transaction if no exceptions have been raised."""
+        if exctype is None and excinst is None and exctb is None:
+            self.commit_transaction()
 
     def _apply(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...] = ()) -> Transaction:
         """Check if the requirements are met, and applies the updates to the metadata."""
