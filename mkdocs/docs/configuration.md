@@ -30,15 +30,23 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                                    | Options                           | Default | Description                                                                                 |
-| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
-| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
+| Key                                    | Options                                | Default         | Description                                                                                 |
+| -------------------------------------- | -------------------------------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}`     | zstd            | Sets the Parquet compression codec.                                                         |
+| `write.parquet.compression-level`      | Integer                                | null            | Parquet compression level for the codec. If not set, it is up to PyIceberg.                 |
+| `write.parquet.row-group-limit`        | Number of rows                         | 1,048,576       | The upper bound of the number of entries within a single row group.                         |
+| `write.parquet.row-group-size-bytes`   | Size in bytes                          | 128 MB          | The maximum size (in bytes) of each Parquet row group.                                      |
+| `write.parquet.page-size-bytes`        | Size in bytes                          | 1 MB            | Target threshold for the approximate encoded size of data pages within a column chunk.      |
+| `write.parquet.page-row-limit`         | Number of rows                         | 20,000          | Target threshold for the number of rows within a data page inside a column chunk.           |
+| `write.parquet.dict-size-bytes`        | Size in bytes                          | 2 MB            | The dictionary page size limit per row group.                                               |
+| `write.parquet.bloom-filter-max-bytes` | Size in bytes                          | 1 MB            | The maximum size (in bytes) of the Bloom filter for Parquet files.                          |
+| `write.parquet.bloom-filter-enabled.column` | Column names                        | N/A             | Enable Bloom filters for specific columns by prefixing the column name.                     |
+| `write.target-file-size-bytes`         | Size in bytes                          | 512 MB          | Target size (in bytes) for each output data file.                                           |
+| `write.metadata.metrics.default`       | `{none, full, truncate(N)}`            | `truncate(16)`  | Default metrics mode to use when writing files.                                             |
+| `write.metadata.metrics.column`        | Column names and modes                 | N/A             | Per-column metrics configuration.                                                           |
+| `write.metadata.previous-versions-max` | Integer                                | 100             | Maximum number of previous version metadata files to keep before deletion after commit.     |
+| `write.summary.partition-limit`        | Integer                                | 0               | The limit on the number of partition summaries written with each commit.                    |
+| `write.delete.mode`                    | `{copy-on-write, merge-on-read}`       | `copy-on-write` | Configures the delete mode (either Copy-on-Write or Merge-on-Read).                         |
 
 ### Table behavior options
 
@@ -47,6 +55,8 @@ Iceberg tables support table properties to configure table behavior.
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
 | `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
 | `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+| `schema.name-mapping.default`          | Name mapping strategy                  | N/A             | Default name mapping for schema evolution.                                                  |
+| `format-version`                       | `{1, 2}`                               | 2               | The version of the Iceberg table format to use.                                             |
 
 <!-- prettier-ignore-start -->
 
@@ -148,6 +158,62 @@ For the FileIO there are several configuration options available:
 | Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
+
+<!-- markdown-link-check-enable-->
+
+### Custom FileIO Implementations
+
+<!-- markdown-link-check-disable -->
+
+The `pyIceberg` library allows you to use custom FileIO implementations, enabling flexible file handling tailored to your specific needs. This feature is particularly useful when working with different storage backends or file formats.
+
+#### Bringing Your Own FileIO with `PY_IO_IMPL`
+
+To implement a custom FileIO, you can specify the `PY_IO_IMPL` property in your configuration. The property should point to the custom FileIO class you wish to use. Below is a brief guide on how to use this feature.
+
+```python
+PY_IO_IMPL = "py-io-impl"
+```
+
+#### Implementation Details
+
+The following functions are key to inferring and loading custom FileIO implementations:
+
+##### `_infer_file_io_from_scheme`
+
+```python
+def _infer_file_io_from_scheme(path: str, properties: Properties) -> Optional[FileIO]:
+```
+
+- **Purpose**: Infers the appropriate FileIO implementation based on the scheme of the provided file path.
+- **Parameters**:
+    - `path` (str): The file path from which to infer the scheme.
+    - `properties` (Properties): Configuration properties to assist with loading.
+- **Returns**: An instance of `FileIO` if a suitable implementation is found; otherwise, `None`.
+
+##### Usage Example
+
+```python
+file_io = _infer_file_io_from_scheme("s3://my-bucket/my-file.txt", properties)
+```
+
+##### `load_file_io`
+
+```python
+def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = None) -> FileIO:
+```
+
+- **Purpose**: Loads the custom FileIO implementation specified in the `properties`.
+- **Parameters**:
+    - `properties` (Properties): A dictionary of configuration properties, which may include `PY_IO_IMPL`.
+    - `location` (Optional[str]): An optional location to specify the file path.
+- **Returns**: An instance of `FileIO`.
+
+##### Usage Example
+
+```python
+file_io = load_file_io(properties={"py-io-impl": "my_custom_file_io"})
+```
 
 <!-- markdown-link-check-enable-->
 
