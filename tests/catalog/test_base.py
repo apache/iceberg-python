@@ -41,14 +41,17 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import WAREHOUSE, load_file_io
+from pyiceberg.expressions import BooleanExpression
+from pyiceberg.io import WAREHOUSE, FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
+    ALWAYS_TRUE,
     CommitTableResponse,
     Table,
+    Transaction,
 )
-from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table.metadata import TableMetadata, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddSchemaUpdate,
@@ -263,6 +266,42 @@ class InMemoryCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+
+class TransactionThrowExceptionInOverwrite(Transaction):
+    def __init__(self, table: Table):
+        super().__init__(table)
+
+    # Override the default overwrite to simulate exception during append
+    def overwrite(
+        self,
+        df: pa.Table,
+        overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ) -> None:
+        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+        raise Exception("Fail Append Commit Exception")
+
+
+class TableThrowExceptionInOverwrite(Table):
+    def __init__(self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog):
+        # Call the constructor of the parent class
+        super().__init__(identifier, metadata, metadata_location, io, catalog)
+
+    def transaction(self) -> Transaction:
+        return TransactionThrowExceptionInOverwrite(self)
+
+
+def given_catalog_has_a_table_throw_exception_in_overwrite(
+    catalog: InMemoryCatalog, properties: Properties = EMPTY_DICT
+) -> TableThrowExceptionInOverwrite:
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=properties or TEST_TABLE_PROPERTIES,
+    )
+    return TableThrowExceptionInOverwrite(table.identifier, table.metadata, table.metadata_location, table.io, table.catalog)
 
 
 @pytest.fixture
@@ -766,3 +805,27 @@ def test_table_properties_raise_for_none_value(catalog: InMemoryCatalog) -> None
     with pytest.raises(ValidationError) as exc_info:
         _ = given_catalog_has_a_table(catalog, properties=property_with_none)
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+def test_table_overwrite_with_exception(catalog: InMemoryCatalog) -> None:
+    given_table = given_catalog_has_a_table_throw_exception_in_overwrite(catalog)
+    # Populate some initial data
+    data = pa.Table.from_pylist(
+        [{"x": 1, "y": 2, "z": 3}, {"x": 4, "y": 5, "z": 6}],
+        schema=TEST_TABLE_SCHEMA.as_arrow(),
+    )
+    given_table.append(data)
+
+    # Data to overwrite
+    data = pa.Table.from_pylist(
+        [{"x": 7, "y": 8, "z": 9}],
+        schema=TEST_TABLE_SCHEMA.as_arrow(),
+    )
+
+    # Since overwrite has an exception, we should fail the whole overwrite transaction
+    try:
+        given_table.overwrite(data)
+    except Exception as e:
+        assert str(e) == "Fail Append Commit Exception", f"Expected 'Fail Append Commit Exception', but got '{str(e)}'"
+
+    assert len(given_table.scan().to_arrow()) == 2
