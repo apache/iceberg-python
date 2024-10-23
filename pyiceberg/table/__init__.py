@@ -206,6 +206,12 @@ class TableProperties:
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
 
+    MAX_SNAPSHOT_AGE_MS = "history.expire.max-snapshot-age-ms"
+    MAX_SNAPSHOT_AGE_MS_DEFAULT = 5 * 24 * 60 * 60 * 1000  # 5 days
+
+    MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
+    MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
+
 
 class Transaction:
     _table: Table
