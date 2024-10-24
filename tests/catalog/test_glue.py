@@ -949,3 +949,37 @@ def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str
         catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
     )
     assert test_catalog.glue.meta.endpoint_url == test_endpoint
+
+
+@mock_aws
+def test_list_views(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    database_name: str,
+    table_name: str,
+    view_table_list: List[str],
+    non_view_table_name: str
+) -> None:
+    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog.create_namespace(namespace=database_name)
+    glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
+    for view_name in view_table_list:
+        glue_client.create_table(
+            DatabaseName=database_name,
+            TableInput={
+                "Name": view_name,
+                "TableType": "VIRTUAL_VIEW",
+                "Parameters": {"table_type": "iceberg"},
+            },
+        )
+    for non_view in non_view_table_name:
+        glue_client.create_table(
+            DatabaseName=database_name,
+            TableInput={
+                "Name": non_view,
+                "TableType": "EXTERNAL_TABLE",
+                "Parameters": {"table_type": "iceberg"},
+            },
+        )
+    loaded_view_list = test_catalog.list_views(database_name)
+    assert set(loaded_view_list) == view_table_list
