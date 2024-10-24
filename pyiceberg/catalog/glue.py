@@ -822,7 +822,7 @@ class GlueCatalog(MetastoreCatalog):
         Returns:
             bool: True if the table is a view, False otherwise.
         """
-        return table.get('TableType', '') == 'VIEW'
+        return table.get('TableType', '') == 'VIRTUAL_VIEW'
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
