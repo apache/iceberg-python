@@ -2186,20 +2186,6 @@ def bound_reference_uuid() -> BoundReference[str]:
 
 
 @pytest.fixture(scope="session")
-def session_catalog() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-
-@pytest.fixture(scope="session")
 def session_catalog_hive() -> Catalog:
     return load_catalog(
         "local",

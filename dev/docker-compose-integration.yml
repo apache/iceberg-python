@@ -41,19 +41,12 @@ services:
       - hive:hive
       - minio:minio
   rest:
-    image: tabulario/iceberg-rest
+    build: https://github.com/apache/polaris.git
     container_name: pyiceberg-rest
     networks:
       iceberg_net:
     ports:
       - 8181:8181
-    environment:
-      - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password
-      - AWS_REGION=us-east-1
-      - CATALOG_WAREHOUSE=s3://warehouse/
-      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
-      - CATALOG_S3_ENDPOINT=http://minio:9000
   minio:
     image: minio/minio
     container_name: pyiceberg-minio
