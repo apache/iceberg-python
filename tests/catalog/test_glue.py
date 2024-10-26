@@ -14,16 +14,49 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import Any, Dict, List
-from unittest import mock
+
+
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    cast,
+)
 
 import boto3
-import pyarrow as pa
-import pytest
-from moto import mock_aws
+from mypy_boto3_glue.client import GlueClient
+from mypy_boto3_glue.type_defs import (
+    ColumnTypeDef,
+    DatabaseInputTypeDef,
+    DatabaseTypeDef,
+    StorageDescriptorTypeDef,
+    TableInputTypeDef,
+    TableTypeDef,
+)
 
-from pyiceberg.catalog.glue import GlueCatalog
+from pyiceberg.catalog import (
+    DEPRECATED_ACCESS_KEY_ID,
+    DEPRECATED_BOTOCORE_SESSION,
+    DEPRECATED_PROFILE_NAME,
+    DEPRECATED_REGION,
+    DEPRECATED_SECRET_ACCESS_KEY,
+    DEPRECATED_SESSION_TOKEN,
+    EXTERNAL_TABLE,
+    ICEBERG,
+    LOCATION,
+    METADATA_LOCATION,
+    PREVIOUS_METADATA_LOCATION,
+    TABLE_TYPE,
+    MetastoreCatalog,
+    PropertiesUpdateSummary,
+)
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIcebergTableError,
@@ -32,954 +65,723 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io.pyarrow import schema_to_pyarrow
-from pyiceberg.partitioning import PartitionField, PartitionSpec
-from pyiceberg.schema import Schema
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Properties
-from pyiceberg.types import IntegerType
-from tests.conftest import (
-    BUCKET_NAME,
-    DEPRECATED_AWS_SESSION_PROPERTIES,
-    TABLE_METADATA_LOCATION_REGEX,
-    UNIFIED_AWS_SESSION_PROPERTIES,
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.schema import Schema, SchemaVisitor, visit
+from pyiceberg.serializers import FromInputFile
+from pyiceberg.table import (
+    CommitTableResponse,
+    Table,
 )
+from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
+from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    PrimitiveType,
+    StringType,
+    StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
+)
+from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
-@mock_aws
-def test_create_table_with_database_location(
-    _glue: boto3.client,
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    table_schema_nested: Schema,
-    database_name: str,
+# There is a unique Glue metastore in each AWS account and each AWS region. By default, GlueCatalog chooses the Glue
+# metastore to use based on the user's default AWS client credential and region setup. You can specify the Glue catalog
+# ID through glue.id catalog property to point to a Glue catalog in a different AWS account. The Glue catalog ID is your
+# numeric AWS account ID.
+GLUE_ID = "glue.id"
+
+# If Glue should skip archiving an old table version when creating a new version in a commit. By
+# default, Glue archives all old table versions after an UpdateTable call, but Glue has a default
+# max number of archived table versions (can be increased). So for streaming use case with lots
+# of commits, it is recommended to set this value to true.
+GLUE_SKIP_ARCHIVE = "glue.skip-archive"
+GLUE_SKIP_ARCHIVE_DEFAULT = True
+
+# Configure an alternative endpoint of the Glue service for GlueCatalog to access.
+# This could be used to use GlueCatalog with any glue-compatible metastore service that has a different endpoint
+GLUE_CATALOG_ENDPOINT = "glue.endpoint"
+
+ICEBERG_FIELD_ID = "iceberg.field.id"
+ICEBERG_FIELD_OPTIONAL = "iceberg.field.optional"
+ICEBERG_FIELD_CURRENT = "iceberg.field.current"
+
+GLUE_PROFILE_NAME = "glue.profile-name"
+GLUE_REGION = "glue.region"
+GLUE_ACCESS_KEY_ID = "glue.access-key-id"
+GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
+GLUE_SESSION_TOKEN = "glue.session-token"
+
+
+def _construct_parameters(
+    metadata_location: str, glue_table: Optional[TableTypeDef] = None, prev_metadata_location: Optional[str] = None
+) -> Properties:
+    new_parameters = glue_table.get("Parameters", {}) if glue_table else {}
+    new_parameters.update({TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location})
+    if prev_metadata_location:
+        new_parameters[PREVIOUS_METADATA_LOCATION] = prev_metadata_location
+    return new_parameters
+
+
+GLUE_PRIMITIVE_TYPES = {
+    BooleanType: "boolean",
+    IntegerType: "int",
+    LongType: "bigint",
+    FloatType: "float",
+    DoubleType: "double",
+    DateType: "date",
+    TimeType: "string",
+    StringType: "string",
+    UUIDType: "string",
+    TimestampType: "timestamp",
+    TimestamptzType: "timestamp",
+    FixedType: "binary",
+    BinaryType: "binary",
+}
+
+
+class _IcebergSchemaToGlueType(SchemaVisitor[str]):
+    def schema(self, schema: Schema, struct_result: str) -> str:
+        return struct_result
+
+    def struct(self, struct: StructType, field_results: List[str]) -> str:
+        return f"struct<{','.join(field_results)}>"
+
+    def field(self, field: NestedField, field_result: str) -> str:
+        return f"{field.name}:{field_result}"
+
+    def list(self, list_type: ListType, element_result: str) -> str:
+        return f"array<{element_result}>"
+
+    def map(self, map_type: MapType, key_result: str, value_result: str) -> str:
+        return f"map<{key_result},{value_result}>"
+
+    def primitive(self, primitive: PrimitiveType) -> str:
+        if isinstance(primitive, DecimalType):
+            return f"decimal({primitive.precision},{primitive.scale})"
+        if (primitive_type := type(primitive)) not in GLUE_PRIMITIVE_TYPES:
+            return str(primitive)
+        return GLUE_PRIMITIVE_TYPES[primitive_type]
+
+
+def _to_columns(metadata: TableMetadata) -> List[ColumnTypeDef]:
+    results: Dict[str, ColumnTypeDef] = {}
+
+    def _append_to_results(field: NestedField, is_current: bool) -> None:
+        if field.name in results:
+            return
+
+        results[field.name] = cast(
+            ColumnTypeDef,
+            {
+                "Name": field.name,
+                "Type": visit(field.field_type, _IcebergSchemaToGlueType()),
+                "Parameters": {
+                    ICEBERG_FIELD_ID: str(field.field_id),
+                    ICEBERG_FIELD_OPTIONAL: str(field.optional).lower(),
+                    ICEBERG_FIELD_CURRENT: str(is_current).lower(),
+                },
+            },
+        )
+        if field.doc:
+            results[field.name]["Comment"] = field.doc
+
+    if current_schema := metadata.schema_by_id(metadata.current_schema_id):
+        for field in current_schema.columns:
+            _append_to_results(field, True)
+
+    for schema in metadata.schemas:
+        if schema.schema_id == metadata.current_schema_id:
+            continue
+        for field in schema.columns:
+            _append_to_results(field, False)
+
+    return list(results.values())
+
+
+def _construct_table_input(
     table_name: str,
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-    # Ensure schema is also pushed to Glue
-    table_info = _glue.get_table(
-        DatabaseName=database_name,
-        Name=table_name,
-    )
-    storage_descriptor = table_info["Table"]["StorageDescriptor"]
-    columns = storage_descriptor["Columns"]
-    assert len(columns) == len(table_schema_nested.fields)
-    assert columns[0] == {
-        "Name": "foo",
-        "Type": "string",
-        "Parameters": {"iceberg.field.id": "1", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
-    }
-
-    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
-
-
-@mock_aws
-def test_create_v1_table(
-    _bucket_initialize: None,
-    _glue: boto3.client,
-    moto_endpoint_url: str,
-    table_schema_nested: Schema,
-    database_name: str,
-    table_name: str,
-) -> None:
-    catalog_name = "glue"
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
-    table = test_catalog.create_table((database_name, table_name), table_schema_nested, properties={"format-version": "1"})
-    assert table.format_version == 1
-
-    table_info = _glue.get_table(
-        DatabaseName=database_name,
-        Name=table_name,
-    )
-
-    storage_descriptor = table_info["Table"]["StorageDescriptor"]
-    columns = storage_descriptor["Columns"]
-    assert len(columns) == len(table_schema_nested.fields)
-    assert columns[0] == {
-        "Name": "foo",
-        "Type": "string",
-        "Parameters": {"iceberg.field.id": "1", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
-    }
-
-    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
-
-
-@mock_aws
-def test_create_table_with_default_warehouse(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-
-@mock_aws
-def test_create_table_with_given_location(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(
-        identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
-    )
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-
-@mock_aws
-def test_create_table_removes_trailing_slash_in_location(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
-    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
-    assert table.identifier == (catalog_name,) + identifier
-    assert table.location() == location
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-
-@mock_aws
-def test_create_table_with_pyarrow_schema(
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    pyarrow_schema_simple_without_ids: pa.Schema,
-    database_name: str,
-    table_name: str,
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(
-        identifier=identifier,
-        schema=pyarrow_schema_simple_without_ids,
-        location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}",
-    )
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-
-@mock_aws
-def test_create_table_with_no_location(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    with pytest.raises(ValueError):
-        test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
-
-
-@mock_aws
-def test_create_table_with_strips(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db/"})
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-
-@mock_aws
-def test_create_table_with_strips_bucket_root(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    table_strip = test_catalog.create_table(identifier, table_schema_nested)
-    assert table_strip.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table_strip.metadata_location)
-    assert test_catalog._parse_metadata_version(table_strip.metadata_location) == 0
-
-
-@mock_aws
-def test_create_table_with_no_database(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    with pytest.raises(NoSuchNamespaceError):
-        test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
-
-
-@mock_aws
-def test_create_table_with_glue_catalog_id(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    catalog_id = "444444444444"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(
-        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.id": catalog_id}
-    )
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-    glue = boto3.client("glue")
-    databases = glue.get_databases()
-    assert databases["DatabaseList"][0]["CatalogId"] == catalog_id
-
-
-@mock_aws
-def test_create_duplicated_table(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_table(identifier, table_schema_nested)
-    with pytest.raises(TableAlreadyExistsError):
-        test_catalog.create_table(identifier, table_schema_nested)
-
-
-@mock_aws
-def test_load_table(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_table(identifier, table_schema_nested)
-    table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-
-@mock_aws
-def test_load_table_from_self_identifier(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    intermediate = test_catalog.create_table(identifier, table_schema_nested)
-    table = test_catalog.load_table(intermediate.identifier)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-
-
-@mock_aws
-def test_load_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(identifier)
-
-
-@mock_aws
-def test_drop_table(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_table(identifier, table_schema_nested)
-    table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    test_catalog.drop_table(identifier)
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(identifier)
-
-
-@mock_aws
-def test_drop_table_from_self_identifier(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_table(identifier, table_schema_nested)
-    table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    test_catalog.drop_table(table.identifier)
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(identifier)
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(table.identifier)
-
-
-@mock_aws
-def test_drop_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    with pytest.raises(NoSuchTableError):
-        test_catalog.drop_table(identifier)
-
-
-@mock_aws
-def test_rename_table(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    new_table_name = f"{table_name}_new"
-    identifier = (database_name, table_name)
-    new_identifier = (database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-    test_catalog.rename_table(identifier, new_identifier)
-    new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (catalog_name,) + new_identifier
-    # the metadata_location should not change
-    assert new_table.metadata_location == table.metadata_location
-    # old table should be dropped
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(identifier)
-
-
-@mock_aws
-def test_rename_table_from_self_identifier(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    new_table_name = f"{table_name}_new"
-    identifier = (database_name, table_name)
-    new_identifier = (database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    test_catalog.rename_table(table.identifier, new_identifier)
-    new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (catalog_name,) + new_identifier
-    # the metadata_location should not change
-    assert new_table.metadata_location == table.metadata_location
-    # old table should be dropped
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(identifier)
-    with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(table.identifier)
-
-
-@mock_aws
-def test_rename_table_no_params(
-    _glue: boto3.client, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str
-) -> None:
-    new_database_name = f"{database_name}_new"
-    new_table_name = f"{table_name}_new"
-    identifier = (database_name, table_name)
-    new_identifier = (new_database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_namespace(namespace=new_database_name)
-    _glue.create_table(
-        DatabaseName=database_name,
-        TableInput={"Name": table_name, "TableType": "EXTERNAL_TABLE", "Parameters": {"table_type": "iceberg"}},
-    )
-    with pytest.raises(NoSuchPropertyException):
-        test_catalog.rename_table(identifier, new_identifier)
-
-
-@mock_aws
-def test_rename_non_iceberg_table(
-    _glue: boto3.client, _bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str
-) -> None:
-    new_database_name = f"{database_name}_new"
-    new_table_name = f"{table_name}_new"
-    identifier = (database_name, table_name)
-    new_identifier = (new_database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_namespace(namespace=new_database_name)
-    _glue.create_table(
-        DatabaseName=database_name,
-        TableInput={
-            "Name": table_name,
-            "TableType": "EXTERNAL_TABLE",
-            "Parameters": {"table_type": "noniceberg", "metadata_location": "test"},
+    metadata_location: str,
+    properties: Properties,
+    metadata: TableMetadata,
+    glue_table: Optional[TableTypeDef] = None,
+    prev_metadata_location: Optional[str] = None,
+) -> TableInputTypeDef:
+    table_input: TableInputTypeDef = {
+        "Name": table_name,
+        "TableType": EXTERNAL_TABLE,
+        "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location),
+        "StorageDescriptor": {
+            "Columns": _to_columns(metadata),
+            "Location": metadata.location,
         },
-    )
-    with pytest.raises(NoSuchIcebergTableError):
-        test_catalog.rename_table(identifier, new_identifier)
-
-
-@mock_aws
-def test_list_tables(
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    table_schema_nested: Schema,
-    database_name: str,
-    table_name: str,
-    table_list: List[str],
-) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-
-    non_iceberg_table_name = "non_iceberg_table"
-    glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
-    glue_client.create_table(
-        DatabaseName=database_name,
-        TableInput={
-            "Name": non_iceberg_table_name,
-            "TableType": "EXTERNAL_TABLE",
-            "Parameters": {"table_type": "noniceberg"},
-        },
-    )
-
-    for table_name in table_list:
-        test_catalog.create_table((database_name, table_name), table_schema_nested)
-    loaded_table_list = test_catalog.list_tables(database_name)
-
-    assert (database_name, non_iceberg_table_name) not in loaded_table_list
-    for table_name in table_list:
-        assert (database_name, table_name) in loaded_table_list
-
-
-@mock_aws
-def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: List[str]) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    for database_name in database_list:
-        test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
-    for database_name in database_list:
-        assert (database_name,) in loaded_database_list
-
-
-@mock_aws
-def test_create_namespace_no_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
-    assert len(loaded_database_list) == 1
-    assert (database_name,) in loaded_database_list
-    properties = test_catalog.load_namespace_properties(database_name)
-    assert properties == {}
-
-
-@mock_aws
-def test_create_namespace_with_comment_and_location(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
-    test_properties = {
-        "comment": "this is a test description",
-        "location": test_location,
     }
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name, properties=test_properties)
-    loaded_database_list = test_catalog.list_namespaces()
-    assert len(loaded_database_list) == 1
-    assert (database_name,) in loaded_database_list
-    properties = test_catalog.load_namespace_properties(database_name)
-    assert properties["comment"] == "this is a test description"
-    assert properties["location"] == test_location
+
+    if "Description" in properties:
+        table_input["Description"] = properties["Description"]
+
+    return table_input
 
 
-@mock_aws
-def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
-    assert len(loaded_database_list) == 1
-    assert (database_name,) in loaded_database_list
-    with pytest.raises(NamespaceAlreadyExistsError):
-        test_catalog.create_namespace(namespace=database_name, properties={"test": "test"})
+def _construct_rename_table_input(to_table_name: str, glue_table: TableTypeDef) -> TableInputTypeDef:
+    rename_table_input: TableInputTypeDef = {"Name": to_table_name}
+    # use the same Glue info to create the new table, pointing to the old metadata
+    assert glue_table["TableType"]
+    rename_table_input["TableType"] = glue_table["TableType"]
+    if "Owner" in glue_table:
+        rename_table_input["Owner"] = glue_table["Owner"]
+
+    if "Parameters" in glue_table:
+        rename_table_input["Parameters"] = glue_table["Parameters"]
+
+    if "StorageDescriptor" in glue_table:
+        # It turns out the output of StorageDescriptor is not the same as the input type
+        # because the Column can have a different type, but for now it seems to work, so
+        # silence the type error.
+        rename_table_input["StorageDescriptor"] = cast(StorageDescriptorTypeDef, glue_table["StorageDescriptor"])
+
+    if "Description" in glue_table:
+        rename_table_input["Description"] = glue_table["Description"]
+
+    return rename_table_input
 
 
-@mock_aws
-def test_drop_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(namespace=database_name)
-    loaded_database_list = test_catalog.list_namespaces()
-    assert len(loaded_database_list) == 1
-    assert (database_name,) in loaded_database_list
-    test_catalog.drop_namespace(database_name)
-    loaded_database_list = test_catalog.list_namespaces()
-    assert len(loaded_database_list) == 0
-
-
-@mock_aws
-def test_drop_non_empty_namespace(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
-) -> None:
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_table(identifier, table_schema_nested)
-    assert len(test_catalog.list_tables(database_name)) == 1
-    with pytest.raises(NamespaceNotEmptyError):
-        test_catalog.drop_namespace(database_name)
-
-
-@mock_aws
-def test_drop_non_exist_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    with pytest.raises(NoSuchNamespaceError):
-        test_catalog.drop_namespace(database_name)
-
-
-@mock_aws
-def test_load_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_location = f"s3://{BUCKET_NAME}/{database_name}.db"
-    test_properties = {
-        "comment": "this is a test description",
-        "location": test_location,
-        "test_property1": "1",
-        "test_property2": "2",
-        "test_property3": "3",
-    }
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(database_name, test_properties)
-    listed_properties = test_catalog.load_namespace_properties(database_name)
-    for k, v in listed_properties.items():
-        assert k in test_properties
-        assert v == test_properties[k]
-
-
-@mock_aws
-def test_load_non_exist_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    with pytest.raises(NoSuchNamespaceError):
-        test_catalog.load_namespace_properties(database_name)
-
-
-@mock_aws
-def test_update_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_properties = {
-        "comment": "this is a test description",
-        "location": f"s3://{BUCKET_NAME}/{database_name}.db",
-        "test_property1": "1",
-        "test_property2": "2",
-        "test_property3": "3",
-    }
-    removals = {"test_property1", "test_property2", "test_property3", "should_not_removed"}
-    updates = {"test_property4": "4", "test_property5": "5", "comment": "updated test description"}
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(database_name, test_properties)
-    update_report = test_catalog.update_namespace_properties(database_name, removals, updates)
-    for k in updates.keys():
-        assert k in update_report.updated
-    for k in removals:
-        if k == "should_not_removed":
-            assert k in update_report.missing
+def _construct_database_input(database_name: str, properties: Properties) -> DatabaseInputTypeDef:
+    database_input: DatabaseInputTypeDef = {"Name": database_name}
+    parameters = {}
+    for k, v in properties.items():
+        if k == "Description":
+            database_input["Description"] = v
+        elif k == LOCATION:
+            database_input["LocationUri"] = v
         else:
-            assert k in update_report.removed
-    assert "updated test description" == test_catalog.load_namespace_properties(database_name)["comment"]
-    test_catalog.drop_namespace(database_name)
+            parameters[k] = v
+    database_input["Parameters"] = parameters
+    return database_input
 
 
-@mock_aws
-def test_load_empty_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(database_name)
-    listed_properties = test_catalog.load_namespace_properties(database_name)
-    assert listed_properties == {}
+def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id: str) -> None:
+    """
+    Register the Glue Catalog ID (AWS Account ID) as a parameter on all Glue client methods.
+
+    It's more ergonomic to do this than to pass the CatalogId as a parameter to every client call since it's an optional
+    parameter and boto3 does not support 'None' values for missing parameters.
+    """
+    event_system = glue.meta.events
+
+    def add_glue_catalog_id(params: Dict[str, str], **kwargs: Any) -> None:
+        if "CatalogId" not in params:
+            params["CatalogId"] = glue_catalog_id
+
+    event_system.register("provide-client-params.glue", add_glue_catalog_id)
 
 
-@mock_aws
-def test_load_default_namespace_properties(_glue, _bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:  # type: ignore
-    # simulate creating database with default settings through AWS Glue Web Console
-    _glue.create_database(DatabaseInput={"Name": database_name})
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    listed_properties = test_catalog.load_namespace_properties(database_name)
-    assert listed_properties == {}
+class GlueCatalog(MetastoreCatalog):
+    def __init__(self, name: str, **properties: Any):
+        super().__init__(name, **properties)
 
-
-@mock_aws
-def test_update_namespace_properties_overlap_update_removal(
-    _bucket_initialize: None, moto_endpoint_url: str, database_name: str
-) -> None:
-    test_properties = {
-        "comment": "this is a test description",
-        "location": f"s3://{BUCKET_NAME}/{database_name}.db",
-        "test_property1": "1",
-        "test_property2": "2",
-        "test_property3": "3",
-    }
-    removals = {"test_property1", "test_property2", "test_property3", "should_not_removed"}
-    updates = {"test_property1": "4", "test_property5": "5", "comment": "updated test description"}
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
-    test_catalog.create_namespace(database_name, test_properties)
-    with pytest.raises(ValueError):
-        test_catalog.update_namespace_properties(database_name, removals, updates)
-    # should not modify the properties
-    assert test_catalog.load_namespace_properties(database_name) == test_properties
-
-
-@mock_aws
-def test_passing_profile_name() -> None:
-    session_properties: Dict[str, Any] = {
-        "aws_access_key_id": "abc",
-        "aws_secret_access_key": "def",
-        "aws_session_token": "ghi",
-        "region_name": "eu-central-1",
-        "profile_name": "sandbox",
-        "botocore_session": None,
-    }
-    test_properties = {"type": "glue"}
-    test_properties.update(session_properties)
-
-    with mock.patch("boto3.Session") as mock_session:
-        test_catalog = GlueCatalog("glue", **test_properties)
-
-    mock_session.assert_called_with(**session_properties)
-    assert test_catalog.glue is mock_session().client()
-
-
-@mock_aws
-def test_passing_glue_session_properties() -> None:
-    session_properties: Properties = {
-        "glue.access-key-id": "glue.access-key-id",
-        "glue.secret-access-key": "glue.secret-access-key",
-        "glue.profile-name": "glue.profile-name",
-        "glue.region": "glue.region",
-        "glue.session-token": "glue.session-token",
-        **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
-    }
-
-    with mock.patch("boto3.Session") as mock_session:
-        test_catalog = GlueCatalog("glue", **session_properties)
-
-    mock_session.assert_called_with(
-        aws_access_key_id="glue.access-key-id",
-        aws_secret_access_key="glue.secret-access-key",
-        aws_session_token="glue.session-token",
-        region_name="glue.region",
-        profile_name="glue.profile-name",
-        botocore_session=None,
-    )
-    assert test_catalog.glue is mock_session().client()
-
-
-@mock_aws
-def test_passing_unified_session_properties_to_glue() -> None:
-    session_properties: Properties = {
-        "glue.profile-name": "glue.profile-name",
-        **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
-    }
-
-    with mock.patch("boto3.Session") as mock_session:
-        test_catalog = GlueCatalog("glue", **session_properties)
-
-    mock_session.assert_called_with(
-        aws_access_key_id="client.access-key-id",
-        aws_secret_access_key="client.secret-access-key",
-        aws_session_token="client.session-token",
-        region_name="client.region",
-        profile_name="glue.profile-name",
-        botocore_session=None,
-    )
-    assert test_catalog.glue is mock_session().client()
-
-
-@mock_aws
-def test_commit_table_update_schema(
-    _glue: boto3.client,
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    table_schema_nested: Schema,
-    database_name: str,
-    table_name: str,
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    original_table_metadata = table.metadata
-    original_table_metadata_location = table.metadata_location
-    original_table_last_updated_ms = table.metadata.last_updated_ms
-
-    assert TABLE_METADATA_LOCATION_REGEX.match(original_table_metadata_location)
-    assert test_catalog._parse_metadata_version(original_table_metadata_location) == 0
-    assert original_table_metadata.current_schema_id == 0
-    assert len(original_table_metadata.metadata_log) == 0
-
-    transaction = table.transaction()
-    update = transaction.update_schema()
-    update.add_column(path="b", field_type=IntegerType())
-    update.commit()
-    transaction.commit_transaction()
-
-    updated_table_metadata = table.metadata
-
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.current_schema_id == 1
-    assert len(updated_table_metadata.schemas) == 2
-    new_schema = next(schema for schema in updated_table_metadata.schemas if schema.schema_id == 1)
-    assert new_schema
-    assert new_schema == update._apply()
-    assert new_schema.find_field("b").field_type == IntegerType()
-    assert len(updated_table_metadata.metadata_log) == 1
-    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
-    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
-
-    # Ensure schema is also pushed to Glue
-    table_info = _glue.get_table(
-        DatabaseName=database_name,
-        Name=table_name,
-    )
-    storage_descriptor = table_info["Table"]["StorageDescriptor"]
-    columns = storage_descriptor["Columns"]
-    assert len(columns) == len(table_schema_nested.fields) + 1
-    assert columns[-1] == {
-        "Name": "b",
-        "Type": "int",
-        "Parameters": {"iceberg.field.id": "18", "iceberg.field.optional": "true", "iceberg.field.current": "true"},
-    }
-    assert storage_descriptor["Location"] == f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
-
-
-@mock_aws
-def test_commit_table_properties(
-    _glue: boto3.client,
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    table_schema_nested: Schema,
-    database_name: str,
-    table_name: str,
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
-
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-    transaction = table.transaction()
-    transaction.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c", Description="test_description")
-    transaction.remove_properties("test_b")
-    transaction.commit_transaction()
-
-    updated_table_metadata = table.metadata
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert updated_table_metadata.properties == {"Description": "test_description", "test_a": "test_aa", "test_c": "test_c"}
-
-    table_info = _glue.get_table(
-        DatabaseName=database_name,
-        Name=table_name,
-    )
-    assert table_info["Table"]["Description"] == "test_description"
-
-
-@mock_aws
-def test_commit_append_table_snapshot_properties(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
-
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-    table.append(
-        pa.Table.from_pylist(
-            [{"foo": "foo_val", "bar": 1, "baz": False}],
-            schema=schema_to_pyarrow(table_schema_simple),
-        ),
-        snapshot_properties={"snapshot_prop_a": "test_prop_a"},
-    )
-
-    updated_table_metadata = table.metadata
-    summary = updated_table_metadata.snapshots[-1].summary
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-    assert summary is not None
-    assert summary["snapshot_prop_a"] == "test_prop_a"
-
-
-@mock_aws
-def test_commit_overwrite_table_snapshot_properties(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-    table = test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
-
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-
-    table.append(
-        pa.Table.from_pylist(
-            [{"foo": "foo_val", "bar": 1, "baz": False}],
-            schema=schema_to_pyarrow(table_schema_simple),
-        ),
-        snapshot_properties={"snapshot_prop_a": "test_prop_a"},
-    )
-
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 1
-
-    table.overwrite(
-        pa.Table.from_pylist(
-            [{"foo": "foo_val", "bar": 2, "baz": True}],
-            schema=schema_to_pyarrow(table_schema_simple),
-        ),
-        snapshot_properties={"snapshot_prop_b": "test_prop_b"},
-    )
-
-    updated_table_metadata = table.metadata
-    summary = updated_table_metadata.snapshots[-1].summary
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 2
-    assert summary is not None
-    assert summary["snapshot_prop_a"] is None
-    assert summary["snapshot_prop_b"] == "test_prop_b"
-    assert len(updated_table_metadata.metadata_log) == 2
-
-
-@mock_aws
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_create_table_transaction(
-    _glue: boto3.client,
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    table_schema_nested: Schema,
-    database_name: str,
-    table_name: str,
-    format_version: int,
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-
-    with test_catalog.create_table_transaction(
-        identifier,
-        table_schema_nested,
-        partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo")),
-        properties={"format-version": format_version},
-    ) as txn:
-        last_updated_metadata = txn.table_metadata.last_updated_ms
-        with txn.update_schema() as update_schema:
-            update_schema.add_column(path="b", field_type=IntegerType())
-
-        with txn.update_spec() as update_spec:
-            update_spec.add_identity("bar")
-
-        txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
-
-    table = test_catalog.load_table(identifier)
-
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-    assert table.format_version == format_version
-    assert table.schema().find_field("b").field_type == IntegerType()
-    assert table.properties == {"test_a": "test_aa", "test_b": "test_b", "test_c": "test_c"}
-    assert table.spec().last_assigned_field_id == 1001
-    assert table.spec().fields_by_source_id(1)[0].name == "foo"
-    assert table.spec().fields_by_source_id(1)[0].field_id == 1000
-    assert table.spec().fields_by_source_id(1)[0].transform == IdentityTransform()
-    assert table.spec().fields_by_source_id(2)[0].name == "bar"
-    assert table.spec().fields_by_source_id(2)[0].field_id == 1001
-    assert table.spec().fields_by_source_id(2)[0].transform == IdentityTransform()
-    assert table.metadata.last_updated_ms > last_updated_metadata
-
-
-@mock_aws
-def test_table_exists(
-    _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name)
-    test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
-    # Act and Assert for an existing table
-    assert test_catalog.table_exists(identifier) is True
-    # Act and Assert for a non-existing table
-    assert test_catalog.table_exists(("non", "exist")) is False
-
-
-@mock_aws
-def test_register_table_with_given_location(
-    _bucket_initialize: None, moto_endpoint_url: str, metadata_location: str, database_name: str, table_name: str
-) -> None:
-    catalog_name = "glue"
-    identifier = (database_name, table_name)
-    location = metadata_location
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
-    test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
-    table = test_catalog.register_table(identifier, location)
-    assert table.identifier == (catalog_name,) + identifier
-    assert test_catalog.table_exists(identifier) is True
-
-
-@mock_aws
-def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    catalog_name = "glue"
-    test_endpoint = "https://test-endpoint"
-    test_catalog = GlueCatalog(
-        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
-    )
-    assert test_catalog.glue.meta.endpoint_url == test_endpoint
-
-
-@mock_aws
-def test_list_views(
-    _bucket_initialize: None,
-    moto_endpoint_url: str,
-    database_name: str,
-    table_name: str,
-    view_table_list: List[str],
-    non_view_table_name: str
-) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
-    test_catalog.create_namespace(namespace=database_name)
-    glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
-    for view_name in view_table_list:
-        glue_client.create_table(
-            DatabaseName=database_name,
-            TableInput={
-                "Name": view_name,
-                "TableType": "VIRTUAL_VIEW",
-                "Parameters": {"table_type": "iceberg"},
-            },
+        session = boto3.Session(
+            profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
+            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
+            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
+            aws_access_key_id=get_first_property_value(
+                properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
+            ),
+            aws_secret_access_key=get_first_property_value(
+                properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
+            ),
+            aws_session_token=get_first_property_value(
+                properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
+            ),
         )
-    for non_view in non_view_table_name:
-        glue_client.create_table(
-            DatabaseName=database_name,
-            TableInput={
-                "Name": non_view,
-                "TableType": "EXTERNAL_TABLE",
-                "Parameters": {"table_type": "iceberg"},
-            },
+        self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
+
+        if glue_catalog_id := properties.get(GLUE_ID):
+            _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
+
+    def _convert_glue_to_iceberg(self, glue_table: TableTypeDef) -> Table:
+        properties: Properties = glue_table["Parameters"]
+
+        assert glue_table["DatabaseName"]
+        assert glue_table["Parameters"]
+        database_name = glue_table["DatabaseName"]
+        table_name = glue_table["Name"]
+
+        if TABLE_TYPE not in properties:
+            raise NoSuchPropertyException(
+                f"Property {TABLE_TYPE} missing, could not determine type: {database_name}.{table_name}"
+            )
+        glue_table_type = properties[TABLE_TYPE]
+
+        if glue_table_type.lower() != ICEBERG:
+            raise NoSuchIcebergTableError(
+                f"Property table_type is {glue_table_type}, expected {ICEBERG}: {database_name}.{table_name}"
+            )
+
+        if METADATA_LOCATION not in properties:
+            raise NoSuchPropertyException(
+                f"Table property {METADATA_LOCATION} is missing, cannot find metadata for: {database_name}.{table_name}"
+            )
+        metadata_location = properties[METADATA_LOCATION]
+
+        io = self._load_file_io(location=metadata_location)
+        file = io.new_input(metadata_location)
+        metadata = FromInputFile.table_metadata(file)
+        return Table(
+            identifier=(database_name, table_name),
+            metadata=metadata,
+            metadata_location=metadata_location,
+            io=self._load_file_io(metadata.properties, metadata_location),
+            catalog=self,
         )
-    loaded_view_list = test_catalog.list_views(database_name)
-    assert set(loaded_view_list) == view_table_list
+
+    def _create_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef) -> None:
+        try:
+            self.glue.create_table(DatabaseName=database_name, TableInput=table_input)
+        except self.glue.exceptions.AlreadyExistsException as e:
+            raise TableAlreadyExistsError(f"Table {database_name}.{table_name} already exists") from e
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchNamespaceError(f"Database {database_name} does not exist") from e
+
+    def _update_glue_table(self, database_name: str, table_name: str, table_input: TableInputTypeDef, version_id: str) -> None:
+        try:
+            self.glue.update_table(
+                DatabaseName=database_name,
+                TableInput=table_input,
+                SkipArchive=property_as_bool(self.properties, GLUE_SKIP_ARCHIVE, GLUE_SKIP_ARCHIVE_DEFAULT),
+                VersionId=version_id,
+            )
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name} (Glue table version {version_id})") from e
+        except self.glue.exceptions.ConcurrentModificationException as e:
+            raise CommitFailedException(
+                f"Cannot commit {database_name}.{table_name} because Glue detected concurrent update to table version {version_id}"
+            ) from e
+
+    def _get_glue_table(self, database_name: str, table_name: str) -> TableTypeDef:
+        try:
+            load_table_response = self.glue.get_table(DatabaseName=database_name, Name=table_name)
+            return load_table_response["Table"]
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
+
+    def create_table(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        """
+        Create an Iceberg table.
+
+        Args:
+            identifier: Table identifier.
+            schema: Table's schema.
+            location: Location for the table. Optional Argument.
+            partition_spec: PartitionSpec for the table.
+            sort_order: SortOrder for the table.
+            properties: Table properties that can be a string based dictionary.
+
+        Returns:
+            Table: the created table instance.
+
+        Raises:
+            AlreadyExistsError: If a table with the name already exists.
+            ValueError: If the identifier is invalid, or no path is given to store metadata.
+
+        """
+        staged_table = self._create_staged_table(
+            identifier=identifier,
+            schema=schema,
+            location=location,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+        )
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+
+        self._write_metadata(staged_table.metadata, staged_table.io, staged_table.metadata_location)
+        table_input = _construct_table_input(table_name, staged_table.metadata_location, properties, staged_table.metadata)
+        self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
+
+        return self.load_table(identifier=identifier)
+
+    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+        """Register a new table using existing metadata.
+
+        Args:
+            identifier Union[str, Identifier]: Table identifier for the table
+            metadata_location str: The location to the metadata
+
+        Returns:
+            Table: The newly registered table
+
+        Raises:
+            TableAlreadyExistsError: If the table already exists
+        """
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        properties = EMPTY_DICT
+        io = self._load_file_io(location=metadata_location)
+        file = io.new_input(metadata_location)
+        metadata = FromInputFile.table_metadata(file)
+        table_input = _construct_table_input(table_name, metadata_location, properties, metadata)
+        self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
+        return self.load_table(identifier=identifier)
+
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
+
+        Args:
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
+
+        Returns:
+            CommitTableResponse: The updated metadata.
+
+        Raises:
+            NoSuchTableError: If a table with the given identifier does not exist.
+            CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
+        """
+        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
+
+        current_glue_table: Optional[TableTypeDef]
+        glue_table_version_id: Optional[str]
+        current_table: Optional[Table]
+        try:
+            current_glue_table = self._get_glue_table(database_name=database_name, table_name=table_name)
+            glue_table_version_id = current_glue_table.get("VersionId")
+            current_table = self._convert_glue_to_iceberg(glue_table=current_glue_table)
+        except NoSuchTableError:
+            current_glue_table = None
+            glue_table_version_id = None
+            current_table = None
+
+        updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
+        if current_table and updated_staged_table.metadata == current_table.metadata:
+            # no changes, do nothing
+            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+        self._write_metadata(
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
+        )
+
+        if current_table:
+            # table exists, update the table
+            if not glue_table_version_id:
+                raise CommitFailedException(
+                    f"Cannot commit {database_name}.{table_name} because Glue table version id is missing"
+                )
+
+            # Pass `version_id` to implement optimistic locking: it ensures updates are rejected if concurrent
+            # modifications occur. See more details at https://iceberg.apache.org/docs/latest/aws/#optimistic-locking
+            update_table_input = _construct_table_input(
+                table_name=table_name,
+                metadata_location=updated_staged_table.metadata_location,
+                properties=updated_staged_table.properties,
+                metadata=updated_staged_table.metadata,
+                glue_table=current_glue_table,
+                prev_metadata_location=current_table.metadata_location,
+            )
+            self._update_glue_table(
+                database_name=database_name,
+                table_name=table_name,
+                table_input=update_table_input,
+                version_id=glue_table_version_id,
+            )
+        else:
+            # table does not exist, create the table
+            create_table_input = _construct_table_input(
+                table_name=table_name,
+                metadata_location=updated_staged_table.metadata_location,
+                properties=updated_staged_table.properties,
+                metadata=updated_staged_table.metadata,
+            )
+            self._create_glue_table(database_name=database_name, table_name=table_name, table_input=create_table_input)
+
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
+
+    def load_table(self, identifier: Union[str, Identifier]) -> Table:
+        """Load the table's metadata and returns the table instance.
+
+        You can also use this method to check for table existence using 'try catalog.table() except TableNotFoundError'.
+        Note: This method doesn't scan data stored in the table.
+
+        Args:
+            identifier: Table identifier.
+
+        Returns:
+            Table: the table instance with its metadata.
+
+        Raises:
+            NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
+        """
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+
+        return self._convert_glue_to_iceberg(self._get_glue_table(database_name=database_name, table_name=table_name))
+
+    def drop_table(self, identifier: Union[str, Identifier]) -> None:
+        """Drop a table.
+
+        Args:
+            identifier: Table identifier.
+
+        Raises:
+            NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
+        """
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
+        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        try:
+            self.glue.delete_table(DatabaseName=database_name, Name=table_name)
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
+
+    def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
+        """Rename a fully classified table name.
+
+        This method can only rename Iceberg tables in AWS Glue.
+
+        Args:
+            from_identifier: Existing table identifier.
+            to_identifier: New table identifier.
+
+        Returns:
+            Table: the updated table instance with its metadata.
+
+        Raises:
+            ValueError: When from table identifier is invalid.
+            NoSuchTableError: When a table with the name does not exist.
+            NoSuchIcebergTableError: When from table is not a valid iceberg table.
+            NoSuchPropertyException: When from table miss some required properties.
+            NoSuchNamespaceError: When the destination namespace doesn't exist.
+        """
+        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
+        try:
+            get_table_response = self.glue.get_table(DatabaseName=from_database_name, Name=from_table_name)
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchTableError(f"Table does not exist: {from_database_name}.{from_table_name}") from e
+
+        glue_table = get_table_response["Table"]
+
+        try:
+            # verify that from_identifier is a valid iceberg table
+            self._convert_glue_to_iceberg(glue_table=glue_table)
+        except NoSuchPropertyException as e:
+            raise NoSuchPropertyException(
+                f"Failed to rename table {from_database_name}.{from_table_name} since it is missing required properties"
+            ) from e
+        except NoSuchIcebergTableError as e:
+            raise NoSuchIcebergTableError(
+                f"Failed to rename table {from_database_name}.{from_table_name} since it is not a valid iceberg table"
+            ) from e
+
+        rename_table_input = _construct_rename_table_input(to_table_name=to_table_name, glue_table=glue_table)
+        self._create_glue_table(database_name=to_database_name, table_name=to_table_name, table_input=rename_table_input)
+
+        try:
+            self.drop_table(from_identifier)
+        except Exception as e:
+            log_message = f"Failed to drop old table {from_database_name}.{from_table_name}. "
+
+            try:
+                self.drop_table(to_identifier)
+                log_message += f"Rolled back table creation for {to_database_name}.{to_table_name}."
+            except NoSuchTableError:
+                log_message += (
+                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. " f"Please clean up manually"
+                )
+
+            raise ValueError(log_message) from e
+
+        return self.load_table(to_identifier)
+
+    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+        """Create a namespace in the catalog.
+
+        Args:
+            namespace: Namespace identifier.
+            properties: A string dictionary of properties for the given namespace.
+
+        Raises:
+            ValueError: If the identifier is invalid.
+            AlreadyExistsError: If a namespace with the given name already exists.
+        """
+        database_name = self.identifier_to_database(namespace)
+        try:
+            self.glue.create_database(DatabaseInput=_construct_database_input(database_name, properties))
+        except self.glue.exceptions.AlreadyExistsException as e:
+            raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
+
+    def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
+        """Drop a namespace.
+
+        A Glue namespace can only be dropped if it is empty.
+
+        Args:
+            namespace: Namespace identifier.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
+            NamespaceNotEmptyError: If the namespace is not empty.
+        """
+        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        try:
+            table_list = self.list_tables(namespace=database_name)
+        except NoSuchNamespaceError as e:
+            raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
+
+        if len(table_list) > 0:
+            raise NamespaceNotEmptyError(f"Database {database_name} is not empty")
+
+        self.glue.delete_database(Name=database_name)
+
+    def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        """List Iceberg tables under the given namespace in the catalog.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier to search.
+
+        Returns:
+            List[Identifier]: list of table identifiers.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
+        """
+        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        table_list: List[TableTypeDef] = []
+        next_token: Optional[str] = None
+        try:
+            while True:
+                table_list_response = (
+                    self.glue.get_tables(DatabaseName=database_name)
+                    if not next_token
+                    else self.glue.get_tables(DatabaseName=database_name, NextToken=next_token)
+                )
+                table_list.extend(table_list_response["TableList"])
+                next_token = table_list_response.get("NextToken")
+                if not next_token:
+                    break
+
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
+        return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
+
+    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+        """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
+
+        Returns:
+            List[Identifier]: a List of namespace identifiers.
+        """
+        # Hierarchical namespace is not supported. Return an empty list
+        if namespace:
+            return []
+
+        database_list: List[DatabaseTypeDef] = []
+        next_token: Optional[str] = None
+
+        while True:
+            databases_response = self.glue.get_databases() if not next_token else self.glue.get_databases(NextToken=next_token)
+            database_list.extend(databases_response["DatabaseList"])
+            next_token = databases_response.get("NextToken")
+            if not next_token:
+                break
+
+        return [self.identifier_to_tuple(database["Name"]) for database in database_list]
+
+    def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
+        """Get properties for a namespace.
+
+        Args:
+            namespace: Namespace identifier.
+
+        Returns:
+            Properties: Properties for the given namespace.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist, or identifier is invalid.
+        """
+        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        try:
+            database_response = self.glue.get_database(Name=database_name)
+        except self.glue.exceptions.EntityNotFoundException as e:
+            raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
+        except self.glue.exceptions.InvalidInputException as e:
+            raise NoSuchNamespaceError(f"Invalid input for namespace {database_name}") from e
+
+        database = database_response["Database"]
+
+        properties = dict(database.get("Parameters", {}))
+        if "LocationUri" in database:
+            properties["location"] = database["LocationUri"]
+        if "Description" in database:
+            properties["Description"] = database["Description"]
+
+        return properties
+
+    def update_namespace_properties(
+        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
+    ) -> PropertiesUpdateSummary:
+        """Remove provided property keys and updates properties for a namespace.
+
+        Args:
+            namespace: Namespace identifier.
+            removals: Set of property keys that need to be removed. Optional Argument.
+            updates: Properties to be updated for the given namespace.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist， or identifier is invalid.
+            ValueError: If removals and updates have overlapping keys.
+        """
+        current_properties = self.load_namespace_properties(namespace=namespace)
+        properties_update_summary, updated_properties = self._get_updated_props_and_update_summary(
+            current_properties=current_properties, removals=removals, updates=updates
+        )
+
+        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        self.glue.update_database(Name=database_name, DatabaseInput=_construct_database_input(database_name, updated_properties))
+
+        return properties_update_summary
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
+    @staticmethod
+    def __is_iceberg_table(table: TableTypeDef) -> bool:
+        return table["Parameters"] is not None and table["Parameters"][TABLE_TYPE].lower() == ICEBERG

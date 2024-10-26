@@ -777,52 +777,7 @@ class GlueCatalog(MetastoreCatalog):
         return properties_update_summary
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List Iceberg views under the given namespace in the catalog.
-
-        Args:
-            namespace (str | Identifier): Namespace identifier to search.
-
-        Returns:
-            List[Identifier]: list of view identifiers.
-
-        Raises:
-            NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
-        """
-        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        view_list: List[TableTypeDef] = []
-        next_token: Optional[str] = None
-
-        try:
-            while True:
-                view_list_response = (
-                    self.glue.get_tables(DatabaseName=database_name)
-                    if not next_token
-                    else self.glue.get_tables(DatabaseName=database_name, NextToken=next_token)
-                )
-
-                for table in view_list_response["TableList"]:
-                    if self.__is_view(table):
-                        view_list.append(table)
-
-                next_token = view_list_response.get("NextToken")
-                if not next_token:
-                    break
-
-        except self.glue.exceptions.EntityNotFoundException as e:
-            raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
-
-        return [(database_name, view["Name"]) for view in view_list]
-
-    def __is_view(self, table: TableTypeDef) -> bool:
-        """Check if the given table is a view.
-
-        Args:
-            table (TableTypeDef): The table object to check.
-
-        Returns:
-            bool: True if the table is a view, False otherwise.
-        """
-        return table.get('TableType', '') == 'VIRTUAL_VIEW'
+        raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
