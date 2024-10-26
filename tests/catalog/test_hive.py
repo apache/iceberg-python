@@ -1233,3 +1233,42 @@ def test_create_hive_client_failure() -> None:
         with pytest.raises(Exception, match="Connection failed"):
             HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
+
+def test_list_views(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    view1 = deepcopy(hive_table)
+    view1.tableName = "view1"
+    view1.dbName = "database"
+    view1.tableType = "VIEW"
+    view1.parameters["table_type"] = "ICEBERG"
+
+    view2 = deepcopy(hive_table)
+    view2.tableName = "view2"
+    view2.dbName = "database"
+    view2.tableType = "VIEW"
+    view2.parameters["table_type"] = "ICEBERG"
+
+    non_iceberg_view = deepcopy(hive_table)
+    non_iceberg_view.tableName = "non_iceberg_view"
+    non_iceberg_view.dbName = "database"
+    non_iceberg_view.tableType = "VIEW"
+    non_iceberg_view.parameters["table_type"] = "non_iceberg"
+
+    non_view_table = deepcopy(hive_table)
+    non_view_table.tableName = "table"
+    non_view_table.dbName = "database"
+    non_view_table.tableType = "TABLE"
+    non_view_table.parameters["table_type"] = "ICEBERG"
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_all_tables.return_value = ["view1", "view2", "non_iceberg_view", "table"]
+    catalog._client.__enter__().get_table_objects_by_name.return_value = [view1, view2, non_iceberg_view, non_view_table]
+
+    got_views = catalog.list_views("database")
+    assert got_views == [("database", "view1"), ("database", "view2")]
+
+    catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
+    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
+        dbname="database", tbl_names=["view1", "view2", "non_iceberg_view", "table"]
+    )
