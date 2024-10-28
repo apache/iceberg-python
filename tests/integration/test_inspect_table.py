@@ -851,6 +851,8 @@ def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pandas.testing import assert_frame_equal
+
     identifier = "default.table_metadata_all_manifests"
     try:
         session_catalog.drop_table(identifier=identifier)
@@ -873,8 +875,7 @@ def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, fo
     # check all_manifests when there are no snapshots
     lhs = tbl.inspect.all_manifests().to_pandas()
     rhs = spark.table(f"{identifier}.all_manifests").toPandas()
-    assert lhs.empty
-    assert rhs.empty
+    assert_frame_equal(lhs, rhs, check_dtype=False)
 
     spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
 
@@ -886,6 +887,7 @@ def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, fo
 
     spark.sql(f"INSERT OVERWRITE {identifier} VALUES (1, 'a')")
 
+    tbl.refresh()
     df = tbl.inspect.all_manifests()
 
     assert df.column_names == [
@@ -935,6 +937,4 @@ def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, fo
 
     lhs = spark.table(f"{identifier}.all_manifests").toPandas()
     rhs = df.to_pandas()
-    for column in df.column_names:
-        for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
-            assert left == right, f"Difference in column {column}: {left} != {right}"
+    assert_frame_equal(lhs, rhs, check_dtype=False)
