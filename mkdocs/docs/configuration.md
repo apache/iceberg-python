@@ -22,20 +22,23 @@ hide:
   - under the License.
   -->
 
+# Configuration
+
 ## Tables
 
 Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                               | Options                           | Default | Description                                                                                 |
-| --------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec` | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level` | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.page-size-bytes`   | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`    | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`   | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.parquet.row-group-limit`   | Number of rows                    | 122880  | The Parquet row group limit                                                                 |
+| Key                                    | Options                           | Default | Description                                                                                 |
+| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
+| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
+| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
+| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
+| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
 
 ### Table behavior options
 
@@ -76,14 +79,15 @@ For the FileIO there are several configuration options available:
 
 | Key                  | Example                  | Description                                                                                                                                                                                                                                               |
 | -------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| s3.endpoint          | https://10.0.19.25/      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud. |
+| s3.endpoint          | <https://10.0.19.25/>      | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3FileIO with any s3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud. |
 | s3.access-key-id     | admin                    | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
 | s3.secret-access-key | password                 | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...           | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.signer            | bearer                   | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
-| s3.signer.uri        | http://my.signer:8080/s3 | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.singer.uri>/v1/aws/s3/sign`.                                                                |
+| s3.signer.uri        | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                          |
+| s3.signer.endpoint   | v1/main/s3-sign          | Configure the remote signing endpoint. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`. (default : v1/aws/s3/sign).                                                            |
 | s3.region            | us-west-2                | Sets the region of the bucket                                                                                                                                                                                                                             |
-| s3.proxy-uri         | http://my.proxy.com:8080 | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
+| s3.proxy-uri         | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                     | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
 
 <!-- markdown-link-check-enable-->
@@ -94,7 +98,7 @@ For the FileIO there are several configuration options available:
 
 | Key                  | Example             | Description                                      |
 | -------------------- | ------------------- | ------------------------------------------------ |
-| hdfs.host            | https://10.0.19.25/ | Configure the HDFS host to connect to            |
+| hdfs.host            | <https://10.0.19.25/> | Configure the HDFS host to connect to            |
 | hdfs.port            | 9000                | Configure the HDFS port to connect to.           |
 | hdfs.user            | user                | Configure the HDFS username used for connection. |
 | hdfs.kerberos_ticket | kerberos_ticket     | Configure the path to the Kerberos ticket cache. |
@@ -105,15 +109,15 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-disable -->
 
-| Key                     | Example                                                                                   | Description                                                                                                                                                                                                                                                                            |
-| ----------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| adlfs.connection-string | AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=http://localhost/ | A [connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string). This could be used to use FileIO with any adlfs-compatible object storage service that has a different endpoint (like [azurite](https://github.com/azure/azurite)). |
-| adlfs.account-name      | devstoreaccount1                                                                          | The account that you want to connect to                                                                                                                                                                                                                                                |
-| adlfs.account-key       | Eby8vdM02xNOcqF...                                                                        | The key to authentication against the account.                                                                                                                                                                                                                                         |
-| adlfs.sas-token         | NuHOuuzdQN7VRM%2FOpOeqBlawRCA845IY05h9eu1Yte4%3D                                          | The shared access signature                                                                                                                                                                                                                                                            |
-| adlfs.tenant-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The tenant-id                                                                                                                                                                                                                                                                          |
-| adlfs.client-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The client-id                                                                                                                                                                                                                                                                          |
-| adlfs.client-secret     | oCA3R6P\*ka#oa1Sms2J74z...                                                                | The client-secret                                                                                                                                                                                                                                                                      |
+| Key                    | Example                                                                                   | Description                                                                                                                                                                                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| adls.connection-string | AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqF...;BlobEndpoint=<http://localhost/> | A [connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string). This could be used to use FileIO with any adls-compatible object storage service that has a different endpoint (like [azurite](https://github.com/azure/azurite)). |
+| adls.account-name      | devstoreaccount1                                                                          | The account that you want to connect to                                                                                                                                                                                                                                                |
+| adls.account-key       | Eby8vdM02xNOcqF...                                                                        | The key to authentication against the account.                                                                                                                                                                                                                                         |
+| adls.sas-token         | NuHOuuzdQN7VRM%2FOpOeqBlawRCA845IY05h9eu1Yte4%3D                                          | The shared access signature                                                                                                                                                                                                                                                            |
+| adls.tenant-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The tenant-id                                                                                                                                                                                                                                                                          |
+| adls.client-id         | ad667be4-b811-11ed-afa1-0242ac120002                                                      | The client-id                                                                                                                                                                                                                                                                          |
+| adls.client-secret     | oCA3R6P\*ka#oa1Sms2J74z...                                                                | The client-secret                                                                                                                                                                                                                                                                      |
 
 <!-- markdown-link-check-enable-->
 
@@ -131,9 +135,19 @@ For the FileIO there are several configuration options available:
 | gcs.cache-timeout           | 60                  | Configure the cache expiration time in seconds for object metadata cache                                                                                                                                                                            |
 | gcs.requester-pays          | False               | Configure whether to use requester-pays requests                                                                                                                                                                                                    |
 | gcs.session-kwargs          | {}                  | Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.                                                                                                                                       |
-| gcs.endpoint                | http://0.0.0.0:4443 | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
+| gcs.endpoint                | <http://0.0.0.0:4443> | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
 | gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
 | gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
+
+<!-- markdown-link-check-enable-->
+
+### PyArrow
+
+<!-- markdown-link-check-disable -->
+
+| Key                             | Example | Description                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
 <!-- markdown-link-check-enable-->
 
@@ -186,19 +200,19 @@ catalog:
 
 <!-- markdown-link-check-disable -->
 
-| Key                    | Example                          | Description                                                                                        |
-| ---------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| uri                    | https://rest-catalog/ws          | URI identifying the REST Server                                                                    |
-| ugi                    | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
-| credential             | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
-| token                  | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
-| scope                  | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
-| resource               | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
-| audience               | rest_catalog                     | Logical name of target resource or service                                                         |
-| rest.sigv4-enabled     | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
-| rest.signing-region    | us-east-1                        | The region to use when SigV4 signing a request                                                     |
-| rest.signing-name      | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
-| rest.authorization-url | https://auth-service/cc          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| Key                 | Example                          | Description                                                                                        |
+| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| uri                 | <https://rest-catalog/ws>          | URI identifying the REST Server                                                                    |
+| ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
+| credential          | t-1234:secret                    | Credential to use for OAuth2 credential flow when initializing the catalog                         |
+| token               | FEW23.DFSDF.FSDF                 | Bearer token value to use for `Authorization` header                                               |
+| scope               | openid offline corpds:ds:profile | Desired scope of the requested security token (default : catalog)                                  |
+| resource            | rest_catalog.iceberg.com         | URI for the target resource or service                                                             |
+| audience            | rest_catalog                     | Logical name of target resource or service                                                         |
+| rest.sigv4-enabled  | true                             | Sign requests to the REST Server using AWS SigV4 protocol                                          |
+| rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
+| rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
+| oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
 
 <!-- markdown-link-check-enable-->
 
@@ -217,7 +231,7 @@ catalog:
 
 ### SQL Catalog
 
-The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
+The SQL catalog requires a database for its backend. PyIceberg supports PostgreSQL and SQLite through psycopg2. The database connection has to be configured using the `uri` property. The init_catalog_tables is optional and defaults to True. If it is set to False, the catalog tables will not be created when the SQLCatalog is initialized. See SQLAlchemy's [documentation for URL format](https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls):
 
 For PostgreSQL:
 
@@ -226,6 +240,7 @@ catalog:
   default:
     type: sql
     uri: postgresql+psycopg2://username:password@localhost/mydatabase
+    init_catalog_tables: false
 ```
 
 In the case of SQLite:
@@ -242,6 +257,7 @@ catalog:
   default:
     type: sql
     uri: sqlite:////tmp/pyiceberg.db
+    init_catalog_tables: false
 ```
 
 | Key           | Example                                                      | Default | Description                                                                                                                                                                                    |
@@ -313,7 +329,7 @@ catalog:
 | ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
 | glue.id                | 111111111111                         | Configure the 12-digit ID of the Glue Catalog                                   |
 | glue.skip-archive      | true                                 | Configure whether to skip the archival of older table versions. Default to true |
-| glue.endpoint          | https://glue.us-east-1.amazonaws.com | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
+| glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
 | glue.profile-name      | default                              | Configure the static profile used to access the Glue Catalog                    |
 | glue.region            | us-east-1                            | Set the region of the Glue Catalog                                              |
 | glue.access-key-id     | admin                                | Configure the static access key id used to access the Glue Catalog              |

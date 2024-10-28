@@ -42,7 +42,7 @@ To get started, you can run `make install`, which installs Poetry and all the de
 
 If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
 
-To set up IDEA with Poetry ([also on Loom](https://www.loom.com/share/6d36464d45f244729d91003e7f671fd2)):
+To set up IDEA with Poetry:
 
 - Open up the Python project in IntelliJ
 - Make sure that you're on latest main (that includes Poetry)
@@ -70,7 +70,7 @@ pip3 install -e ".[s3fs,hive]"
 
 Install it directly for GitHub (not recommended), but sometimes handy:
 
-```
+```shell
 pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyarrow]"
 ```
 
@@ -106,28 +106,28 @@ For Python, `pytest` is used a testing framework in combination with `coverage` 
 make test
 ```
 
-By default, S3 and ADLFS tests are ignored because that require minio and azurite to be running.
+By default, S3 and ADLS tests are ignored because that require minio and azurite to be running.
 To run the S3 suite:
 
 ```bash
 make test-s3
 ```
 
-To run the ADLFS suite:
+To run the ADLS suite:
 
 ```bash
-make test-adlfs
+make test-adls
 ```
 
 To pass additional arguments to pytest, you can use `PYTEST_ARGS`.
 
-_Run pytest in verbose mode_
+### Run pytest in verbose mode
 
 ```sh
 make test PYTEST_ARGS="-v"
 ```
 
-_Run pytest with pdb enabled_
+### Run pytest with pdb enabled
 
 ```sh
 make test PYTEST_ARGS="--pdb"
@@ -176,15 +176,33 @@ def load_something():
 
 Which will warn:
 
-```
+```text
 Call to load_something, deprecated in 0.1.0, will be removed in 0.2.0. Please use load_something_else() instead.
+```
+
+If you want to remove a property or notify about a behavior change, please add a deprecation notice by calling the deprecation_message function:
+
+```python
+from pyiceberg.utils.deprecated import deprecation_message
+
+deprecation_message(
+    deprecated_in="0.1.0",
+    removed_in="0.2.0",
+    help_message="The old_property is deprecated. Please use the something_else property instead.",
+)
+```
+
+Which will warn:
+
+```text
+Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
 
 ## Type annotations
 
 For the type annotation the types from the `Typing` package are used.
 
-PyIceberg offers support from Python 3.8 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
+PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
 
 ## Third party libraries
 

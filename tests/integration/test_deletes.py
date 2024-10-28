@@ -226,6 +226,127 @@ def test_delete_partitioned_table_positional_deletes(spark: SparkSession, sessio
 
 @pytest.mark.integration
 @pytest.mark.filterwarnings("ignore:Merge on read is not yet supported, falling back to copy-on-write")
+def test_delete_partitioned_table_positional_deletes_empty_batch(spark: SparkSession, session_catalog: RestCatalog) -> None:
+    identifier = "default.test_delete_partitioned_table_positional_deletes_empty_batch"
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number_partitioned  int,
+                number              int
+            )
+            USING iceberg
+            PARTITIONED BY (number_partitioned)
+            TBLPROPERTIES(
+                'format-version' = 2,
+                'write.delete.mode'='merge-on-read',
+                'write.update.mode'='merge-on-read',
+                'write.merge.mode'='merge-on-read',
+                'write.parquet.row-group-limit'=1
+            )
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array([10, 10, 10]),
+            pa.array([1, 2, 3]),
+        ],
+        schema=pa.schema([pa.field("number_partitioned", pa.int32()), pa.field("number", pa.int32())]),
+    )
+
+    tbl.append(arrow_table)
+
+    assert len(tbl.scan().to_arrow()) == 3
+
+    run_spark_commands(
+        spark,
+        [
+            # Generate a positional delete
+            f"""
+            DELETE FROM {identifier} WHERE number = 1
+        """,
+        ],
+    )
+    # Assert that there is just a single Parquet file, that has one merge on read file
+    tbl = tbl.refresh()
+
+    files = list(tbl.scan().plan_files())
+    assert len(files) == 1
+    assert len(files[0].delete_files) == 1
+
+    assert len(tbl.scan().to_arrow()) == 2
+
+    assert len(tbl.scan(row_filter="number_partitioned == 10").to_arrow()) == 2
+
+    assert len(tbl.scan(row_filter="number_partitioned == 1").to_arrow()) == 0
+
+    reader = tbl.scan(row_filter="number_partitioned == 1").to_arrow_batch_reader()
+    assert isinstance(reader, pa.RecordBatchReader)
+    assert len(reader.read_all()) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.filterwarnings("ignore:Merge on read is not yet supported, falling back to copy-on-write")
+def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
+    identifier = "default.test_read_multiple_batches_in_task_with_position_deletes"
+
+    run_spark_commands(
+        spark,
+        [
+            f"DROP TABLE IF EXISTS {identifier}",
+            f"""
+            CREATE TABLE {identifier} (
+                number              int
+            )
+            USING iceberg
+            TBLPROPERTIES(
+                'format-version' = 2,
+                'write.delete.mode'='merge-on-read',
+                'write.update.mode'='merge-on-read',
+                'write.merge.mode'='merge-on-read'
+            )
+        """,
+        ],
+    )
+
+    tbl = session_catalog.load_table(identifier)
+
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array(list(range(1, 1001)) * 100),
+        ],
+        schema=pa.schema([pa.field("number", pa.int32())]),
+    )
+
+    tbl.append(arrow_table)
+
+    run_spark_commands(
+        spark,
+        [
+            f"""
+            DELETE FROM {identifier} WHERE number in (1, 2, 3, 4)
+        """,
+        ],
+    )
+
+    tbl.refresh()
+
+    reader = tbl.scan(row_filter="number <= 50").to_arrow_batch_reader()
+    assert isinstance(reader, pa.RecordBatchReader)
+    pyiceberg_count = len(reader.read_all())
+    expected_count = 46 * 100
+    assert pyiceberg_count == expected_count, f"Failing check. {pyiceberg_count} != {expected_count}"
+
+
+@pytest.mark.integration
+@pytest.mark.filterwarnings("ignore:Merge on read is not yet supported, falling back to copy-on-write")
 def test_overwrite_partitioned_table(spark: SparkSession, session_catalog: RestCatalog) -> None:
     identifier = "default.table_partitioned_delete"
 

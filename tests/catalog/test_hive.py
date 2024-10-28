@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,redefined-outer-name
 import copy
 import uuid
+from copy import deepcopy
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -905,23 +906,30 @@ def test_drop_database_does_not_exists() -> None:
     assert "Database does not exists: does_not_exists" in str(exc_info.value)
 
 
-def test_list_tables() -> None:
+def test_list_tables(hive_table: HiveTable) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
-    catalog._client = MagicMock()
-    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2"]
+    tbl1 = deepcopy(hive_table)
+    tbl1.tableName = "table1"
+    tbl1.dbName = "database"
+    tbl2 = deepcopy(hive_table)
+    tbl2.tableName = "table2"
+    tbl2.dbName = "database"
+    tbl3 = deepcopy(hive_table)
+    tbl3.tableName = "table3"
+    tbl3.dbName = "database"
+    tbl3.parameters["table_type"] = "non_iceberg"
 
-    assert catalog.list_tables("database") == [
-        (
-            "database",
-            "table1",
-        ),
-        (
-            "database",
-            "table2",
-        ),
-    ]
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3"]
+    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3]
+
+    got_tables = catalog.list_tables("database")
+    assert got_tables == [("database", "table1"), ("database", "table2")]
     catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
+    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
+        dbname="database", tbl_names=["table1", "table2", "table3"]
+    )
 
 
 def test_list_namespaces() -> None:
@@ -1195,3 +1203,33 @@ def test_hive_wait_for_lock() -> None:
     with pytest.raises(WaitingForLockException):
         catalog._wait_for_lock("db", "tbl", lockid, catalog._client)
     assert catalog._client.check_lock.call_count == 5
+
+
+def test_create_hive_client_success() -> None:
+    properties = {"uri": "thrift://localhost:10000", "ugi": "user"}
+
+    with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
+        client = HiveCatalog._create_hive_client(properties)
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user")
+        assert client is not None
+
+
+def test_create_hive_client_multiple_uris() -> None:
+    properties = {"uri": "thrift://localhost:10000,thrift://localhost:10001", "ugi": "user"}
+
+    with patch("pyiceberg.catalog.hive._HiveClient") as mock_hive_client:
+        mock_hive_client.side_effect = [Exception("Connection failed"), MagicMock()]
+
+        client = HiveCatalog._create_hive_client(properties)
+        assert mock_hive_client.call_count == 2
+        mock_hive_client.assert_has_calls([call("thrift://localhost:10000", "user"), call("thrift://localhost:10001", "user")])
+        assert client is not None
+
+
+def test_create_hive_client_failure() -> None:
+    properties = {"uri": "thrift://localhost:10000,thrift://localhost:10001", "ugi": "user"}
+
+    with patch("pyiceberg.catalog.hive._HiveClient", side_effect=Exception("Connection failed")) as mock_hive_client:
+        with pytest.raises(Exception, match="Connection failed"):
+            HiveCatalog._create_hive_client(properties)
+        assert mock_hive_client.call_count == 2
