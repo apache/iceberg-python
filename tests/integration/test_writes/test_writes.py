@@ -1460,7 +1460,8 @@ def test_abort_table_transaction_on_exception(
 
     # Pre-populate some data
     tbl.append(arrow_table_with_null)
-    assert len(tbl.scan().to_pandas()) == 3
+    table_size = len(arrow_table_with_null)
+    assert len(tbl.scan().to_pandas()) == table_size
 
     # try to commit a transaction that raises exception at the middle
     with pytest.raises(ValueError):
