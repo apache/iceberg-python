@@ -1471,4 +1471,4 @@ def test_abort_table_transaction_on_exception(
             txn.append(arrow_table_with_null)  # type: ignore
 
     # Validate the transaction is aborted and no partial update is applied
-    assert len(tbl.scan().to_pandas()) == table_size
+    assert len(tbl.scan().to_pandas()) == table_size  # type: ignore
