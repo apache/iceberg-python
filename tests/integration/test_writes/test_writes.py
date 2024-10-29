@@ -1448,3 +1448,44 @@ def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) ->
             EqualTo("category", "A"),
         ),
     )
+
+
+@pytest.mark.integration
+def test_writing_null_structs(session_catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema([
+        pa.field(
+            "struct_field_1",
+            pa.struct([
+                pa.field("string_nested_1", pa.string()),
+                pa.field("int_item_2", pa.int32()),
+                pa.field("float_item_2", pa.float32()),
+            ]),
+        ),
+    ])
+
+    records = [
+        {
+            "struct_field_1": {
+                "string_nested_1": "nest_1",
+                "int_item_2": 1234,
+                "float_item_2": 1.234,
+            },
+        },
+        {},
+    ]
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.test_writing_null_structs",
+        )
+    except NoSuchTableError:
+        pass
+
+    table = session_catalog.create_table("default.test_writing_null_structs", schema)
+
+    pyarrow_table: pa.Table = pa.Table.from_pylist(records, schema=schema)
+    table.append(pyarrow_table)
+
+    assert pyarrow_table.to_pandas()["struct_field_1"].tolist() == table.scan().to_pandas()["struct_field_1"].tolist()
