@@ -1491,6 +1491,7 @@ def test_writing_null_structs(session_catalog: Catalog) -> None:
     assert pyarrow_table.to_pandas()["struct_field_1"].tolist() == table.scan().to_pandas()["struct_field_1"].tolist()
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_abort_table_transaction_on_exception(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
