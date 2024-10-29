@@ -40,7 +40,6 @@ from pyiceberg.typedef import Properties
 from pyiceberg.types import IntegerType
 from tests.conftest import (
     BUCKET_NAME,
-    DEPRECATED_AWS_SESSION_PROPERTIES,
     TABLE_METADATA_LOCATION_REGEX,
     UNIFIED_AWS_SESSION_PROPERTIES,
 )
@@ -667,7 +666,6 @@ def test_passing_glue_session_properties() -> None:
         "glue.region": "glue.region",
         "glue.session-token": "glue.session-token",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -689,7 +687,6 @@ def test_passing_unified_session_properties_to_glue() -> None:
     session_properties: Properties = {
         "glue.profile-name": "glue.profile-name",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:

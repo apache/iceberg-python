@@ -40,12 +40,6 @@ from mypy_boto3_glue.type_defs import (
 )
 
 from pyiceberg.catalog import (
-    DEPRECATED_ACCESS_KEY_ID,
-    DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
@@ -303,18 +297,11 @@ class GlueCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
-            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(
-                properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
-            ),
-            aws_secret_access_key=get_first_property_value(
-                properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
-            ),
-            aws_session_token=get_first_property_value(
-                properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
-            ),
+            profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME),
+            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
+            aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
 

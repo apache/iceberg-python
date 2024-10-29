@@ -45,7 +45,6 @@ from pyiceberg.schema import Schema
 from pyiceberg.typedef import Properties
 from tests.conftest import (
     BUCKET_NAME,
-    DEPRECATED_AWS_SESSION_PROPERTIES,
     TABLE_METADATA_LOCATION_REGEX,
     UNIFIED_AWS_SESSION_PROPERTIES,
 )
@@ -594,7 +593,6 @@ def test_passing_glue_session_properties() -> None:
         "dynamodb.region": "dynamodb.region",
         "dynamodb.session-token": "dynamodb.session-token",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -619,7 +617,6 @@ def test_passing_unified_session_properties_to_dynamodb() -> None:
     session_properties: Properties = {
         "dynamodb.profile-name": "dynamodb.profile-name",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
