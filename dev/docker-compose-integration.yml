@@ -47,6 +47,8 @@ services:
       iceberg_net:
     ports:
       - 8181:8181
+    volumes:
+      - ./warehouse:/warehouse
   minio:
     image: minio/minio
     container_name: pyiceberg-minio
