@@ -341,7 +341,7 @@ catalog:
 <!-- prettier-ignore-start -->
 
 !!! warning "Deprecated Properties"
-    `profile_name`, `region_name`, `botocore_session`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token` are deprecated and will be removed in 0.8.0:
+    `profile_name`, `region_name`, `botocore_session`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token` are deprecated and removed in 0.8.0:
 
 <!-- prettier-ignore-end -->
 
@@ -397,7 +397,7 @@ catalog:
 <!-- prettier-ignore-start -->
 
 !!! warning "Deprecated Properties"
-    `profile_name`, `region_name`, `botocore_session`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token` are deprecated and will be removed in 0.8.0:
+    `profile_name`, `region_name`, `botocore_session`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token` are deprecated and removed in 0.8.0:
 
 <!-- prettier-ignore-end -->
 
