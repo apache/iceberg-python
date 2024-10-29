@@ -1807,7 +1807,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
 
-        return pa.StructArray.from_arrays(arrays=field_arrays, fields=pa.struct(fields))
+        return pa.StructArray.from_arrays(
+            arrays=field_arrays,
+            fields=pa.struct(fields),
+            mask=struct_array.is_null() if isinstance(struct_array, pa.StructArray) else None,
+        )
 
     def field(self, field: NestedField, _: Optional[pa.Array], field_array: Optional[pa.Array]) -> Optional[pa.Array]:
         return field_array
