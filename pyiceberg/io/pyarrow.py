@@ -814,6 +814,8 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
 
     # Create the full range array with pyarrow
     full_range = pa.array(range(start_index, end_index))
+    # When available, replace with Arrow generator to improve performance
+    # See https://github.com/apache/iceberg-python/issues/1271 for details
 
     # Filter out values in all_chunks from full_range
     result = pc.filter(full_range, pc.invert(pc.is_in(full_range, value_set=all_chunks)))
