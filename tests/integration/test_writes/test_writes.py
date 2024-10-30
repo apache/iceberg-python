@@ -45,6 +45,7 @@ from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
+from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
     DateType,
@@ -738,7 +739,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
-            "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
+            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/pull/10369) that prevents create and commit a staged version 1 table"
         )
 
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
@@ -785,6 +786,62 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
     tbl = catalog.load_table(identifier=identifier)
     assert tbl.format_version == format_version
     assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
+    if format_version == 1 and isinstance(catalog, RestCatalog):
+        pytest.skip(
+            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/pull/10369) that prevents create and commit a staged version 1 table"
+        )
+
+    identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
+    identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier_ref)
+    except NoSuchTableError:
+        pass
+
+    iceberg_spec = PartitionSpec(*[
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="integer_partition")
+    ])
+
+    sort_order = SortOrder(*[SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC)])
+
+    txn = catalog.create_table_transaction(
+        identifier=identifier,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+    txn.commit_transaction()
+
+    tbl = catalog.load_table(identifier)
+
+    tbl_ref = catalog.create_table(
+        identifier=identifier_ref,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+
+    assert tbl.format_version == tbl_ref.format_version
+    assert tbl.schema() == tbl.schema()
+    assert tbl.schemas() == tbl_ref.schemas()
+    assert tbl.spec() == tbl_ref.spec()
+    assert tbl.specs() == tbl_ref.specs()
+    assert tbl.sort_order() == tbl_ref.sort_order()
+    assert tbl.sort_orders() == tbl_ref.sort_orders()
 
 
 @pytest.mark.integration
