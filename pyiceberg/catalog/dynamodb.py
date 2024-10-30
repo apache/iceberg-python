@@ -96,7 +96,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, DYNAMODB_PROFILE_NAME),
+            profile_name=properties.get(DYNAMODB_PROFILE_NAME),
             region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
             aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
             aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
