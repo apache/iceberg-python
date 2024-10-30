@@ -57,7 +57,6 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
@@ -812,7 +811,17 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
         all_chunks = positional_deletes[0]
     else:
         all_chunks = pa.chunked_array(itertools.chain(*[arr.chunks for arr in positional_deletes]))
-    return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
+
+    # Create the full range array with pyarrow
+    full_range = pa.array(range(start_index, end_index))
+    # When available, replace with Arrow generator to improve performance
+    # See https://github.com/apache/iceberg-python/issues/1271 for details
+
+    # Filter out values in all_chunks from full_range
+    result = pc.filter(full_range, pc.invert(pc.is_in(full_range, value_set=all_chunks)))
+
+    # Subtract the start_index from each element in the result
+    return pc.subtract(result, pa.scalar(start_index))
 
 
 def pyarrow_to_schema(
