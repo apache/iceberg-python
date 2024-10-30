@@ -218,8 +218,9 @@ def test_delete_partitioned_table_positional_deletes(spark: SparkSession, sessio
     # Will rewrite a data file without the positional delete
     tbl.delete(EqualTo("number", 40))
 
-    # One positional delete has been added
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "overwrite"]
+    # One positional delete has been added, but an OVERWRITE status is set
+    # https://github.com/apache/iceberg/issues/10122
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "overwrite", "overwrite"]
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10], "number": [20]}
 
 
@@ -447,7 +448,7 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     assert len(snapshots) == 3
 
     # Snapshots produced by Spark
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "delete"]
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "overwrite"]
 
     # Will rewrite one parquet file
     assert snapshots[2].summary == Summary(
