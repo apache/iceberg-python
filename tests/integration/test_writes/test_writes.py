@@ -836,7 +836,7 @@ def test_create_table_with_non_default_values(catalog: Catalog, table_schema_wit
     )
 
     assert tbl.format_version == tbl_ref.format_version
-    assert tbl.schema() == tbl.schema()
+    assert tbl.schema() == tbl_ref.schema()
     assert tbl.schemas() == tbl_ref.schemas()
     assert tbl.spec() == tbl_ref.spec()
     assert tbl.specs() == tbl_ref.specs()
