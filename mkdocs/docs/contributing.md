@@ -202,7 +202,7 @@ Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. P
 
 For the type annotation the types from the `Typing` package are used.
 
-PyIceberg offers support from Python 3.8 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
+PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
 
 ## Third party libraries
 
