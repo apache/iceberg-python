@@ -784,15 +784,23 @@ class Table:
     metadata_location: str = Field()
     io: FileIO
     catalog: Catalog
+    config: Dict[str, str]
 
     def __init__(
-        self, identifier: Identifier, metadata: TableMetadata, metadata_location: str, io: FileIO, catalog: Catalog
+        self,
+        identifier: Identifier,
+        metadata: TableMetadata,
+        metadata_location: str,
+        io: FileIO,
+        catalog: Catalog,
+        config: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
         self.metadata_location = metadata_location
         self.io = io
         self.catalog = catalog
+        self.config = config
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
