@@ -17,13 +17,13 @@
 # pylint:disable=redefined-outer-name
 import math
 import os
+import random
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
-import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -1373,14 +1373,14 @@ def test_delete_threshold(session_catalog: Catalog) -> None:
     date_start, date_end = date(2024, 1, 1), date(2024, 2, 1)
 
     # Generate the 'id' column
-    id_column = np.random.randint(id_min, id_max, num_rows)
+    id_column = [random.randint(id_min, id_max) for _ in range(num_rows)]
 
     # Generate the 'created_at' column as dates only
-    date_range = pd.date_range(start=date_start, end=date_end, freq="D")  # Daily frequency for dates
-    created_at_column = np.random.choice(date_range, num_rows)  # Convert to string (YYYY-MM-DD format)
+    date_range = pd.date_range(start=date_start, end=date_end, freq="D").to_list()  # Daily frequency for dates
+    created_at_column = [random.choice(date_range) for _ in range(num_rows)]  # Convert to string (YYYY-MM-DD format)
 
     # Generate the 'relevancy_score' column with a peak around 0.1
-    relevancy_score_column = np.random.beta(a=2, b=20, size=num_rows)  # Adjusting parameters to peak around 0.1
+    relevancy_score_column = [random.betavariate(2, 20) for _ in range(num_rows)]  # Adjusting parameters to peak around 0.1
 
     # Create the dataframe
     df = pd.DataFrame({"id": id_column, "created_at": created_at_column, "relevancy_score": relevancy_score_column})
@@ -1403,12 +1403,12 @@ def test_delete_threshold(session_catalog: Catalog) -> None:
 
 @pytest.mark.integration
 def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) -> None:
-    np.random.seed(876)
+    random.seed(876)
     N = 1440
     d = {
         "timestamp": pa.array([datetime(2023, 1, 1, 0, 0, 0) + timedelta(minutes=i) for i in range(N)]),
-        "category": pa.array([np.random.choice(["A", "B", "C"]) for _ in range(N)]),
-        "value": pa.array(np.random.normal(size=N)),
+        "category": pa.array([random.choice(["A", "B", "C"]) for _ in range(N)]),
+        "value": pa.array([random.gauss(0, 1) for _ in range(N)]),
     }
     data = pa.Table.from_pydict(d)
 
