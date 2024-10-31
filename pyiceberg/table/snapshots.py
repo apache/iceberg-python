@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 from collections import defaultdict
 from enum import Enum
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
@@ -182,7 +183,10 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     operation: Operation = Field()
     _additional_properties: Dict[str, str] = PrivateAttr()
 
-    def __init__(self, operation: Operation, **data: Any) -> None:
+    def __init__(self, operation: Optional[Operation] = None, **data: Any) -> None:
+        if operation is None:
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
