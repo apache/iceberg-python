@@ -770,7 +770,13 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
             self.update_schema.make_column_optional(full_name)
 
         if field.field_type.is_primitive and field.field_type != existing_field.field_type:
-            self.update_schema.update_column(full_name, field_type=field.field_type)
+            try:
+                # If the current type is wider than the new type, then
+                # we preform a noop
+                _ = promote(field.field_type, existing_field.field_type)
+            except ResolveError:
+                # If this is not the case, perform the type evolution
+                self.update_schema.update_column(full_name, field_type=field.field_type)
 
         if field.doc is not None and field.doc != existing_field.doc:
             self.update_schema.update_column(full_name, doc=field.doc)
