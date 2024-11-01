@@ -703,22 +703,22 @@ class CreateTableTransaction(Transaction):
 
         schema: Schema = table_metadata.schema()
         self._updates += (
-            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id, initial_change=True),
+            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id),
             SetCurrentSchemaUpdate(schema_id=-1),
         )
 
         spec: PartitionSpec = table_metadata.spec()
         if spec.is_unpartitioned():
-            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC, initial_change=True),)
+            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC),)
         else:
-            self._updates += (AddPartitionSpecUpdate(spec=spec, initial_change=True),)
+            self._updates += (AddPartitionSpecUpdate(spec=spec),)
         self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
         sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
         if sort_order is None or sort_order.is_unsorted:
-            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER, initial_change=True),)
+            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER),)
         else:
-            self._updates += (AddSortOrderUpdate(sort_order=sort_order, initial_change=True),)
+            self._updates += (AddSortOrderUpdate(sort_order=sort_order),)
         self._updates += (SetDefaultSortOrderUpdate(sort_order_id=-1),)
 
         self._updates += (

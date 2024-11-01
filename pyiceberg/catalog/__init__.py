@@ -1011,4 +1011,4 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             TableMetadata: An empty TableMetadata instance.
         """
-        return TableMetadataV1(location="", last_column_id=-1, schema=Schema())
+        return TableMetadataV1.model_construct(last_column_id=-1, schema=Schema())
