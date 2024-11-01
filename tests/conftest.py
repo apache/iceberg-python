@@ -2029,14 +2029,6 @@ TABLE_METADATA_LOCATION_REGEX = re.compile(
     re.X,
 )
 
-DEPRECATED_AWS_SESSION_PROPERTIES = {
-    "aws_access_key_id": "aws_access_key_id",
-    "aws_secret_access_key": "aws_secret_access_key",
-    "aws_session_token": "aws_session_token",
-    "region_name": "region_name",
-    "profile_name": "profile_name",
-}
-
 UNIFIED_AWS_SESSION_PROPERTIES = {
     "client.access-key-id": "client.access-key-id",
     "client.secret-access-key": "client.secret-access-key",
