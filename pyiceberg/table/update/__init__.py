@@ -494,6 +494,20 @@ def _(
     return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
 
 
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+    # TODO: implement me
+    return base_metadata
+
+
+@_apply_table_update.register(RemoveSnapshotsUpdate)
+def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    context.add_update(update)
+    # TODO: implement me
+    return base_metadata
+
+
 def update_table_metadata(
     base_metadata: TableMetadata,
     updates: Tuple[TableUpdate, ...],

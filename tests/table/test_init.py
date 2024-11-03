@@ -1260,10 +1260,11 @@ def test_table_module_refactoring_backward_compatibility() -> None:
         raise pytest.fail("Importing moved modules should not raise an exception") from exc
 
 
-def test_table_update_has_corresponding_dispatch() -> None:
-    from pyiceberg.table import TableUpdate, _apply_table_update
-    # assert that every TableUpdate has a corresponding `_apply_table_update` dispatch function
-    table_update_class = set(TableUpdate.__origin__.__args__)  # type: ignore
-    dispatch_function_class = set(_apply_table_update.registry.keys())
-    missing_dispatch_function = table_update_class - dispatch_function_class
-    assert len(missing_dispatch_function) == 0, f"Missing dispatch function for {missing_dispatch_function}"
+def test_all_table_updates_have_dispatch() -> None:
+    # ensures that every TableUpdate subclass has a corresponding `_apply_table_update` dispatch function.
+    from pyiceberg.table.update import TableUpdate, _apply_table_update
+
+    table_update_classes = set(TableUpdate.__origin__.__args__)  # type: ignore
+    dispatch_classes = set(_apply_table_update.registry.keys())
+    missing_dispatch = table_update_classes - dispatch_classes
+    assert not missing_dispatch, f"Missing dispatch function for: {missing_dispatch}"
