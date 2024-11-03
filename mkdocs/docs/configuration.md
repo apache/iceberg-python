@@ -30,15 +30,23 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                                    | Options                           | Default | Description                                                                                 |
-| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
-| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
+| Key                                    | Options                                | Default         | Description                                                                                 |
+| -------------------------------------- | -------------------------------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}`     | zstd            | Sets the Parquet compression codec.                                                         |
+| `write.parquet.compression-level`      | Integer                                | null            | Parquet compression level for the codec. If not set, it is up to PyIceberg.                 |
+| `write.parquet.row-group-limit`        | Number of rows                         | 1,048,576       | The upper bound of the number of entries within a single row group.                         |
+| `write.parquet.row-group-size-bytes`   | Size in bytes                          | 128 MB          | The maximum size (in bytes) of each Parquet row group.                                      |
+| `write.parquet.page-size-bytes`        | Size in bytes                          | 1 MB            | Target threshold for the approximate encoded size of data pages within a column chunk.      |
+| `write.parquet.page-row-limit`         | Number of rows                         | 20,000          | Target threshold for the number of rows within a data page inside a column chunk.           |
+| `write.parquet.dict-size-bytes`        | Size in bytes                          | 2 MB            | The dictionary page size limit per row group.                                               |
+| `write.parquet.bloom-filter-max-bytes` | Size in bytes                          | 1 MB            | The maximum size (in bytes) of the Bloom filter for Parquet files.                          |
+| `write.parquet.bloom-filter-enabled.column` | Column names                        | N/A             | Enable Bloom filters for specific columns by prefixing the column name.                     |
+| `write.target-file-size-bytes`         | Size in bytes                          | 512 MB          | Target size (in bytes) for each output data file.                                           |
+| `write.metadata.metrics.default`       | `{none, full, truncate(N)}`            | `truncate(16)`  | Default metrics mode to use when writing files.                                             |
+| `write.metadata.metrics.column`        | Column names and modes                 | N/A             | Per-column metrics configuration.                                                           |
+| `write.metadata.previous-versions-max` | Integer                                | 100             | Maximum number of previous version metadata files to keep before deletion after commit.     |
+| `write.summary.partition-limit`        | Integer                                | 0               | The limit on the number of partition summaries written with each commit.                    |
+| `write.delete.mode`                    | `{copy-on-write, merge-on-read}`       | `copy-on-write` | Configures the delete mode (either Copy-on-Write or Merge-on-Read).                         |
 
 ### Table behavior options
 
@@ -47,6 +55,8 @@ Iceberg tables support table properties to configure table behavior.
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
 | `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Target size when merging manifest files                     |
 | `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+| `schema.name-mapping.default`          | Name mapping strategy                  | N/A             | Default name mapping for schema evolution.                                                  |
+| `format-version`                       | `{1, 2}`                               | 2               | The version of the Iceberg table format to use.                                             |
 
 <!-- prettier-ignore-start -->
 
