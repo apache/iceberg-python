@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import json
 import uuid
 from copy import copy
 from typing import Any, Dict
@@ -64,6 +65,7 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
+from pyiceberg.table.statistics import BlobMetadata, StatisticsFile
 from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AddSortOrderUpdate,
@@ -76,9 +78,11 @@ from pyiceberg.table.update import (
     AssertRefSnapshotId,
     AssertTableUUID,
     RemovePropertiesUpdate,
+    RemoveStatisticsUpdate,
     SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
+    SetStatisticsUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -1247,3 +1251,97 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    blob_metadata = BlobMetadata(
+        type="boring-type",
+        snapshot_id=snapshot_id,
+        sequence_number=2,
+        fields=[1],
+        properties={"prop-key": "prop-value"},
+    )
+
+    statistics_file = StatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[blob_metadata],
+    )
+
+    update = SetStatisticsUpdate(
+        snapshot_id=snapshot_id,
+        statistics=statistics_file,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+
+    expected = """
+    {
+      "snapshot-id": 3055729675574597004,
+      "statistics-path": "s3://bucket/warehouse/stats.puffin",
+      "file-size-in-bytes": 124,
+      "file-footer-size-in-bytes": 27,
+      "blob-metadata": [
+        {
+          "type": "boring-type",
+          "snapshot-id": 3055729675574597004,
+          "sequence-number": 2,
+          "fields": [
+            1
+          ],
+          "properties": {
+            "prop-key": "prop-value"
+          }
+        }
+      ]
+    }"""
+
+    assert len(new_metadata.statistics) == 2
+
+    updated_statistics = [stat for stat in new_metadata.statistics if stat.snapshot_id == snapshot_id]
+
+    assert len(updated_statistics) == 1
+    assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
+
+    update = SetStatisticsUpdate(
+        snapshot_id=123456789,
+        statistics=statistics_file,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Snapshot id in statistics does not match the snapshot id in the update",
+    ):
+        update_table_metadata(
+            table_v2_with_statistics.metadata,
+            (update,),
+        )
+
+
+def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
+    update = RemoveStatisticsUpdate(
+        snapshot_id=3055729675574597004,
+    )
+
+    remove_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+
+    assert len(remove_metadata.statistics) == 1
+
+    with pytest.raises(
+        ValueError,
+        match="Statistics with snapshot id 123456789 does not exist",
+    ):
+        update_table_metadata(
+            table_v2_with_statistics.metadata,
+            (RemoveStatisticsUpdate(snapshot_id=123456789),),
+        )
