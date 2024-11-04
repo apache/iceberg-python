@@ -41,12 +41,22 @@ from pyiceberg.expressions import (
 )
 
 
-def test_true() -> None:
+def test_always_true() -> None:
     assert AlwaysTrue() == parser.parse("true")
 
 
-def test_false() -> None:
+def test_always_false() -> None:
     assert AlwaysFalse() == parser.parse("false")
+
+
+def test_equals_true() -> None:
+    assert EqualTo("foo", True) == parser.parse("foo = true")
+    assert EqualTo("foo", True) == parser.parse("foo == TRUE")
+
+
+def test_equals_false() -> None:
+    assert EqualTo("foo", False) == parser.parse("foo = false")
+    assert EqualTo("foo", False) == parser.parse("foo == FALSE")
 
 
 def test_is_null() -> None:

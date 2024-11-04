@@ -272,14 +272,29 @@ def handle_or(result: ParseResults) -> Or:
     return Or(*result[0])
 
 
-boolean_expression = infix_notation(
-    predicate,
-    [
-        (Suppress(NOT), 1, opAssoc.RIGHT, handle_not),
-        (Suppress(AND), 2, opAssoc.LEFT, handle_and),
-        (Suppress(OR), 2, opAssoc.LEFT, handle_or),
-    ],
-).set_name("expr")
+def handle_always_expression(result: ParseResults) -> BooleanExpression:
+    # If the entire result is "true" or "false", return AlwaysTrue or AlwaysFalse
+    expr = result[0]
+    if isinstance(expr, BooleanLiteral):
+        if expr.value:
+            return AlwaysTrue()
+        else:
+            return AlwaysFalse()
+    return result[0]
+
+
+boolean_expression = (
+    infix_notation(
+        predicate,
+        [
+            (Suppress(NOT), 1, opAssoc.RIGHT, handle_not),
+            (Suppress(AND), 2, opAssoc.LEFT, handle_and),
+            (Suppress(OR), 2, opAssoc.LEFT, handle_or),
+        ],
+    )
+    .set_name("expr")
+    .add_parse_action(handle_always_expression)
+)
 
 
 def parse(expr: str) -> BooleanExpression:
