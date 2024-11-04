@@ -780,7 +780,7 @@ class RestCatalog(Catalog):
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
 
         headers = self._session.headers
-        if table_token := table.config.get("token"):
+        if table_token := table.config.get(TOKEN):
             headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
 
         response = self._session.post(
