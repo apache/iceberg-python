@@ -49,6 +49,10 @@ def test_always_false() -> None:
     assert AlwaysFalse() == parser.parse("false")
 
 
+def test_quoted_column() -> None:
+    assert EqualTo("foo", True) == parser.parse('"foo" = TRUE')
+
+
 def test_equals_true() -> None:
     assert EqualTo("foo", True) == parser.parse("foo = true")
     assert EqualTo("foo", True) == parser.parse("foo == TRUE")
