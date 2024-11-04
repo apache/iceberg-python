@@ -1195,7 +1195,7 @@ def test_allow_double_to_float() -> None:
 
     applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
 
-    assert applied.as_struct() == new_schema.as_struct()
+    assert applied.as_struct() == current_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, DoubleType)
 
@@ -1228,7 +1228,7 @@ def test_promote_int_to_long() -> None:
 
     applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
 
-    assert applied.as_struct() == current_schema.as_struct()
+    assert applied.as_struct() == new_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, LongType)
 
