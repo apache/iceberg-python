@@ -57,7 +57,6 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
@@ -812,7 +811,17 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
         all_chunks = positional_deletes[0]
     else:
         all_chunks = pa.chunked_array(itertools.chain(*[arr.chunks for arr in positional_deletes]))
-    return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
+
+    # Create the full range array with pyarrow
+    full_range = pa.array(range(start_index, end_index))
+    # When available, replace with Arrow generator to improve performance
+    # See https://github.com/apache/iceberg-python/issues/1271 for details
+
+    # Filter out values in all_chunks from full_range
+    result = pc.filter(full_range, pc.invert(pc.is_in(full_range, value_set=all_chunks)))
+
+    # Subtract the start_index from each element in the result
+    return pc.subtract(result, pa.scalar(start_index))
 
 
 def pyarrow_to_schema(
@@ -1677,23 +1686,6 @@ def project_batches(
                     batch = batch.slice(0, limit - total_row_count)
             yield batch
             total_row_count += len(batch)
-
-
-@deprecated(
-    deprecated_in="0.7.0",
-    removed_in="0.8.0",
-    help_message="The public API for 'to_requested_schema' is deprecated and is replaced by '_to_requested_schema'",
-)
-def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:
-    struct_array = visit_with_partner(requested_schema, table, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
-
-    arrays = []
-    fields = []
-    for pos, field in enumerate(requested_schema.fields):
-        array = struct_array.field(pos)
-        arrays.append(array)
-        fields.append(pa.field(field.name, array.type, field.optional))
-    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
 
 
 def _to_requested_schema(

@@ -89,7 +89,6 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
-    AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
     AssertRefSnapshotId,
@@ -313,55 +312,6 @@ class Transaction:
             raise ValueError("Cannot pass both properties and kwargs")
         updates = properties or kwargs
         return self._apply((SetPropertiesUpdate(updates=updates),))
-
-    @deprecated(
-        deprecated_in="0.7.0",
-        removed_in="0.8.0",
-        help_message="Please use one of the functions in ManageSnapshots instead",
-    )
-    def add_snapshot(self, snapshot: Snapshot) -> Transaction:
-        """Add a new snapshot to the table.
-
-        Returns:
-            The transaction with the add-snapshot staged.
-        """
-        updates = (AddSnapshotUpdate(snapshot=snapshot),)
-
-        return self._apply(updates, ())
-
-    @deprecated(
-        deprecated_in="0.7.0",
-        removed_in="0.8.0",
-        help_message="Please use one of the functions in ManageSnapshots instead",
-    )
-    def set_ref_snapshot(
-        self,
-        snapshot_id: int,
-        parent_snapshot_id: Optional[int],
-        ref_name: str,
-        type: str,
-        max_ref_age_ms: Optional[int] = None,
-        max_snapshot_age_ms: Optional[int] = None,
-        min_snapshots_to_keep: Optional[int] = None,
-    ) -> Transaction:
-        """Update a ref to a snapshot.
-
-        Returns:
-            The transaction with the set-snapshot-ref staged
-        """
-        updates = (
-            SetSnapshotRefUpdate(
-                snapshot_id=snapshot_id,
-                ref_name=ref_name,
-                type=type,
-                max_ref_age_ms=max_ref_age_ms,
-                max_snapshot_age_ms=max_snapshot_age_ms,
-                min_snapshots_to_keep=min_snapshots_to_keep,
-            ),
-        )
-
-        requirements = (AssertRefSnapshotId(snapshot_id=parent_snapshot_id, ref="main"),)
-        return self._apply(updates, requirements)
 
     def _set_ref_snapshot(
         self,
@@ -703,22 +653,22 @@ class CreateTableTransaction(Transaction):
 
         schema: Schema = table_metadata.schema()
         self._updates += (
-            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id, initial_change=True),
+            AddSchemaUpdate(schema_=schema, last_column_id=schema.highest_field_id),
             SetCurrentSchemaUpdate(schema_id=-1),
         )
 
         spec: PartitionSpec = table_metadata.spec()
         if spec.is_unpartitioned():
-            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC, initial_change=True),)
+            self._updates += (AddPartitionSpecUpdate(spec=UNPARTITIONED_PARTITION_SPEC),)
         else:
-            self._updates += (AddPartitionSpecUpdate(spec=spec, initial_change=True),)
+            self._updates += (AddPartitionSpecUpdate(spec=spec),)
         self._updates += (SetDefaultSpecUpdate(spec_id=-1),)
 
         sort_order: Optional[SortOrder] = table_metadata.sort_order_by_id(table_metadata.default_sort_order_id)
         if sort_order is None or sort_order.is_unsorted:
-            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER, initial_change=True),)
+            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER),)
         else:
-            self._updates += (AddSortOrderUpdate(sort_order=sort_order, initial_change=True),)
+            self._updates += (AddSortOrderUpdate(sort_order=sort_order),)
         self._updates += (SetDefaultSortOrderUpdate(sort_order_id=-1),)
 
         self._updates += (
