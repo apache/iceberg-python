@@ -772,7 +772,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         if field.field_type.is_primitive and field.field_type != existing_field.field_type:
             try:
                 # If the current type is wider than the new type, then
-                # we preform a noop
+                # we perform a noop
                 _ = promote(field.field_type, existing_field.field_type)
             except ResolveError:
                 # If this is not the case, perform the type evolution

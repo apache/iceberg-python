@@ -1231,7 +1231,7 @@ def test_promote_int_to_long() -> None:
     assert isinstance(applied.fields[0].field_type, LongType)
 
 
-def test_detect_invalid_promotion_double_to_float() -> None:
+def test_allow_union_double_to_float() -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
 
