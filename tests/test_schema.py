@@ -1199,6 +1199,7 @@ def test_allow_double_to_float() -> None:
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, DoubleType)
 
+
 def test_promote_float_to_double() -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
@@ -1219,6 +1220,7 @@ def test_allow_long_to_int() -> None:
     assert applied.as_struct() == current_schema.as_struct()
     assert len(applied.fields) == 1
     assert isinstance(applied.fields[0].field_type, LongType)
+
 
 def test_promote_int_to_long() -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
