@@ -84,6 +84,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.statistics import StatisticsFile
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
@@ -94,12 +95,14 @@ from pyiceberg.table.update import (
     AssertTableUUID,
     AssignUUIDUpdate,
     RemovePropertiesUpdate,
+    RemoveStatisticsUpdate,
     SetCurrentSchemaUpdate,
     SetDefaultSortOrderUpdate,
     SetDefaultSpecUpdate,
     SetLocationUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
+    SetStatisticsUpdate,
     TableRequirement,
     TableUpdate,
     UpdatesAndRequirements,
@@ -662,6 +665,42 @@ class Transaction:
             The alter table builder.
         """
         raise NotImplementedError("Not yet implemented")
+
+    def set_statistics(self, snapshot_id: int, statistics_file: StatisticsFile) -> Transaction:
+        """Set the statistics for a snapshot.
+
+        Args:
+            snapshot_id: The snapshot ID to set the statistics for.
+            statistics_file: The statistics file to set.
+
+        Returns:
+            The alter table builder.
+        """
+        updates = (
+            SetStatisticsUpdate(
+                snapshot_id=snapshot_id,
+                statistics=statistics_file,
+            ),
+        )
+
+        return self._apply(updates, ())
+
+    def remove_statistics(self, snapshot_id: int) -> Transaction:
+        """Remove the statistics for a snapshot.
+
+        Args:
+            snapshot_id: The snapshot ID to remove the statistics for.
+
+        Returns:
+            The alter table builder.
+        """
+        updates = (
+            RemoveStatisticsUpdate(
+                snapshot_id=snapshot_id,
+            ),
+        )
+
+        return self._apply(updates, ())
 
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
