@@ -1189,6 +1189,17 @@ def test_detect_invalid_top_level_maps() -> None:
         _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
 
 
+def test_allow_double_to_float() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
+
+    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+
+    assert applied.as_struct() == current_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, DoubleType)
+
+
 def test_promote_float_to_double() -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
@@ -1200,11 +1211,33 @@ def test_promote_float_to_double() -> None:
     assert isinstance(applied.fields[0].field_type, DoubleType)
 
 
-def test_detect_invalid_promotion_double_to_float() -> None:
-    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
+def test_allow_long_to_int() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=LongType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
+
+    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+
+    assert applied.as_struct() == current_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, LongType)
+
+
+def test_promote_int_to_long() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=LongType(), required=False))
+
+    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+
+    assert applied.as_struct() == new_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, LongType)
+
+
+def test_detect_invalid_promotion_string_to_float() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=StringType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
 
-    with pytest.raises(ValidationError, match="Cannot change column type: aCol: double -> float"):
+    with pytest.raises(ValidationError, match="Cannot change column type: aCol: string -> float"):
         _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
 
 
