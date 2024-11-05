@@ -48,7 +48,6 @@ The environment variable picked up by Iceberg starts with `PYICEBERG_` and then 
 
 For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
 
-
 ## Tables
 
 Iceberg tables support table properties to configure table behavior.
@@ -185,7 +184,6 @@ Alternatively, you can also directly set the catalog implementation:
 | --------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
 | type            | rest                         | Type of catalog, one of `rest`, `sql`, `hive`, `glue`, `dymamodb`. Default to `rest`             |
 | py-catalog-impl | mypackage.mymodule.MyCatalog | Sets the catalog explicitly to an implementation, and will fail explicitly if it can't be loaded |
-
 
 ### REST Catalog
 
