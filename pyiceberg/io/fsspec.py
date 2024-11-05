@@ -172,14 +172,12 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
 
-    if (endpoint := properties.get(GCS_ENDPOINT)) and GCS_SERVICE_HOST not in properties:
+    if properties.get(GCS_ENDPOINT):
         deprecation_message(
             deprecated_in="0.8.0",
             removed_in="0.9.0",
             help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
         )
-        properties[GCS_SERVICE_HOST] = endpoint
-
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
