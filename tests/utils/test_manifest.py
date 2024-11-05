@@ -17,6 +17,7 @@
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
 from typing import Dict
+from unittest.mock import patch
 
 import fastavro
 import pytest
@@ -31,6 +32,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
     PartitionFieldSummary,
+    _manifests,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
@@ -41,6 +43,12 @@ from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
+
+
+@pytest.fixture(autouse=True)
+def clear_global_manifests_cache() -> None:
+    # Clear the global cache before each test
+    _manifests.cache_clear()  # type: ignore
 
 
 def _verify_metadata_with_fastavro(avro_file: str, expected_metadata: Dict[str, str]) -> None:
@@ -304,6 +312,30 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
     assert entry.file_sequence_number == 3
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
+
+
+def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
+    with patch("pyiceberg.manifest.read_manifest_list") as mocked_read_manifest_list:
+        io = load_file_io()
+
+        snapshot = Snapshot(
+            snapshot_id=25,
+            parent_snapshot_id=19,
+            timestamp_ms=1602638573590,
+            manifest_list=generated_manifest_file_file_v2,
+            summary=Summary(Operation.APPEND),
+            schema_id=3,
+        )
+
+        # Access the manifests property multiple times to test caching
+        manifests_first_call = snapshot.manifests(io)
+        manifests_second_call = snapshot.manifests(io)
+
+        # Ensure that read_manifest_list was called only once
+        mocked_read_manifest_list.assert_called_once()
+
+        # Ensure that the same manifest list is returned
+        assert manifests_first_call == manifests_second_call
 
 
 def test_write_empty_manifest() -> None:

@@ -51,15 +51,18 @@ from pyiceberg.schema import Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
-    CommitTableRequest,
     CommitTableResponse,
     CreateTableTransaction,
     StagedTable,
     Table,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+    update_table_metadata,
+)
 from pyiceberg.typedef import (
     EMPTY_DICT,
     Identifier,
@@ -67,7 +70,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -102,21 +105,6 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     """,
     re.X,
 )
-
-DEPRECATED_PROFILE_NAME = "profile_name"
-DEPRECATED_REGION = "region_name"
-DEPRECATED_BOTOCORE_SESSION = "botocore_session"
-DEPRECATED_ACCESS_KEY_ID = "aws_access_key_id"
-DEPRECATED_SECRET_ACCESS_KEY = "aws_secret_access_key"
-DEPRECATED_SESSION_TOKEN = "aws_session_token"
-DEPRECATED_PROPERTY_NAMES = {
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_ACCESS_KEY_ID,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
-}
 
 
 class CatalogType(Enum):
@@ -502,11 +490,15 @@ class Catalog(ABC):
         """
 
     @abstractmethod
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update one or more tables.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -557,8 +549,6 @@ class Catalog(ABC):
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
 
-        If namespace not provided, will list all tables in the catalog.
-
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
@@ -578,6 +568,20 @@ class Catalog(ABC):
 
         Returns:
             List[Identifier]: a List of namespace identifiers.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist.
+        """
+
+    @abstractmethod
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        """List views under the given namespace in the catalog.
+
+        Args:
+            namespace (str | Identifier): Namespace identifier to search.
+
+        Returns:
+            List[Identifier]: list of table identifiers.
 
         Raises:
             NoSuchNamespaceError: If a namespace with the given name does not exist.
@@ -613,6 +617,22 @@ class Catalog(ABC):
             ValueError: If removals and updates have overlapping keys.
         """
 
+    @abstractmethod
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        """Drop a view.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Raises:
+            NoSuchViewError: If a view with the given name does not exist.
+        """
+
+    @deprecated(
+        deprecated_in="0.8.0",
+        removed_in="0.9.0",
+        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+    )
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
 
@@ -624,6 +644,25 @@ class Catalog(ABC):
         """
         identifier_tuple = Catalog.identifier_to_tuple(identifier)
         if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            identifier_tuple = identifier_tuple[1:]
+        return identifier_tuple
+
+    def _identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
+        """Convert an identifier to a tuple and drop this catalog's name from the first element.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+
+        Returns:
+            Identifier: a tuple of strings with this catalog's name removed
+        """
+        identifier_tuple = Catalog.identifier_to_tuple(identifier)
+        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+            )
             identifier_tuple = identifier_tuple[1:]
         return identifier_tuple
 
@@ -740,14 +779,6 @@ class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-        for property_name in DEPRECATED_PROPERTY_NAMES:
-            if self.properties.get(property_name):
-                deprecated(
-                    deprecated_in="0.7.0",
-                    removed_in="0.8.0",
-                    help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
-                )(lambda: None)()
-
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],
@@ -769,7 +800,7 @@ class MetastoreCatalog(Catalog, ABC):
             return False
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         table = self.load_table(identifier_tuple)
         self.drop_table(identifier_tuple)
         io = load_file_io(self.properties, table.metadata_location)
@@ -823,28 +854,35 @@ class MetastoreCatalog(Catalog, ABC):
         )
         io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(
-            identifier=(self.name, database_name, table_name),
+            identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
             io=io,
             catalog=self,
         )
 
-    def _update_and_stage_table(self, current_table: Optional[Table], table_request: CommitTableRequest) -> StagedTable:
-        for requirement in table_request.requirements:
+    def _update_and_stage_table(
+        self,
+        current_table: Optional[Table],
+        table_identifier: Identifier,
+        requirements: Tuple[TableRequirement, ...],
+        updates: Tuple[TableUpdate, ...],
+    ) -> StagedTable:
+        for requirement in requirements:
             requirement.validate(current_table.metadata if current_table else None)
 
         updated_metadata = update_table_metadata(
             base_metadata=current_table.metadata if current_table else self._empty_table_metadata(),
-            updates=table_request.updates,
+            updates=updates,
             enforce_validation=current_table is None,
+            metadata_location=current_table.metadata_location if current_table else None,
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
         new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
 
         return StagedTable(
-            identifier=tuple(table_request.identifier.namespace.root + [table_request.identifier.name]),
+            identifier=table_identifier,
             metadata=updated_metadata,
             metadata_location=new_metadata_location,
             io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
@@ -950,4 +988,4 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             TableMetadata: An empty TableMetadata instance.
         """
-        return TableMetadataV1(location="", last_column_id=-1, schema=Schema())
+        return TableMetadataV1.model_construct(last_column_id=-1, schema=Schema())

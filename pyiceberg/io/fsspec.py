@@ -44,8 +44,15 @@ from pyiceberg.io import (
     ADLFS_ACCOUNT_NAME,
     ADLFS_CLIENT_ID,
     ADLFS_CONNECTION_STRING,
+    ADLFS_PREFIX,
     ADLFS_SAS_TOKEN,
     ADLFS_TENANT_ID,
+    ADLS_ACCOUNT_KEY,
+    ADLS_ACCOUNT_NAME,
+    ADLS_CLIENT_ID,
+    ADLS_CONNECTION_STRING,
+    ADLS_SAS_TOKEN,
+    ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
@@ -68,8 +75,11 @@ from pyiceberg.io import (
     S3_REGION,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SIGNER_ENDPOINT,
+    S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
     ADLFS_ClIENT_SECRET,
+    ADLS_ClIENT_SECRET,
     FileIO,
     InputFile,
     InputStream,
@@ -88,6 +98,8 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
         raise SignError("Signer set, but token is not available")
 
     signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
+    signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
+
     signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
     signer_body = {
         "method": request.method,
@@ -96,7 +108,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
         "headers": {key: [val] for key, val in request.headers.items()},
     }
 
-    response = requests.post(f"{signer_url}/v1/aws/s3/sign", headers=signer_headers, json=signer_body)
+    response = requests.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
     try:
         response.raise_for_status()
         response_json = response.json()
@@ -133,9 +145,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if signer := properties.get("s3.signer"):
         logger.info("Loading signer %s", signer)
-        if singer_func := SIGNERS.get(signer):
-            singer_func_with_properties = partial(singer_func, properties)
-            register_events["before-sign.s3"] = singer_func_with_properties
+        if signer_func := SIGNERS.get(signer):
+            signer_func_with_properties = partial(signer_func, properties)
+            register_events["before-sign.s3"] = signer_func_with_properties
 
             # Disable the AWS Signer
             config_kwargs["signature_version"] = UNSIGNED
@@ -182,17 +194,53 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     )
 
 
-def _adlfs(properties: Properties) -> AbstractFileSystem:
+def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
+    for property_name in properties:
+        if property_name.startswith(ADLFS_PREFIX):
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message=f"The property {property_name} is deprecated. Please use properties that start with adls.",
+            )
+
     return AzureBlobFileSystem(
-        connection_string=properties.get(ADLFS_CONNECTION_STRING),
-        account_name=properties.get(ADLFS_ACCOUNT_NAME),
-        account_key=properties.get(ADLFS_ACCOUNT_KEY),
-        sas_token=properties.get(ADLFS_SAS_TOKEN),
-        tenant_id=properties.get(ADLFS_TENANT_ID),
-        client_id=properties.get(ADLFS_CLIENT_ID),
-        client_secret=properties.get(ADLFS_ClIENT_SECRET),
+        connection_string=get_first_property_value(
+            properties,
+            ADLS_CONNECTION_STRING,
+            ADLFS_CONNECTION_STRING,
+        ),
+        account_name=get_first_property_value(
+            properties,
+            ADLS_ACCOUNT_NAME,
+            ADLFS_ACCOUNT_NAME,
+        ),
+        account_key=get_first_property_value(
+            properties,
+            ADLS_ACCOUNT_KEY,
+            ADLFS_ACCOUNT_KEY,
+        ),
+        sas_token=get_first_property_value(
+            properties,
+            ADLS_SAS_TOKEN,
+            ADLFS_SAS_TOKEN,
+        ),
+        tenant_id=get_first_property_value(
+            properties,
+            ADLS_TENANT_ID,
+            ADLFS_TENANT_ID,
+        ),
+        client_id=get_first_property_value(
+            properties,
+            ADLS_CLIENT_ID,
+            ADLFS_CLIENT_ID,
+        ),
+        client_secret=get_first_property_value(
+            properties,
+            ADLS_ClIENT_SECRET,
+            ADLFS_ClIENT_SECRET,
+        ),
     )
 
 
@@ -202,8 +250,8 @@ SCHEME_TO_FS = {
     "s3": _s3,
     "s3a": _s3,
     "s3n": _s3,
-    "abfs": _adlfs,
-    "abfss": _adlfs,
+    "abfs": _adls,
+    "abfss": _adls,
     "gs": _gs,
     "gcs": _gs,
 }

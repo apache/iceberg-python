@@ -14,7 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import Any, Dict, List
+from typing import List
 from unittest import mock
 
 import boto3
@@ -40,7 +40,6 @@ from pyiceberg.typedef import Properties
 from pyiceberg.types import IntegerType
 from tests.conftest import (
     BUCKET_NAME,
-    DEPRECATED_AWS_SESSION_PROPERTIES,
     TABLE_METADATA_LOCATION_REGEX,
     UNIFIED_AWS_SESSION_PROPERTIES,
 )
@@ -448,9 +447,23 @@ def test_list_tables(
 ) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
+
+    non_iceberg_table_name = "non_iceberg_table"
+    glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
+    glue_client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": non_iceberg_table_name,
+            "TableType": "EXTERNAL_TABLE",
+            "Parameters": {"table_type": "noniceberg"},
+        },
+    )
+
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
     loaded_table_list = test_catalog.list_tables(database_name)
+
+    assert (database_name, non_iceberg_table_name) not in loaded_table_list
     for table_name in table_list:
         assert (database_name, table_name) in loaded_table_list
 
@@ -625,26 +638,6 @@ def test_update_namespace_properties_overlap_update_removal(
 
 
 @mock_aws
-def test_passing_profile_name() -> None:
-    session_properties: Dict[str, Any] = {
-        "aws_access_key_id": "abc",
-        "aws_secret_access_key": "def",
-        "aws_session_token": "ghi",
-        "region_name": "eu-central-1",
-        "profile_name": "sandbox",
-        "botocore_session": None,
-    }
-    test_properties = {"type": "glue"}
-    test_properties.update(session_properties)
-
-    with mock.patch("boto3.Session") as mock_session:
-        test_catalog = GlueCatalog("glue", **test_properties)
-
-    mock_session.assert_called_with(**session_properties)
-    assert test_catalog.glue is mock_session().client()
-
-
-@mock_aws
 def test_passing_glue_session_properties() -> None:
     session_properties: Properties = {
         "glue.access-key-id": "glue.access-key-id",
@@ -653,7 +646,6 @@ def test_passing_glue_session_properties() -> None:
         "glue.region": "glue.region",
         "glue.session-token": "glue.session-token",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -665,7 +657,6 @@ def test_passing_glue_session_properties() -> None:
         aws_session_token="glue.session-token",
         region_name="glue.region",
         profile_name="glue.profile-name",
-        botocore_session=None,
     )
     assert test_catalog.glue is mock_session().client()
 
@@ -675,7 +666,6 @@ def test_passing_unified_session_properties_to_glue() -> None:
     session_properties: Properties = {
         "glue.profile-name": "glue.profile-name",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -687,7 +677,6 @@ def test_passing_unified_session_properties_to_glue() -> None:
         aws_session_token="client.session-token",
         region_name="client.region",
         profile_name="glue.profile-name",
-        botocore_session=None,
     )
     assert test_catalog.glue is mock_session().client()
 
@@ -707,10 +696,13 @@ def test_commit_table_update_schema(
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_table_metadata = table.metadata
+    original_table_metadata_location = table.metadata_location
+    original_table_last_updated_ms = table.metadata.last_updated_ms
 
-    assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    assert TABLE_METADATA_LOCATION_REGEX.match(original_table_metadata_location)
+    assert test_catalog._parse_metadata_version(original_table_metadata_location) == 0
     assert original_table_metadata.current_schema_id == 0
+    assert len(original_table_metadata.metadata_log) == 0
 
     transaction = table.transaction()
     update = transaction.update_schema()
@@ -728,6 +720,9 @@ def test_commit_table_update_schema(
     assert new_schema
     assert new_schema == update._apply()
     assert new_schema.find_field("b").field_type == IntegerType()
+    assert len(updated_table_metadata.metadata_log) == 1
+    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
+    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
 
     # Ensure schema is also pushed to Glue
     table_info = _glue.get_table(
@@ -841,6 +836,7 @@ def test_commit_overwrite_table_snapshot_properties(
     assert summary is not None
     assert summary["snapshot_prop_a"] is None
     assert summary["snapshot_prop_b"] == "test_prop_b"
+    assert len(updated_table_metadata.metadata_log) == 2
 
 
 @mock_aws

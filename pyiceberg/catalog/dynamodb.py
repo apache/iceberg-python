@@ -23,18 +23,13 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
 import boto3
 
 from pyiceberg.catalog import (
-    DEPRECATED_ACCESS_KEY_ID,
-    DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
     ICEBERG,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
@@ -57,9 +52,13 @@ from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, A
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableRequest, CommitTableResponse, Table
+from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.properties import get_first_property_value
 
@@ -97,18 +96,11 @@ class DynamoDbCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
-            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(
-                properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
-            ),
-            aws_secret_access_key=get_first_property_value(
-                properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
-            ),
-            aws_session_token=get_first_property_value(
-                properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
-            ),
+            profile_name=properties.get(DYNAMODB_PROFILE_NAME),
+            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
+            aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         self.dynamodb = session.client(DYNAMODB_CLIENT)
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
@@ -215,11 +207,15 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update the table.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -246,7 +242,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
         return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
@@ -260,7 +256,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
 
         try:
@@ -291,7 +287,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             NoSuchPropertyException: When from table miss some required properties.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self.identifier_to_tuple_without_catalog(from_identifier)
+        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
 
@@ -388,7 +384,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
@@ -528,6 +524,12 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:
         try:
             return self._get_dynamo_item(identifier=f"{database_name}.{table_name}", namespace=database_name)
@@ -638,7 +640,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(self.name, database_name, table_name),
+            identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),

@@ -17,14 +17,16 @@
 # pylint:disable=redefined-outer-name
 import math
 import os
+import random
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 import pytz
@@ -38,12 +40,21 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
-from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import IntegerType, LongType, NestedField
+from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
+from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
+from pyiceberg.types import (
+    DateType,
+    DoubleType,
+    IntegerType,
+    LongType,
+    NestedField,
+    StringType,
+)
 from utils import _create_table
 
 
@@ -527,7 +538,6 @@ def test_write_parquet_other_properties(
     "properties",
     [
         {"write.parquet.row-group-size-bytes": "42"},
-        {"write.parquet.page-row-limit": "42"},
         {"write.parquet.bloom-filter-enabled.column.bool": "42"},
         {"write.parquet.bloom-filter-max-bytes": "42"},
     ],
@@ -541,7 +551,7 @@ def test_write_parquet_unsupported_properties(
     identifier = "default.write_parquet_unsupported_properties"
 
     tbl = _create_table(session_catalog, identifier, properties, [])
-    with pytest.raises(NotImplementedError):
+    with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
 
 
@@ -729,7 +739,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
-            "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
+            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
         )
 
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
@@ -776,6 +786,62 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
     tbl = catalog.load_table(identifier=identifier)
     assert tbl.format_version == format_version
     assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
+    if format_version == 1 and isinstance(catalog, RestCatalog):
+        pytest.skip(
+            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
+        )
+
+    identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
+    identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier_ref)
+    except NoSuchTableError:
+        pass
+
+    iceberg_spec = PartitionSpec(*[
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="integer_partition")
+    ])
+
+    sort_order = SortOrder(*[SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC)])
+
+    txn = catalog.create_table_transaction(
+        identifier=identifier,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+    txn.commit_transaction()
+
+    tbl = catalog.load_table(identifier)
+
+    tbl_ref = catalog.create_table(
+        identifier=identifier_ref,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+
+    assert tbl.format_version == tbl_ref.format_version
+    assert tbl.schema() == tbl_ref.schema()
+    assert tbl.schemas() == tbl_ref.schemas()
+    assert tbl.spec() == tbl_ref.spec()
+    assert tbl.specs() == tbl_ref.specs()
+    assert tbl.sort_order() == tbl_ref.sort_order()
+    assert tbl.sort_orders() == tbl_ref.sort_orders()
 
 
 @pytest.mark.integration
@@ -1295,3 +1361,212 @@ def test_rest_catalog_with_empty_catalog_name_append_data(session_catalog: Catal
     )
     tbl = _create_table(test_catalog, identifier, data=[])
     tbl.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.lower.table_v1_with_null_nested_namespace"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+    # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
+    # that supports HEAD request on table endpoint
+
+    # assert session_catalog.table_exists(identifier)
+
+    # We expect no error here
+    session_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_overwrite_all_data_with_filter(session_catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", StringType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+
+    data = pa.Table.from_pylist(
+        [
+            {"id": "1", "name": "Amsterdam"},
+            {"id": "2", "name": "San Francisco"},
+            {"id": "3", "name": "Drachten"},
+        ],
+        schema=schema.as_arrow(),
+    )
+
+    identifier = "default.test_overwrite_all_data_with_filter"
+    tbl = _create_table(session_catalog, identifier, data=[data], schema=schema)
+    tbl.overwrite(data, In("id", ["1", "2", "3"]))
+
+    assert len(tbl.scan().to_arrow()) == 3
+
+
+@pytest.mark.integration
+def test_delete_threshold(session_catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(field_id=101, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=103, name="created_at", field_type=DateType(), required=False),
+        NestedField(field_id=104, name="relevancy_score", field_type=DoubleType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(PartitionField(source_id=103, field_id=2000, transform=DayTransform(), name="created_at_day"))
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.scores",
+        )
+    except NoSuchTableError:
+        pass
+
+    session_catalog.create_table(
+        identifier="default.scores",
+        schema=schema,
+        partition_spec=partition_spec,
+    )
+
+    # Parameters
+    num_rows = 100  # Number of rows in the dataframe
+    id_min, id_max = 1, 10000
+    date_start, date_end = date(2024, 1, 1), date(2024, 2, 1)
+
+    # Generate the 'id' column
+    id_column = [random.randint(id_min, id_max) for _ in range(num_rows)]
+
+    # Generate the 'created_at' column as dates only
+    date_range = pd.date_range(start=date_start, end=date_end, freq="D").to_list()  # Daily frequency for dates
+    created_at_column = [random.choice(date_range) for _ in range(num_rows)]  # Convert to string (YYYY-MM-DD format)
+
+    # Generate the 'relevancy_score' column with a peak around 0.1
+    relevancy_score_column = [random.betavariate(2, 20) for _ in range(num_rows)]  # Adjusting parameters to peak around 0.1
+
+    # Create the dataframe
+    df = pd.DataFrame({"id": id_column, "created_at": created_at_column, "relevancy_score": relevancy_score_column})
+
+    iceberg_table = session_catalog.load_table("default.scores")
+
+    # Convert the pandas DataFrame to a PyArrow Table with the Iceberg schema
+    arrow_schema = iceberg_table.schema().as_arrow()
+    docs_table = pa.Table.from_pandas(df, schema=arrow_schema)
+
+    # Append the data to the Iceberg table
+    iceberg_table.append(docs_table)
+
+    delete_condition = GreaterThanOrEqual("relevancy_score", 0.1)
+    lower_before = len(iceberg_table.scan(row_filter=Not(delete_condition)).to_arrow())
+    assert len(iceberg_table.scan(row_filter=Not(delete_condition)).to_arrow()) == lower_before
+    iceberg_table.delete(delete_condition)
+    assert len(iceberg_table.scan().to_arrow()) == lower_before
+
+
+@pytest.mark.integration
+def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) -> None:
+    random.seed(876)
+    N = 1440
+    d = {
+        "timestamp": pa.array([datetime(2023, 1, 1, 0, 0, 0) + timedelta(minutes=i) for i in range(N)]),
+        "category": pa.array([random.choice(["A", "B", "C"]) for _ in range(N)]),
+        "value": pa.array([random.gauss(0, 1) for _ in range(N)]),
+    }
+    data = pa.Table.from_pydict(d)
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.test_error_table",
+        )
+    except NoSuchTableError:
+        pass
+
+    table = session_catalog.create_table(
+        "default.test_error_table",
+        schema=data.schema,
+    )
+
+    with table.update_spec() as update:
+        update.add_field("timestamp", transform=HourTransform())
+
+    table.append(data)
+
+    with table.update_spec() as update:
+        update.add_field("category", transform=IdentityTransform())
+
+    data_ = data.filter(
+        (pc.field("category") == "A")
+        & (pc.field("timestamp") >= datetime(2023, 1, 1, 0))
+        & (pc.field("timestamp") < datetime(2023, 1, 1, 1))
+    )
+
+    table.overwrite(
+        df=data_,
+        overwrite_filter=And(
+            And(
+                GreaterThanOrEqual("timestamp", datetime(2023, 1, 1, 0).isoformat()),
+                LessThan("timestamp", datetime(2023, 1, 1, 1).isoformat()),
+            ),
+            EqualTo("category", "A"),
+        ),
+    )
+
+
+@pytest.mark.integration
+def test_writing_null_structs(session_catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema([
+        pa.field(
+            "struct_field_1",
+            pa.struct([
+                pa.field("string_nested_1", pa.string()),
+                pa.field("int_item_2", pa.int32()),
+                pa.field("float_item_2", pa.float32()),
+            ]),
+        ),
+    ])
+
+    records = [
+        {
+            "struct_field_1": {
+                "string_nested_1": "nest_1",
+                "int_item_2": 1234,
+                "float_item_2": 1.234,
+            },
+        },
+        {},
+    ]
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.test_writing_null_structs",
+        )
+    except NoSuchTableError:
+        pass
+
+    table = session_catalog.create_table("default.test_writing_null_structs", schema)
+
+    pyarrow_table: pa.Table = pa.Table.from_pylist(records, schema=schema)
+    table.append(pyarrow_table)
+
+    assert pyarrow_table.to_pandas()["struct_field_1"].tolist() == table.scan().to_pandas()["struct_field_1"].tolist()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_abort_table_transaction_on_exception(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_test_abort_table_transaction_on_exception"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # Pre-populate some data
+    tbl.append(arrow_table_with_null)
+    table_size = len(arrow_table_with_null)
+    assert len(tbl.scan().to_pandas()) == table_size
+
+    # try to commit a transaction that raises exception at the middle
+    with pytest.raises(ValueError):
+        with tbl.transaction() as txn:
+            txn.append(arrow_table_with_null)
+            raise ValueError
+            txn.append(arrow_table_with_null)  # type: ignore
+
+    # Validate the transaction is aborted and no partial update is applied
+    assert len(tbl.scan().to_pandas()) == table_size  # type: ignore

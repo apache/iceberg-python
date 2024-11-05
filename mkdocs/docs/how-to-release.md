@@ -38,6 +38,16 @@ For example, the API with the following deprecation tag should be removed when p
 )
 ```
 
+We also have the `deprecation_message` function. We need to change the behavior according to what is noted in the message of that deprecation.
+
+```python
+deprecation_message(
+    deprecated_in="0.1.0",
+    removed_in="0.2.0",
+    help_message="The old_property is deprecated. Please use the something_else property instead.",
+)
+```
+
 ## Running a release candidate
 
 Make sure that the version is correct in `pyproject.toml` and `pyiceberg/__init__.py`. Correct means that it reflects the version that you want to release.
@@ -71,7 +81,7 @@ export GIT_TAG_HASH=${GIT_TAG_REF:0:40}
 export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 ```
 
-The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57.
+The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
 If you have not published your GPG key in [KEYS](https://dist.apache.org/repos/dist/dev/iceberg/KEYS) yet, you must publish it before sending the vote email by doing:
 
 ```bash
@@ -183,7 +193,7 @@ cat release-announcement-email.txt
 
 Once the vote has been passed, you can close the vote thread by concluding it:
 
-```
+```text
 Thanks everyone for voting! The 72 hours have passed, and a minimum of 3 binding votes have been cast:
 
 +1 Foo Bar (non-binding)
@@ -197,7 +207,7 @@ Kind regards,
 
 ### Copy the artifacts to the release dist
 
-```
+```bash
 export RC=rc2
 export VERSION=0.7.0${RC}
 export VERSION_WITHOUT_RC=${VERSION/rc?/}
@@ -220,12 +230,14 @@ svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add 
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
 
 ```bash
-twine upload /tmp/iceberg-dist-release/pyiceberg-<VERSION>/*
+svn checkout https://dist.apache.org/repos/dist/release/iceberg /tmp/iceberg-dist-release/
+cd /tmp/iceberg-dist-release/pyiceberg-${VERSION_WITHOUT_RC}
+twine upload pyiceberg-*.whl pyiceberg-*.tar.gz
 ```
 
 Send out an announcement on the dev mail list:
 
-```
+```text
 To: dev@iceberg.apache.org
 Subject: [ANNOUNCE] Apache PyIceberg release <VERSION>
 
