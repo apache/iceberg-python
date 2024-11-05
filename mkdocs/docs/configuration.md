@@ -24,6 +24,30 @@ hide:
 
 # Configuration
 
+## Setting Configuration Values
+
+There are three ways to pass in configuration:
+
+- Using the `~/.pyiceberg.yaml` configuration file
+- Through environment variables
+- By passing in credentials through the CLI or the Python API
+
+The configuration file is recommended since that's the easiest way to manage the credentials.
+
+To change the path searched for the `.pyiceberg.yaml`, you can overwrite the `PYICEBERG_HOME` environment variable.
+
+Another option is through environment variables:
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__URI=thrift://localhost:9083
+export PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID=username
+export PYICEBERG_CATALOG__DEFAULT__S3__SECRET_ACCESS_KEY=password
+```
+
+The environment variable picked up by Iceberg starts with `PYICEBERG_` and then follows the yaml structure below, where a double underscore `__` represents a nested field, and the underscore `_` is converted into a dash `-`.
+
+For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
+
 ## Tables
 
 Iceberg tables support table properties to configure table behavior.
@@ -36,7 +60,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
 | `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
 | `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the approximate encoded size of data pages within a column chunk |
+| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the maximum number of rows within a column chunk                 |
 | `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
 | `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
 
@@ -160,26 +184,6 @@ Alternatively, you can also directly set the catalog implementation:
 | --------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
 | type            | rest                         | Type of catalog, one of `rest`, `sql`, `hive`, `glue`, `dymamodb`. Default to `rest`             |
 | py-catalog-impl | mypackage.mymodule.MyCatalog | Sets the catalog explicitly to an implementation, and will fail explicitly if it can't be loaded |
-
-There are three ways to pass in configuration:
-
-- Using the `~/.pyiceberg.yaml` configuration file
-- Through environment variables
-- By passing in credentials through the CLI or the Python API
-
-The configuration file is recommended since that's the easiest way to manage the credentials.
-
-Another option is through environment variables:
-
-```sh
-export PYICEBERG_CATALOG__DEFAULT__URI=thrift://localhost:9083
-export PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID=username
-export PYICEBERG_CATALOG__DEFAULT__S3__SECRET_ACCESS_KEY=password
-```
-
-The environment variable picked up by Iceberg starts with `PYICEBERG_` and then follows the yaml structure below, where a double underscore `__` represents a nested field, and the underscore `_` is converted into a dash `-`.
-
-For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-key-id` on the `default` catalog.
 
 ### REST Catalog
 
