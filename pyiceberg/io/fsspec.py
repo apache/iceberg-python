@@ -186,7 +186,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
         session_kwargs=json.loads(properties.get(GCS_SESSION_KWARGS, "{}")),
-        endpoint_url=properties.get(GCS_SERVICE_HOST),
+        endpoint_url=get_first_property_value(properties, GCS_SERVICE_HOST, GCS_ENDPOINT),
         default_location=properties.get(GCS_DEFAULT_LOCATION),
         version_aware=property_as_bool(properties, GCS_VERSION_AWARE, False),
     )
