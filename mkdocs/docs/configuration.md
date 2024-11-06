@@ -107,7 +107,7 @@ For the FileIO there are several configuration options available:
 | s3.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
 | s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
-| s3.session-name      | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
+| s3.role-session-name | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
 | s3.role-arn          | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                              |
 | s3.signer            | bearer                     | Configure the signature version of the FileIO.                                                                                                                                                                                                            |
 | s3.signer.uri        | <http://my.signer:8080/s3> | Configure the remote signing uri if it differs from the catalog uri. Remote signing is only implemented for `FsspecFileIO`. The final request is sent to `<s3.signer.uri>/<s3.signer.endpoint>`.                                                          |
@@ -331,16 +331,18 @@ catalog:
 
 <!-- markdown-link-check-disable -->
 
-| Key                    | Example                              | Description                                                                     |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
-| glue.id                | 111111111111                         | Configure the 12-digit ID of the Glue Catalog                                   |
-| glue.skip-archive      | true                                 | Configure whether to skip the archival of older table versions. Default to true |
+| Key                    | Example                                | Description                                                                     |
+|------------------------|----------------------------------------| ------------------------------------------------------------------------------- |
+| glue.id                | 111111111111                           | Configure the 12-digit ID of the Glue Catalog                                   |
+| glue.skip-archive      | true                                   | Configure whether to skip the archival of older table versions. Default to true |
 | glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
-| glue.profile-name      | default                              | Configure the static profile used to access the Glue Catalog                    |
-| glue.region            | us-east-1                            | Set the region of the Glue Catalog                                              |
-| glue.access-key-id     | admin                                | Configure the static access key id used to access the Glue Catalog              |
-| glue.secret-access-key | password                             | Configure the static secret access key used to access the Glue Catalog          |
-| glue.session-token     | AQoDYXdzEJr...                       | Configure the static session token used to access the Glue Catalog              |
+| glue.profile-name      | default                                | Configure the static profile used to access the Glue Catalog                    |
+| glue.role-session-name | session                                | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
+| glue.role-arn          | arn:aws:...                            | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                              |
+| glue.region            | us-east-1                              | Set the region of the Glue Catalog                                              |
+| glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
+| glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
+| glue.session-token     | AQoDYXdzEJr...                         | Configure the static session token used to access the Glue Catalog              |
 
 <!-- markdown-link-check-enable-->
 
