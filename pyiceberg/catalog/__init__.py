@@ -106,6 +106,8 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     re.X,
 )
 
+DEPRECATED_BOTOCORE_SESSION = "botocore_session"
+
 
 class CatalogType(Enum):
     REST = "rest"
