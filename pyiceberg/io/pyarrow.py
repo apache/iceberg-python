@@ -91,6 +91,7 @@ from pyiceberg.io import (
     AWS_SESSION_TOKEN,
     GCS_DEFAULT_LOCATION,
     GCS_ENDPOINT,
+    GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
     HDFS_HOST,
@@ -163,7 +164,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -400,7 +401,13 @@ class PyArrowFileIO(FileIO):
                 gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
             if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
                 gcs_kwargs["default_bucket_location"] = bucket_location
-            if endpoint := self.properties.get(GCS_ENDPOINT):
+            if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
+                if self.properties.get(GCS_ENDPOINT):
+                    deprecation_message(
+                        deprecated_in="0.8.0",
+                        removed_in="0.9.0",
+                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+                    )
                 url_parts = urlparse(endpoint)
                 gcs_kwargs["scheme"] = url_parts.scheme
                 gcs_kwargs["endpoint_override"] = url_parts.netloc
