@@ -1409,17 +1409,17 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.3.9"
+version = "0.3.10"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "getdaft-0.3.9-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f5b430bf26b1e7cf5d26ebb41b5313ff3c632f8ec3922311605689f1c34bb58b"},
-    {file = "getdaft-0.3.9-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:e1d6e9288ee3dbb5335484c08904cbd8a794e764005216856f29505f82a38162"},
-    {file = "getdaft-0.3.9-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:904c3a0d07ee0ea5b93e586b16d33520fb9ea761f001d03959edac05fa54b218"},
-    {file = "getdaft-0.3.9-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:eeaedceaed6e874a74c2274eef474307a9b7ee31babaa0b6e5ca72dab3e80b55"},
-    {file = "getdaft-0.3.9-cp38-abi3-win_amd64.whl", hash = "sha256:f98e24695837db18366d216267146641f2aeb2993a30e86c8808470ae23d5e88"},
-    {file = "getdaft-0.3.9.tar.gz", hash = "sha256:59e14728e5a74ed12e7494ead4f704d7b7e6bfe4c395fe03304c2cc43147b8b1"},
+    {file = "getdaft-0.3.10-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:06ce182bcf4b1f15b623152f129c9b8b120007f8f7ed0b35d194b608baa8a8f1"},
+    {file = "getdaft-0.3.10-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:1175b7c12e033332b7dfe5a329fa95c414656e7c3478eca9a5b511f9e562d93f"},
+    {file = "getdaft-0.3.10-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8833187719e8963c3b53a78af648c85c2b1a39e383a8bddadbc98d5f4072b502"},
+    {file = "getdaft-0.3.10-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0eaf2b7b116cf9c9c5bc466fe5c3d5d3a689b96fe51cc0ae1b1de224b1e59e6b"},
+    {file = "getdaft-0.3.10-cp38-abi3-win_amd64.whl", hash = "sha256:2e541009d0fe9e98ef2aef7d5cbe5d05c463b54b7239d32807639f2a5434b502"},
+    {file = "getdaft-0.3.10.tar.gz", hash = "sha256:b45d1d3a82cfec0a187f52702a8cec7c63a5b805e8998625c07d74ef041ef39f"},
 ]
 
 [package.dependencies]
