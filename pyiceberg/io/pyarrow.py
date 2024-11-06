@@ -391,14 +391,13 @@ class PyArrowFileIO(FileIO):
                 gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
             if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
                 gcs_kwargs["default_bucket_location"] = bucket_location
-            if (endpoint := self.properties.get(GCS_ENDPOINT)) and GCS_SERVICE_HOST not in self.properties:
-                deprecation_message(
-                    deprecated_in="0.8.0",
-                    removed_in="0.9.0",
-                    help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
-                )
-                self.properties[GCS_SERVICE_HOST] = endpoint
-            if endpoint := self.properties.get(GCS_SERVICE_HOST):
+            if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
+                if self.properties.get(GCS_ENDPOINT):
+                    deprecation_message(
+                        deprecated_in="0.8.0",
+                        removed_in="0.9.0",
+                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+                    )
                 url_parts = urlparse(endpoint)
                 gcs_kwargs["scheme"] = url_parts.scheme
                 gcs_kwargs["endpoint_override"] = url_parts.netloc
