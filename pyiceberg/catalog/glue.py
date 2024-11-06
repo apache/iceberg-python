@@ -29,6 +29,7 @@ from typing import (
 )
 
 import boto3
+from botocore.credentials import AssumeRoleCredentialFetcher, Credentials, DeferredRefreshableCredentials
 from mypy_boto3_glue.client import GlueClient
 from mypy_boto3_glue.type_defs import (
     ColumnTypeDef,
@@ -59,7 +60,14 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+from pyiceberg.io import (
+    AWS_ACCESS_KEY_ID,
+    AWS_REGION,
+    AWS_ROLE_ARN,
+    AWS_ROLE_SESSION_NAME,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
+)
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
@@ -127,6 +135,8 @@ GLUE_REGION = "glue.region"
 GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
+GLUE_ROLE_ARN = "glue.role-arn"
+GLUE_ROLE_SESSION_NAME = "glue.role-session-name"
 
 
 def _construct_parameters(
@@ -296,13 +306,48 @@ class GlueCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
 
+        credentials = Credentials(
+            access_key=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            secret_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
+        )
+
         session = boto3.Session(
             profile_name=properties.get(GLUE_PROFILE_NAME),
             region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
-            aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            aws_access_key_id=credentials.access_key,
+            aws_secret_access_key=credentials.secret_key,
+            aws_session_token=credentials.token,
         )
+
+        if role_arn := get_first_property_value(properties, GLUE_ROLE_ARN, AWS_ROLE_ARN):
+            extra_args = {}
+            if role_session_name := get_first_property_value(properties, GLUE_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+                extra_args["RoleSessionName"] = role_session_name
+
+            fetcher = AssumeRoleCredentialFetcher(
+                client_creator=session.client,
+                source_credentials=credentials,
+                role_arn=role_arn,
+                extra_args=extra_args,
+            )
+            refreshable_credentials = DeferredRefreshableCredentials(
+                method="assume-role",
+                refresh_using=fetcher.fetch_credentials,
+            )
+            from botocore.session import Session as BotoSession
+
+            botocore_session = BotoSession()
+            botocore_session._credentials = refreshable_credentials  # noqa: SLF001
+            session = boto3.Session(
+                profile_name=properties.get(GLUE_PROFILE_NAME),
+                region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
+                aws_access_key_id=credentials.access_key,
+                aws_secret_access_key=credentials.secret_key,
+                aws_session_token=credentials.token,
+                botocore_session=botocore_session,
+            )
+
         self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
 
         if glue_catalog_id := properties.get(GLUE_ID):
