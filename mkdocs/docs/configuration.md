@@ -440,6 +440,8 @@ configures the AWS credentials for both Glue Catalog and S3 FileIO.
 | client.access-key-id     | admin          | Configure the static access key id used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
 | client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO |
 | client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO     |
+| client.role-session-name      | session                    | An optional identifier for the assumed role session.                                                                                                                                                                                                      |
+| client.role-arn          | arn:aws:...                | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.                                                                                                                              |
 
 <!-- prettier-ignore-start -->
 
