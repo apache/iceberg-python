@@ -585,6 +585,7 @@ def test_passing_glue_session_properties() -> None:
             aws_session_token="dynamodb.session-token",
             region_name="dynamodb.region",
             profile_name="dynamodb.profile-name",
+            botocore_session=None,
         )
         assert test_catalog.dynamodb is mock_session().client()
 
@@ -608,6 +609,7 @@ def test_passing_unified_session_properties_to_dynamodb() -> None:
             aws_session_token="client.session-token",
             region_name="client.region",
             profile_name="dynamodb.profile-name",
+            botocore_session=None,
         )
         assert test_catalog.dynamodb is mock_session().client()
 
