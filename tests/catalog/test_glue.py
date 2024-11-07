@@ -657,6 +657,7 @@ def test_passing_glue_session_properties() -> None:
         aws_session_token="glue.session-token",
         region_name="glue.region",
         profile_name="glue.profile-name",
+        botocore_session=None,
     )
     assert test_catalog.glue is mock_session().client()
 
@@ -677,6 +678,7 @@ def test_passing_unified_session_properties_to_glue() -> None:
         aws_session_token="client.session-token",
         region_name="client.region",
         profile_name="glue.profile-name",
+        botocore_session=None,
     )
     assert test_catalog.glue is mock_session().client()
 
