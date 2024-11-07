@@ -472,6 +472,17 @@ def test_view_exists_404(rest_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     assert not catalog.view_exists((namespace, view))
 
+def test_view_exists_multilevel_namespace_404(rest_mock: Mocker) -> None:
+    multilevel_namespace = "core.examples.some_namespace"
+    view = "some_view"
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/{multilevel_namespace}/views/{view}",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.view_exists((multilevel_namespace, view))
+
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces",
