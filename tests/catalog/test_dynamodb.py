@@ -45,7 +45,6 @@ from pyiceberg.schema import Schema
 from pyiceberg.typedef import Properties
 from tests.conftest import (
     BUCKET_NAME,
-    DEPRECATED_AWS_SESSION_PROPERTIES,
     TABLE_METADATA_LOCATION_REGEX,
     UNIFIED_AWS_SESSION_PROPERTIES,
 )
@@ -563,28 +562,6 @@ def test_update_namespace_properties_overlap_update_removal(_bucket_initialize: 
     assert test_catalog.load_namespace_properties(database_name) == test_properties
 
 
-def test_passing_provided_profile() -> None:
-    catalog_name = "test_ddb_catalog"
-    session_props = {
-        "aws_access_key_id": "abc",
-        "aws_secret_access_key": "def",
-        "aws_session_token": "ghi",
-        "region_name": "eu-central-1",
-        "botocore_session": None,
-        "profile_name": None,
-    }
-    props = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    props.update(session_props)  # type: ignore
-    with mock.patch("boto3.Session", return_value=mock.Mock()) as mock_session:
-        mock_client = mock.Mock()
-        mock_session.return_value.client.return_value = mock_client
-        mock_client.describe_table.return_value = {"Table": {"TableStatus": "ACTIVE"}}
-        test_catalog = DynamoDbCatalog(catalog_name, **props)
-        assert test_catalog.dynamodb is mock_client
-        mock_session.assert_called_with(**session_props)
-        assert test_catalog.dynamodb is mock_session().client()
-
-
 @mock_aws
 def test_passing_glue_session_properties() -> None:
     session_properties: Properties = {
@@ -594,7 +571,6 @@ def test_passing_glue_session_properties() -> None:
         "dynamodb.region": "dynamodb.region",
         "dynamodb.session-token": "dynamodb.session-token",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -619,7 +595,6 @@ def test_passing_unified_session_properties_to_dynamodb() -> None:
     session_properties: Properties = {
         "dynamodb.profile-name": "dynamodb.profile-name",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:

@@ -42,29 +42,11 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSnapshotUpdate,
-    AddSortOrderUpdate,
-    AssertCreate,
-    AssertCurrentSchemaId,
-    AssertDefaultSortOrderId,
-    AssertDefaultSpecId,
-    AssertLastAssignedFieldId,
-    AssertLastAssignedPartitionId,
-    AssertRefSnapshotId,
-    AssertTableUUID,
     CommitTableRequest,
-    RemovePropertiesUpdate,
-    SetDefaultSortOrderUpdate,
-    SetPropertiesUpdate,
-    SetSnapshotRefUpdate,
     StaticTable,
     Table,
     TableIdentifier,
-    UpdateSchema,
-    _apply_table_update,
     _match_deletes_to_data_file,
-    _TableMetadataUpdateContext,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import SnapshotRef
@@ -82,6 +64,26 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
+from pyiceberg.table.update import (
+    AddSnapshotUpdate,
+    AddSortOrderUpdate,
+    AssertCreate,
+    AssertCurrentSchemaId,
+    AssertDefaultSortOrderId,
+    AssertDefaultSpecId,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
+    AssertRefSnapshotId,
+    AssertTableUUID,
+    RemovePropertiesUpdate,
+    SetDefaultSortOrderUpdate,
+    SetPropertiesUpdate,
+    SetSnapshotRefUpdate,
+    _apply_table_update,
+    _TableMetadataUpdateContext,
+    update_table_metadata,
+)
+from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
@@ -1241,3 +1243,18 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_table_module_refactoring_backward_compatibility() -> None:
+    # TODO: Remove this in 0.9.0
+    try:
+        from pyiceberg.table import (  # noqa: F401
+            DeleteFiles,
+            FastAppendFiles,
+            MergeAppendFiles,
+            Move,
+            MoveOperation,
+            OverwriteFiles,
+        )
+    except Exception as exc:
+        raise pytest.fail("Importing moved modules should not raise an exception") from exc

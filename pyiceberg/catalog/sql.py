@@ -61,9 +61,13 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse, Table, TableRequirement, TableUpdate
+from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import strtobool
 
@@ -72,6 +76,7 @@ if TYPE_CHECKING:
 
 DEFAULT_ECHO_VALUE = "false"
 DEFAULT_POOL_PRE_PING_VALUE = "false"
+DEFAULT_INIT_CATALOG_TABLES = "true"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -119,10 +124,12 @@ class SqlCatalog(MetastoreCatalog):
         echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
         echo = strtobool(echo_str) if echo_str != "debug" else "debug"
         pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+        init_catalog_tables = strtobool(self.properties.get("init_catalog_tables", DEFAULT_INIT_CATALOG_TABLES))
 
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
-        self._ensure_tables_exist()
+        if init_catalog_tables:
+            self._ensure_tables_exist()
 
     def _ensure_tables_exist(self) -> None:
         with Session(self.engine) as session:
@@ -572,8 +579,6 @@ class SqlCatalog(MetastoreCatalog):
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
-
-        If namespace not provided, will list all tables in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.

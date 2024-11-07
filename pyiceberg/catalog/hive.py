@@ -84,10 +84,12 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableProperties,
+)
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
@@ -259,7 +261,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(properties["uri"], properties.get("ugi"))
+        self._client = self._create_hive_client(properties)
 
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
@@ -268,6 +270,19 @@ class HiveCatalog(MetastoreCatalog):
             LOCK_CHECK_RETRIES,
             DEFAULT_LOCK_CHECK_RETRIES,
         )
+
+    @staticmethod
+    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+        last_exception = None
+        for uri in properties["uri"].split(","):
+            try:
+                return _HiveClient(uri, properties.get("ugi"))
+            except BaseException as e:
+                last_exception = e
+        if last_exception is not None:
+            raise last_exception
+        else:
+            raise ValueError(f"Unable to connect to hive using uri: {properties['uri']}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -616,7 +631,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         When the database doesn't exist, it will just return an empty list.
 
@@ -631,7 +646,13 @@ class HiveCatalog(MetastoreCatalog):
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
-            return [(database_name, table_name) for table_name in open_client.get_all_tables(db_name=database_name)]
+            return [
+                (database_name, table.tableName)
+                for table in open_client.get_table_objects_by_name(
+                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                )
+                if table.parameters[TABLE_TYPE].lower() == ICEBERG
+            ]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.

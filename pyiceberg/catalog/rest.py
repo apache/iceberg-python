@@ -69,11 +69,13 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableIdentifier,
-    TableRequirement,
-    TableUpdate,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
@@ -110,6 +112,7 @@ class IdentifierKind(Enum):
     VIEW = "view"
 
 
+ACCESS_DELEGATION_DEFAULT = "vended-credentials"
 AUTHORIZATION_HEADER = "Authorization"
 BEARER_PREFIX = "Bearer"
 CATALOG_SCOPE = "catalog"
@@ -407,10 +410,7 @@ class RestCatalog(Catalog):
         self, identifier: Union[str, Identifier, TableIdentifier], kind: IdentifierKind = IdentifierKind.TABLE
     ) -> Properties:
         if isinstance(identifier, TableIdentifier):
-            if identifier.namespace.root[0] == self.name:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root[1:]), kind.value: identifier.name}
-            else:
-                return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
+            return {"namespace": NAMESPACE_SEPARATOR.join(identifier.namespace.root), kind.value: identifier.name}
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
 
         return {"namespace": NAMESPACE_SEPARATOR.join(identifier_tuple[:-1]), kind.value: identifier_tuple[-1]}
@@ -526,6 +526,7 @@ class RestCatalog(Catalog):
                 {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
             ),
             catalog=self,
+            config=table_response.config,
         )
 
     def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
@@ -556,7 +557,7 @@ class RestCatalog(Catalog):
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
-        session.headers["X-Iceberg-Access-Delegation"] = "vended-credentials"
+        session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
     def _extract_headers_from_properties(self) -> Dict[str, str]:
         return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
@@ -576,6 +577,7 @@ class RestCatalog(Catalog):
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
+        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:
             location = location.rstrip("/")
@@ -657,6 +659,7 @@ class RestCatalog(Catalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
             name=namespace_and_table["table"],
@@ -776,9 +779,15 @@ class RestCatalog(Catalog):
         identifier = self._identifier_to_tuple_without_catalog(table.identifier)
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
+
+        headers = self._session.headers
+        if table_token := table.config.get(TOKEN):
+            headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
+
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
             data=table_request.model_dump_json().encode(UTF8),
+            headers=headers,
         )
         try:
             response.raise_for_status()

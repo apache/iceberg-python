@@ -53,8 +53,8 @@ from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
-    GCS_ENDPOINT,
     GCS_PROJECT_ID,
+    GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
     fsspec,
@@ -111,23 +111,23 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--s3.secret-access-key", action="store", default="password", help="The AWS secret access key ID for tests marked as s3"
     )
-    # ADLFS options
+    # ADLS options
     # Azurite provides default account name and key.  Those can be customized using env variables.
     # For more information, see README file at https://github.com/azure/azurite#default-storage-account
     parser.addoption(
-        "--adlfs.endpoint",
+        "--adls.endpoint",
         action="store",
         default="http://127.0.0.1:10000",
-        help="The ADLS endpoint URL for tests marked as adlfs",
+        help="The ADLS endpoint URL for tests marked as adls",
     )
     parser.addoption(
-        "--adlfs.account-name", action="store", default="devstoreaccount1", help="The ADLS account key for tests marked as adlfs"
+        "--adls.account-name", action="store", default="devstoreaccount1", help="The ADLS account key for tests marked as adls"
     )
     parser.addoption(
-        "--adlfs.account-key",
+        "--adls.account-key",
         action="store",
         default="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-        help="The ADLS secret account key for tests marked as adlfs",
+        help="The ADLS secret account key for tests marked as adls",
     )
     parser.addoption(
         "--gcs.endpoint", action="store", default="http://0.0.0.0:4443", help="The GCS endpoint URL for tests marked gcs"
@@ -1873,7 +1873,7 @@ def fsspec_fileio(request: pytest.FixtureRequest) -> FsspecFileIO:
 @pytest.fixture
 def fsspec_fileio_gcs(request: pytest.FixtureRequest) -> FsspecFileIO:
     properties = {
-        GCS_ENDPOINT: request.config.getoption("--gcs.endpoint"),
+        GCS_SERVICE_HOST: request.config.getoption("--gcs.endpoint"),
         GCS_TOKEN: request.config.getoption("--gcs.oauth2.token"),
         GCS_PROJECT_ID: request.config.getoption("--gcs.project-id"),
     }
@@ -1885,7 +1885,7 @@ def pyarrow_fileio_gcs(request: pytest.FixtureRequest) -> "PyArrowFileIO":
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     properties = {
-        GCS_ENDPOINT: request.config.getoption("--gcs.endpoint"),
+        GCS_SERVICE_HOST: request.config.getoption("--gcs.endpoint"),
         GCS_TOKEN: request.config.getoption("--gcs.oauth2.token"),
         GCS_PROJECT_ID: request.config.getoption("--gcs.project-id"),
         GCS_TOKEN_EXPIRES_AT_MS: datetime_to_millis(datetime.now()) + 60 * 1000,
@@ -1955,16 +1955,16 @@ def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, No
 
 
 @pytest.fixture
-def adlfs_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
+def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
     from azure.storage.blob import BlobServiceClient
 
-    azurite_url = request.config.getoption("--adlfs.endpoint")
-    azurite_account_name = request.config.getoption("--adlfs.account-name")
-    azurite_account_key = request.config.getoption("--adlfs.account-key")
+    azurite_url = request.config.getoption("--adls.endpoint")
+    azurite_account_name = request.config.getoption("--adls.account-name")
+    azurite_account_key = request.config.getoption("--adls.account-key")
     azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
     properties = {
-        "adlfs.connection-string": azurite_connection_string,
-        "adlfs.account-name": azurite_account_name,
+        "adls.connection-string": azurite_connection_string,
+        "adls.account-name": azurite_account_name,
     }
 
     bbs = BlobServiceClient.from_connection_string(conn_str=azurite_connection_string)
@@ -2028,14 +2028,6 @@ TABLE_METADATA_LOCATION_REGEX = re.compile(
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
-
-DEPRECATED_AWS_SESSION_PROPERTIES = {
-    "aws_access_key_id": "aws_access_key_id",
-    "aws_secret_access_key": "aws_secret_access_key",
-    "aws_session_token": "aws_session_token",
-    "region_name": "region_name",
-    "profile_name": "profile_name",
-}
 
 UNIFIED_AWS_SESSION_PROPERTIES = {
     "client.access-key-id": "client.access-key-id",
