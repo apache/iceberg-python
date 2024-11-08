@@ -2554,3 +2554,37 @@ def test_create_table_integrity_after_fresh_assignment(catalog: Catalog) -> None
     assert tbl.schema() == expected_schema
     assert tbl.spec() == expected_spec
     assert tbl.sort_order() == expected_sort_order
+
+
+@pytest.mark.integration
+def test_create_table_integrity_without_fresh_assignment(catalog: Catalog) -> None:
+    schema = Schema(
+        NestedField(field_id=5, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=4, name="col_fixed", field_type=FixedType(25), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=5, field_id=1000, transform=IdentityTransform(), name="col_uuid"), spec_id=0
+    )
+    sort_order = SortOrder(SortField(source_id=4, transform=IdentityTransform()))
+    tbl_name = "default.test_create_integrity"
+    try:
+        catalog.drop_table(tbl_name)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier=tbl_name, schema=schema, partition_spec=partition_spec, sort_order=sort_order, assign_fresh_ids=False
+    )
+    # Here, unfortunately the REST Catalog assigns fresh IDs - although it is still a good test to cover a different code
+    # path than 'test_create_table_integrity_after_fresh_assignment'
+    expected_schema = Schema(
+        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+    )
+    expected_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="col_uuid"), spec_id=0
+    )
+    expected_sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+    assert tbl.schema() == expected_schema
+    assert tbl.spec() == expected_spec
+    assert tbl.sort_order() == expected_sort_order
