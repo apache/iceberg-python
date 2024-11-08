@@ -313,9 +313,7 @@ class GlueCatalog(MetastoreCatalog):
             endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT),
             config=Config(
                 retries={
-                    "max_attempts": get_first_property_value(properties, GLUE_MAX_RETRIES)
-                    if get_first_property_value(properties, GLUE_MAX_RETRIES)
-                    else MAX_RETRIES,
+                    "max_attempts": properties.get(GLUE_MAX_RETRIES, MAX_RETRIES),
                     "mode": "standard",
                 }
             ),
