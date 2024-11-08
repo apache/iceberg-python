@@ -29,6 +29,7 @@ from typing import (
 )
 
 import boto3
+from botocore.config import Config
 from mypy_boto3_glue.client import GlueClient
 from mypy_boto3_glue.type_defs import (
     ColumnTypeDef,
@@ -44,6 +45,7 @@ from pyiceberg.catalog import (
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
+    MAX_RETRIES,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
@@ -128,6 +130,7 @@ GLUE_REGION = "glue.region"
 GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
+GLUE_MAX_RETRIES = "glue.max-retries"
 
 
 def _construct_parameters(
@@ -305,7 +308,18 @@ class GlueCatalog(MetastoreCatalog):
             aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
-        self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
+        self.glue: GlueClient = session.client(
+            "glue",
+            endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT),
+            config=Config(
+                retries={
+                    "max_attempts": get_first_property_value(properties, GLUE_MAX_RETRIES)
+                    if get_first_property_value(properties, GLUE_MAX_RETRIES)
+                    else MAX_RETRIES,
+                    "mode": "standard",
+                }
+            ),
+        )
 
         if glue_catalog_id := properties.get(GLUE_ID):
             _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
