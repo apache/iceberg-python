@@ -38,7 +38,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import (
     # DeclarativeBase,
     Mapped,
-    MappedAsDataclass,
+    # MappedAsDataclass,
     Session,
     mapped_column,
 )
@@ -81,7 +81,7 @@ DEFAULT_INIT_CATALOG_TABLES = "true"
 
 DeclarativeBase = declarative_base()
 
-class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
+class SqlCatalogBaseTable(DeclarativeBase):
     pass
 
 
