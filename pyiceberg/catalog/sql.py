@@ -34,8 +34,9 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import (
-    DeclarativeBase,
+    # DeclarativeBase,
     Mapped,
     MappedAsDataclass,
     Session,
@@ -78,6 +79,7 @@ DEFAULT_ECHO_VALUE = "false"
 DEFAULT_POOL_PRE_PING_VALUE = "false"
 DEFAULT_INIT_CATALOG_TABLES = "true"
 
+DeclarativeBase = declarative_base()
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
     pass
