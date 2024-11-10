@@ -38,4 +38,12 @@ class StatisticsFile(IcebergBaseModel):
     statistics_path: str = Field(alias="statistics-path")
     file_size_in_bytes: int = Field(alias="file-size-in-bytes")
     file_footer_size_in_bytes: int = Field(alias="file-footer-size-in-bytes")
+    key_metadata: Optional[str] = Field(alias="key-metadata", default=None)
     blob_metadata: List[BlobMetadata] = Field(alias="blob-metadata")
+
+
+def reject_statistics(
+    statistics: List[StatisticsFile],
+    reject_snapshot_id: int,
+) -> List[StatisticsFile]:
+    return [stat for stat in statistics if stat.snapshot_id != reject_snapshot_id]

@@ -84,7 +84,6 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.table.statistics import StatisticsFile
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
@@ -95,14 +94,12 @@ from pyiceberg.table.update import (
     AssertTableUUID,
     AssignUUIDUpdate,
     RemovePropertiesUpdate,
-    RemoveStatisticsUpdate,
     SetCurrentSchemaUpdate,
     SetDefaultSortOrderUpdate,
     SetDefaultSpecUpdate,
     SetLocationUpdate,
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
-    SetStatisticsUpdate,
     TableRequirement,
     TableUpdate,
     UpdatesAndRequirements,
@@ -119,6 +116,7 @@ from pyiceberg.table.update.snapshot import (
     _OverwriteFiles,
 )
 from pyiceberg.table.update.spec import UpdateSpec
+from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -666,42 +664,6 @@ class Transaction:
         """
         raise NotImplementedError("Not yet implemented")
 
-    def set_statistics(self, snapshot_id: int, statistics_file: StatisticsFile) -> Transaction:
-        """Set the statistics for a snapshot.
-
-        Args:
-            snapshot_id: The snapshot ID to set the statistics for.
-            statistics_file: The statistics file to set.
-
-        Returns:
-            The alter table builder.
-        """
-        updates = (
-            SetStatisticsUpdate(
-                snapshot_id=snapshot_id,
-                statistics=statistics_file,
-            ),
-        )
-
-        return self._apply(updates, ())
-
-    def remove_statistics(self, snapshot_id: int) -> Transaction:
-        """Remove the statistics for a snapshot.
-
-        Args:
-            snapshot_id: The snapshot ID to remove the statistics for.
-
-        Returns:
-            The alter table builder.
-        """
-        updates = (
-            RemoveStatisticsUpdate(
-                snapshot_id=snapshot_id,
-            ),
-        )
-
-        return self._apply(updates, ())
-
     def commit_transaction(self) -> Table:
         """Commit the changes to the catalog.
 
@@ -1020,6 +982,23 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
+
+    def update_statistics(self) -> UpdateStatistics:
+        """
+        Shorthand to run statistics management operations like add statistics and remove statistics.
+
+        Use table.update_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_statistics() as update:
+            update.set_statistics(snapshot_id=1, statistics_file=statistics_file)
+            update.remove_statistics(snapshot_id=2)
+        """
+        return UpdateStatistics(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
