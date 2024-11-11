@@ -20,7 +20,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    Union,
+    Union, override,
 )
 
 from pyiceberg.catalog import Catalog, PropertiesUpdateSummary
@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
 
 class NoopCatalog(Catalog):
+    @override
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -54,6 +55,7 @@ class NoopCatalog(Catalog):
     ) -> Table:
         raise NotImplementedError
 
+    @override
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],
@@ -65,12 +67,15 @@ class NoopCatalog(Catalog):
     ) -> CreateTableTransaction:
         raise NotImplementedError
 
+    @override
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         raise NotImplementedError
 
+    @override
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
+    @override
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -86,42 +91,54 @@ class NoopCatalog(Catalog):
         """
         raise NotImplementedError
 
+    @override
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
+    @override
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
+    @override
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         raise NotImplementedError
 
+    @override
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
         raise NotImplementedError
 
+    @override
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         raise NotImplementedError
 
+    @override
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
+    @override
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         raise NotImplementedError
 
+    @override
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         raise NotImplementedError
 
+    @override
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
