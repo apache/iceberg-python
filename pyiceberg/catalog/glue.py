@@ -26,6 +26,7 @@ from typing import (
     Tuple,
     Union,
     cast,
+    override,
 )
 
 import boto3
@@ -158,21 +159,27 @@ GLUE_PRIMITIVE_TYPES = {
 
 
 class _IcebergSchemaToGlueType(SchemaVisitor[str]):
+    @override
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
+    @override
     def struct(self, struct: StructType, field_results: List[str]) -> str:
         return f"struct<{','.join(field_results)}>"
 
+    @override
     def field(self, field: NestedField, field_result: str) -> str:
         return f"{field.name}:{field_result}"
 
+    @override
     def list(self, list_type: ListType, element_result: str) -> str:
         return f"array<{element_result}>"
 
+    @override
     def map(self, map_type: MapType, key_result: str, value_result: str) -> str:
         return f"map<{key_result},{value_result}>"
 
+    @override
     def primitive(self, primitive: PrimitiveType) -> str:
         if isinstance(primitive, DecimalType):
             return f"decimal({primitive.precision},{primitive.scale})"
@@ -376,6 +383,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
+    @override
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -420,6 +428,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -442,6 +451,7 @@ class GlueCatalog(MetastoreCatalog):
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
         return self.load_table(identifier=identifier)
 
+    @override
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -521,6 +531,7 @@ class GlueCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
+    @override
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and returns the table instance.
 
@@ -541,6 +552,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self._convert_glue_to_iceberg(self._get_glue_table(database_name=database_name, table_name=table_name))
 
+    @override
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
 
@@ -557,6 +569,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
+    @override
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         """Rename a fully classified table name.
 
@@ -618,6 +631,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
+    @override
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -635,6 +649,7 @@ class GlueCatalog(MetastoreCatalog):
         except self.glue.exceptions.AlreadyExistsException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
+    @override
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         """Drop a namespace.
 
@@ -658,6 +673,7 @@ class GlueCatalog(MetastoreCatalog):
 
         self.glue.delete_database(Name=database_name)
 
+    @override
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
@@ -689,6 +705,7 @@ class GlueCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
         return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
+    @override
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
@@ -711,6 +728,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return [self.identifier_to_tuple(database["Name"]) for database in database_list]
 
+    @override
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
 
@@ -741,6 +759,7 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties
 
+    @override
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -765,9 +784,11 @@ class GlueCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
+    @override
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
