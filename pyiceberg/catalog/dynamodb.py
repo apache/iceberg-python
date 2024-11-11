@@ -25,6 +25,7 @@ from typing import (
     Set,
     Tuple,
     Union,
+    override
 )
 
 import boto3
@@ -140,6 +141,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         else:
             return True
 
+    @override
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -194,6 +196,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -209,6 +212,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
+    @override
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -228,6 +232,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
+    @override
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """
         Load the table's metadata and returns the table instance.
@@ -249,6 +254,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
         return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
 
+    @override
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
 
@@ -270,6 +276,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchTableError(f"Table does not exist: {database_name}.{table_name}") from e
 
+    @override
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         """Rename a fully classified table name.
 
@@ -337,6 +344,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return self.load_table(to_identifier)
 
+    @override
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -358,6 +366,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
+    @override
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         """Drop a namespace.
 
@@ -385,6 +394,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except ConditionalCheckFailedException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
+    @override
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
@@ -429,6 +439,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return table_identifiers
 
+    @override
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List top-level namespaces from the catalog.
 
@@ -471,6 +482,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return database_identifiers
 
+    @override
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """
         Get properties for a namespace.
@@ -489,6 +501,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         namespace_dict = _convert_dynamo_item_to_regular_dict(namespace_item)
         return _get_namespace_properties(namespace_dict=namespace_dict)
 
+    @override
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -526,9 +539,11 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         return properties_update_summary
 
+    @override
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
