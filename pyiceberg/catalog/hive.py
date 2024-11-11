@@ -29,6 +29,7 @@ from typing import (
     Tuple,
     Type,
     Union,
+    override
 )
 from urllib.parse import urlparse
 
@@ -230,22 +231,28 @@ class SchemaToHiveConverter(SchemaVisitor[str]):
     def __init__(self, hive2_compatible: bool):
         self.hive2_compatible = hive2_compatible
 
+    @override
     def schema(self, schema: Schema, struct_result: str) -> str:
         return struct_result
 
+    @override
     def struct(self, struct: StructType, field_results: List[str]) -> str:
         return f"struct<{','.join(field_results)}>"
 
+    @override
     def field(self, field: NestedField, field_result: str) -> str:
         return f"{field.name}:{field_result}"
 
+    @override
     def list(self, list_type: ListType, element_result: str) -> str:
         return f"array<{element_result}>"
 
+    @override
     def map(self, map_type: MapType, key_result: str, value_result: str) -> str:
         # Key has to be primitive for Hive
         return f"map<{key_result},{value_result}>"
 
+    @override
     def primitive(self, primitive: PrimitiveType) -> str:
         if isinstance(primitive, DecimalType):
             return f"decimal({primitive.precision},{primitive.scale})"
@@ -345,6 +352,7 @@ class HiveCatalog(MetastoreCatalog):
         except NoSuchObjectException as e:
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
+    @override
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -391,6 +399,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
+    @override
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -406,6 +415,7 @@ class HiveCatalog(MetastoreCatalog):
         """
         raise NotImplementedError
 
+    @override
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
 
@@ -438,6 +448,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return _do_wait_for_lock()
 
+    @override
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -516,6 +527,7 @@ class HiveCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
+    @override
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and return the table instance.
 
@@ -539,6 +551,7 @@ class HiveCatalog(MetastoreCatalog):
 
         return self._convert_hive_into_iceberg(hive_table)
 
+    @override
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
 
@@ -557,10 +570,12 @@ class HiveCatalog(MetastoreCatalog):
             # When the namespace doesn't exist, it throws the same error
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
+    @override
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         # This requires to traverse the reachability set, and drop all the data files.
         raise NotImplementedError("Not yet implemented")
 
+    @override
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         """Rename a fully classified table name.
 
@@ -591,6 +606,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {to_database_name}") from e
         return self.load_table(to_identifier)
 
+    @override
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -611,6 +627,7 @@ class HiveCatalog(MetastoreCatalog):
         except AlreadyExistsException as e:
             raise NamespaceAlreadyExistsError(f"Database {database_name} already exists") from e
 
+    @override
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         """Drop a namespace.
 
@@ -630,6 +647,7 @@ class HiveCatalog(MetastoreCatalog):
         except MetaException as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
+    @override
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List Iceberg tables under the given namespace in the catalog.
 
@@ -654,6 +672,7 @@ class HiveCatalog(MetastoreCatalog):
                 if table.parameters[TABLE_TYPE].lower() == ICEBERG
             ]
 
+    @override
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
@@ -667,6 +686,7 @@ class HiveCatalog(MetastoreCatalog):
         with self._client as open_client:
             return list(map(self.identifier_to_tuple, open_client.get_all_databases()))
 
+    @override
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
 
@@ -691,6 +711,7 @@ class HiveCatalog(MetastoreCatalog):
         except NoSuchObjectException as e:
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
+    @override
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -733,5 +754,6 @@ class HiveCatalog(MetastoreCatalog):
 
         return PropertiesUpdateSummary(removed=list(removed or []), updated=list(updated or []), missing=list(expected_to_change))
 
+    @override
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
