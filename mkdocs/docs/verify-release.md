@@ -40,7 +40,7 @@ After downloading the source tarball, signature, checksum, and KEYS file, here a
 First, import the keys.
 
 ```sh
-curl https://dist.apache.org/repos/dist/dev/iceberg/KEYS -o KEYS
+curl https://downloads.apache.org/iceberg/KEYS -o KEYS
 gpg --import KEYS
 ```
 

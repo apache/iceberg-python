@@ -82,10 +82,10 @@ export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 ```
 
 The `-s` option will sign the commit. If you don't have a key yet, you can find the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key). To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
-If you have not published your GPG key in [KEYS](https://dist.apache.org/repos/dist/dev/iceberg/KEYS) yet, you must publish it before sending the vote email by doing:
+If you have not published your GPG key in [KEYS](https://downloads.apache.org/iceberg/KEYS) yet, you must publish it before sending the vote email by doing:
 
 ```bash
-svn co https://dist.apache.org/repos/dist/dev/iceberg icebergsvn
+svn co https://dist.apache.org/repos/dist/release/iceberg icebergsvn
 cd icebergsvn
 echo "" >> KEYS # append a newline
 gpg --list-sigs <YOUR KEY ID HERE> >> KEYS # append signatures
@@ -166,7 +166,7 @@ The release tarball, signature, and checksums are here:
 
 You can find the KEYS file here:
 
-* https://dist.apache.org/repos/dist/dev/iceberg/KEYS
+* https://downloads.apache.org/iceberg/KEYS
 
 Convenience binary artifacts are staged on pypi:
 
