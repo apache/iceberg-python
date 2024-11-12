@@ -85,7 +85,7 @@ The `-s` option will sign the commit. If you don't have a key yet, you can find 
 If you have not published your GPG key in [KEYS](https://downloads.apache.org/iceberg/KEYS) yet, you must publish it before sending the vote email by doing:
 
 ```bash
-svn co https://downloads.apache.org/iceberg icebergsvn
+svn co https://dist.apache.org/repos/dist/release/iceberg icebergsvn
 cd icebergsvn
 echo "" >> KEYS # append a newline
 gpg --list-sigs <YOUR KEY ID HERE> >> KEYS # append signatures
