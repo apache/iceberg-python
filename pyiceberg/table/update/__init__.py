@@ -37,7 +37,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import SortOrder
-from pyiceberg.table.statistics import StatisticsFile, reject_statistics
+from pyiceberg.table.statistics import StatisticsFile, filter_statistics_by_snapshot_id
 from pyiceberg.typedef import (
     IcebergBaseModel,
     Properties,
@@ -496,7 +496,7 @@ def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _Table
     if update.snapshot_id != update.statistics.snapshot_id:
         raise ValueError("Snapshot id in statistics does not match the snapshot id in the update")
 
-    statistics = reject_statistics(base_metadata.statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})
@@ -507,7 +507,7 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
     if not any(stat.snapshot_id == update.snapshot_id for stat in base_metadata.statistics):
         raise ValueError(f"Statistics with snapshot id {update.snapshot_id} does not exist")
 
-    statistics = reject_statistics(base_metadata.statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics})

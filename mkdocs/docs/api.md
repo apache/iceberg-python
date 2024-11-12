@@ -1140,6 +1140,7 @@ table.update_statistics().set_statistics(snapshot_id, statistics_file).commit()
 table.update_statistics()
   .set_statistics(snapshot_id1, statistics_file1)
   .remove_statistics(snapshot_id2)
+  .commit()
 # Operations are applied on commit.
 ```
 
@@ -1147,8 +1148,8 @@ You can also use context managers to make more changes:
 
 ```python
 with table.update_statistics() as update:
-  update.set_statistics(1, statistics_file)
-  update.remove_statistics(2)
+  update.set_statistics(snaphsot_id1, statistics_file)
+  update.remove_statistics(snapshot_id2)
 ```
 
 ## Query the data

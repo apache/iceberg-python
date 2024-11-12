@@ -42,7 +42,7 @@ class StatisticsFile(IcebergBaseModel):
     blob_metadata: List[BlobMetadata] = Field(alias="blob-metadata")
 
 
-def reject_statistics(
+def filter_statistics_by_snapshot_id(
     statistics: List[StatisticsFile],
     reject_snapshot_id: int,
 ) -> List[StatisticsFile]:
