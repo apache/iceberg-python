@@ -40,12 +40,7 @@ from mypy_boto3_glue.type_defs import (
 )
 
 from pyiceberg.catalog import (
-    DEPRECATED_ACCESS_KEY_ID,
     DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
@@ -303,18 +298,12 @@ class GlueCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
+            profile_name=properties.get(GLUE_PROFILE_NAME),
+            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(
-                properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
-            ),
-            aws_secret_access_key=get_first_property_value(
-                properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
-            ),
-            aws_session_token=get_first_property_value(
-                properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
-            ),
+            aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
 
@@ -670,7 +659,7 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.delete_database(Name=database_name)
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
@@ -698,7 +687,7 @@ class GlueCatalog(MetastoreCatalog):
 
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
-        return [(database_name, table["Name"]) for table in table_list]
+        return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
@@ -781,3 +770,7 @@ class GlueCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    @staticmethod
+    def __is_iceberg_table(table: TableTypeDef) -> bool:
+        return table.get("Parameters", {}).get("table_type", "").lower() == ICEBERG

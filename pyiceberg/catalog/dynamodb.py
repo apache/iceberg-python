@@ -30,12 +30,7 @@ from typing import (
 import boto3
 
 from pyiceberg.catalog import (
-    DEPRECATED_ACCESS_KEY_ID,
     DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
     ICEBERG,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
@@ -102,18 +97,12 @@ class DynamoDbCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
+            profile_name=properties.get(DYNAMODB_PROFILE_NAME),
+            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(
-                properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
-            ),
-            aws_secret_access_key=get_first_property_value(
-                properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
-            ),
-            aws_session_token=get_first_property_value(
-                properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
-            ),
+            aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         self.dynamodb = session.client(DYNAMODB_CLIENT)
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
@@ -397,7 +386,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
