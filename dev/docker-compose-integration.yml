@@ -41,7 +41,7 @@ services:
       - hive:hive
       - minio:minio
   rest:
-    image: apache/iceberg-rest-adapter
+    image: tabulario/iceberg-rest
     container_name: pyiceberg-rest
     networks:
       iceberg_net:
