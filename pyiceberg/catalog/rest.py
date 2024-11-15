@@ -899,7 +899,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_view(self, identifier: Union[str]) -> None:
-        identifier_tuple = self.identifier_to_tuple_without_catalog(identifier)
+        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
             self.url(
                 Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier_tuple, IdentifierKind.VIEW)
