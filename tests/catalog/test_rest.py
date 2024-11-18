@@ -80,6 +80,17 @@ def example_table_metadata_with_snapshot_v1_rest_json(example_table_metadata_wit
 
 
 @pytest.fixture
+def example_table_metadata_with_no_location(example_table_metadata_with_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "metadata": example_table_metadata_with_snapshot_v1,
+        "config": {
+            "client.factory": "io.tabular.iceberg.catalog.TabularAwsClientFactory",
+            "region": "us-west-2",
+        },
+    }
+
+
+@pytest.fixture
 def example_table_metadata_no_snapshot_v1_rest_json(example_table_metadata_no_snapshot_v1: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "metadata-location": "s3://warehouse/database/table/metadata.json",
@@ -897,6 +908,70 @@ def test_create_table_with_given_location_removes_trailing_slash_200(
     )
     assert rest_mock.last_request
     assert rest_mock.last_request.json()["location"] == location
+
+
+def test_create_staged_table_200(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+    example_table_metadata_with_no_location: Dict[str, Any],
+    example_table_metadata_no_snapshot_v1_rest_json: Dict[str, Any],
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json=example_table_metadata_with_no_location,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables/fokko2",
+        json=example_table_metadata_no_snapshot_v1_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    identifier = ("fokko", "fokko2")
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    txn = catalog.create_table_transaction(
+        identifier=identifier,
+        schema=table_schema_simple,
+        location=None,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="id"), spec_id=1
+        ),
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+        properties={"owner": "fokko"},
+    )
+    txn.commit_transaction()
+
+    actual_response = rest_mock.last_request.json()
+    expected = {
+        "identifier": {"namespace": ["fokko"], "name": "fokko2"},
+        "requirements": [{"type": "assert-create"}],
+        "updates": [
+            {"action": "assign-uuid", "uuid": "b55d9dda-6561-423a-8bfc-787980ce421f"},
+            {"action": "upgrade-format-version", "format-version": 1},
+            {
+                "action": "add-schema",
+                "schema": {
+                    "type": "struct",
+                    "fields": [
+                        {"id": 1, "name": "id", "type": "int", "required": False},
+                        {"id": 2, "name": "data", "type": "string", "required": False},
+                    ],
+                    "schema-id": 0,
+                    "identifier-field-ids": [],
+                },
+                "last-column-id": 2,
+            },
+            {"action": "set-current-schema", "schema-id": -1},
+            {"action": "add-spec", "spec": {"spec-id": 0, "fields": []}},
+            {"action": "set-default-spec", "spec-id": -1},
+            {"action": "add-sort-order", "sort-order": {"order-id": 0, "fields": []}},
+            {"action": "set-default-sort-order", "sort-order-id": -1},
+            {"action": "set-location", "location": "s3://warehouse/database/table"},
+            {"action": "set-properties", "updates": {"owner": "bryan", "write.metadata.compression-codec": "gzip"}},
+        ],
+    }
+    assert actual_response == expected
 
 
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
