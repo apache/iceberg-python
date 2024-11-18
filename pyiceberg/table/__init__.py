@@ -822,7 +822,7 @@ class Table:
             row_filter:
                 A string or BooleanExpression that decsribes the
                 desired rows
-            selected_fileds:
+            selected_fields:
                 A tuple of strings representing the column names
                 to return in the output dataframe.
             case_sensitive:
