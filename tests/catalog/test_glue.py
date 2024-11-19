@@ -449,6 +449,7 @@ def test_list_tables(
     test_catalog.create_namespace(namespace=database_name)
 
     non_iceberg_table_name = "non_iceberg_table"
+    non_table_type_table_name = "non_table_type_table"
     glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
     glue_client.create_table(
         DatabaseName=database_name,
@@ -458,12 +459,21 @@ def test_list_tables(
             "Parameters": {"table_type": "noniceberg"},
         },
     )
+    glue_client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": non_table_type_table_name,
+            "TableType": "OTHER_TABLE_TYPE",
+            "Parameters": {},
+        },
+    )
 
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
     loaded_table_list = test_catalog.list_tables(database_name)
 
     assert (database_name, non_iceberg_table_name) not in loaded_table_list
+    assert (database_name, non_table_type_table_name) not in loaded_table_list
     for table_name in table_list:
         assert (database_name, table_name) in loaded_table_list
 
