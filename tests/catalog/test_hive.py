@@ -919,16 +919,20 @@ def test_list_tables(hive_table: HiveTable) -> None:
     tbl3.tableName = "table3"
     tbl3.dbName = "database"
     tbl3.parameters["table_type"] = "non_iceberg"
+    tbl4 = deepcopy(hive_table)
+    tbl4.tableName = "table4"
+    tbl4.dbName = "database"
+    tbl4.parameters.pop("table_type")
 
     catalog._client = MagicMock()
-    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3"]
-    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3]
+    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3", "table4"]
+    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
 
     got_tables = catalog.list_tables("database")
     assert got_tables == [("database", "table1"), ("database", "table2")]
     catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
     catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
-        dbname="database", tbl_names=["table1", "table2", "table3"]
+        dbname="database", tbl_names=["table1", "table2", "table3", "table4"]
     )
 
 
