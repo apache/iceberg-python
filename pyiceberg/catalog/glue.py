@@ -773,4 +773,4 @@ class GlueCatalog(MetastoreCatalog):
 
     @staticmethod
     def __is_iceberg_table(table: TableTypeDef) -> bool:
-        return table.get("Parameters", {}).get("table_type", "").lower() == ICEBERG
+        return table.get("Parameters", {}).get(TABLE_TYPE, "").lower() == ICEBERG
