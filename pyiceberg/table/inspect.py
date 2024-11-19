@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
@@ -76,7 +76,7 @@ class InspectTable:
                 additional_properties = None
 
             snapshots.append({
-                "committed_at": datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
                 "snapshot_id": snapshot.snapshot_id,
                 "parent_id": snapshot.parent_snapshot_id,
                 "operation": str(operation),
@@ -465,7 +465,7 @@ class InspectTable:
             snapshot = metadata.snapshot_by_id(snapshot_entry.snapshot_id)
 
             history.append({
-                "made_current_at": datetime.utcfromtimestamp(snapshot_entry.timestamp_ms / 1000.0),
+                "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=timezone.utc),
                 "snapshot_id": snapshot_entry.snapshot_id,
                 "parent_id": snapshot.parent_snapshot_id if snapshot else None,
                 "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
