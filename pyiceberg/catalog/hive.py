@@ -651,7 +651,7 @@ class HiveCatalog(MetastoreCatalog):
                 for table in open_client.get_table_objects_by_name(
                     dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
                 )
-                if table.parameters[TABLE_TYPE].lower() == ICEBERG
+                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
