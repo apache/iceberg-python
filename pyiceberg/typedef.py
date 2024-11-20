@@ -157,7 +157,7 @@ class IcebergRootModel(RootModel[T], Generic[T]):
 
 @lru_cache
 def _get_struct_fields(struct_type: StructType) -> Tuple[str, ...]:
-    return tuple([field.name for field in struct_type.fields])
+    return tuple(field.name for field in struct_type.fields)
 
 
 class Record(StructProtocol):

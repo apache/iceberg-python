@@ -19,7 +19,7 @@ exclude: ^vendor/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -29,7 +29,7 @@ repos:
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version (Used for linting)
-    rev: v0.1.8
+    rev: v0.7.4
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix, --preview ]
@@ -47,7 +47,7 @@ repos:
       - id: pycln
         args: [--config=pyproject.toml]
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.41.0
+    rev: v0.42.0
     hooks:
       - id: markdownlint
         args: ["--fix"]

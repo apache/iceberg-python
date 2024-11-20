@@ -1301,7 +1301,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (9, b"\x00\x9bj\xca8\xf1\x05\x00"),
             (10, b"\x9eK\x00\x00"),
             (11, b"\x01"),
-            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" b"\x00\x00\x00\x00"),
+            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
         ]
         assert tbl_a_data_file["nan_value_counts"] == []
         assert tbl_a_data_file["null_value_counts"] == [
@@ -1334,7 +1334,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (9, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
             (10, b"\xd9K\x00\x00"),
             (11, b"\x12"),
-            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11" b"\x11\x11\x11\x11"),
+            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11"),
         ]
         assert tbl_a_data_file["value_counts"] == [
             (1, 3),
