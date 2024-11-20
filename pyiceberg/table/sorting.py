@@ -108,7 +108,7 @@ class SortField(IcebergBaseModel):
         BeforeValidator(parse_transform),
         PlainSerializer(lambda c: str(c), return_type=str),  # pylint: disable=W0108
         WithJsonSchema({"type": "string"}, mode="serialization"),
-    ] = Field()
+    ] = Field(default=IdentityTransform())
     direction: SortDirection = Field()
     null_order: NullOrder = Field(alias="null-order")
 
