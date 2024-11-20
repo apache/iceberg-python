@@ -903,6 +903,8 @@ filterwarnings = [
   "ignore:unclosed <socket.socket",
   # Remove this in a future release of PySpark.
   "ignore:distutils Version classes are deprecated. Use packaging.version instead.",
+  # Remove this in a future release of PySpark. https://github.com/apache/iceberg-python/issues/1349
+  "ignore:datetime.datetime.utcfromtimestamp\\(\\) is deprecated and scheduled for removal in a future version.",
   # Remove this once https://github.com/boto/boto3/issues/3889 is fixed.
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated and scheduled for removal in a future version.",
 ]
