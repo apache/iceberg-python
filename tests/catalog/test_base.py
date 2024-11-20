@@ -102,7 +102,7 @@ class InMemoryCatalog(MetastoreCatalog):
                 self.__namespaces[namespace] = {}
 
             if not location:
-                location = f'{self._warehouse_location}/{"/".join(identifier)}'
+                location = f"{self._warehouse_location}/{'/'.join(identifier)}"
             location = location.rstrip("/")
 
             metadata_location = self._get_metadata_location(location=location)

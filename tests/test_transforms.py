@@ -973,7 +973,7 @@ def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundRe
 
 
 def _test_projection(lhs: Optional[UnboundPredicate[L]], rhs: Optional[UnboundPredicate[L]]) -> None:
-    assert type(lhs) == type(lhs), f"Different classes: {type(lhs)} != {type(rhs)}"
+    assert type(lhs) is type(lhs), f"Different classes: {type(lhs)} != {type(rhs)}"
     if lhs is None and rhs is None:
         # Both null
         pass
