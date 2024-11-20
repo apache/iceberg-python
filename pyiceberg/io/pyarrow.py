@@ -57,7 +57,6 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
@@ -86,10 +85,13 @@ from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
+    AWS_ROLE_ARN,
+    AWS_ROLE_SESSION_NAME,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
     GCS_DEFAULT_LOCATION,
     GCS_ENDPOINT,
+    GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
     HDFS_HOST,
@@ -102,6 +104,8 @@ from pyiceberg.io import (
     S3_ENDPOINT,
     S3_PROXY_URI,
     S3_REGION,
+    S3_ROLE_ARN,
+    S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     FileIO,
@@ -160,7 +164,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -363,6 +367,12 @@ class PyArrowFileIO(FileIO):
             if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
                 client_kwargs["connect_timeout"] = float(connect_timeout)
 
+            if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+                client_kwargs["role_arn"] = role_arn
+
+            if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+                client_kwargs["session_name"] = session_name
+
             return S3FileSystem(**client_kwargs)
         elif scheme in ("hdfs", "viewfs"):
             from pyarrow.fs import HadoopFileSystem
@@ -391,7 +401,13 @@ class PyArrowFileIO(FileIO):
                 gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
             if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
                 gcs_kwargs["default_bucket_location"] = bucket_location
-            if endpoint := self.properties.get(GCS_ENDPOINT):
+            if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
+                if self.properties.get(GCS_ENDPOINT):
+                    deprecation_message(
+                        deprecated_in="0.8.0",
+                        removed_in="0.9.0",
+                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+                    )
                 url_parts = urlparse(endpoint)
                 gcs_kwargs["scheme"] = url_parts.scheme
                 gcs_kwargs["endpoint_override"] = url_parts.netloc
@@ -812,7 +828,17 @@ def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start
         all_chunks = positional_deletes[0]
     else:
         all_chunks = pa.chunked_array(itertools.chain(*[arr.chunks for arr in positional_deletes]))
-    return np.subtract(np.setdiff1d(np.arange(start_index, end_index), all_chunks, assume_unique=False), start_index)
+
+    # Create the full range array with pyarrow
+    full_range = pa.array(range(start_index, end_index))
+    # When available, replace with Arrow generator to improve performance
+    # See https://github.com/apache/iceberg-python/issues/1271 for details
+
+    # Filter out values in all_chunks from full_range
+    result = pc.filter(full_range, pc.invert(pc.is_in(full_range, value_set=all_chunks)))
+
+    # Subtract the start_index from each element in the result
+    return pc.subtract(result, pa.scalar(start_index))
 
 
 def pyarrow_to_schema(
@@ -1679,23 +1705,6 @@ def project_batches(
             total_row_count += len(batch)
 
 
-@deprecated(
-    deprecated_in="0.7.0",
-    removed_in="0.8.0",
-    help_message="The public API for 'to_requested_schema' is deprecated and is replaced by '_to_requested_schema'",
-)
-def to_requested_schema(requested_schema: Schema, file_schema: Schema, table: pa.Table) -> pa.Table:
-    struct_array = visit_with_partner(requested_schema, table, ArrowProjectionVisitor(file_schema), ArrowAccessor(file_schema))
-
-    arrays = []
-    fields = []
-    for pos, field in enumerate(requested_schema.fields):
-        array = struct_array.field(pos)
-        arrays.append(array)
-        fields.append(pa.field(field.name, array.type, field.optional))
-    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
-
-
 def _to_requested_schema(
     requested_schema: Schema,
     file_schema: Schema,
@@ -1807,7 +1816,11 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
 
-        return pa.StructArray.from_arrays(arrays=field_arrays, fields=pa.struct(fields))
+        return pa.StructArray.from_arrays(
+            arrays=field_arrays,
+            fields=pa.struct(fields),
+            mask=struct_array.is_null() if isinstance(struct_array, pa.StructArray) else None,
+        )
 
     def field(self, field: NestedField, _: Optional[pa.Array], field_array: Optional[pa.Array]) -> Optional[pa.Array]:
         return field_array
@@ -2429,7 +2442,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
-        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
+        file_path = f"{table_metadata.location}/data/{task.generate_data_file_path('parquet')}"
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:

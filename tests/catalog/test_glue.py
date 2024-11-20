@@ -14,7 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from typing import Any, Dict, List
+from typing import List
 from unittest import mock
 
 import boto3
@@ -40,7 +40,6 @@ from pyiceberg.typedef import Properties
 from pyiceberg.types import IntegerType
 from tests.conftest import (
     BUCKET_NAME,
-    DEPRECATED_AWS_SESSION_PROPERTIES,
     TABLE_METADATA_LOCATION_REGEX,
     UNIFIED_AWS_SESSION_PROPERTIES,
 )
@@ -443,13 +442,13 @@ def test_list_tables(
     moto_endpoint_url: str,
     table_schema_nested: Schema,
     database_name: str,
-    table_name: str,
     table_list: List[str],
 ) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
 
     non_iceberg_table_name = "non_iceberg_table"
+    non_table_type_table_name = "non_table_type_table"
     glue_client = boto3.client("glue", endpoint_url=moto_endpoint_url)
     glue_client.create_table(
         DatabaseName=database_name,
@@ -459,12 +458,21 @@ def test_list_tables(
             "Parameters": {"table_type": "noniceberg"},
         },
     )
+    glue_client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": non_table_type_table_name,
+            "TableType": "OTHER_TABLE_TYPE",
+            "Parameters": {},
+        },
+    )
 
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
     loaded_table_list = test_catalog.list_tables(database_name)
 
     assert (database_name, non_iceberg_table_name) not in loaded_table_list
+    assert (database_name, non_table_type_table_name) not in loaded_table_list
     for table_name in table_list:
         assert (database_name, table_name) in loaded_table_list
 
@@ -639,26 +647,6 @@ def test_update_namespace_properties_overlap_update_removal(
 
 
 @mock_aws
-def test_passing_profile_name() -> None:
-    session_properties: Dict[str, Any] = {
-        "aws_access_key_id": "abc",
-        "aws_secret_access_key": "def",
-        "aws_session_token": "ghi",
-        "region_name": "eu-central-1",
-        "profile_name": "sandbox",
-        "botocore_session": None,
-    }
-    test_properties = {"type": "glue"}
-    test_properties.update(session_properties)
-
-    with mock.patch("boto3.Session") as mock_session:
-        test_catalog = GlueCatalog("glue", **test_properties)
-
-    mock_session.assert_called_with(**session_properties)
-    assert test_catalog.glue is mock_session().client()
-
-
-@mock_aws
 def test_passing_glue_session_properties() -> None:
     session_properties: Properties = {
         "glue.access-key-id": "glue.access-key-id",
@@ -667,7 +655,6 @@ def test_passing_glue_session_properties() -> None:
         "glue.region": "glue.region",
         "glue.session-token": "glue.session-token",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
@@ -689,7 +676,6 @@ def test_passing_unified_session_properties_to_glue() -> None:
     session_properties: Properties = {
         "glue.profile-name": "glue.profile-name",
         **UNIFIED_AWS_SESSION_PROPERTIES,
-        **DEPRECATED_AWS_SESSION_PROPERTIES,
     }
 
     with mock.patch("boto3.Session") as mock_session:
