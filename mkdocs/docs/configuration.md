@@ -342,6 +342,7 @@ catalog:
 | glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
 | glue.session-token     | AQoDYXdzEJr...                         | Configure the static session token used to access the Glue Catalog              |
 | glue.max-retries       | 10                                     | Configure the maximum number of retries for the Glue service calls              |
+| glue.retry-mode        | standard                               | Configure the retry mode for the Glue service. Default to standard.             |
 
 <!-- markdown-link-check-enable-->
 

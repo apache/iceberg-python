@@ -45,7 +45,6 @@ from pyiceberg.catalog import (
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
-    MAX_RETRIES,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
     TABLE_TYPE,
@@ -131,6 +130,13 @@ GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
 GLUE_MAX_RETRIES = "glue.max-retries"
+GLUE_RETRY_MODE = "glue.retry-mode"
+
+MAX_RETRIES = 10
+STANDARD_RETRY_MODE = "standard"
+ADAPTIVE_RETRY_MODE = "adaptive"
+LEGACY_RETRY_MODE = "legacy"
+EXISTING_RETRY_MODES = [STANDARD_RETRY_MODE, ADAPTIVE_RETRY_MODE, LEGACY_RETRY_MODE]
 
 
 def _construct_parameters(
@@ -300,6 +306,8 @@ class GlueCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
 
+        retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
+
         session = boto3.Session(
             profile_name=properties.get(GLUE_PROFILE_NAME),
             region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
@@ -314,7 +322,7 @@ class GlueCatalog(MetastoreCatalog):
             config=Config(
                 retries={
                     "max_attempts": properties.get(GLUE_MAX_RETRIES, MAX_RETRIES),
-                    "mode": "standard",
+                    "mode": retry_mode_prop_value if retry_mode_prop_value in EXISTING_RETRY_MODES else STANDARD_RETRY_MODE,
                 }
             ),
         )

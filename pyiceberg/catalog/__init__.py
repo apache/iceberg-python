@@ -94,7 +94,6 @@ METADATA = "metadata"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
-MAX_RETRIES = 10
 
 TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     r"""
