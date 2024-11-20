@@ -137,7 +137,7 @@ class ConsoleOutput(Output):
             else:
                 snapshots = []
 
-        snapshot_tree = Tree(f"Snapshots: {'.'.join(table.identifier)}")
+        snapshot_tree = Tree(f"Snapshots: {'.'.join(table.name())}")
         io = table.io
 
         for snapshot in snapshots:
@@ -216,7 +216,7 @@ class JsonOutput(Output):
 
         print(
             FauxTable(
-                identifier=table.identifier, metadata=table.metadata, metadata_location=table.metadata_location
+                identifier=table.name(), metadata=table.metadata, metadata_location=table.metadata_location
             ).model_dump_json()
         )
 

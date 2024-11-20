@@ -314,7 +314,7 @@ class HiveCatalog(MetastoreCatalog):
         )
 
     def _convert_iceberg_into_hive(self, table: Table) -> HiveTable:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
+        identifier_tuple = table.name()
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         current_time_millis = int(time.time() * 1000)
 
@@ -455,7 +455,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232

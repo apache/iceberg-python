@@ -133,7 +133,7 @@ class InMemoryCatalog(MetastoreCatalog):
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
+        identifier_tuple = table.name()
         current_table = self.load_table(identifier_tuple)
         base_metadata = current_table.metadata
 
