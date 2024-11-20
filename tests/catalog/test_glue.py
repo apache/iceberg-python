@@ -439,7 +439,6 @@ def test_list_tables(
     moto_endpoint_url: str,
     table_schema_nested: Schema,
     database_name: str,
-    table_name: str,
     table_list: List[str],
 ) -> None:
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})

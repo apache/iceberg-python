@@ -331,16 +331,18 @@ catalog:
 
 <!-- markdown-link-check-disable -->
 
-| Key                    | Example                              | Description                                                                     |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
-| glue.id                | 111111111111                         | Configure the 12-digit ID of the Glue Catalog                                   |
-| glue.skip-archive      | true                                 | Configure whether to skip the archival of older table versions. Default to true |
+| Key                    | Example                                | Description                                                                     |
+|------------------------|----------------------------------------|---------------------------------------------------------------------------------|
+| glue.id                | 111111111111                           | Configure the 12-digit ID of the Glue Catalog                                   |
+| glue.skip-archive      | true                                   | Configure whether to skip the archival of older table versions. Default to true |
 | glue.endpoint          | <https://glue.us-east-1.amazonaws.com> | Configure an alternative endpoint of the Glue service for GlueCatalog to access |
-| glue.profile-name      | default                              | Configure the static profile used to access the Glue Catalog                    |
-| glue.region            | us-east-1                            | Set the region of the Glue Catalog                                              |
-| glue.access-key-id     | admin                                | Configure the static access key id used to access the Glue Catalog              |
-| glue.secret-access-key | password                             | Configure the static secret access key used to access the Glue Catalog          |
-| glue.session-token     | AQoDYXdzEJr...                       | Configure the static session token used to access the Glue Catalog              |
+| glue.profile-name      | default                                | Configure the static profile used to access the Glue Catalog                    |
+| glue.region            | us-east-1                              | Set the region of the Glue Catalog                                              |
+| glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
+| glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
+| glue.session-token     | AQoDYXdzEJr...                         | Configure the static session token used to access the Glue Catalog              |
+| glue.max-retries       | 10                                     | Configure the maximum number of retries for the Glue service calls              |
+| glue.retry-mode        | standard                               | Configure the retry mode for the Glue service. Default to standard.             |
 
 <!-- markdown-link-check-enable-->
 
