@@ -330,7 +330,7 @@ class DynamoDbCatalog(MetastoreCatalog):
                 log_message += f"Rolled back table creation for {to_database_name}.{to_table_name}."
             except (NoSuchTableError, GenericDynamoDbError):
                 log_message += (
-                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. " f"Please clean up manually"
+                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. Please clean up manually"
                 )
 
             raise ValueError(log_message) from e
@@ -635,7 +635,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         if table_type.lower() != ICEBERG:
             raise NoSuchIcebergTableError(
-                f"Property table_type is {table_type}, expected {ICEBERG}: " f"{database_name}.{table_name}"
+                f"Property table_type is {table_type}, expected {ICEBERG}: {database_name}.{table_name}"
             )
 
         io = load_file_io(properties=self.properties, location=metadata_location)
