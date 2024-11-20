@@ -673,7 +673,7 @@ def test_hive_locking(session_catalog_hive: HiveCatalog) -> None:
 
     database_name: str
     table_name: str
-    _, database_name, table_name = table.identifier
+    database_name, table_name = table.name()
 
     hive_client: _HiveClient = _HiveClient(session_catalog_hive.properties["uri"])
     blocking_lock_request: LockRequest = session_catalog_hive._create_lock_request(database_name, table_name)
@@ -694,7 +694,7 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
     table = create_table(session_catalog_hive)
     database_name: str
     table_name: str
-    _, database_name, table_name = table.identifier
+    database_name, table_name = table.name()
     session_catalog_hive._lock_check_min_wait_time = 0.1
     session_catalog_hive._lock_check_max_wait_time = 0.5
     session_catalog_hive._lock_check_retries = 5
