@@ -309,7 +309,27 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        import pyarrow as pa
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)
+
+        def bucket(array: ArrayLike) -> ArrayLike:
+            if isinstance(array, pa.Array):
+                return pyiceberg_core_transform.bucket(array, self._num_buckets)
+            elif isinstance(array, pa.ChunkedArray):
+                result_chunks = []
+                for arr in array.iterchunks():
+                    result_chunks.append(pyiceberg_core_transform.bucket(arr, self._num_buckets))
+                return pa.chunked_array(result_chunks)
+            else:
+                raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
+
+        return bucket
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 class TimeResolution(IntEnum):
