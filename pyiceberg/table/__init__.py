@@ -801,7 +801,7 @@ class Table:
         Returns:
             An Identifier tuple of the table name
         """
-        return self.identifier
+        return self._identifier
 
     def scan(
         self,

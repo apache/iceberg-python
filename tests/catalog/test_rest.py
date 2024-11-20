@@ -763,7 +763,7 @@ def test_load_table_from_self_identifier_200(
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     table = catalog.load_table(("pdames", "table"))
-    actual = catalog.load_table(table.identifier)
+    actual = catalog.load_table(table.name())
     expected = Table(
         identifier=("pdames", "table"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
@@ -1111,7 +1111,7 @@ def test_register_table_200(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual.metadata_location == expected.metadata_location
-    assert actual.identifier == expected.identifier
+    assert actual.name() == expected.name()
 
 
 def test_register_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
@@ -1174,7 +1174,7 @@ def test_delete_table_from_self_identifier_204(
         status_code=204,
         request_headers=TEST_HEADERS,
     )
-    catalog.drop_table(table.identifier)
+    catalog.drop_table(table.name())
 
 
 def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
@@ -1236,7 +1236,7 @@ def test_rename_table_from_self_identifier_200(
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    actual = catalog.rename_table(table.identifier, to_identifier)
+    actual = catalog.rename_table(table.name(), to_identifier)
     expected = Table(
         identifier=("pdames", "destination"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
