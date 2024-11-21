@@ -19,23 +19,23 @@
 
 # How to Release
 
-This guide documents the process for releasing PyIceberg following the [Apache Release Process](https://infra.apache.org/release-publishing.html). The process involves:
+This guide outlines the process for releasing PyIceberg in accordance with the [Apache Release Process](https://infra.apache.org/release-publishing.html). The steps include:
 
 1. Preparing for a release
-2. Publishing a release candidate (RC)
-3. Community voting and validation
-4. Publishing the final release if the vote passes
-5. Post release
+2. Publishing a Release Candidate (RC)
+3. Community Voting and Validation
+4. Publishing the Final Release (if the vote passes)
+5. Post-Release Step
 
 ## Requirements
 
-* GPG key registered and published in [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS). See instructions at [Set up GPG key and Upload to Apache Iceberg KEYS file](#set-up-gpg-key-and-upload-to-apache-iceberg-keys-file).
-* SVN
-    * Access to Apache SVN for uploading artifacts to [Apache Iceberg dev dist](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Commmitter)
-    * Access to Apache SVN for uploading artifacts to [Apache Iceberg release dist](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC)
-* PyPI
-    * `twine` installed for uploading to PyPi
-    * PyPI account with access to publish to the [pyiceberg project](https://pypi.org/project/pyiceberg/)
+* A GPG key must be registered and published in the [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS). Follow [the instructions for setting up a GPG key and uploading it to the KEYS file](#set-up-gpg-key-and-upload-to-apache-iceberg-keys-file).
+* SVN Access
+    * Permission to upload artifacts to the [Apache development distribution](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Commmitter access).
+    * Permission to upload artifacts to the [Apache release distribution](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC access).
+* PyPI Access
+    * The `twine` package must be installed for uploading releases to PyPi.
+    * A PyPI account with publishing permissions for the [pyiceberg project](https://pypi.org/project/pyiceberg/).
 
 ## Preparing for a Release
 
