@@ -21,7 +21,7 @@
 
 This guide documents the process for releasing PyIceberg following the [Apache Release Process](https://infra.apache.org/release-publishing.html). The process involves:
 
-1. Prepare for a release
+1. Preparing for a release
 2. Publishing a release candidate (RC)
 3. Community voting and validation
 4. Publishing the final release if the vote passes
@@ -30,18 +30,18 @@ This guide documents the process for releasing PyIceberg following the [Apache R
 ## Requirements
 
 * GPG key registered and published in [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS)
+* SVN
+    * Access to Apache SVN for uploading artifacts to [Apache Iceberg dev dist](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Commmitter)
+    * Access to Apache SVN for uploading artifacts to [Apache Iceberg release dist](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC)
 * PyPI
     * `twine` installed for uploading to PyPi
     * PyPI account with access to publish to the [pyiceberg project](https://pypi.org/project/pyiceberg/)
-* SVN
-    * Access to Apache SVN for uploading artifacts to [Apache Iceberg dev/ dist](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Commmitter)
-    * Access to Apache SVN for uploading artifacts to [Apache Iceberg release/ dist](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC)
 
 ## Preparing for a Release
 
 ### Remove Deprecated APIs
 
-Before running the release candidate, we want to remove any APIs that were marked for removal under the @deprecated tag for this release.
+Before running the release candidate, we want to remove any APIs that were marked for removal under the `@deprecated` tag for this release.
 
 For example, the API with the following deprecation tag should be removed when preparing for the 0.2.0 release.
 
@@ -68,16 +68,18 @@ deprecation_message(
 
 Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the release version.
 
-## Release
+## Publishing a release candidate (RC)
 
 ### Create Tag
 
 Make sure you are on the correct branch:
 
-* For a Major/Minor release, make sure that you're on `main`
-* For a Patch release, make sure that you're on the branch corresponding to the pathch version, i.e. `pyiceberg-0.6.x`.
+* For a Major/Minor release, use the `main` branch
+* For a Patch release, use the branch corresponding to the pathch version, i.e. `pyiceberg-0.6.x`.
 
 Then, create a signed tag:
+
+Change `VERSION` and `RC` to the appropriate values.
 
 ```bash
 export RC=rc1
@@ -123,7 +125,7 @@ done
 
 ##### Upload Artifacts to Apache Dev SVN
 
-Now we can upload the files from the same directory:
+Now, upload the files from the same directory:
 
 ```bash
 export SVN_TMP_DIR=/tmp/iceberg-${VERSION_BRANCH}/
@@ -216,13 +218,13 @@ EOF
 
 ### Send Vote Email
 
-Send the content of `release-announcement-email.txt` to `dev@iceberg.apache.org`.
+Verify the content of `release-announcement-email.txt` and send it to `dev@iceberg.apache.org` with the corresponding subject line.
 
 ## Vote has failed
 
 If there are concerns with the RC, address the issues and generate another RC.
 
-## Vote has passed
+## Publish the Final Release (Vote has passed)
 
 A minimum of 3 binding +1 votes is required to pass an RC.
 Once the vote has been passed, you can close the vote thread by concluding it:
@@ -290,15 +292,15 @@ Thanks to everyone for contributing!
 
 Run the [`Python Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-ci-docs.yml).
 
-## Update the Github template
+### Update the Github template
 
 Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
 
-## Update the integration tests
+### Update the integration tests
 
 Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
 
-## Create a Github Release Note
+### Create a Github Release Note
 
 Create a [new Release Note](https://github.com/apache/iceberg-python/releases/new) on the iceberg-python Github repository.
 
