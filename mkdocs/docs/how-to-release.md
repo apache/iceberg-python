@@ -146,6 +146,14 @@ svn ci -m "PyIceberg ${VERSION}" ${SVN_TMP_DIR_VERSIONED}
 
 Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/dev/iceberg](https://dist.apache.org/repos/dist/dev/iceberg/).
 
+##### Remove Old Artifacts From Apache Dev SVN
+
+Clean up old RC artifacts:
+
+```bash
+svn delete https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-<OLD_RC_VERSION> -m "Remove old RC artifacts"
+```
+
 #### Upload to PyPi
 
 ##### Create Artifacts for PyPi
@@ -274,6 +282,14 @@ svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add 
 ```
 
 Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/release/iceberg](https://dist.apache.org/repos/dist/release/iceberg/).
+
+### Remove Old Artifacts From Apache Release SVN
+
+We only want to host the latest release. Clean up old release artifacts:
+
+```bash
+svn delete https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-<OLD_RELEASE_VERSION> -m "Remove old release artifacts"
+```
 
 ### Upload the accepted release to PyPi
 
