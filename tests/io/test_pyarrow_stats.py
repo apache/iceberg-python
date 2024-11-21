@@ -681,6 +681,73 @@ def test_stats_types(table_schema_nested: Schema) -> None:
     ]
 
 
+def construct_test_table_without_stats() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
+    table_metadata = {
+        "format-version": 2,
+        "location": "s3://bucket/test/location",
+        "last-column-id": 7,
+        "current-schema-id": 0,
+        "schemas": [
+            {
+                "type": "struct",
+                "schema-id": 0,
+                "fields": [
+                    {"id": 1, "name": "strings", "required": False, "type": "string"},
+                    {"id": 2, "name": "floats", "required": False, "type": "float"}
+                ]
+            }
+        ],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": []}],
+        "properties": {},
+    }
+
+    table_metadata = TableMetadataUtil.parse_obj(table_metadata)
+    arrow_schema = schema_to_pyarrow(table_metadata.schemas[0])
+    _strings = ["zzzzzzzzzzzzzzzzzzzz", "rrrrrrrrrrrrrrrrrrrr", None, "aaaaaaaaaaaaaaaaaaaa"]
+    _floats = [3.14, math.nan, 1.69, 100]
+
+    table = pa.Table.from_pydict(
+        {
+            "strings": _strings,
+            "floats": _floats
+        },
+        schema=arrow_schema,
+    )
+
+    metadata_collector: List[Any] = []
+
+    with pa.BufferOutputStream() as f:
+        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector, write_statistics=False) as writer:
+            writer.write_table(table)
+
+    return metadata_collector[0], table_metadata
+
+
+def test_is_stats_set_false() -> None:
+    metadata, table_metadata = construct_test_table_without_stats()
+    schema = get_current_schema(table_metadata)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    datafile = DataFile(**statistics.to_serialized_dict())
+
+    # assert attributes except for column_aggregates and null_value_counts are present
+    assert datafile.record_count == 4
+
+    assert len(datafile.column_sizes) == 2
+    assert datafile.column_sizes[1] > 0
+    assert datafile.column_sizes[2] > 0
+
+    assert len(datafile.nan_value_counts) == 0
+
+    assert datafile.split_offsets is not None
+    assert len(datafile.split_offsets) == 1
+    assert datafile.split_offsets[0] == 4
+
+
 # This is commented out for now because write_to_dataset drops the partition
 # columns making it harder to calculate the mapping from the column index to
 # datatype id
