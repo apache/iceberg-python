@@ -159,6 +159,13 @@ Download the zip file from the Github Action run and unzip locally.
 
 Upload release candidate to PyPi. This **won't** bump the version for everyone that hasn't pinned their version, since it is set to an RC [pre-release and those are ignored](https://packaging.python.org/en/latest/guides/distributing-packages-using-setuptools/#pre-release-versioning).
 
+<!-- prettier-ignore-start -->
+
+!!! note
+    `twine` might require an PyPi API token.
+
+<!-- prettier-ignore-end -->
+
 ```bash
 twine upload release-${VERSION}/*
 ```
@@ -265,6 +272,13 @@ Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/release/i
 ### Upload the accepted release to PyPi
 
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
+
+<!-- prettier-ignore-start -->
+
+!!! note
+    `twine` might require an PyPi API token.
+
+<!-- prettier-ignore-end -->
 
 ```bash
 svn checkout https://dist.apache.org/repos/dist/release/iceberg /tmp/iceberg-dist-release/
