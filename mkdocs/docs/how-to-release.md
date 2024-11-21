@@ -29,7 +29,7 @@ This guide documents the process for releasing PyIceberg following the [Apache R
 
 ## Requirements
 
-* GPG key registered and published in [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS)
+* GPG key registered and published in [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS). See instructions at [Set up GPG key and Upload to Apache Iceberg KEYS file](#set-up-gpg-key-and-upload-to-apache-iceberg-keys-file).
 * SVN
     * Access to Apache SVN for uploading artifacts to [Apache Iceberg dev dist](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Commmitter)
     * Access to Apache SVN for uploading artifacts to [Apache Iceberg release dist](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC)
@@ -41,7 +41,7 @@ This guide documents the process for releasing PyIceberg following the [Apache R
 
 ### Remove Deprecated APIs
 
-Before running the release candidate, we want to remove any APIs that were marked for removal under the `@deprecated` tag for this release.
+Before running the release candidate, we want to remove any APIs that were marked for removal under the `@deprecated` tag for this release. See [#1269](https://github.com/apache/iceberg-python/pull/1269).
 
 For example, the API with the following deprecation tag should be removed when preparing for the 0.2.0 release.
 
@@ -66,7 +66,7 @@ deprecation_message(
 
 ### Update Library Version
 
-Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the release version.
+Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the release version. See [#1276](https://github.com/apache/iceberg-python/pull/1276).
 
 ## Publishing a release candidate (RC)
 
@@ -313,3 +313,22 @@ Then, select the previous release version as the **Previous tag** to use the dif
 **Generate release notes**.
 
 **Set as the latest release** and **Publish**.
+
+## Misc
+
+### Set up GPG key and Upload to Apache Iceberg KEYS file
+
+To set up GPG key locally, see the instructions [here](http://www.apache.org/dev/openpgp.html#key-gen-generate-key).
+
+To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
+
+Then, published GPG key to the [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS):
+
+```bash
+svn co https://dist.apache.org/repos/dist/release/iceberg icebergsvn
+cd icebergsvn
+echo "" >> KEYS # append a newline
+gpg --list-sigs <YOUR KEY ID HERE> >> KEYS # append signatures
+gpg --armor --export <YOUR KEY ID HERE> >> KEYS # append public key block
+svn commit -m "add key for <YOUR NAME HERE>"
+```
