@@ -68,18 +68,18 @@ deprecation_message(
 
 Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the release version. See [#1276](https://github.com/apache/iceberg-python/pull/1276).
 
-## Publishing a release candidate (RC)
+## Publishing a Release Candidate (RC)
 
 ### Create Tag
 
-Make sure you are on the correct branch:
+Ensure you are on the correct branch:
 
-* For a Major/Minor release, use the `main` branch
-* For a Patch release, use the branch corresponding to the pathch version, i.e. `pyiceberg-0.6.x`.
+* For a major/minor release, use the `main` branch
+* For a patch release, use the branch corresponding to the patch version, i.e. `pyiceberg-0.6.x`.
 
-Then, create a signed tag:
+Create a signed tag:
 
-Change `VERSION` and `RC` to the appropriate values.
+Replace `VERSION` and `RC` with the appropriate values for the release.
 
 ```bash
 export RC=rc1
@@ -92,7 +92,7 @@ git tag -s ${GIT_TAG} -m "PyIceberg ${VERSION}"
 git push git@github.com:apache/iceberg-python.git ${GIT_TAG}
 ```
 
-### Publish RC
+### Publish Release Candidate (RC)
 
 #### Upload to Apache Dev SVN
 
@@ -100,18 +100,24 @@ git push git@github.com:apache/iceberg-python.git ${GIT_TAG}
 
 Run the [`Python release` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml).
 
-* Use the newly created tag.
-* Set the `version` to `main`, since we cannot modify the source.
+* Tag: Use the newly created tag.
+* Version: Set the `version` to `main`, as the source cannot be modified.
 
 ![Github Actions Run Workflow for SVN Upload](assets/images/ghactions-run-workflow-svn-upload.png)
 
-This will create the source distribution (`sdist`) and the binary distributions (`wheels`) for each architectures, using [`cibuildwheel`](https://github.com/pypa/cibuildwheel)
+This action will generate:
 
-##### Download Artifacts, Sign and Generate Checksums
+* Source distribution (`sdist`)
+* Binary distributions (`wheels`) for each architectures. These are created using [`cibuildwheel`](https://github.com/pypa/cibuildwheel)
 
-Before committing the files to the Apache SVN artifact distribution SVN hashes need to be generated, and those need to be signed with gpg to make sure that they are authentic.
+##### Download Artifacts, Sign, and Generate Checksums
 
-Download the zip file from the Github Action run, unzip, and sign the files:
+Download the ZIP file containing the artifacts from the GitHub Actions run and unzip it.
+
+Navigate to the release directory. Sign the files and generate checksums:
+
+* `.asc` files: GPG-signed versions of each artifact to ensure authenticity.
+* `.sha512` files: SHA-512 checksums for verifying file integrity.
 
 ```bash
 cd release-main/
@@ -146,8 +152,8 @@ Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/dev/icebe
 
 Run the [`Python release` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml).
 
-* Use the newly created tag.
-* Set the `version` to release candidate, e.g. `0.7.0rc1`.
+* Tag: Use the newly created tag.
+* Version: Set the `version` to release candidate, e.g. `0.7.0rc1`.
 
 ![Github Actions Run Workflow for PyPi Upload](assets/images/ghactions-run-workflow-pypi-upload.png)
 
