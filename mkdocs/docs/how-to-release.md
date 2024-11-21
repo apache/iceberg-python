@@ -138,6 +138,8 @@ svn add $SVN_TMP_DIR_VERSIONED
 svn ci -m "PyIceberg ${VERSION}" ${SVN_TMP_DIR_VERSIONED}
 ```
 
+Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/dev/iceberg](https://dist.apache.org/repos/dist/dev/iceberg/).
+
 #### Upload to PyPi
 
 ##### Create Artifacts for PyPi
@@ -160,6 +162,8 @@ Upload release candidate to PyPi. This **won't** bump the version for everyone t
 ```bash
 twine upload release-${VERSION}/*
 ```
+
+Verify the artifact is uploaded to [PyPi](https://pypi.org/project/pyiceberg/#history).
 
 ## Vote
 
@@ -256,6 +260,8 @@ export SVN_RELEASE_DIR_VERSIONED="https://dist.apache.org/repos/dist/release/ice
 svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add release ${VERSION_WITHOUT_RC}"
 ```
 
+Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/release/iceberg](https://dist.apache.org/repos/dist/release/iceberg/).
+
 ### Upload the accepted release to PyPi
 
 The latest version can be pushed to PyPi. Check out the Apache SVN and make sure to publish the right version with `twine`:
@@ -265,6 +271,8 @@ svn checkout https://dist.apache.org/repos/dist/release/iceberg /tmp/iceberg-dis
 cd /tmp/iceberg-dist-release/pyiceberg-${VERSION_WITHOUT_RC}
 twine upload pyiceberg-*.whl pyiceberg-*.tar.gz
 ```
+
+Verify the artifact is uploaded to [PyPi](https://pypi.org/project/pyiceberg/#history).
 
 ## Post Release
 
