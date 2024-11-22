@@ -334,7 +334,7 @@ Thanks to everyone for contributing!
 
 ### Release the docs
 
-Run the [`Python Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
+Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
 
 ### Update the Github template
 
