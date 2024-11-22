@@ -93,9 +93,16 @@ class ManifestEntryStatus(int, Enum):
 
 
 class FileFormat(str, Enum):
-    AVRO = "AVRO"
-    PARQUET = "PARQUET"
-    ORC = "ORC"
+    AVRO = "AVRO", "avro"
+    PARQUET = "PARQUET", "parquet"
+    ORC = "ORC", "orc"
+
+    def __new__(cls, value, *value_aliases):
+        obj = str.__new__(cls)
+        obj._value_ = value
+        for alias in value_aliases:
+            cls._value2member_map_[alias] = obj
+        return obj
 
     def __repr__(self) -> str:
         """Return the string representation of the FileFormat class."""
