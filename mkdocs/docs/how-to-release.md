@@ -70,6 +70,30 @@ Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the 
 
 ## Publishing a Release Candidate (RC)
 
+### Release Types
+
+#### Major/Minor Release
+
+* Use the `main` branch for the release.
+* Includes new features, enhancements, and any necessary backward-compatible changes.
+* Examples: `0.8.0`, `0.9.0`, `1.0.0`.
+
+#### Patch Release
+
+* Use the branch corresponding to the patch version, such as `pyiceberg-0.8.x`.
+* Focuses on critical bug fixes or security patches that maintain backward compatibility.
+* Examples: `0.8.1`, `0.8.2`.
+
+To create a patch branch from the latest release tag:
+
+```bash
+# Check out the base branch for the patch version
+git checkout pyiceberg-0.8.x
+
+# Create a new branch for the upcoming patch release
+git checkout -b pyiceberg-0.8.1
+```
+
 ### Create Tag
 
 Ensure you are on the correct branch:
