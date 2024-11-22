@@ -79,7 +79,7 @@ NULL = CaselessKeyword("null")
 NAN = CaselessKeyword("nan")
 LIKE = CaselessKeyword("like")
 
-unquoted_identifier = Word(alphas, alphanums + "_$")
+unquoted_identifier = Word(alphas + "_", alphanums + "_$")
 quoted_identifier = Suppress('"') + unquoted_identifier + Suppress('"')
 identifier = MatchFirst([unquoted_identifier, quoted_identifier]).set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
