@@ -81,7 +81,9 @@ class TestStruct:
     y: Optional[float]
 
 
-def construct_test_table() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
+def construct_test_table(
+    write_statistics: bool | List[str] = True,
+) -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
     table_metadata = {
         "format-version": 2,
         "location": "s3://bucket/test/location",
@@ -169,7 +171,9 @@ def construct_test_table() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, Tabl
     metadata_collector: List[Any] = []
 
     with pa.BufferOutputStream() as f:
-        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
+        with pq.ParquetWriter(
+            f, table.schema, metadata_collector=metadata_collector, write_statistics=write_statistics
+        ) as writer:
             writer.write_table(table)
 
     return metadata_collector[0], table_metadata
@@ -681,71 +685,37 @@ def test_stats_types(table_schema_nested: Schema) -> None:
     ]
 
 
-def construct_test_table_without_stats() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
-    table_metadata = {
-        "format-version": 2,
-        "location": "s3://bucket/test/location",
-        "last-column-id": 7,
-        "current-schema-id": 0,
-        "schemas": [
-            {
-                "type": "struct",
-                "schema-id": 0,
-                "fields": [
-                    {"id": 1, "name": "strings", "required": False, "type": "string"},
-                    {"id": 2, "name": "floats", "required": False, "type": "float"}
-                ]
-            }
-        ],
-        "default-spec-id": 0,
-        "partition-specs": [{"spec-id": 0, "fields": []}],
-        "properties": {},
-    }
+def test_read_missing_statistics() -> None:
+    # write statistics for only for "strings" column
+    metadata, table_metadata = construct_test_table(write_statistics=["strings"])
 
-    table_metadata = TableMetadataUtil.parse_obj(table_metadata)
-    arrow_schema = schema_to_pyarrow(table_metadata.schemas[0])
-    _strings = ["zzzzzzzzzzzzzzzzzzzz", "rrrrrrrrrrrrrrrrrrrr", None, "aaaaaaaaaaaaaaaaaaaa"]
-    _floats = [3.14, math.nan, 1.69, 100]
+    # expect only "strings" column to have statistics in metadata
+    assert metadata.row_group(0).column(0).is_stats_set is True
+    assert metadata.row_group(0).column(0).statistics is not None
 
-    table = pa.Table.from_pydict(
-        {
-            "strings": _strings,
-            "floats": _floats
-        },
-        schema=arrow_schema,
-    )
+    # expect all other columns to have no statistics
+    for r in range(metadata.num_row_groups):
+        for pos in range(1, metadata.num_columns):
+            assert metadata.row_group(r).column(pos).is_stats_set is False
+            assert metadata.row_group(r).column(pos).statistics is None
 
-    metadata_collector: List[Any] = []
-
-    with pa.BufferOutputStream() as f:
-        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector, write_statistics=False) as writer:
-            writer.write_table(table)
-
-    return metadata_collector[0], table_metadata
-
-
-def test_is_stats_set_false() -> None:
-    metadata, table_metadata = construct_test_table_without_stats()
     schema = get_current_schema(table_metadata)
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=metadata,
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+
     datafile = DataFile(**statistics.to_serialized_dict())
 
-    # assert attributes except for column_aggregates and null_value_counts are present
-    assert datafile.record_count == 4
-
-    assert len(datafile.column_sizes) == 2
-    assert datafile.column_sizes[1] > 0
-    assert datafile.column_sizes[2] > 0
-
-    assert len(datafile.nan_value_counts) == 0
-
-    assert datafile.split_offsets is not None
-    assert len(datafile.split_offsets) == 1
-    assert datafile.split_offsets[0] == 4
+    # expect only "strings" column values to be reflected in the
+    # upper_bound, lower_bound and null_value_counts props of datafile
+    assert len(datafile.lower_bounds) == 1
+    assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaa"
+    assert len(datafile.upper_bounds) == 1
+    assert datafile.upper_bounds[1].decode() == "zzzzzzzzzzzzzzz{"
+    assert len(datafile.null_value_counts) == 1
+    assert datafile.null_value_counts[1] == 1
 
 
 # This is commented out for now because write_to_dataset drops the partition
