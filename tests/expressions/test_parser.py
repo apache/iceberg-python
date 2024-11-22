@@ -53,6 +53,10 @@ def test_quoted_column() -> None:
     assert EqualTo("foo", True) == parser.parse('"foo" = TRUE')
 
 
+def test_leading_underscore() -> None:
+    assert EqualTo("_foo", True) == parser.parse("_foo = true")
+
+
 def test_equals_true() -> None:
     assert EqualTo("foo", True) == parser.parse("foo = true")
     assert EqualTo("foo", True) == parser.parse("foo == TRUE")
