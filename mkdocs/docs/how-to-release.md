@@ -130,6 +130,15 @@ Run the [`Python release` Github Action](https://github.com/apache/iceberg-pytho
 * Tag: Use the newly created tag.
 * Version: Set the `version` to `main`, as the source cannot be modified.
 
+Or if `gh` is available, trigger the action using:
+
+```bash
+gh workflow run python-release.yml --repo apache/iceberg-python --ref ${GIT_TAG} --field version=main
+SVN_RUN_ID=$(gh run list --repo apache/iceberg-python --json databaseId -q '.[0].databaseId')
+echo "Waiting for workflow to complete, this will take several minutes..."
+gh run watch $SVN_RUN_ID --repo apache/iceberg-python
+```
+
 ![Github Actions Run Workflow for SVN Upload](assets/images/ghactions-run-workflow-svn-upload.png)
 
 This action will generate:
@@ -140,6 +149,12 @@ This action will generate:
 ##### Download Artifacts, Sign, and Generate Checksums
 
 Download the ZIP file containing the artifacts from the GitHub Actions run and unzip it.
+Or if `gh` is available, download the artifacts using:
+
+```bash
+# download artifact to current directory
+gh run download $SVN_RUN_ID --repo apache/iceberg-python
+```
 
 Navigate to the release directory. Sign the files and generate checksums:
 
@@ -190,11 +205,26 @@ Run the [`Python release` Github Action](https://github.com/apache/iceberg-pytho
 * Tag: Use the newly created tag.
 * Version: Set the `version` to release candidate, e.g. `0.7.0rc1`.
 
+Or if `gh` is available, trigger the action using:
+
+```bash
+gh workflow run python-release.yml --repo apache/iceberg-python --ref ${GIT_TAG} --field version=main
+PYPI_RUN_ID=$(gh run list --repo apache/iceberg-python --json databaseId -q '.[0].databaseId')
+echo "Waiting for workflow to complete, this will take several minutes..."
+gh run watch $PYPI_RUN_ID --repo apache/iceberg-python
+```
+
 ![Github Actions Run Workflow for PyPi Upload](assets/images/ghactions-run-workflow-pypi-upload.png)
 
 ##### Download Artifacts
 
 Download the zip file from the Github Action run and unzip locally.
+Or if `gh` is available, download the artifacts using:
+
+```bash
+# download artifact to current directory
+gh run download $PYPI_RUN_ID --repo apache/iceberg-python
+```
 
 ##### Upload Artifacts to PyPi
 
@@ -362,6 +392,15 @@ Thanks to everyone for contributing!
 ### Release the docs
 
 Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
+
+Or if `gh` is available, trigger the action using:
+
+```bash
+gh workflow run python-release-docs.yml --repo apache/iceberg-python --ref ${GIT_TAG}
+DOCS_RUN_ID=$(gh run list --repo apache/iceberg-python --json databaseId -q '.[0].databaseId')
+echo "Waiting for workflow to complete..."
+gh run watch $DOCS_RUN_ID --repo apache/iceberg-python
+```
 
 ### Update the Github template
 
