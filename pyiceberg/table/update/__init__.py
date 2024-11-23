@@ -43,8 +43,8 @@ from pyiceberg.typedef import (
 from pyiceberg.types import (
     transform_dict_value_to_str,
 )
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.datetime import datetime_to_millis
-from pyiceberg.utils.deprecated import deprecation_notice
 from pyiceberg.utils.properties import property_as_int
 
 if TYPE_CHECKING:
@@ -101,8 +101,11 @@ class AddSchemaUpdate(IcebergBaseModel):
     initial_change: bool = Field(
         default=False,
         exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+        deprecated=deprecated.message(
+            deprecate_in="0.8.0",
+            remove_in="0.9.0",
+            prefix="initial_change",
+            topic="CreateTableTransaction can work without this field",
         ),
     )
 
@@ -121,8 +124,11 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     initial_change: bool = Field(
         default=False,
         exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+        deprecated=deprecated.message(
+            deprecate_in="0.8.0",
+            remove_in="0.9.0",
+            prefix="initial_change",
+            topic="CreateTableTransaction can work without this field",
         ),
     )
 
@@ -141,8 +147,11 @@ class AddSortOrderUpdate(IcebergBaseModel):
     initial_change: bool = Field(
         default=False,
         exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+        deprecated=deprecated.message(
+            deprecate_in="0.8.0",
+            remove_in="0.9.0",
+            prefix="initial_change",
+            topic="CreateTableTransaction can work without this field",
         ),
     )
 

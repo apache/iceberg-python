@@ -159,43 +159,137 @@ Below are the formalized conventions that we adhere to in the PyIceberg project.
 
 It is important to keep the Python public API compatible across versions. The Python official [PEP-8](https://peps.python.org/pep-0008/) defines public methods as: _Public attributes should have no leading underscores_. This means not removing any methods without any notice, or removing or renaming any existing parameters. Adding new optional parameters is okay.
 
-If you want to remove a method, please add a deprecation notice by annotating the function using `@deprecated`:
+### Functions, Methods, Properties, and Classes
+
+To deprecate functions, methods, or properties, use the `@deprecated` decorator. This indicates that the feature will be removed in a future release and notifies users about the deprecation timeline.
+
+#### Basic Example
 
 ```python
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils._deprecations import deprecated
 
-
-@deprecated(
-    deprecated_in="0.1.0",
-    removed_in="0.2.0",
-    help_message="Please use load_something_else() instead",
-)
-def load_something():
+@deprecated("1.5.0", "2.0.0")
+def old_function():
     pass
 ```
 
-Which will warn:
+This will warn:
 
 ```text
-Call to load_something, deprecated in 0.1.0, will be removed in 0.2.0. Please use load_something_else() instead.
+Call to old_function, deprecated in 1.5.0, will be removed in 2.0.0.
 ```
 
-If you want to remove a property or notify about a behavior change, please add a deprecation notice by calling the deprecation_message function:
+#### Adding a Recommendation
+
+Optionally, include a recommendation to guide users toward an alternative feature:
 
 ```python
-from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils._deprecations import deprecated
 
-deprecation_message(
-    deprecated_in="0.1.0",
-    removed_in="0.2.0",
-    help_message="The old_property is deprecated. Please use the something_else property instead.",
-)
+@deprecated("1.5.0", "2.0.0", topic="Use `new_function` instead.")
+def old_function():
+    pass
 ```
 
-Which will warn:
+This will warn:
 
 ```text
-Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
+Call to old_function, deprecated in 1.5.0, will be removed in 2.0.0. Use `new_function` instead.
+```
+
+### Keyword Arguments
+
+To deprecate or rename keyword arguments, use the `@deprecated.argument` decorator.
+
+#### Deprecating a Keyword Argument
+
+```python
+from pyiceberg.utils._deprecations import deprecated
+
+@deprecated.argument("1.5.0", "2.0.0", "old_arg")
+def my_function(*, old_arg=True):
+    pass
+```
+
+This will warn:
+
+```text
+Call to my_function(old_arg), deprecated in 1.5.0, will be removed in 2.0.0.
+```
+
+#### Renaming a Keyword Argument
+
+```python
+from pyiceberg.utils._deprecations import deprecated
+
+@deprecated.argument("1.5.0", "2.0.0", "old_arg", rename="new_arg")
+def my_function(*, new_arg=True):
+    pass
+```
+
+This will warn:
+
+```text
+Call to my_function(old_arg), deprecated in 1.5.0, will be removed in 2.0.0. Use `new_arg` instead.
+```
+
+### Constants and Enums
+
+To deprecate constants or enums, use the `deprecated.constant` function.
+
+#### Deprecating a Constant
+
+```python
+from pyiceberg.utils._deprecations import deprecated
+
+deprecated.constant("1.5.0", "2.0.0", "OLD_CONSTANT", 42)
+```
+
+This will warn:
+
+```text
+OLD_CONSTANT, deprecated in 1.5.0, will be removed in 2.0.0.
+```
+
+#### Deprecating an Enum
+
+```python
+from enum import Enum
+from pyiceberg.utils._deprecations import deprecated
+
+class MyEnum(Enum):
+    OLD_VALUE = 42
+
+deprecated.constant("1.5.0", "2.0.0", "MyEnum", MyEnum)
+del MyEnum
+```
+
+This will warn:
+
+```text
+MyEnum, deprecated in 1.5.0, will be removed in 2.0.0.
+```
+
+### Topics
+
+For deprecations that do not fit into the above categories, use the `deprecated.topic` function.
+
+```python
+from pyiceberg.utils._deprecations import deprecated
+
+def some_function():
+    # some logic
+
+    if condition:
+        deprecated.topic("1.5.0", "2.0.0", topic="The <TOPIC>")
+
+    # more logic
+```
+
+This will warn:
+
+```text
+The <TOPIC>, deprecated in 1.5.0, will be removed in 2.0.0.
 ```
 
 ## Type annotations

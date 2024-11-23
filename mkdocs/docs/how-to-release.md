@@ -48,21 +48,13 @@ For example, the API with the following deprecation tag should be removed when p
 ```python
 
 @deprecated(
-    deprecated_in="0.1.0",
-    removed_in="0.2.0",
+    deprecate_in="0.1.0",
+    remove_in="0.2.0",
     help_message="Please use load_something_else() instead",
 )
 ```
 
-We also have the `deprecation_message` function. We need to change the behavior according to what is noted in the message of that deprecation.
-
-```python
-deprecation_message(
-    deprecated_in="0.1.0",
-    removed_in="0.2.0",
-    help_message="The old_property is deprecated. Please use the something_else property instead.",
-)
-```
+We also have other deprecation strategies, so we recommend identifying all code references using the deprecation module (`pyiceberg.utils._deprecations`) and removing them before making a release.
 
 ### Update Library Version
 

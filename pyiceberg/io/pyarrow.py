@@ -162,10 +162,10 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -407,10 +407,11 @@ class PyArrowFileIO(FileIO):
                 gcs_kwargs["default_bucket_location"] = bucket_location
             if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
                 if self.properties.get(GCS_ENDPOINT):
-                    deprecation_message(
-                        deprecated_in="0.8.0",
-                        removed_in="0.9.0",
-                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+                    deprecated.topic(
+                        deprecate_in="0.8.0",
+                        remove_in="0.9.0",
+                        prefix=f"The property {GCS_ENDPOINT}",
+                        topic=f"please use {GCS_SERVICE_HOST} instead",
                     )
                 url_parts = urlparse(endpoint)
                 gcs_kwargs["scheme"] = url_parts.scheme
@@ -1529,9 +1530,9 @@ class ArrowScan:
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="project_table is deprecated. Use ArrowScan.to_table instead.",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="Use ArrowScan.to_table instead.",
 )
 def project_table(
     tasks: Iterable[FileScanTask],
@@ -1628,9 +1629,9 @@ def project_table(
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="project_table is deprecated. Use ArrowScan.to_record_batches instead.",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="Use ArrowScan.to_record_batches instead.",
 )
 def project_batches(
     tasks: Iterable[FileScanTask],
