@@ -33,7 +33,7 @@ from pydantic import Field, conlist, field_validator, model_serializer
 from pyiceberg.schema import P, PartnerAccessor, Schema, SchemaVisitor, SchemaWithPartnerVisitor, visit, visit_with_partner
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
 from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils._deprecations import deprecated
 
 
 class MappedField(IcebergBaseModel):
@@ -76,9 +76,9 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
         return visit_name_mapping(self, _IndexByName())
 
     @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="Please use `apply_name_mapping` instead",
+        deprecate_in="0.8.0",
+        remove_in="0.9.0",
+        topic="Please use `apply_name_mapping` instead",
     )
     def find(self, *names: str) -> MappedField:
         name = ".".join(names)

@@ -69,8 +69,8 @@ from pyiceberg.typedef import (
     Properties,
     RecursiveDict,
 )
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -631,9 +631,9 @@ class Catalog(ABC):
         """
 
     @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+        deprecate_in="0.8.0",
+        remove_in="0.9.0",
+        topic="Please refer to the table using only its namespace and its table name.",
     )
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
@@ -660,10 +660,11 @@ class Catalog(ABC):
         """
         identifier_tuple = Catalog.identifier_to_tuple(identifier)
         if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
+            deprecated.topic(
+                deprecate_in="0.8.0",
+                remove_in="0.9.0",
+                prefix="Support for parsing catalog level identifier in Catalog identifiers",
+                topic="Please refer to the table using only its namespace and its table name.",
             )
             identifier_tuple = identifier_tuple[1:]
         return identifier_tuple
@@ -782,10 +783,11 @@ class MetastoreCatalog(Catalog, ABC):
         super().__init__(name, **properties)
 
         if self.properties.get(DEPRECATED_BOTOCORE_SESSION):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {DEPRECATED_BOTOCORE_SESSION} is deprecated and will be removed.",
+            deprecated.topic(
+                deprecate_in="0.8.0",
+                remove_in="0.9.0",
+                prefix=f"The property {DEPRECATED_BOTOCORE_SESSION}",
+                topic="and will be removed.",
             )
 
     def create_table_transaction(

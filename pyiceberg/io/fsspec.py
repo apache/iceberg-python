@@ -87,7 +87,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 logger = logging.getLogger(__name__)
@@ -173,10 +173,11 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     from gcsfs import GCSFileSystem
 
     if properties.get(GCS_ENDPOINT):
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+        deprecated.topic(
+            deprecate_in="0.8.0",
+            remove_in="0.9.0",
+            prefix=f"The property {GCS_ENDPOINT}",
+            topic=f"please use {GCS_SERVICE_HOST} instead",
         )
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
@@ -197,10 +198,11 @@ def _adls(properties: Properties) -> AbstractFileSystem:
 
     for property_name in properties:
         if property_name.startswith(ADLFS_PREFIX):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {property_name} is deprecated. Please use properties that start with adls.",
+            deprecated.topic(
+                deprecate_in="0.8.0",
+                remove_in="0.9.0",
+                prefix=f"The property {property_name}",
+                topic="Please use properties that start with adls.",
             )
 
     return AzureBlobFileSystem(

@@ -233,3 +233,12 @@ Home page: https://hive.apache.org/
 License: https://www.apache.org/licenses/LICENSE-2.0
 
 --------------------------------------------------------------------------------
+
+This product includes code from Conda.
+
+* Uses deprecations.py file that's part of conda project in conda/conda/
+* Uses test_deprecations.py file that's part of conda project in conda/tests/
+
+Copyright: 2012 Anaconda, Inc.
+Home page: https://conda.io/
+License: https://opensource.org/licenses/BSD-3-Clause

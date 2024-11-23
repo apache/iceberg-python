@@ -130,9 +130,9 @@ from pyiceberg.typedef import (
 from pyiceberg.types import (
     strtobool,
 )
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
@@ -782,17 +782,17 @@ class Table:
         return self
 
     @property
+    @deprecated(
+        deprecate_in="0.8.0",
+        remove_in="0.9.0",
+        topic="Please use Table.name() function instead.",
+    )
     def identifier(self) -> Identifier:
         """Return the identifier of this table.
 
         Returns:
             An Identifier tuple of the table name
         """
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message="Table.identifier property is deprecated. Please use Table.name() function instead.",
-        )
         return (self.catalog.name,) + self._identifier
 
     def name(self) -> Identifier:
@@ -1538,54 +1538,54 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.Move has been changed to private class pyiceberg.table.update.schema._Move",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="pyiceberg.table.Move has been changed to private class pyiceberg.table.update.schema._Move",
 )
 def Move(*args: Any, **kwargs: Any) -> _Move:
     return _Move(*args, **kwargs)
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.MoveOperation has been changed to private class pyiceberg.table.update.schema._MoveOperation",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="pyiceberg.table.MoveOperation has been changed to private class pyiceberg.table.update.schema._MoveOperation",
 )
 def MoveOperation(*args: Any, **kwargs: Any) -> _MoveOperation:
     return _MoveOperation(*args, **kwargs)
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.DeleteFiles has been changed to private class pyiceberg.table.update.snapshot._DeleteFiles",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="pyiceberg.table.DeleteFiles has been changed to private class pyiceberg.table.update.snapshot._DeleteFiles",
 )
 def DeleteFiles(*args: Any, **kwargs: Any) -> _DeleteFiles:
     return _DeleteFiles(*args, **kwargs)
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.FastAppendFiles has been changed to private class pyiceberg.table.update.snapshot._FastAppendFiles",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="pyiceberg.table.FastAppendFiles has been changed to private class pyiceberg.table.update.snapshot._FastAppendFiles",
 )
 def FastAppendFiles(*args: Any, **kwargs: Any) -> _FastAppendFiles:
     return _FastAppendFiles(*args, **kwargs)
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.MergeAppendFiles has been changed to private class pyiceberg.table.update.snapshot._MergeAppendFiles",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="pyiceberg.table.MergeAppendFiles has been changed to private class pyiceberg.table.update.snapshot._MergeAppendFiles",
 )
 def MergeAppendFiles(*args: Any, **kwargs: Any) -> _MergeAppendFiles:
     return _MergeAppendFiles(*args, **kwargs)
 
 
 @deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.OverwriteFiles has been changed to private class pyiceberg.table.update.snapshot._OverwriteFiles",
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="pyiceberg.table.OverwriteFiles has been changed to private class pyiceberg.table.update.snapshot._OverwriteFiles",
 )
 def OverwriteFiles(*args: Any, **kwargs: Any) -> _OverwriteFiles:
     return _OverwriteFiles(*args, **kwargs)
