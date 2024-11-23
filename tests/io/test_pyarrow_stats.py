@@ -82,7 +82,7 @@ class TestStruct:
 
 
 def construct_test_table(
-    write_statistics: bool | List[str] = True,
+    write_statistics: Union[bool, List[str]] = True,
 ) -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
     table_metadata = {
         "format-version": 2,
@@ -690,14 +690,15 @@ def test_read_missing_statistics() -> None:
     metadata, table_metadata = construct_test_table(write_statistics=["strings"])
 
     # expect only "strings" column to have statistics in metadata
-    assert metadata.row_group(0).column(0).is_stats_set is True
-    assert metadata.row_group(0).column(0).statistics is not None
-
-    # expect all other columns to have no statistics
+    # and all other columns to have no statistics
     for r in range(metadata.num_row_groups):
-        for pos in range(1, metadata.num_columns):
-            assert metadata.row_group(r).column(pos).is_stats_set is False
-            assert metadata.row_group(r).column(pos).statistics is None
+        for pos in range(metadata.num_columns):
+            if metadata.row_group(r).column(pos).path_in_schema == "strings":
+                assert metadata.row_group(r).column(pos).is_stats_set is True
+                assert metadata.row_group(r).column(pos).statistics is not None
+            else:
+                assert metadata.row_group(r).column(pos).is_stats_set is False
+                assert metadata.row_group(r).column(pos).statistics is None
 
     schema = get_current_schema(table_metadata)
     statistics = data_file_statistics_from_parquet_metadata(
