@@ -2397,8 +2397,8 @@ def data_file_statistics_from_parquet_metadata(
     split_offsets.sort()
 
     for field_id in invalidate_col:
-        del col_aggs[field_id]
-        del null_value_counts[field_id]
+        col_aggs.pop(field_id, None)
+        null_value_counts.pop(field_id, None)
 
     return DataFileStatistics(
         record_count=parquet_metadata.num_rows,
