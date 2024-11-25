@@ -172,8 +172,9 @@ def test_pyarrow_time64_us_to_iceberg() -> None:
 
 def test_pyarrow_time64_ns_to_iceberg() -> None:
     pyarrow_type = pa.time64("ns")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: time64[ns]")):
-        visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg(downcast_ns_timestamp_to_us=True))
+    assert converted_iceberg_type == TimeType()
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.time64("us")
 
 
 @pytest.mark.parametrize("precision", ["s", "ms", "us", "ns"])
