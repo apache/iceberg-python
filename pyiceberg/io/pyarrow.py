@@ -1094,8 +1094,14 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
-        elif isinstance(primitive, pa.Time64Type) and primitive.unit == "us":
-            return TimeType()
+        elif isinstance(primitive, pa.Time64Type):
+            if primitive.unit == "us":
+                return TimeType()
+            elif primitive.unit == "ns":
+                if self._downcast_ns_timestamp_to_us:
+                    logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
+                else:
+                    return TimeType()
         elif pa.types.is_timestamp(primitive):
             primitive = cast(pa.TimestampType, primitive)
             if primitive.unit in ("s", "ms", "us"):
