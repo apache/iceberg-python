@@ -84,14 +84,14 @@ Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the 
 * Focuses on critical bug fixes or security patches that maintain backward compatibility.
 * Examples: `0.8.1`, `0.8.2`.
 
-To create a patch branch from the latest release tag:
+To create a patch from the latest release tag:
 
 ```bash
 # Check out the base branch for the patch version
 git checkout pyiceberg-0.8.x
 
-# Create a new branch for the upcoming patch release
-git checkout -b pyiceberg-0.8.1
+# Cherry-pick commits for the upcoming patch release
+git cherry-pick <commit>
 ```
 
 ### Create Tag
