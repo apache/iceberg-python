@@ -711,12 +711,13 @@ def test_read_missing_statistics() -> None:
 
     # expect only "strings" column values to be reflected in the
     # upper_bound, lower_bound and null_value_counts props of datafile
+    string_col_idx = 1
     assert len(datafile.lower_bounds) == 1
-    assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaa"
+    assert datafile.lower_bounds[string_col_idx].decode() == "aaaaaaaaaaaaaaaa"
     assert len(datafile.upper_bounds) == 1
-    assert datafile.upper_bounds[1].decode() == "zzzzzzzzzzzzzzz{"
+    assert datafile.upper_bounds[string_col_idx].decode() == "zzzzzzzzzzzzzzz{"
     assert len(datafile.null_value_counts) == 1
-    assert datafile.null_value_counts[1] == 1
+    assert datafile.null_value_counts[string_col_idx] == 1
 
 
 # This is commented out for now because write_to_dataset drops the partition
