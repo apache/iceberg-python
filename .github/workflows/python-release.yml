@@ -97,3 +97,4 @@ jobs:
         with:
           name: "release-${{ github.event.inputs.version }}"
           pattern: release-*
+          delete-merged: true
