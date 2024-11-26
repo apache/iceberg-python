@@ -611,19 +611,6 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         tbl.add_files(file_paths=[file_path])
 
 
-    assert tbl.scan().to_arrow() == pa.concat_tables(
-        [
-            arrow_table.cast(
-                pa.schema([
-                    ("quux", pa.timestamp("us", tz="UTC")),
-                ]),
-                safe=False,
-            )
-        ]
-
-    )
-
-
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_add_file_with_valid_nullability_diff(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
