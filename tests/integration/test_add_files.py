@@ -601,6 +601,7 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
             writer.write_table(arrow_table)
 
     # add the parquet files as data files
+
     with pytest.raises(
         TypeError,
         match=re.escape(
@@ -608,6 +609,19 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         ),
     ):
         tbl.add_files(file_paths=[file_path])
+
+
+    assert tbl.scan().to_arrow() == pa.concat_tables(
+        [
+            arrow_table.cast(
+                pa.schema([
+                    ("quux", pa.timestamp("us", tz="UTC")),
+                ]),
+                safe=False,
+            )
+        ]
+
+    )
 
 
 @pytest.mark.integration
@@ -827,3 +841,60 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=[existing_files_in_table], check_duplicate_files=True)
     assert f"Cannot add files that are already referenced by table, files: {existing_files_in_table}" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_timestamp_tz_ns_downcast_on_read(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
+    nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
+
+    nanoseconds_schema = pa.schema([
+        ("quux", pa.timestamp("ns", tz="UTC")),
+    ])
+
+    arrow_table = pa.Table.from_pylist(
+        [
+            {
+                "quux": 1615967687249846175,
+            }
+        ],
+        schema=nanoseconds_schema,
+    )
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+
+    identifier = f"default.timestamptz_ns_added{format_version}"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=nanoseconds_schema_iceberg,
+        properties={"format-version": str(format_version)},
+        partition_spec=PartitionSpec(),
+    )
+
+    file_paths = [f"s3://warehouse/default/test_timestamp_tz/v{format_version}/test-{i}.parquet" for i in range(5)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=nanoseconds_schema) as writer:
+                writer.write_table(arrow_table)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths)
+
+    assert tbl.scan().to_arrow() == pa.concat_tables(
+        [
+            arrow_table.cast(
+                pa.schema([
+                    ("quux", pa.timestamp("us", tz="UTC")),
+                ]),
+                safe=False,
+            )
+        ]
+        * 5
+    )

@@ -18,7 +18,7 @@
 import math
 import os
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -1448,3 +1448,40 @@ def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) ->
             EqualTo("category", "A"),
         ),
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_ns_timestamp_precision(mocker: MockerFixture, session_catalog: Catalog, format_version: int) -> None:
+    identifier = "default.table_ns_timestamp_precision"
+    arrow_table_schema_with_ns_timestamp_precisions = pa.schema([
+        ("timestamp_ns", pa.timestamp(unit="ns")),
+        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+    ])
+    TEST_DATA_WITH_NULL = {
+        "timestamp_ns": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+        "timestamptz_ns": [
+            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+            None,
+            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        ],
+    }
+    input_arrow_table = pa.Table.from_pydict(TEST_DATA_WITH_NULL, schema=arrow_table_schema_with_ns_timestamp_precisions)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        {"format-version": format_version},
+        data=[input_arrow_table],
+        schema=arrow_table_schema_with_ns_timestamp_precisions,
+    )
+    tbl.overwrite(input_arrow_table)
+    written_arrow_table = tbl.scan().to_arrow()
+
+    expected_schema_in_all_us = pa.schema([
+        ("timestamp_ns", pa.timestamp(unit="us")),
+        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
+    ])
+    assert written_arrow_table.schema == expected_schema_in_all_us
+    assert written_arrow_table == input_arrow_table.cast(expected_schema_in_all_us)

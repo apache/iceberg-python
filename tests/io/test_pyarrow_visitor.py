@@ -170,11 +170,22 @@ def test_pyarrow_time64_us_to_iceberg() -> None:
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
 
 
-def test_pyarrow_time64_ns_to_iceberg() -> None:
+def test_pyarrow_time64_ns_to_iceberg_downcast_set() -> None:
     pyarrow_type = pa.time64("ns")
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg(downcast_ns_timestamp_to_us=True))
     assert converted_iceberg_type == TimeType()
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.time64("us")
+
+
+def test_pyarrow_time64_ns_to_iceberg_downcast_not_set() -> None:
+    pyarrow_type = pa.time64("ns")
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ):
+        visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
 @pytest.mark.parametrize("precision", ["s", "ms", "us", "ns"])
