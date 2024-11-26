@@ -87,11 +87,14 @@ Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the 
 To create a patch branch from the latest release tag:
 
 ```bash
-# Check out the base branch for the patch version
-git checkout pyiceberg-0.8.x
+# Fetch all tags
+git fetch --tags
 
-# Create a new branch for the upcoming patch release
-git checkout -b pyiceberg-0.8.1
+# Assuming 0.8.0 is the latest release tag
+git checkout -b pyiceberg-0.8.x pyiceberg-0.8.0
+
+# Cherry-pick commits for the upcoming patch release
+git cherry-pick <commit>
 ```
 
 ### Create Tag
