@@ -957,7 +957,11 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             format_version=1,
             output_file=output_file,
-            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
+            meta={
+                "snapshot-id": str(snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
+                "format-version": "1",
+            },
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -976,7 +980,7 @@ class ManifestListWriterV2(ManifestListWriter):
             output_file=output_file,
             meta={
                 "snapshot-id": str(snapshot_id),
-                "parent-snapshot-id": str(parent_snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
             },
