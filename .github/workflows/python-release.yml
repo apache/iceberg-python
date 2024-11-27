@@ -42,22 +42,14 @@ jobs:
           version="${{ github.event.inputs.version }}"
           # Trim whitespace
           version="${version// /}"
-          
-          if [[ -z "$version" ]]; then
-            echo "Error: Version input cannot be empty"
-            exit 1
-          fi
-          
-          if [[ "$version" == "main" ]]; then
-            echo "✓ Valid version: main"
-          elif [[ "$version" =~ ^rc[0-9]+$ ]]; then
-            echo "✓ Valid version: $version"
+          echo "Checking if version is 'main' or a valid rc candidate"
+          # Matches "main" or any string ending with "rc" followed by one or more digits.
+          if echo "$version" | grep -E -q '^(main|.*rc[0-9]+)$'; then
+            echo "Valid version: $version"
           else
-            echo "❌ Error: Version must be 'main' or 'rc' followed by a number (e.g., rc1, rc2)"
-            echo "   Received: '$version'"
+            echo "Invalid version: $version" >&2
             exit 1
           fi
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
