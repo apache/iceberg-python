@@ -48,6 +48,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
+    needs: validate_version
 
     steps:
       - uses: actions/checkout@v4
