@@ -37,19 +37,15 @@ jobs:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
 
     steps:
-      - name: Validate version input
-        run: |
-          version="${{ github.event.inputs.version }}"
-          # Trim whitespace
-          version="${version// /}"
-          echo "Checking if version is 'main' or a valid rc candidate"
-          # Matches "main" or any string ending with "rc" followed by one or more digits.
-          if echo "$version" | grep -E -q '^(main|.*rc[0-9]+)$'; then
-            echo "Valid version: $version"
-          else
-            echo "Invalid version: $version" >&2
-            exit 1
-          fi
+    - name: Validate version input
+      if: ${{ github.event.inputs.version != 'main' && !contains(github.event.inputs.version, 'rc') }}
+      run: |
+        echo "Error: Invalid version format. You provided: '${{ github.event.inputs.version }}'"
+        echo "Allowed formats:"
+        echo "  - 'main'"
+        echo "  - version string containing 'rc' (e.g., 0.8.0rc1, 0.8.0rc2)"
+        exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
