@@ -37,6 +37,18 @@ jobs:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
 
     steps:
+      - name: Validate version input
+        run: |
+          version="${{ github.event.inputs.version }}"
+          if [[ "$version" == "main" ]]; then
+            echo "Valid version: main"
+          elif [[ "$version" == rc* ]] && [[ "${version:2}" =~ ^[0-9]+$ ]]; then
+            echo "Valid version: $version"
+          else
+            echo "Error: Version must be 'main' or 'rc' followed by a number (e.g., rc1, rc2, etc.)"
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
