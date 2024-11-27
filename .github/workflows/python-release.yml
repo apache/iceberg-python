@@ -29,6 +29,19 @@ on:
 
 
 jobs:
+  validate_version:
+    name: Validate version input
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version format
+        if: ${{ github.event.inputs.version != 'main' && !contains(github.event.inputs.version, 'rc') }}
+        run: |
+          echo "Error: Invalid version format. You provided: '${{ github.event.inputs.version }}'"
+          echo "Allowed formats:"
+          echo "  - 'main'"
+          echo "  - Semantic version with 'rc' suffix (e.g., 0.8.0rc1, 0.8.0rc2)"
+          exit 1
+
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -37,15 +50,6 @@ jobs:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
 
     steps:
-      - name: Validate version input
-        if: ${{ github.event.inputs.version != 'main' && !contains(github.event.inputs.version, 'rc') }}
-        run: |
-          echo "Error: Invalid version format. You provided: '${{ github.event.inputs.version }}'"
-          echo "Allowed formats:"
-          echo "  - 'main'"
-          echo "  - version string containing 'rc' (e.g., 0.8.0rc1, 0.8.0rc2)"
-          exit 1
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
