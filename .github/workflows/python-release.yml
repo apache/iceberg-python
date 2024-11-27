@@ -40,12 +40,21 @@ jobs:
       - name: Validate version input
         run: |
           version="${{ github.event.inputs.version }}"
+          # Trim whitespace
+          version="${version// /}"
+          
+          if [[ -z "$version" ]]; then
+            echo "Error: Version input cannot be empty"
+            exit 1
+          fi
+          
           if [[ "$version" == "main" ]]; then
-            echo "Valid version: main"
-          elif [[ "$version" == rc* ]] && [[ "${version:2}" =~ ^[0-9]+$ ]]; then
-            echo "Valid version: $version"
+            echo "✓ Valid version: main"
+          elif [[ "$version" =~ ^rc[0-9]+$ ]]; then
+            echo "✓ Valid version: $version"
           else
-            echo "Error: Version must be 'main' or 'rc' followed by a number (e.g., rc1, rc2, etc.)"
+            echo "❌ Error: Version must be 'main' or 'rc' followed by a number (e.g., rc1, rc2)"
+            echo "   Received: '$version'"
             exit 1
           fi
 
