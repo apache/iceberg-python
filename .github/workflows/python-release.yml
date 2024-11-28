@@ -34,7 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Echo version input
-        run: echo "Version input is: ${{ github.event.inputs.version }}"
+        run: |
+          echo "Version input is: ${{ github.event.inputs.version }}"
 
       - name: Validate version input
         if: ${{ github.event.inputs.version != 'main' && !contains(github.event.inputs.version, 'rc') }}
