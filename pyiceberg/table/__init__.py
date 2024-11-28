@@ -1228,7 +1228,7 @@ class TableScan(ABC):
         return self.update(case_sensitive=case_sensitive)
 
     @abstractmethod
-    def count(self) -> int : ...
+    def count(self) -> int: ...
 
 
 class ScanTask(ABC):
@@ -1502,6 +1502,7 @@ class DataScan(TableScan):
         for task in tasks:
             res += task.file.record_count
         return res
+
 
 @dataclass(frozen=True)
 class WriteTask:
