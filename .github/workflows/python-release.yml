@@ -34,15 +34,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Echo version input
-        run: echo "Version input: '${{ github.event.inputs.version }}'"
+        run: echo "Version input is: ${{ github.event.inputs.version }}"
 
       - name: Validate version input
         if: ${{ github.event.inputs.version != 'main' && !contains(github.event.inputs.version, 'rc') }}
         run: |
           echo "Error: Invalid version format. You provided: '${{ github.event.inputs.version }}'"
           echo "Allowed formats:"
-          echo "  - 'main'"
-          echo "  - version string containing 'rc' (e.g., 0.8.0rc1, 0.8.0rc2)"
+          echo " - 'main'"
+          echo " - version string containing 'rc' (e.g., 0.8.0rc1, 0.8.0rc2)"
           exit 1
 
   build_wheels:
