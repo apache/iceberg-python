@@ -149,6 +149,7 @@ This action will generate:
 ##### Download Artifacts, Sign, and Generate Checksums
 
 Download the ZIP file containing the artifacts from the GitHub Actions run and unzip it.
+
 Or if `gh` is available, download the artifacts using:
 
 ```bash
@@ -219,6 +220,7 @@ gh run watch $PYPI_RUN_ID --repo apache/iceberg-python
 ##### Download Artifacts
 
 Download the zip file from the Github Action run and unzip locally.
+
 Or if `gh` is available, download the artifacts using:
 
 ```bash
