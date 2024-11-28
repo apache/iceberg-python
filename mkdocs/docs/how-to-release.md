@@ -208,7 +208,7 @@ Run the [`Python release` Github Action](https://github.com/apache/iceberg-pytho
 Or if `gh` is available, trigger the action using:
 
 ```bash
-gh workflow run python-release.yml --repo apache/iceberg-python --ref ${GIT_TAG} --field version=main
+gh workflow run python-release.yml --repo apache/iceberg-python --ref ${GIT_TAG} --field version=${VERSION}
 PYPI_RUN_ID=$(gh run list --repo apache/iceberg-python --json databaseId -q '.[0].databaseId')
 echo "Waiting for workflow to complete, this will take several minutes..."
 gh run watch $PYPI_RUN_ID --repo apache/iceberg-python
