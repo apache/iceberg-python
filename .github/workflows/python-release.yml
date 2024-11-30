@@ -80,6 +80,24 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: ls -lah dist/* && cp dist/* svn_wheelhouse/
 
+      - name: Generate SHA512 checksums
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          cd svn_wheelhouse
+          for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
+          do
+             shasum -a 512 "${name}" > "${name}.sha512"
+          done
+
+      - name: Generate GPG signatures
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          cd svn_wheelhouse
+          for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
+          do
+             gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: "release-svn-${{ matrix.os }}"
