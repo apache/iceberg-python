@@ -87,6 +87,9 @@ jobs:
   build_svn_artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    needs:
+      - validate-inputs
+      - validate-library-version
     strategy:
       matrix:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
@@ -168,6 +171,9 @@ jobs:
   build_pypi_artifacts:
     name: Build artifacts for PyPi on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    needs:
+      - validate-inputs
+      - validate-library-version
     strategy:
       matrix:
         os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
