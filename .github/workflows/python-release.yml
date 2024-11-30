@@ -29,8 +29,64 @@ on:
 
 
 jobs:
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+  build_svn_artifacts:
+    name: Build artifacts for SVN on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: |
+            3.9
+            3.10
+            3.11
+            3.12
+
+      - name: Install poetry
+        run: pip install poetry
+
+      # Publish the source distribution with the version that's in
+      # the repository, otherwise the tests will fail
+      - name: Compile source distribution
+        run: python3 -m poetry build --format=sdist
+        if: startsWith(matrix.os, 'ubuntu')
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.22.0
+        with:
+          output-dir: svn_wheelhouse
+          config-file: "pyproject.toml"
+        env:
+          # Ignore 32 bit architectures
+          CIBW_ARCHS: "auto64"
+          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.9,<3.13"
+          CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1"
+          CIBW_TEST_EXTRAS: "s3fs,glue"
+          CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
+          # There is an upstream issue with installing on MacOSX
+          # https://github.com/pypa/cibuildwheel/issues/1603
+          # Ignore tests for pypy since not all dependencies are compiled for it
+          # and would require a local rust build chain
+          CIBW_TEST_SKIP: "pp* *macosx*"
+
+      - name: Add source distribution
+        if: startsWith(matrix.os, 'ubuntu')
+        run: ls -lah dist/* && cp dist/* svn_wheelhouse/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "release-svn-${{ matrix.os }}"
+          path: ./svn_wheelhouse/*
+
+  build_pypi_artifacts: # pypi `tag` as version
+    name: Build artifacts for PyPi on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -53,8 +109,7 @@ jobs:
         run: pip install poetry
 
       - name: Set version
-        run: python -m poetry version "${{ inputs.version }}"
-        if: "${{ github.event.inputs.version != 'main' }}"
+        run: python -m poetry version "${{ inputs.version }}" # CHANGE TO current TAG
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -65,7 +120,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0
         with:
-          output-dir: wheelhouse
+          output-dir: pypi_wheelhouse
           config-file: "pyproject.toml"
         env:
           # Ignore 32 bit architectures
@@ -82,19 +137,31 @@ jobs:
 
       - name: Add source distribution
         if: startsWith(matrix.os, 'ubuntu')
-        run: ls -lah dist/* && cp dist/* wheelhouse/
+        run: ls -lah dist/* && cp dist/* pypi_wheelhouse/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: "release-${{ matrix.os }}"
-          path: ./wheelhouse/*
-  merge:
+          name: "release-pypi-${{ matrix.os }}"
+          path: ./pypi_wheelhouse/*
+
+  merge_svn_artifacts:
     runs-on: ubuntu-latest
-    needs: build_wheels
+    needs: build_svn_artifacts
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "release-${{ github.event.inputs.version }}"
-          pattern: release-*
+          name: "release-svn-${{ github.event.inputs.version }}"
+          pattern: release-svn*
+          delete-merged: true
+
+  merge_pypi_artifacts:
+    runs-on: ubuntu-latest
+    needs: build_pypi_artifacts
+    steps:
+      - name: Merge Artifacts
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: "release-pypi-${{ github.event.inputs.version }}"
+          pattern: release-pypi*
           delete-merged: true
