@@ -89,6 +89,13 @@ jobs:
              shasum -a 512 "${name}" > "${name}.sha512"
           done
 
+      - name: Import GPG Key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@111c56156bcc6918c056dbef52164cfa583dc549
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
       - name: Generate GPG signatures
         if: startsWith(matrix.os, 'ubuntu')
         run: |
