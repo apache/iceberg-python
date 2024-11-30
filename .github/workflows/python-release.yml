@@ -25,10 +25,33 @@ on:
       version:
         description: 'Version'
         type: string
-        default: 'main'
+      rc:
+        description: 'RC'
+        type: string
 
 
 jobs:
+  validate-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Version and RC
+        id: validate
+        run: |
+          # Validate version (e.g., 1.0.0)
+          if [[ ! "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: version must be in the format number.number.number"
+            exit 1
+          fi
+
+          # Validate rc (e.g., rc1)
+          if [[ ! "${{ github.event.inputs.rc }}" =~ ^rc[0-9]+$ ]]; then
+            echo "Error: rc must be in the format rc<number>"
+            exit 1
+
+      - name: Release Version
+        run: |
+          echo "Running Release Version: ${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+
   build_svn_artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -134,7 +157,7 @@ jobs:
         run: pip install poetry
 
       - name: Set version
-        run: python -m poetry version "${{ inputs.version }}" # CHANGE TO current TAG
+        run: python -m poetry version "${{ github.event.inputs.version }}${{ github.event.inputs.rc }}" # CHANGE TO current TAG
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -176,7 +199,7 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "release-svn-${{ github.event.inputs.version }}"
+          name: "release-svn-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
           pattern: release-svn*
           delete-merged: true
 
@@ -187,6 +210,6 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "release-pypi-${{ github.event.inputs.version }}"
+          name: "release-pypi-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
           pattern: release-pypi*
           delete-merged: true
