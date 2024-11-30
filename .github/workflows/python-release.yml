@@ -25,10 +25,11 @@ on:
       version:
         description: 'Version'
         type: string
+        required: true
       rc:
-        description: 'RC'
+        description: 'Release candidate (RC)'
         type: string
-
+        required: true
 
 jobs:
   validate-inputs:
@@ -47,10 +48,41 @@ jobs:
           if [[ ! "${{ github.event.inputs.rc }}" =~ ^rc[0-9]+$ ]]; then
             echo "Error: rc must be in the format rc<number>"
             exit 1
+          fi
 
       - name: Release Version
         run: |
           echo "Running Release Version: ${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+
+  validate-library-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: Install Poetry
+        run: |
+          pip install poetry
+
+      - name: Validate current pyiceberg version
+        run: |
+          # Extract the current version from Poetry
+          current_pyiceberg_version=$(poetry version --short)
+          echo "Detected Poetry version: $current_pyiceberg_version"
+
+          # Compare the input version with the Poetry version
+          input_version="${{ github.event.inputs.version }}"
+
+          # Check if the input version matches the Poetry version
+          if [[ "$input_version" != "$current_pyiceberg_version" ]]; then
+            echo "Error: Input version ($input_version) does not match the Poetry version ($current_pyiceberg_version)"
+            exit 1
+          fi
 
   build_svn_artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
@@ -133,7 +165,7 @@ jobs:
           name: "release-svn-${{ matrix.os }}"
           path: ./svn_wheelhouse/*
 
-  build_pypi_artifacts: # pypi `tag` as version
+  build_pypi_artifacts:
     name: Build artifacts for PyPi on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -156,8 +188,8 @@ jobs:
       - name: Install poetry
         run: pip install poetry
 
-      - name: Set version
-        run: python -m poetry version "${{ github.event.inputs.version }}${{ github.event.inputs.rc }}" # CHANGE TO current TAG
+      - name: Set version with RC
+        run: python -m poetry version "${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
