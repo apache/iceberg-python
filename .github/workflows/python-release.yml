@@ -23,11 +23,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version'
+        description: 'Version (e.g, 0.8.0)'
         type: string
         required: true
       rc:
-        description: 'Release candidate (RC)'
+        description: 'Release candidate (RC) (e.g, rc1)'
         type: string
         required: true
 
