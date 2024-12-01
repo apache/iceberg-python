@@ -140,6 +140,7 @@ jobs:
         run: ls -lah dist/* && cp dist/* svn_wheelhouse/
 
       - name: Generate SHA512 checksums
+        shell: bash  # required for windows
         run: |
           cd svn_wheelhouse
           for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
@@ -155,6 +156,7 @@ jobs:
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Generate GPG signatures
+        shell: bash  # required for windows
         run: |
           cd svn_wheelhouse
           for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
