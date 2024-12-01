@@ -165,8 +165,8 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: "release-svn-sha-checksums"
-          path: ./svn_wheelhouse/*
+          name: release-svn-sha-checksums
+          path: ./svn_wheelhouse/*.sha512
 
   svn_generate_signatures:
     name: Generate GPG Signatures
@@ -194,8 +194,8 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: "release-svn-gpg-signatures"
-          path: ./svn_wheelhouse/*
+          name: release-svn-gpg-signatures
+          path: ./svn_wheelhouse/*.asc
 
   svn_merge_artifacts:
     runs-on: ubuntu-latest
