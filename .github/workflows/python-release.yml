@@ -123,7 +123,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0
         with:
-          output-dir: svn_wheelhouse
+          output-dir: wheelhouse
           config-file: "pyproject.toml"
         env:
           # Ignore 32 bit architectures
@@ -140,13 +140,13 @@ jobs:
 
       - name: Add source distribution
         if: startsWith(matrix.os, 'ubuntu')
-        run: ls -lah dist/* && cp dist/* svn_wheelhouse/
+        run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      # TODO: upload to SVN, all files in pypi_wheelhouse
+      # TODO: upload to SVN
       - uses: actions/upload-artifact@v4
         with:
           name: "svn-release-candidate-${{ matrix.os }}"
-          path: ./svn_wheelhouse/*
+          path: ./wheelhouse/*
 
   svn_generate_checksums:
     name: Generate SHA512 checksums
@@ -156,12 +156,12 @@ jobs:
       - name: Download All SVN Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: svn_wheelhouse
+          path: artifacts
           pattern: svn-release-candidate-*
           merge-multiple: true
       - name: Generate SHA512 checksums
         run: |
-          cd svn_wheelhouse
+          cd artifacts
           for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
           do
             shasum -a 512 "${name}" > "${name}.sha512"
@@ -169,7 +169,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: svn-release-candidate-sha-checksums
-          path: ./svn_wheelhouse/*.sha512
+          path: ./artifacts/*.sha512
 
   svn_generate_signatures:
     name: Generate GPG Signatures
@@ -179,7 +179,7 @@ jobs:
       - name: Download All SVN Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: svn_wheelhouse
+          path: artifacts
           pattern: svn-release-candidate-*
           merge-multiple: true
       - name: Import GPG Key
@@ -190,7 +190,7 @@ jobs:
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
       - name: Generate GPG signatures
         run: |
-          cd svn_wheelhouse
+          cd artifacts
           for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
           do
             gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
@@ -198,7 +198,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: svn-release-candidate-gpg-signatures
-          path: ./svn_wheelhouse/*.asc
+          path: ./artifacts/*.asc
 
   svn_merge_artifacts:
     runs-on: ubuntu-latest
@@ -253,7 +253,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0
         with:
-          output-dir: pypi_wheelhouse
+          output-dir: wheelhouse
           config-file: "pyproject.toml"
         env:
           # Ignore 32 bit architectures
@@ -270,13 +270,13 @@ jobs:
 
       - name: Add source distribution
         if: startsWith(matrix.os, 'ubuntu')
-        run: ls -lah dist/* && cp dist/* pypi_wheelhouse/
+        run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      # TODO: upload to PyPi, all files in pypi_wheelhouse
+      # TODO: upload to PyPi
       - uses: actions/upload-artifact@v4
         with:
           name: "pypi-release-candidate-${{ matrix.os }}"
-          path: ./pypi_wheelhouse/*
+          path: ./wheelhouse/*
 
   pypi_merge_artifacts:
     runs-on: ubuntu-latest
