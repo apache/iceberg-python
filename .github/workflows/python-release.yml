@@ -31,6 +31,9 @@ on:
         type: string
         required: true
 
+env:
+  RELEASE_CANDIDATE: "${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+
 jobs:
   validate-inputs:
     runs-on: ubuntu-latest
@@ -52,7 +55,7 @@ jobs:
 
       - name: Echo Release Candidate Version
         run: |
-          echo "Running Release Candidate Version: ${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          echo "Running Release Candidate Version: $RELEASE_CANDIDATE"
 
   validate-library-version:
     runs-on: ubuntu-latest
@@ -207,7 +210,7 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "svn-release-candidate-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          name: "svn-release-candidate-${{ env.RELEASE_CANDIDATE }}"
           pattern: svn-release-candidate*
           delete-merged: true
 
@@ -239,7 +242,7 @@ jobs:
         run: pip install poetry
 
       - name: Set version with RC
-        run: python -m poetry version "${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+        run: python -m poetry version "${{ env.RELEASE_CANDIDATE }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -282,6 +285,6 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "pypi-release-candidate-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          name: "pypi-release-candidate-${{ env.RELEASE_CANDIDATE }}"
           pattern: pypi-release-candidate*
           delete-merged: true
