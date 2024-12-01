@@ -142,7 +142,6 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      # TODO: upload to SVN
       - uses: actions/upload-artifact@v4
         with:
           name: "svn-release-candidate-${{ matrix.os }}"
@@ -272,7 +271,6 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      # TODO: upload to PyPi
       - uses: actions/upload-artifact@v4
         with:
           name: "pypi-release-candidate-${{ matrix.os }}"
