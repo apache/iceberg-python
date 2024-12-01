@@ -27,7 +27,7 @@ on:
         type: string
         required: true
       rc:
-        description: 'Release candidate (RC) (e.g, rc1)'
+        description: 'Release Candidate (RC) (e.g, rc1)'
         type: string
         required: true
 
@@ -50,9 +50,9 @@ jobs:
             exit 1
           fi
 
-      - name: Echo Release Version
+      - name: Echo Release Candidate Version
         run: |
-          echo "Running Release Version: ${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          echo "Running Release Candidate Version: ${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
 
   validate-library-version:
     runs-on: ubuntu-latest
@@ -142,7 +142,7 @@ jobs:
       # TODO: upload to SVN, all files in pypi_wheelhouse
       - uses: actions/upload-artifact@v4
         with:
-          name: "release-svn-${{ matrix.os }}"
+          name: "svn-release-candidate-${{ matrix.os }}"
           path: ./svn_wheelhouse/*
 
   svn_generate_checksums:
@@ -154,7 +154,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: svn_wheelhouse
-          pattern: release-svn-*
+          pattern: svn-release-candidate-*
           merge-multiple: true
       - name: Generate SHA512 checksums
         run: |
@@ -165,7 +165,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: release-svn-sha-checksums
+          name: svn-release-candidate-sha-checksums
           path: ./svn_wheelhouse/*.sha512
 
   svn_generate_signatures:
@@ -177,7 +177,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: svn_wheelhouse
-          pattern: release-svn-*
+          pattern: svn-release-candidate-*
           merge-multiple: true
       - name: Import GPG Key
         id: import_gpg
@@ -194,7 +194,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: release-svn-gpg-signatures
+          name: svn-release-candidate-gpg-signatures
           path: ./svn_wheelhouse/*.asc
 
   svn_merge_artifacts:
@@ -207,8 +207,8 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "release-svn-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
-          pattern: release-svn*
+          name: "svn-release-candidate-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          pattern: svn-release-candidate*
           delete-merged: true
 
   # PyPi
@@ -272,7 +272,7 @@ jobs:
       # TODO: upload to PyPi, all files in pypi_wheelhouse
       - uses: actions/upload-artifact@v4
         with:
-          name: "release-pypi-${{ matrix.os }}"
+          name: "pypi-release-candidate-${{ matrix.os }}"
           path: ./pypi_wheelhouse/*
 
   pypi_merge_artifacts:
@@ -282,6 +282,6 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "release-pypi-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
-          pattern: release-pypi*
+          name: "pypi-release-candidate-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          pattern: pypi-release-candidate*
           delete-merged: true
