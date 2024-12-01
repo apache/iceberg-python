@@ -17,7 +17,7 @@
 # under the License.
 #
 
-name: "Python Release"
+name: "Python Release RC"
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
   validate-inputs:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate Version and RC
+      - name: Validate Input Version and RC
         id: validate
         run: |
           # Validate version (e.g., 1.0.0)
@@ -50,7 +50,7 @@ jobs:
             exit 1
           fi
 
-      - name: Release Version
+      - name: Echo Release Version
         run: |
           echo "Running Release Version: ${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
 
@@ -84,7 +84,8 @@ jobs:
             exit 1
           fi
 
-  build_svn_artifacts:
+  # SVN
+  svn_build_artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs:
@@ -139,12 +140,11 @@ jobs:
         run: ls -lah dist/* && cp dist/* svn_wheelhouse/
 
       - name: Generate SHA512 checksums
-        if: startsWith(matrix.os, 'ubuntu')
         run: |
           cd svn_wheelhouse
           for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
           do
-             shasum -a 512 "${name}" > "${name}.sha512"
+            shasum -a 512 "${name}" > "${name}.sha512"
           done
 
       - name: Import GPG Key
@@ -155,20 +155,32 @@ jobs:
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Generate GPG signatures
-        if: startsWith(matrix.os, 'ubuntu')
         run: |
           cd svn_wheelhouse
           for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
           do
-             gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
+            gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
           done
 
+      # TODO: upload to SVN, all files in pypi_wheelhouse
       - uses: actions/upload-artifact@v4
         with:
           name: "release-svn-${{ matrix.os }}"
           path: ./svn_wheelhouse/*
 
-  build_pypi_artifacts:
+  svn_merge_artifacts:
+    runs-on: ubuntu-latest
+    needs: svn_build_artifacts
+    steps:
+      - name: Merge Artifacts
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: "release-svn-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
+          pattern: release-svn*
+          delete-merged: true
+
+  # PyPi
+  pypi_build_artifacts:
     name: Build artifacts for PyPi on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs:
@@ -225,25 +237,15 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: ls -lah dist/* && cp dist/* pypi_wheelhouse/
 
+      # TODO: upload to PyPi, all files in pypi_wheelhouse
       - uses: actions/upload-artifact@v4
         with:
           name: "release-pypi-${{ matrix.os }}"
           path: ./pypi_wheelhouse/*
 
-  merge_svn_artifacts:
+  pypi_merge_artifacts:
     runs-on: ubuntu-latest
-    needs: build_svn_artifacts
-    steps:
-      - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
-        with:
-          name: "release-svn-${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
-          pattern: release-svn*
-          delete-merged: true
-
-  merge_pypi_artifacts:
-    runs-on: ubuntu-latest
-    needs: build_pypi_artifacts
+    needs: pypi_build_artifacts
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
