@@ -115,6 +115,7 @@ For the FileIO there are several configuration options available:
 | s3.region            | us-west-2                  | Sets the region of the bucket                                                                                                                                                                                                                             |
 | s3.proxy-uri         | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
+| s3.force-virtual-addressing   | False                       | Configure the style of requests. Set `False` to use path-style request and `True` for virtual-hosted-style request.                                                                                                                                                                                                       |
 
 <!-- markdown-link-check-enable-->
 
