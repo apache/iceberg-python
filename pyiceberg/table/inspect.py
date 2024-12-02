@@ -17,13 +17,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
 from pyiceberg.types import PrimitiveType
+from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
 if TYPE_CHECKING:
@@ -326,7 +327,7 @@ class InspectTable:
             schema=table_schema,
         )
 
-    def manifests(self) -> "pa.Table":
+    def _get_manifests_schema(self) -> "pa.Schema":
         import pyarrow as pa
 
         partition_summary_schema = pa.struct([
@@ -350,6 +351,17 @@ class InspectTable:
             pa.field("deleted_delete_files_count", pa.int32(), nullable=False),
             pa.field("partition_summaries", pa.list_(partition_summary_schema), nullable=False),
         ])
+        return manifest_schema
+
+    def _get_all_manifests_schema(self) -> "pa.Schema":
+        import pyarrow as pa
+
+        all_manifests_schema = self._get_manifests_schema()
+        all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
+        return all_manifests_schema
+
+    def _generate_manifests_table(self, snapshot: Optional[Snapshot], is_all_manifests_table: bool = False) -> "pa.Table":
+        import pyarrow as pa
 
         def _partition_summaries_to_rows(
             spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
@@ -386,11 +398,11 @@ class InspectTable:
 
         specs = self.tbl.metadata.specs()
         manifests = []
-        if snapshot := self.tbl.metadata.current_snapshot():
+        if snapshot:
             for manifest in snapshot.manifests(self.tbl.io):
                 is_data_file = manifest.content == ManifestContent.DATA
                 is_delete_file = manifest.content == ManifestContent.DELETES
-                manifests.append({
+                manifest_row = {
                     "content": manifest.content,
                     "path": manifest.manifest_path,
                     "length": manifest.manifest_length,
@@ -405,12 +417,18 @@ class InspectTable:
                     "partition_summaries": _partition_summaries_to_rows(specs[manifest.partition_spec_id], manifest.partitions)
                     if manifest.partitions
                     else [],
-                })
+                }
+                if is_all_manifests_table:
+                    manifest_row["reference_snapshot_id"] = snapshot.snapshot_id
+                manifests.append(manifest_row)
 
         return pa.Table.from_pylist(
             manifests,
-            schema=manifest_schema,
+            schema=self._get_all_manifests_schema() if is_all_manifests_table else self._get_manifests_schema(),
         )
+
+    def manifests(self) -> "pa.Table":
+        return self._generate_manifests_table(self.tbl.current_snapshot())
 
     def metadata_log_entries(self) -> "pa.Table":
         import pyarrow as pa
@@ -586,3 +604,16 @@ class InspectTable:
 
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
+
+    def all_manifests(self) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots = self.tbl.snapshots()
+        if not snapshots:
+            return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
+
+        executor = ExecutorFactory.get_or_create()
+        manifests_by_snapshots: Iterator["pa.Table"] = executor.map(
+            lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
+        )
+        return pa.concat_tables(manifests_by_snapshots)
