@@ -351,7 +351,7 @@ class PyArrowFileIO(FileIO):
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
-        if scheme in {"s3", "s3a", "s3n", "oss", "r2"}:
+        if scheme in {"s3", "s3a", "s3n", "oss"}:
             from pyarrow.fs import S3FileSystem
 
             client_kwargs: Dict[str, Any] = {
