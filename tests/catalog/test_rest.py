@@ -801,7 +801,7 @@ def test_table_exists_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    assert not catalog.table_exists(("fokko", "table"))
+    assert catalog.table_exists(("fokko", "table"))
 
 
 def test_table_exists_204(rest_mock: Mocker) -> None:
