@@ -147,64 +147,10 @@ jobs:
           name: "svn-release-candidate-${{ matrix.os }}"
           path: ./wheelhouse/*
 
-  svn_generate_checksums:
-    name: Generate SHA512 checksums
-    runs-on: ubuntu-latest
-    needs: svn_build_artifacts
-    steps:
-      - name: Download All SVN Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: svn-release-candidate-*
-          merge-multiple: true
-      - name: Generate SHA512 checksums
-        run: |
-          cd artifacts
-          for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
-          do
-            shasum -a 512 "${name}" > "${name}.sha512"
-          done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: svn-release-candidate-sha-checksums
-          path: ./artifacts/*.sha512
-
-  svn_generate_signatures:
-    name: Generate GPG Signatures
-    runs-on: ubuntu-latest
-    needs: svn_build_artifacts
-    steps:
-      - name: Download All SVN Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: svn-release-candidate-*
-          merge-multiple: true
-      - name: Import GPG Key
-        id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@111c56156bcc6918c056dbef52164cfa583dc549
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-      - name: Generate GPG signatures
-        run: |
-          cd artifacts
-          for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
-          do
-            gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
-          done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: svn-release-candidate-gpg-signatures
-          path: ./artifacts/*.asc
-
   svn_merge_artifacts:
     runs-on: ubuntu-latest
     needs:
       - svn_build_artifacts
-      - svn_generate_checksums
-      - svn_generate_signatures
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
