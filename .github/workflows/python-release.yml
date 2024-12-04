@@ -20,42 +20,64 @@
 name: "Python Build Release Candidate"
 
 on:
+  push:
+    tags:
+      # Trigger this workflow when tag follows the versioning format: <major>.<minor>.<patch>rc<release_candidate>
+      # Example valid tags: 0.8.1rc1, 1.0.0rc2
+      - '[0-9]+.[0-9]+.[0-9]+rc[0-9]+'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g, 0.8.0)'
+        description: 'Version (e.g., 0.8.0)'
         type: string
         required: true
       rc:
-        description: 'Release Candidate (RC) (e.g, rc1)'
+        description: 'Release Candidate (RC) (e.g., rc1)'
         type: string
         required: true
-
-env:
-  RELEASE_CANDIDATE: "${{ github.event.inputs.version }}${{ github.event.inputs.rc }}"
 
 jobs:
   validate-inputs:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate Input Version and RC
-        id: validate
+      - name: Validate and Extract Version and RC
         run: |
-          # Validate version (e.g., 1.0.0)
-          if [[ ! "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: version must be in the format number.number.number"
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "Workflow triggered by tag push."
+            TAG=${GITHUB_REF#refs/tags/} # Extract the tag name
+            VERSION=${TAG%rc*} # Extract version by removing everything after "rc"
+            RC=${TAG#*rc} # Extract RCby removing everything before "rc"
+
+            if [[ -z "$VERSION" || -z "$RC" ]]; then
+              echo "Error: Unable to parse VERSION or RC from tag ($TAG). Ensure the tag format is correct."
+              exit 1
+            fi
+          else
+            echo "Workflow triggered manually via workflow_dispatch."
+            VERSION="${{ github.event.inputs.version }}"
+            RC="${{ github.event.inputs.rc }}"
+
+            # Validate version (e.g., 1.0.0)
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: version ($VERSION) must be in the format <number>.<number>.<number>"
+              exit 1
+            fi
+
+            # Validate rc (e.g., rc1)
+            if [[ ! "$RC" =~ ^rc[0-9]+$ ]]; then
+              echo "Error: rc ($RC) must be in the format rc<number>"
+              exit 1
+            fi
           fi
 
-          # Validate rc (e.g., rc1)
-          if [[ ! "${{ github.event.inputs.rc }}" =~ ^rc[0-9]+$ ]]; then
-            echo "Error: rc must be in the format rc<number>"
-            exit 1
-          fi
+          # Export variables for future steps
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "RC=$RC" >> $GITHUB_ENV
 
-      - name: Echo Release Candidate Version
+      - name: Display Extracted Version and RC
         run: |
-          echo "Running Release Candidate Version: $RELEASE_CANDIDATE"
+          echo "Using Version: $VERSION"
+          echo "Using RC: $RC"
 
   validate-library-version:
     runs-on: ubuntu-latest
@@ -73,17 +95,16 @@ jobs:
           pip install poetry
 
       - name: Validate current pyiceberg version
+        env:
+          VERSION: ${{ env.VERSION }}
         run: |
           # Extract the current version from Poetry
           current_pyiceberg_version=$(poetry version --short)
           echo "Detected Poetry version: $current_pyiceberg_version"
 
           # Compare the input version with the Poetry version
-          input_version="${{ github.event.inputs.version }}"
-
-          # Check if the input version matches the Poetry version
-          if [[ "$input_version" != "$current_pyiceberg_version" ]]; then
-            echo "Error: Input version ($input_version) does not match the Poetry version ($current_pyiceberg_version)"
+          if [[ "$VERSION" != "$current_pyiceberg_version" ]]; then
+            echo "Error: Input version ($VERSION) does not match the Poetry version ($current_pyiceberg_version)"
             exit 1
           fi
 
@@ -154,8 +175,11 @@ jobs:
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
+        env:
+          VERSION: ${{ env.VERSION }}
+          RC: ${{ env.RC }}
         with:
-          name: "svn-release-candidate-${{ env.RELEASE_CANDIDATE }}"
+          name: "svn-release-candidate-${VERSION}-rc${RC}"
           pattern: svn-release-candidate*
           delete-merged: true
 
@@ -187,7 +211,10 @@ jobs:
         run: pip install poetry
 
       - name: Set version with RC
-        run: python -m poetry version "${{ env.RELEASE_CANDIDATE }}"
+        env:
+          VERSION: ${{ env.VERSION }}
+          RC: ${{ env.RC }}
+        run: python -m poetry version "${VERSION}-rc${RC}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -228,7 +255,10 @@ jobs:
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
+        env:
+          VERSION: ${{ env.VERSION }}
+          RC: ${{ env.RC }}
         with:
-          name: "pypi-release-candidate-${{ env.RELEASE_CANDIDATE }}"
+          name: "pypi-release-candidate-${VERSION}-rc${RC}"
           pattern: pypi-release-candidate*
           delete-merged: true
