@@ -68,7 +68,11 @@ jobs:
               exit 1
             fi
 
-            # RC is already validated as a number via workflow_dispatch inputs
+            # Validate rc (e.g., 1)
+            if [[ ! "$RC" =~ ^[0-9]+$ ]]; then
+              echo "Error: rc ($RC) must be in the format: <number>"
+              exit 1
+            fi
           fi
 
           # Export variables for future steps
