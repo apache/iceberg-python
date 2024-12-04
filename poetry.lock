@@ -2243,13 +2243,13 @@ type = ["mypy (==1.11.2)"]
 
 [[package]]
 name = "moto"
-version = "5.0.21"
+version = "5.0.22"
 description = ""
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "moto-5.0.21-py3-none-any.whl", hash = "sha256:1235b2ae3666459c9cc44504a5e73d35f4959b45e5876b2f6df2e5f4889dfb4f"},
-    {file = "moto-5.0.21.tar.gz", hash = "sha256:52f63291daeff9444ef5eb14fbf69b24264567b79f184ae6aee4945d09845f06"},
+    {file = "moto-5.0.22-py3-none-any.whl", hash = "sha256:defae32e834ba5674f77cbbe996b41dc248dd81289af8032fa3e847284409b29"},
+    {file = "moto-5.0.22.tar.gz", hash = "sha256:daf47b8a1f5f190cd3eaa40018a643f38e542277900cf1db7f252cedbfed998f"},
 ]
 
 [package.dependencies]
