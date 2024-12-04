@@ -46,7 +46,7 @@ jobs:
             echo "Workflow triggered by tag push."
             TAG=${GITHUB_REF#refs/tags/} # Extract the tag name
             VERSION=${TAG%rc*} # Extract version by removing everything after "rc"
-            RC=${TAG#*rc} # Extract RCby removing everything before "rc"
+            RC=${TAG#*rc} # Extract RC by removing everything before "rc"
 
             if [[ -z "$VERSION" || -z "$RC" ]]; then
               echo "Error: Unable to parse VERSION or RC from tag ($TAG). Ensure the tag format is correct."
@@ -81,6 +81,8 @@ jobs:
 
   validate-library-version:
     runs-on: ubuntu-latest
+    needs:
+      - validate-inputs
     steps:
       - uses: actions/checkout@v4
         with:
