@@ -39,8 +39,12 @@ on:
 jobs:
   validate-inputs:
     runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.validate-inputs.outputs.VERSION }}
+      RC: ${{ steps.validate-inputs.outputs.RC }}
     steps:
       - name: Validate and Extract Version and RC
+        id: validate-inputs
         run: |
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             echo "Workflow triggered by tag push."
@@ -71,8 +75,8 @@ jobs:
           fi
 
           # Export variables for future steps
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "RC=$RC" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "RC=$RC" >> $GITHUB_OUTPUT
 
       - name: Display Extracted Version and RC
         run: |
@@ -98,7 +102,7 @@ jobs:
 
       - name: Validate current pyiceberg version
         env:
-          VERSION: ${{ env.VERSION }}
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
         run: |
           # Extract the current version from Poetry
           current_pyiceberg_version=$(poetry version --short)
@@ -178,10 +182,10 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         env:
-          VERSION: ${{ env.VERSION }}
-          RC: ${{ env.RC }}
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
+          RC: ${{ needs.validate-inputs.outputs.RC }}
         with:
-          name: "svn-release-candidate-${VERSION}-rc${RC}"
+          name: "svn-release-candidate-${{ env.VERSION }}-rc${{ env.RC }}"
           pattern: svn-release-candidate*
           delete-merged: true
 
@@ -214,9 +218,9 @@ jobs:
 
       - name: Set version with RC
         env:
-          VERSION: ${{ env.VERSION }}
-          RC: ${{ env.RC }}
-        run: python -m poetry version "${VERSION}-rc${RC}"
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
+          RC: ${{ needs.validate-inputs.outputs.RC }}
+        run: python -m poetry version "${{ env.VERSION }}-rc${{ env.RC }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -258,9 +262,9 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         env:
-          VERSION: ${{ env.VERSION }}
-          RC: ${{ env.RC }}
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
+          RC: ${{ needs.validate-inputs.outputs.RC }}
         with:
-          name: "pypi-release-candidate-${VERSION}-rc${RC}"
+          name: "pypi-release-candidate-${{ env.VERSION }}-rc${{ env.RC }}"
           pattern: pypi-release-candidate*
           delete-merged: true
