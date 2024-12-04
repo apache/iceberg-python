@@ -41,8 +41,7 @@ services:
       - hive:hive
       - minio:minio
   rest:
-    # TODO: This needs to be updated to apache/iceberg-rest-fixture once https://github.com/apache/iceberg/pull/11676 is merged
-    image: asfjenkins/iceberg-rest-fixture
+    image: apache/iceberg-rest-fixture
     container_name: pyiceberg-rest
     networks:
       iceberg_net:
