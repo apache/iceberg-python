@@ -183,7 +183,6 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This must be set to True as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
 
-
 <!-- markdown-link-check-enable-->
 
 ### PyArrow
