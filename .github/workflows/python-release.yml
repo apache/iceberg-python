@@ -174,15 +174,13 @@ jobs:
   svn_merge_artifacts:
     runs-on: ubuntu-latest
     needs:
+      - validate-inputs
       - svn_build_artifacts
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
-        env:
-          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
-          RC: ${{ needs.validate-inputs.outputs.RC }}
         with:
-          name: "svn-release-candidate-${{ env.VERSION }}-rc${{ env.RC }}"
+          name: "svn-release-candidate-${{ needs.validate-inputs.outputs.VERSION }}-rc${{ needs.validate-inputs.outputs.RC }}"
           pattern: svn-release-candidate*
           delete-merged: true
 
@@ -217,7 +215,7 @@ jobs:
         env:
           VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
           RC: ${{ needs.validate-inputs.outputs.RC }}
-        run: python -m poetry version "${{ env.VERSION }}-rc${{ env.RC }}"
+        run: python -m poetry version "${{ env.VERSION }}rc${{ env.RC }}" # e.g., 0.8.0rc1
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -254,14 +252,13 @@ jobs:
 
   pypi_merge_artifacts:
     runs-on: ubuntu-latest
-    needs: pypi_build_artifacts
+    needs: 
+      - validate-inputs
+      - pypi_build_artifacts
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
-        env:
-          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
-          RC: ${{ needs.validate-inputs.outputs.RC }}
         with:
-          name: "pypi-release-candidate-${{ env.VERSION }}-rc${{ env.RC }}"
+          name: "pypi-release-candidate-${{ needs.validate-inputs.outputs.VERSION }}-rc${{ needs.validate-inputs.outputs.RC }}"
           pattern: pypi-release-candidate*
           delete-merged: true
