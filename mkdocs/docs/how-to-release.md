@@ -130,6 +130,20 @@ This action will generate two final artifacts:
 * `svn-release-candidate-${VERSION}rc${RC}` for SVN
 * `pypi-release-candidate-${VERSION}rc${RC}` for PyPi
 
+If `gh` is available, watch the GitHub Action progress using:
+
+```bash
+RUN_ID=$(gh run list --repo apache/iceberg-python --workflow "Python Build Release Candidate" --branch "${GIT_TAG}" --event push --json databaseId -q '.[0].databaseId')
+echo "Waiting for workflow to complete, this will take several minutes..."
+gh run watch $RUN_ID --repo apache/iceberg-python
+```
+
+and download the artifacts using:
+
+```bash
+gh run download $RUN_ID --repo apache/iceberg-python
+```
+
 ### Publish Release Candidate (RC)
 
 #### Upload to Apache Dev SVN
