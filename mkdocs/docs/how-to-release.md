@@ -158,14 +158,18 @@ Navigate to the artifact directory. Generate signature and checksum files:
 * `.sha512` files: SHA-512 checksums for verifying file integrity.
 
 ```bash
-cd svn-release-candidate-${VERSION}rc${RC}
+(
+    cd svn-release-candidate-${VERSION}rc${RC}
 
-for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
-do
-    gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
-    shasum -a 512 "${name}" > "${name}.sha512"
-done
+    for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
+    do
+        gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
+        shasum -a 512 "${name}" > "${name}.sha512"
+    done
+)
 ```
+
+The parentheses `()` create a subshell. Any changes to the directory (`cd`) are limited to this subshell, so the current directory in the parent shell remains unchanged.
 
 ##### Upload Artifacts to Apache Dev SVN
 
@@ -177,7 +181,7 @@ svn checkout https://dist.apache.org/repos/dist/dev/iceberg $SVN_TMP_DIR
 
 export SVN_TMP_DIR_VERSIONED=${SVN_TMP_DIR}pyiceberg-$VERSION_WITH_RC/
 mkdir -p $SVN_TMP_DIR_VERSIONED
-cp * $SVN_TMP_DIR_VERSIONED
+cp svn-release-candidate-${VERSION}rc${RC}/* $SVN_TMP_DIR_VERSIONED
 svn add $SVN_TMP_DIR_VERSIONED
 svn ci -m "PyIceberg ${VERSION_WITH_RC}" ${SVN_TMP_DIR_VERSIONED}
 ```
