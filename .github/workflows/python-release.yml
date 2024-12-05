@@ -184,7 +184,7 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "svn-release-candidate-${{ needs.validate-inputs.outputs.VERSION }}-rc${{ needs.validate-inputs.outputs.RC }}"
+          name: "svn-release-candidate-${{ needs.validate-inputs.outputs.VERSION }}rc${{ needs.validate-inputs.outputs.RC }}"
           pattern: svn-release-candidate*
           delete-merged: true
 
@@ -263,6 +263,6 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "pypi-release-candidate-${{ needs.validate-inputs.outputs.VERSION }}-rc${{ needs.validate-inputs.outputs.RC }}"
+          name: "pypi-release-candidate-${{ needs.validate-inputs.outputs.VERSION }}rc${{ needs.validate-inputs.outputs.RC }}"
           pattern: pypi-release-candidate*
           delete-merged: true
