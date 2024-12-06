@@ -365,18 +365,6 @@ This Python release can be downloaded from: https://pypi.org/project/pyiceberg/<
 Thanks to everyone for contributing!
 ```
 
-### Release the docs
-
-Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
-
-### Update the Github template
-
-Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
-
-### Update the integration tests
-
-Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
-
 ### Create a Github Release Note
 
 Create a [new Release Note](https://github.com/apache/iceberg-python/releases/new) on the iceberg-python Github repository.
@@ -390,6 +378,18 @@ Then, select the previous release version as the **Previous tag** to use the dif
 **Generate release notes**.
 
 **Set as the latest release** and **Publish**.
+
+### Release the docs
+
+Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
+
+### Update the Github template
+
+Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
+
+### Update the integration tests
+
+Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
 
 ## Misc
 
