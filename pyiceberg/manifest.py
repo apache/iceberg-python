@@ -30,7 +30,7 @@ from typing import (
     Optional,
     Tuple,
     Type,
-    Union
+    Union,
 )
 
 from cachetools import LRUCache, cached
@@ -101,7 +101,7 @@ class FileFormat(str, Enum):
     @classmethod
     def _missing_(cls, value: object) -> Union[None, str]:
         for member in cls:
-            if getattr(member, "value") == str(value).upper():
+            if member.value == str(value).upper():
                 return member
         return None
 
