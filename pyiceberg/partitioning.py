@@ -218,7 +218,10 @@ class PartitionSpec(IcebergBaseModel):
         """
         nested_fields = []
         for field in self.fields:
-            source_type = schema.find_type(field.source_id)
+            try:
+                source_type = schema.find_type(field.source_id)
+            except ValueError:
+                continue
             result_type = field.transform.result_type(source_type)
             required = schema.find_field(field.source_id).required
             nested_fields.append(NestedField(field.field_id, field.name, result_type, required=required))
