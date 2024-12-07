@@ -156,28 +156,28 @@ class InMemoryCatalog(MetastoreCatalog):
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
-            return self.__tables[identifier_tuple]
+            identifier = Catalog.identifier_to_tuple(identifier)
+            return self.__tables[identifier]
         except KeyError as error:
-            raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
+            raise NoSuchTableError(f"Table does not exist: {identifier}") from error
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
-            self.__tables.pop(identifier_tuple)
+            identifier = Catalog.identifier_to_tuple(identifier)
+            self.__tables.pop(identifier)
         except KeyError as error:
-            raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
+            raise NoSuchTableError(f"Table does not exist: {identifier}") from error
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         self.drop_table(identifier)
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         try:
-            table = self.__tables.pop(identifier_tuple)
+            from_identifier = Catalog.identifier_to_tuple(from_identifier)
+            table = self.__tables.pop(from_identifier)
         except KeyError as error:
-            raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
+            raise NoSuchTableError(f"Table does not exist: {from_identifier}") from error
 
         to_identifier = Catalog.identifier_to_tuple(to_identifier)
         to_namespace = Catalog.namespace_from(to_identifier)
@@ -514,7 +514,7 @@ def test_rename_table(catalog: InMemoryCatalog) -> None:
 
     # Then
     assert table._identifier == Catalog.identifier_to_tuple(new_table)
-
+    print(f"DEBUG: {table._identifier}")
     # And
     table = catalog.load_table(new_table)
     assert table._identifier == Catalog.identifier_to_tuple(new_table)
