@@ -78,7 +78,7 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
-from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 if TYPE_CHECKING:
@@ -318,10 +318,11 @@ class RestCatalog(Catalog):
     @property
     def auth_url(self) -> str:
         if self.properties.get(AUTH_URL):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {AUTH_URL} is deprecated. Please use {OAUTH2_SERVER_URI} instead",
+            deprecated.topic(
+                deprecate_in="0.8.0",
+                remove_in="0.9.0",
+                prefix=f"The property {AUTH_URL}",
+                topic=f"Please use {OAUTH2_SERVER_URI} instead",
             )
 
         self._warn_oauth_tokens_deprecation()
@@ -338,10 +339,11 @@ class RestCatalog(Catalog):
         has_sigv4_enabled = property_as_bool(self.properties, SIGV4, False)
 
         if not has_oauth_server_uri and (has_init_token or has_credential) and not has_sigv4_enabled:
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="1.0.0",
-                help_message="Iceberg REST client is missing the OAuth2 server URI "
+            deprecated.topic(
+                deprecate_in="0.8.0",
+                remove_in="1.0.0",
+                prefix="Default OAuth2 endpoint",
+                topic="Iceberg REST client is missing the OAuth2 server URI "
                 f"configuration and defaults to {self.uri}{Endpoints.get_token}. "
                 "This automatic fallback will be removed in a future Iceberg release."
                 f"It is recommended to configure the OAuth2 endpoint using the '{OAUTH2_SERVER_URI}'"

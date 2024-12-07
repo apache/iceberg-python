@@ -34,32 +34,24 @@ from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef
-from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils._deprecations import deprecated
 from pyiceberg.utils.properties import property_as_int
 
+deprecated.constant(
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="Use TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT instead.",
+    constant="DEFAULT_MAX_SNAPSHOT_AGE_MS",
+    value=TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT,
+)
 
-class DeprecatedConstants:
-    @property
-    @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="DEFAULT_MAX_SNAPSHOT_AGE_MS is deprecated. Use TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT instead.",
-    )
-    def DEFAULT_MAX_SNAPSHOT_AGE_MS(self) -> int:
-        return 432000000
-
-    @property
-    @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="DEFAULT_MIN_SNAPSHOTS_TO_KEEP is deprecated. Use TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT instead.",
-    )
-    def DEFAULT_MIN_SNAPSHOTS_TO_KEEP(self) -> int:
-        return 1
-
-
-DEFAULT_MIN_SNAPSHOTS_TO_KEEP = DeprecatedConstants().DEFAULT_MIN_SNAPSHOTS_TO_KEEP
-DEFAULT_MAX_SNAPSHOT_AGE_MS = DeprecatedConstants().DEFAULT_MAX_SNAPSHOT_AGE_MS
+deprecated.constant(
+    deprecate_in="0.8.0",
+    remove_in="0.9.0",
+    topic="Use TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT instead.",
+    constant="DEFAULT_MIN_SNAPSHOTS_TO_KEEP",
+    value=TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT,
+)
 
 
 def catch_exception() -> Callable:  # type: ignore
