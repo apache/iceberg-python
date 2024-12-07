@@ -109,66 +109,81 @@ Create a signed tag:
 Replace `VERSION` and `RC` with the appropriate values for the release.
 
 ```bash
-export RC=rc1
-export VERSION=0.7.0${RC}
-export VERSION_WITHOUT_RC=${VERSION/rc?/}
-export VERSION_BRANCH=${VERSION_WITHOUT_RC//./-}
-export GIT_TAG=pyiceberg-${VERSION}
+export VERSION=0.7.0
+export RC=1
 
-git tag -s ${GIT_TAG} -m "PyIceberg ${VERSION}"
+export VERSION_WITH_RC=${VERSION}rc${RC}
+export GIT_TAG=pyiceberg-${VERSION_WITH_RC}
+
+git tag -s ${GIT_TAG} -m "PyIceberg ${VERSION_WITH_RC}"
 git push git@github.com:apache/iceberg-python.git ${GIT_TAG}
+```
+
+### Create Artifacts
+
+The [`Python Build Release Candidate` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml) will run automatically upon tag push.
+
+This action will generate artifacts that will include both source distribution (`sdist`) and binary distributions (`wheels` using [`cibuildwheel`](https://github.com/pypa/cibuildwheel)) for each architectures.
+
+This action will generate two final artifacts:
+
+* `svn-release-candidate-${VERSION}rc${RC}` for SVN
+* `pypi-release-candidate-${VERSION}rc${RC}` for PyPi
+
+If `gh` is available, watch the GitHub Action progress using:
+
+```bash
+RUN_ID=$(gh run list --repo apache/iceberg-python --workflow "Python Build Release Candidate" --branch "${GIT_TAG}" --event push --json databaseId -q '.[0].databaseId')
+echo "Waiting for workflow to complete, this will take several minutes..."
+gh run watch $RUN_ID --repo apache/iceberg-python
+```
+
+and download the artifacts using:
+
+```bash
+gh run download $RUN_ID --repo apache/iceberg-python
 ```
 
 ### Publish Release Candidate (RC)
 
 #### Upload to Apache Dev SVN
 
-##### Create Artifacts for SVN
-
-Run the [`Python release` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml).
-
-* Tag: Use the newly created tag.
-* Version: Set the `version` to `main`, as the source cannot be modified.
-
-![Github Actions Run Workflow for SVN Upload](assets/images/ghactions-run-workflow-svn-upload.png)
-
-This action will generate:
-
-* Source distribution (`sdist`)
-* Binary distributions (`wheels`) for each architectures. These are created using [`cibuildwheel`](https://github.com/pypa/cibuildwheel)
-
 ##### Download Artifacts, Sign, and Generate Checksums
 
-Download the ZIP file containing the artifacts from the GitHub Actions run and unzip it.
+Download the SVN artifact from the GitHub Action and unzip it.
 
-Navigate to the release directory. Sign the files and generate checksums:
+Navigate to the artifact directory. Generate signature and checksum files:
 
 * `.asc` files: GPG-signed versions of each artifact to ensure authenticity.
 * `.sha512` files: SHA-512 checksums for verifying file integrity.
 
 ```bash
-cd release-main/
+(
+    cd svn-release-candidate-${VERSION}rc${RC}
 
-for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
-do
-    gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
-    shasum -a 512 "${name}" > "${name}.sha512"
-done
+    for name in $(ls pyiceberg-*.whl pyiceberg-*.tar.gz)
+    do
+        gpg --yes --armor --output "${name}.asc" --detach-sig "${name}"
+        shasum -a 512 "${name}" > "${name}.sha512"
+    done
+)
 ```
+
+The parentheses `()` create a subshell. Any changes to the directory (`cd`) are limited to this subshell, so the current directory in the parent shell remains unchanged.
 
 ##### Upload Artifacts to Apache Dev SVN
 
 Now, upload the files from the same directory:
 
 ```bash
-export SVN_TMP_DIR=/tmp/iceberg-${VERSION_BRANCH}/
+export SVN_TMP_DIR=/tmp/iceberg-${VERSION}/
 svn checkout https://dist.apache.org/repos/dist/dev/iceberg $SVN_TMP_DIR
 
-export SVN_TMP_DIR_VERSIONED=${SVN_TMP_DIR}pyiceberg-$VERSION/
+export SVN_TMP_DIR_VERSIONED=${SVN_TMP_DIR}pyiceberg-$VERSION_WITH_RC/
 mkdir -p $SVN_TMP_DIR_VERSIONED
-cp * $SVN_TMP_DIR_VERSIONED
+cp svn-release-candidate-${VERSION}rc${RC}/* $SVN_TMP_DIR_VERSIONED
 svn add $SVN_TMP_DIR_VERSIONED
-svn ci -m "PyIceberg ${VERSION}" ${SVN_TMP_DIR_VERSIONED}
+svn ci -m "PyIceberg ${VERSION_WITH_RC}" ${SVN_TMP_DIR_VERSIONED}
 ```
 
 Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/dev/iceberg](https://dist.apache.org/repos/dist/dev/iceberg/).
@@ -183,22 +198,13 @@ svn delete https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-<OLD_RC_VERS
 
 #### Upload to PyPi
 
-##### Create Artifacts for PyPi
-
-Run the [`Python release` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml).
-
-* Tag: Use the newly created tag.
-* Version: Set the `version` to release candidate, e.g. `0.7.0rc1`.
-
-![Github Actions Run Workflow for PyPi Upload](assets/images/ghactions-run-workflow-pypi-upload.png)
-
 ##### Download Artifacts
 
-Download the zip file from the Github Action run and unzip locally.
+Download the PyPi artifact from the GitHub Action and unzip it.
 
 ##### Upload Artifacts to PyPi
 
-Upload release candidate to PyPi. This **won't** bump the version for everyone that hasn't pinned their version, since it is set to an RC [pre-release and those are ignored](https://packaging.python.org/en/latest/guides/distributing-packages-using-setuptools/#pre-release-versioning).
+Update the artifact directory to PyPi using `twine`. This **won't** bump the version for everyone that hasn't pinned their version, since it is set to an RC [pre-release and those are ignored](https://packaging.python.org/en/latest/guides/distributing-packages-using-setuptools/#pre-release-versioning).
 
 <!-- prettier-ignore-start -->
 
@@ -208,7 +214,7 @@ Upload release candidate to PyPi. This **won't** bump the version for everyone t
 <!-- prettier-ignore-end -->
 
 ```bash
-twine upload release-${VERSION}/*
+twine upload pypi-release-candidate-${VERSION}rc${RC}/*
 ```
 
 Verify the artifact is uploaded to [PyPi](https://pypi.org/project/pyiceberg/#history).
@@ -226,10 +232,10 @@ export LAST_COMMIT_ID=$(git rev-list ${GIT_TAG} 2> /dev/null | head -n 1)
 
 cat << EOF > release-announcement-email.txt
 To: dev@iceberg.apache.org
-Subject: [VOTE] Release Apache PyIceberg $VERSION
+Subject: [VOTE] Release Apache PyIceberg $VERSION_WITH_RC
 Hi Everyone,
 
-I propose that we release the following RC as the official PyIceberg $VERSION_WITHOUT_RC release.
+I propose that we release the following RC as the official PyIceberg $VERSION release.
 
 A summary of the high level features:
 
@@ -243,7 +249,7 @@ The commit ID is $LAST_COMMIT_ID
 
 The release tarball, signature, and checksums are here:
 
-* https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-$VERSION/
+* https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-$VERSION_WITH_RC/
 
 You can find the KEYS file here:
 
@@ -251,9 +257,9 @@ You can find the KEYS file here:
 
 Convenience binary artifacts are staged on pypi:
 
-https://pypi.org/project/pyiceberg/$VERSION/
+https://pypi.org/project/pyiceberg/$VERSION_WITH_RC/
 
-And can be installed using: pip3 install pyiceberg==$VERSION
+And can be installed using: pip3 install pyiceberg==$VERSION_WITH_RC
 
 Instructions for verifying a release can be found here:
 
@@ -262,7 +268,7 @@ Instructions for verifying a release can be found here:
 Please download, verify, and test.
 
 Please vote in the next 72 hours.
-[ ] +1 Release this as PyIceberg $VERSION_WITHOUT_RC
+[ ] +1 Release this as PyIceberg $VERSION
 [ ] +0
 [ ] -1 Do not release this because...
 EOF
@@ -302,10 +308,10 @@ Kind regards,
 <!-- prettier-ignore-end -->
 
 ```bash
-export SVN_DEV_DIR_VERSIONED="https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION}"
-export SVN_RELEASE_DIR_VERSIONED="https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION_WITHOUT_RC}"
+export SVN_DEV_DIR_VERSIONED="https://dist.apache.org/repos/dist/dev/iceberg/pyiceberg-${VERSION_WITH_RC}"
+export SVN_RELEASE_DIR_VERSIONED="https://dist.apache.org/repos/dist/release/iceberg/pyiceberg-${VERSION}"
 
-svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add release ${VERSION_WITHOUT_RC}"
+svn mv ${SVN_DEV_DIR_VERSIONED} ${SVN_RELEASE_DIR_VERSIONED} -m "PyIceberg: Add release ${VERSION}"
 ```
 
 Verify the artifact is uploaded to [https://dist.apache.org/repos/dist/release/iceberg](https://dist.apache.org/repos/dist/release/iceberg/).
@@ -331,7 +337,7 @@ The latest version can be pushed to PyPi. Check out the Apache SVN and make sure
 
 ```bash
 svn checkout https://dist.apache.org/repos/dist/release/iceberg /tmp/iceberg-dist-release/
-cd /tmp/iceberg-dist-release/pyiceberg-${VERSION_WITHOUT_RC}
+cd /tmp/iceberg-dist-release/pyiceberg-${VERSION}
 twine upload pyiceberg-*.whl pyiceberg-*.tar.gz
 ```
 
@@ -359,18 +365,6 @@ This Python release can be downloaded from: https://pypi.org/project/pyiceberg/<
 Thanks to everyone for contributing!
 ```
 
-### Release the docs
-
-Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
-
-### Update the Github template
-
-Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
-
-### Update the integration tests
-
-Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
-
 ### Create a Github Release Note
 
 Create a [new Release Note](https://github.com/apache/iceberg-python/releases/new) on the iceberg-python Github repository.
@@ -384,6 +378,18 @@ Then, select the previous release version as the **Previous tag** to use the dif
 **Generate release notes**.
 
 **Set as the latest release** and **Publish**.
+
+### Release the docs
+
+Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
+
+### Update the Github template
+
+Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
+
+### Update the integration tests
+
+Ensure to update the `PYICEBERG_VERSION` in the [Dockerfile](https://github.com/apache/iceberg-python/blob/main/dev/Dockerfile).
 
 ## Misc
 
