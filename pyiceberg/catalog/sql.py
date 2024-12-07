@@ -21,7 +21,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    Union,
+    Union, override,
 )
 
 from sqlalchemy import (
@@ -170,6 +170,7 @@ class SqlCatalog(MetastoreCatalog):
             catalog=self,
         )
 
+    @override
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -232,6 +233,7 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -270,6 +272,7 @@ class SqlCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
+    @override
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         """Load the table's metadata and return the table instance.
 
@@ -300,6 +303,7 @@ class SqlCatalog(MetastoreCatalog):
             return self._convert_orm_to_iceberg(result)
         raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
 
+    @override
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         """Drop a table.
 
@@ -341,6 +345,7 @@ class SqlCatalog(MetastoreCatalog):
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}") from e
             session.commit()
 
+    @override
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         """Rename a fully classified table name.
 
@@ -402,6 +407,7 @@ class SqlCatalog(MetastoreCatalog):
                 raise TableAlreadyExistsError(f"Table {to_namespace}.{to_table_name} already exists") from e
         return self.load_table(to_identifier)
 
+    @override
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -523,6 +529,7 @@ class SqlCatalog(MetastoreCatalog):
                 return True
         return False
 
+    @override
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         """Create a namespace in the catalog.
 
@@ -551,6 +558,7 @@ class SqlCatalog(MetastoreCatalog):
                 )
             session.commit()
 
+    @override
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         """Drop a namespace.
 
@@ -577,6 +585,7 @@ class SqlCatalog(MetastoreCatalog):
             )
             session.commit()
 
+    @override
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
 
@@ -598,6 +607,7 @@ class SqlCatalog(MetastoreCatalog):
             result = session.scalars(stmt)
             return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
 
+    @override
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
 
@@ -626,6 +636,7 @@ class SqlCatalog(MetastoreCatalog):
         with Session(self.engine) as session:
             return [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
 
+    @override
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.
 
@@ -649,6 +660,7 @@ class SqlCatalog(MetastoreCatalog):
             result = session.scalars(stmt)
             return {props.property_key: props.property_value for props in result}
 
+    @override
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -705,8 +717,10 @@ class SqlCatalog(MetastoreCatalog):
             session.commit()
         return properties_update_summary
 
+    @override
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError

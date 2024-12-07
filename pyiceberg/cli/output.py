@@ -21,7 +21,7 @@ from typing import (
     Dict,
     List,
     Optional,
-    Tuple,
+    Tuple, override,
 )
 from uuid import UUID
 
@@ -86,12 +86,14 @@ class ConsoleOutput(Output):
     def _table(self) -> RichTable:
         return RichTable.grid(padding=(0, 2))
 
+    @override
     def exception(self, ex: Exception) -> None:
         if self.verbose:
             Console(stderr=True).print_exception()
         else:
             Console(stderr=True).print(ex)
 
+    @override
     def identifiers(self, identifiers: List[Identifier]) -> None:
         table = self._table
         for identifier in identifiers:
@@ -99,6 +101,7 @@ class ConsoleOutput(Output):
 
         Console().print(table)
 
+    @override
     def describe_table(self, table: Table) -> None:
         metadata = table.metadata
         table_properties = self._table
@@ -128,6 +131,7 @@ class ConsoleOutput(Output):
         output_table.add_row("Properties", table_properties)
         Console().print(output_table)
 
+    @override
     def files(self, table: Table, history: bool) -> None:
         if history:
             snapshots = table.metadata.snapshots
@@ -151,30 +155,37 @@ class ConsoleOutput(Output):
                     manifest_tree.add(f"Datafile: {manifest_entry.data_file.file_path}")
         Console().print(snapshot_tree)
 
+    @override
     def describe_properties(self, properties: Properties) -> None:
         output_table = self._table
         for k, v in properties.items():
             output_table.add_row(k, v)
         Console().print(output_table)
 
+    @override
     def text(self, response: str) -> None:
         Console(soft_wrap=True).print(response)
 
+    @override
     def schema(self, schema: Schema) -> None:
         output_table = self._table
         for field in schema.fields:
             output_table.add_row(field.name, str(field.field_type), field.doc or "")
         Console().print(output_table)
 
+    @override
     def spec(self, spec: PartitionSpec) -> None:
         Console().print(str(spec))
 
+    @override
     def uuid(self, uuid: Optional[UUID]) -> None:
         Console().print(str(uuid) if uuid else "missing")
 
+    @override
     def version(self, version: str) -> None:
         Console().print(version)
 
+    @override
     def describe_refs(self, ref_details: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
         refs_table = RichTable(title="Snapshot Refs")
         refs_table.add_column("Ref")
@@ -200,12 +211,15 @@ class JsonOutput(Output):
     def _out(self, d: Any) -> None:
         print(json.dumps(d))
 
+    @override
     def exception(self, ex: Exception) -> None:
         self._out({"type": ex.__class__.__name__, "message": str(ex)})
 
+    @override
     def identifiers(self, identifiers: List[Identifier]) -> None:
         self._out([".".join(identifier) for identifier in identifiers])
 
+    @override
     def describe_table(self, table: Table) -> None:
         class FauxTable(IcebergBaseModel):
             """Just to encode it using Pydantic."""
@@ -220,27 +234,35 @@ class JsonOutput(Output):
             ).model_dump_json()
         )
 
+    @override
     def describe_properties(self, properties: Properties) -> None:
         self._out(properties)
 
+    @override
     def text(self, response: str) -> None:
         print(json.dumps(response))
 
+    @override
     def schema(self, schema: Schema) -> None:
         print(schema.model_dump_json())
 
+    @override
     def files(self, table: Table, history: bool) -> None:
         pass
 
+    @override
     def spec(self, spec: PartitionSpec) -> None:
         print(spec.model_dump_json())
 
+    @override
     def uuid(self, uuid: Optional[UUID]) -> None:
         self._out({"uuid": str(uuid) if uuid else "missing"})
 
+    @override
     def version(self, version: str) -> None:
         self._out({"version": version})
 
+    @override
     def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
         self._out([
             {"name": name, "type": type, detail_key: detail_val}

@@ -26,6 +26,7 @@ from typing import (
     Set,
     Tuple,
     Union,
+    override,
 )
 
 import pyarrow as pa
@@ -80,6 +81,7 @@ class InMemoryCatalog(MetastoreCatalog):
         self.__namespaces = {}
         self._warehouse_location = properties.get(WAREHOUSE, DEFAULT_WAREHOUSE_LOCATION)
 
+    @override
     def create_table(
         self,
         identifier: Union[str, Identifier],
@@ -127,9 +129,11 @@ class InMemoryCatalog(MetastoreCatalog):
             self.__tables[identifier] = table
             return table
 
+    @override
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         raise NotImplementedError
 
+    @override
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
@@ -155,6 +159,7 @@ class InMemoryCatalog(MetastoreCatalog):
 
         return CommitTableResponse(metadata=updated_metadata, metadata_location=new_metadata_location)
 
+    @override
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
@@ -162,6 +167,7 @@ class InMemoryCatalog(MetastoreCatalog):
         except KeyError as error:
             raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
 
+    @override
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         try:
@@ -169,9 +175,11 @@ class InMemoryCatalog(MetastoreCatalog):
         except KeyError as error:
             raise NoSuchTableError(f"Table does not exist: {identifier_tuple}") from error
 
+    @override
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         self.drop_table(identifier)
 
+    @override
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         try:
@@ -193,6 +201,7 @@ class InMemoryCatalog(MetastoreCatalog):
         )
         return self.__tables[to_identifier]
 
+    @override
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         namespace = Catalog.identifier_to_tuple(namespace)
         if namespace in self.__namespaces:
@@ -200,6 +209,7 @@ class InMemoryCatalog(MetastoreCatalog):
         else:
             self.__namespaces[namespace] = properties if properties else {}
 
+    @override
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         namespace = Catalog.identifier_to_tuple(namespace)
         if [table_identifier for table_identifier in self.__tables.keys() if namespace == table_identifier[:-1]]:
@@ -209,6 +219,7 @@ class InMemoryCatalog(MetastoreCatalog):
         except KeyError as error:
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}") from error
 
+    @override
     def list_tables(self, namespace: Optional[Union[str, Identifier]] = None) -> List[Identifier]:
         if namespace:
             namespace = Catalog.identifier_to_tuple(namespace)
@@ -218,6 +229,7 @@ class InMemoryCatalog(MetastoreCatalog):
 
         return list_tables
 
+    @override
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         # Hierarchical namespace is not supported. Return an empty list
         if namespace:
@@ -225,6 +237,7 @@ class InMemoryCatalog(MetastoreCatalog):
 
         return list(self.__namespaces.keys())
 
+    @override
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         namespace = Catalog.identifier_to_tuple(namespace)
         try:
@@ -232,6 +245,7 @@ class InMemoryCatalog(MetastoreCatalog):
         except KeyError as error:
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}") from error
 
+    @override
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
@@ -258,9 +272,11 @@ class InMemoryCatalog(MetastoreCatalog):
             removed=list(removed or []), updated=list(updates.keys() if updates else []), missing=list(expected_to_change)
         )
 
+    @override
     def list_views(self, namespace: Optional[Union[str, Identifier]] = None) -> List[Identifier]:
         raise NotImplementedError
 
+    @override
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 

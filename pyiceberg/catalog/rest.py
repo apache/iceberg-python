@@ -27,6 +27,7 @@ from typing import (
     Tuple,
     Type,
     Union,
+    override
 )
 
 from pydantic import Field, ValidationError, field_validator
@@ -601,6 +602,7 @@ class RestCatalog(Catalog):
             self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
         return TableResponse(**response.json())
 
+    @override
     @retry(**_RETRY_ARGS)
     def create_table(
         self,
@@ -622,6 +624,7 @@ class RestCatalog(Catalog):
         )
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
+    @override
     @retry(**_RETRY_ARGS)
     def create_table_transaction(
         self,
@@ -644,6 +647,7 @@ class RestCatalog(Catalog):
         staged_table = self._response_to_staged_table(self.identifier_to_tuple(identifier), table_response)
         return CreateTableTransaction(staged_table)
 
+    @override
     @retry(**_RETRY_ARGS)
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
@@ -677,6 +681,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse(**response.json())
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
+    @override
     @retry(**_RETRY_ARGS)
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -688,6 +693,7 @@ class RestCatalog(Catalog):
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return [(*table.namespace, table.name) for table in ListTablesResponse(**response.json()).identifiers]
 
+    @override
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
@@ -702,6 +708,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse(**response.json())
         return self._response_to_table(identifier_tuple, table_response)
 
+    @override
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
         identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
@@ -715,10 +722,12 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchTableError})
 
+    @override
     @retry(**_RETRY_ARGS)
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         self.drop_table(identifier=identifier, purge_requested=True)
 
+    @override
     @retry(**_RETRY_ARGS)
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
@@ -745,6 +754,7 @@ class RestCatalog(Catalog):
             )
         return table_request
 
+    @override
     @retry(**_RETRY_ARGS)
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -756,6 +766,7 @@ class RestCatalog(Catalog):
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
         return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
 
+    @override
     @retry(**_RETRY_ARGS)
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
@@ -802,6 +813,7 @@ class RestCatalog(Catalog):
             )
         return CommitTableResponse(**response.json())
 
+    @override
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -812,6 +824,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
 
+    @override
     @retry(**_RETRY_ARGS)
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -822,6 +835,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
+    @override
     @retry(**_RETRY_ARGS)
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         namespace_tuple = self.identifier_to_tuple(namespace)
@@ -839,6 +853,7 @@ class RestCatalog(Catalog):
 
         return ListNamespaceResponse(**response.json()).namespaces
 
+    @override
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -851,6 +866,7 @@ class RestCatalog(Catalog):
 
         return NamespaceResponse(**response.json()).properties
 
+    @override
     @retry(**_RETRY_ARGS)
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
@@ -870,6 +886,7 @@ class RestCatalog(Catalog):
             missing=parsed_response.missing,
         )
 
+    @override
     @retry(**_RETRY_ARGS)
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         """Check if a table exists.
@@ -897,6 +914,7 @@ class RestCatalog(Catalog):
 
         return False
 
+    @override
     @retry(**_RETRY_ARGS)
     def drop_view(self, identifier: Union[str]) -> None:
         identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)

@@ -35,6 +35,7 @@ from typing import (
     Type,
     Union,
     cast,
+    override
 )
 
 from pyiceberg.exceptions import (
@@ -778,6 +779,7 @@ class Catalog(ABC):
 
 
 class MetastoreCatalog(Catalog, ABC):
+    @override
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
@@ -788,6 +790,7 @@ class MetastoreCatalog(Catalog, ABC):
                 help_message=f"The property {DEPRECATED_BOTOCORE_SESSION} is deprecated and will be removed.",
             )
 
+    @override
     def create_table_transaction(
         self,
         identifier: Union[str, Identifier],
@@ -801,6 +804,7 @@ class MetastoreCatalog(Catalog, ABC):
             self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
         )
 
+    @override
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         try:
             self.load_table(identifier)
@@ -808,6 +812,7 @@ class MetastoreCatalog(Catalog, ABC):
         except NoSuchTableError:
             return False
 
+    @override
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         table = self.load_table(identifier_tuple)
