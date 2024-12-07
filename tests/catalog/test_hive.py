@@ -53,6 +53,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import StaticTable
 from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -373,6 +374,93 @@ def test_create_table(
     )
 
     assert metadata.model_dump() == expected.model_dump()
+
+
+@pytest.mark.parametrize("hive2_compatible", [True, False])
+@patch("time.time", MagicMock(return_value=12345))
+def test_create_table_with_fresh_ids_assignment(
+    hive_database: HiveDatabase,
+    hive_table: HiveTable,
+    hive2_compatible: bool,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+    iceberg_schema_with_fresh_ids: Schema,
+    partition_spec_with_fresh_ids: PartitionSpec,
+    sort_order_with_fresh_ids: SortOrder,
+) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+    if hive2_compatible:
+        catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL, **{"hive.hive2-compatible": "true"})
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().create_table.return_value = None
+    catalog._client.__enter__().get_table.return_value = hive_table
+    catalog._client.__enter__().get_database.return_value = hive_database
+    catalog.create_table(
+        identifier=("default", "table"),
+        properties={"owner": "javaberg"},
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=True,
+    )
+
+    called_hive_table: HiveTable = catalog._client.__enter__().create_table.call_args[0][0]
+    # This one is generated within the function itself, so we need to extract
+    # it to construct the assert_called_with
+    metadata_location: str = called_hive_table.parameters["metadata_location"]
+    # with open(metadata_location, encoding=UTF8) as f:
+    #     payload = f.read()
+
+    # metadata = TableMetadataUtil.parse_raw(payload)
+    table = StaticTable.from_metadata(metadata_location=metadata_location)
+
+    assert table.schema() == iceberg_schema_with_fresh_ids
+    assert table.spec() == partition_spec_with_fresh_ids
+    assert table.sort_order() == sort_order_with_fresh_ids
+
+
+@pytest.mark.parametrize("hive2_compatible", [True, False])
+@patch("time.time", MagicMock(return_value=12345))
+def test_create_table_without_fresh_ids_assignment(
+    hive_database: HiveDatabase,
+    hive_table: HiveTable,
+    hive2_compatible: bool,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+    if hive2_compatible:
+        catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL, **{"hive.hive2-compatible": "true"})
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().create_table.return_value = None
+    catalog._client.__enter__().get_table.return_value = hive_table
+    catalog._client.__enter__().get_database.return_value = hive_database
+    catalog.create_table(
+        identifier=("default", "table"),
+        properties={"owner": "javaberg"},
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=False,
+    )
+
+    called_hive_table: HiveTable = catalog._client.__enter__().create_table.call_args[0][0]
+    # This one is generated within the function itself, so we need to extract
+    # it to construct the assert_called_with
+    metadata_location: str = called_hive_table.parameters["metadata_location"]
+    # with open(metadata_location, encoding=UTF8) as f:
+    #     payload = f.read()
+
+    # metadata = TableMetadataUtil.parse_raw(payload)
+    table = StaticTable.from_metadata(metadata_location=metadata_location)
+
+    assert table.schema() == iceberg_schema_without_fresh_ids
+    assert table.spec() == partition_spec_without_fresh_ids
+    assert table.sort_order() == sort_order_without_fresh_ids
 
 
 @pytest.mark.parametrize("hive2_compatible", [True, False])

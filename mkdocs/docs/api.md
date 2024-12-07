@@ -122,31 +122,12 @@ schema = Schema(
     ),
 )
 
-from pyiceberg.partitioning import PartitionSpec, PartitionField
-from pyiceberg.transforms import DayTransform
-
-partition_spec = PartitionSpec(
-    PartitionField(
-        source_id=1, field_id=1000, transform=DayTransform(), name="datetime_day"
-    )
-)
-
-from pyiceberg.table.sorting import SortOrder, SortField
-from pyiceberg.transforms import IdentityTransform
-
-# Sort on the symbol
-sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
-
 catalog.create_table(
     identifier="docs_example.bids",
     schema=schema,
     location="s3://pyiceberg",
-    partition_spec=partition_spec,
-    sort_order=sort_order,
 )
 ```
-
-When the table is created, all IDs in the schema are re-assigned to ensure uniqueness.
 
 To create a table using a pyarrow schema:
 
@@ -164,6 +145,7 @@ schema = pa.schema(
 catalog.create_table(
     identifier="docs_example.bids",
     schema=schema,
+    location="s3://pyiceberg",
 )
 ```
 
@@ -174,8 +156,6 @@ with catalog.create_table_transaction(
     identifier="docs_example.bids",
     schema=schema,
     location="s3://pyiceberg",
-    partition_spec=partition_spec,
-    sort_order=sort_order,
 ) as txn:
     with txn.update_schema() as update_schema:
         update_schema.add_column(path="new_column", field_type=StringType())
