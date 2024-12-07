@@ -887,7 +887,7 @@ class RestCatalog(Catalog):
 
         if response.status_code == 404:
             return False
-        elif response.status_code == 204:
+        elif response.status_code in (200, 204):
             return True
 
         try:
