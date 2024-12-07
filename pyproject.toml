@@ -82,7 +82,7 @@ cachetools = "^5.5.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.4.4"
-pytest-checkdocs = "2.10.1"
+pytest-checkdocs = "2.13.0"
 pytest-lazy-fixture = "0.6.3"
 pre-commit = "4.0.1"
 fastavro = "1.9.7"
