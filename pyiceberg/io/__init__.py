@@ -74,6 +74,7 @@ S3_SIGNER_ENDPOINT = "s3.signer.endpoint"
 S3_SIGNER_ENDPOINT_DEFAULT = "v1/aws/s3/sign"
 S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
+S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -304,6 +305,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "s3": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3a": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "s3n": [ARROW_FILE_IO, FSSPEC_FILE_IO],
+    "oss": [ARROW_FILE_IO],
     "gs": [ARROW_FILE_IO],
     "file": [ARROW_FILE_IO, FSSPEC_FILE_IO],
     "hdfs": [ARROW_FILE_IO],
