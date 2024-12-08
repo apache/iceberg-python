@@ -2397,8 +2397,8 @@ def data_file_statistics_from_parquet_metadata(
     split_offsets.sort()
 
     for field_id in invalidate_col:
-        del col_aggs[field_id]
-        del null_value_counts[field_id]
+        col_aggs.pop(field_id, None)
+        null_value_counts.pop(field_id, None)
 
     return DataFileStatistics(
         record_count=parquet_metadata.num_rows,
@@ -2442,7 +2442,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
-        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
+        file_path = f"{table_metadata.location}/data/{task.generate_data_file_path('parquet')}"
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:

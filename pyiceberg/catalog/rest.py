@@ -775,7 +775,7 @@ class RestCatalog(Catalog):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
-        identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        identifier = table.name()
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
 
@@ -887,7 +887,7 @@ class RestCatalog(Catalog):
 
         if response.status_code == 404:
             return False
-        elif response.status_code == 204:
+        elif response.status_code in (200, 204):
             return True
 
         try:
