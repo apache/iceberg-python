@@ -56,7 +56,6 @@ def deprecation_message(deprecated_in: str, removed_in: str, help_message: Optio
 
 def _deprecation_warning(message: str) -> None:
     with warnings.catch_warnings():  # temporarily override warning handling
-        warnings.simplefilter("always", DeprecationWarning)  # turn off filter
         warnings.warn(
             message,
             category=DeprecationWarning,
