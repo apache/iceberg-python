@@ -16,8 +16,8 @@
 # under the License.
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, PartitionFieldSummary
@@ -76,7 +76,7 @@ class InspectTable:
                 additional_properties = None
 
             snapshots.append({
-                "committed_at": datetime.utcfromtimestamp(snapshot.timestamp_ms / 1000.0),
+                "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
                 "snapshot_id": snapshot.snapshot_id,
                 "parent_id": snapshot.parent_snapshot_id,
                 "operation": str(operation),
@@ -465,7 +465,7 @@ class InspectTable:
             snapshot = metadata.snapshot_by_id(snapshot_entry.snapshot_id)
 
             history.append({
-                "made_current_at": datetime.utcfromtimestamp(snapshot_entry.timestamp_ms / 1000.0),
+                "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=timezone.utc),
                 "snapshot_id": snapshot_entry.snapshot_id,
                 "parent_id": snapshot.parent_snapshot_id if snapshot else None,
                 "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
@@ -473,7 +473,7 @@ class InspectTable:
 
         return pa.Table.from_pylist(history, schema=history_schema)
 
-    def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -530,6 +530,8 @@ class InspectTable:
         for manifest_list in snapshot.manifests(io):
             for manifest_entry in manifest_list.fetch_manifest_entry(io):
                 data_file = manifest_entry.data_file
+                if data_file_filter and data_file.content not in data_file_filter:
+                    continue
                 column_sizes = data_file.column_sizes or {}
                 value_counts = data_file.value_counts or {}
                 null_value_counts = data_file.null_value_counts or {}
@@ -558,12 +560,12 @@ class InspectTable:
                     "spec_id": data_file.spec_id,
                     "record_count": data_file.record_count,
                     "file_size_in_bytes": data_file.file_size_in_bytes,
-                    "column_sizes": dict(data_file.column_sizes),
-                    "value_counts": dict(data_file.value_counts),
-                    "null_value_counts": dict(data_file.null_value_counts),
-                    "nan_value_counts": dict(data_file.nan_value_counts),
-                    "lower_bounds": dict(data_file.lower_bounds),
-                    "upper_bounds": dict(data_file.upper_bounds),
+                    "column_sizes": dict(data_file.column_sizes) if data_file.column_sizes is not None else None,
+                    "value_counts": dict(data_file.value_counts) if data_file.value_counts is not None else None,
+                    "null_value_counts": dict(data_file.null_value_counts) if data_file.null_value_counts is not None else None,
+                    "nan_value_counts": dict(data_file.nan_value_counts) if data_file.nan_value_counts is not None else None,
+                    "lower_bounds": dict(data_file.lower_bounds) if data_file.lower_bounds is not None else None,
+                    "upper_bounds": dict(data_file.upper_bounds) if data_file.upper_bounds is not None else None,
                     "key_metadata": data_file.key_metadata,
                     "split_offsets": data_file.split_offsets,
                     "equality_ids": data_file.equality_ids,
@@ -575,3 +577,12 @@ class InspectTable:
             files,
             schema=files_schema,
         )
+
+    def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        return self._files(snapshot_id)
+
+    def data_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        return self._files(snapshot_id, {DataFileContent.DATA})
+
+    def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})

@@ -17,19 +17,26 @@
 
 import os
 from pathlib import Path
-from typing import Any, Generator, List
+from typing import Any, Generator, List, cast
 
 import pyarrow as pa
 import pytest
 from pydantic_core import ValidationError
 from pytest_lazyfixture import lazy_fixture
+from sqlalchemy import Engine, create_engine, inspect
 from sqlalchemy.exc import ArgumentError, IntegrityError
 
 from pyiceberg.catalog import (
     Catalog,
     load_catalog,
 )
-from pyiceberg.catalog.sql import DEFAULT_ECHO_VALUE, DEFAULT_POOL_PRE_PING_VALUE, SqlCatalog
+from pyiceberg.catalog.sql import (
+    DEFAULT_ECHO_VALUE,
+    DEFAULT_POOL_PRE_PING_VALUE,
+    IcebergTables,
+    SqlCatalog,
+    SqlCatalogBaseTable,
+)
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceAlreadyExistsError,
@@ -53,6 +60,8 @@ from pyiceberg.table.sorting import (
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import IntegerType, strtobool
+
+CATALOG_TABLES = [c.__tablename__ for c in SqlCatalogBaseTable.__subclasses__()]
 
 
 @pytest.fixture(scope="module")
@@ -130,6 +139,16 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
+
+
+@pytest.fixture(scope="module")
+def catalog_uri(warehouse: Path) -> str:
+    return f"sqlite:////{warehouse}/sql-catalog.db"
+
+
+@pytest.fixture(scope="module")
+def alchemy_engine(catalog_uri: str) -> Engine:
+    return create_engine(catalog_uri)
 
 
 @pytest.fixture(scope="module")
@@ -223,6 +242,69 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
         ),
         SqlCatalog,
     )
+
+
+def confirm_no_tables_exist(alchemy_engine: Engine) -> None:
+    inspector = inspect(alchemy_engine)
+    for c in SqlCatalogBaseTable.__subclasses__():
+        if inspector.has_table(c.__tablename__):
+            c.__table__.drop(alchemy_engine)
+
+    any_table_exists = any(t for t in inspector.get_table_names() if t in CATALOG_TABLES)
+    if any_table_exists:
+        pytest.raises(TableAlreadyExistsError, "Tables exist, but should not have been created yet")
+
+
+def confirm_all_tables_exist(catalog: SqlCatalog) -> None:
+    all_tables_exists = True
+    for t in CATALOG_TABLES:
+        if t not in inspect(catalog.engine).get_table_names():
+            all_tables_exists = False
+
+    assert isinstance(catalog, SqlCatalog), "Catalog should be a SQLCatalog"
+    assert all_tables_exists, "Tables should have been created"
+
+
+def load_catalog_for_catalog_table_creation(catalog_name: str, catalog_uri: str) -> SqlCatalog:
+    catalog = load_catalog(
+        catalog_name,
+        type="sql",
+        uri=catalog_uri,
+        init_catalog_tables="true",
+    )
+
+    return cast(SqlCatalog, catalog)
+
+
+def test_creation_when_no_tables_exist(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
+    confirm_no_tables_exist(alchemy_engine)
+    catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
+    confirm_all_tables_exist(catalog)
+
+
+def test_creation_when_one_tables_exists(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
+    confirm_no_tables_exist(alchemy_engine)
+
+    # Create one table
+    inspector = inspect(alchemy_engine)
+    IcebergTables.__table__.create(bind=alchemy_engine)
+    assert IcebergTables.__tablename__ in [t for t in inspector.get_table_names() if t in CATALOG_TABLES]
+
+    catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
+    confirm_all_tables_exist(catalog)
+
+
+def test_creation_when_all_tables_exists(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
+    confirm_no_tables_exist(alchemy_engine)
+
+    # Create all tables
+    inspector = inspect(alchemy_engine)
+    SqlCatalogBaseTable.metadata.create_all(bind=alchemy_engine)
+    for c in CATALOG_TABLES:
+        assert c in [t for t in inspector.get_table_names() if t in CATALOG_TABLES]
+
+    catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
+    confirm_all_tables_exist(catalog)
 
 
 @pytest.mark.parametrize(
@@ -411,7 +493,7 @@ def test_create_table_with_default_warehouse_location(
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     table = catalog.load_table(table_identifier)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == table_identifier_nocatalog
     assert table.metadata_location.startswith(f"file://{warehouse}")
     assert os.path.exists(table.metadata_location[len("file://") :])
     catalog.drop_table(table_identifier)
@@ -442,7 +524,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
     catalog.create_namespace(namespace)
     catalog.create_table(table_identifier, table_schema_nested, location=f"{location}/")
     table = catalog.load_table(table_identifier)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == table_identifier_nocatalog
     assert table.metadata_location.startswith(f"file://{warehouse}")
     assert os.path.exists(table.metadata_location[len("file://") :])
     assert table.location() == location
@@ -496,7 +578,7 @@ def test_create_table_if_not_exists_duplicated_table(
     catalog.create_namespace(namespace)
     table1 = catalog.create_table(table_identifier, table_schema_nested)
     table2 = catalog.create_table_if_not_exists(table_identifier, table_schema_nested)
-    assert table1.identifier == table2.identifier
+    assert table1.name() == table2.name()
 
 
 @pytest.mark.parametrize(
@@ -544,7 +626,7 @@ def test_register_table(catalog: SqlCatalog, table_identifier: Identifier, metad
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.register_table(table_identifier, metadata_location)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == table_identifier_nocatalog
     assert table.metadata_location == metadata_location
     assert os.path.exists(metadata_location)
     catalog.drop_table(table_identifier)
@@ -620,7 +702,7 @@ def test_load_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     loaded_table = catalog.load_table(table_identifier)
-    assert table.identifier == loaded_table.identifier
+    assert table.name() == loaded_table.name()
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
 
@@ -646,9 +728,9 @@ def test_load_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
     intermediate = catalog.load_table(table_identifier)
-    assert intermediate.identifier == (catalog.name,) + table_identifier_nocatalog
-    loaded_table = catalog.load_table(intermediate.identifier)
-    assert table.identifier == loaded_table.identifier
+    assert intermediate.name() == table_identifier_nocatalog
+    loaded_table = catalog.load_table(intermediate.name())
+    assert table.name() == loaded_table.name()
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
 
@@ -674,7 +756,7 @@ def test_drop_table(catalog: SqlCatalog, table_schema_nested: Schema, table_iden
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
+    assert table.name() == table_identifier_nocatalog
     catalog.drop_table(table_identifier)
     with pytest.raises(NoSuchTableError):
         catalog.load_table(table_identifier)
@@ -701,10 +783,10 @@ def test_drop_table_from_self_identifier(catalog: SqlCatalog, table_schema_neste
     namespace = Catalog.namespace_from(table_identifier_nocatalog)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + table_identifier_nocatalog
-    catalog.drop_table(table.identifier)
+    assert table.name() == table_identifier_nocatalog
+    catalog.drop_table(table.name())
     with pytest.raises(NoSuchTableError):
-        catalog.load_table(table.identifier)
+        catalog.load_table(table.name())
     with pytest.raises(NoSuchTableError):
         catalog.load_table(table_identifier)
 
@@ -764,10 +846,10 @@ def test_rename_table(
     catalog.create_namespace(from_namespace)
     catalog.create_namespace(to_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
+    assert table.name() == from_table_identifier_nocatalog
     catalog.rename_table(from_table_identifier, to_table_identifier)
     new_table = catalog.load_table(to_table_identifier)
-    assert new_table.identifier == (catalog.name,) + to_table_identifier_nocatalog
+    assert new_table.name() == to_table_identifier_nocatalog
     assert new_table.metadata_location == table.metadata_location
     with pytest.raises(NoSuchTableError):
         catalog.load_table(from_table_identifier)
@@ -807,13 +889,13 @@ def test_rename_table_from_self_identifier(
     catalog.create_namespace(from_namespace)
     catalog.create_namespace(to_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
-    catalog.rename_table(table.identifier, to_table_identifier)
+    assert table.name() == from_table_identifier_nocatalog
+    catalog.rename_table(table.name(), to_table_identifier)
     new_table = catalog.load_table(to_table_identifier)
-    assert new_table.identifier == (catalog.name,) + to_table_identifier_nocatalog
+    assert new_table.name() == to_table_identifier_nocatalog
     assert new_table.metadata_location == table.metadata_location
     with pytest.raises(NoSuchTableError):
-        catalog.load_table(table.identifier)
+        catalog.load_table(table.name())
     with pytest.raises(NoSuchTableError):
         catalog.load_table(from_table_identifier)
 
@@ -852,9 +934,9 @@ def test_rename_table_to_existing_one(
     catalog.create_namespace(from_namespace)
     catalog.create_namespace(to_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
+    assert table.name() == from_table_identifier_nocatalog
     new_table = catalog.create_table(to_table_identifier, table_schema_nested)
-    assert new_table.identifier == (catalog.name,) + to_table_identifier_nocatalog
+    assert new_table.name() == to_table_identifier_nocatalog
     with pytest.raises(TableAlreadyExistsError):
         catalog.rename_table(from_table_identifier, to_table_identifier)
 
@@ -922,7 +1004,7 @@ def test_rename_table_to_missing_namespace(
     from_namespace = Catalog.namespace_from(from_table_identifier_nocatalog)
     catalog.create_namespace(from_namespace)
     table = catalog.create_table(from_table_identifier, table_schema_nested)
-    assert table.identifier == (catalog.name,) + from_table_identifier_nocatalog
+    assert table.name() == from_table_identifier_nocatalog
     with pytest.raises(NoSuchNamespaceError):
         catalog.rename_table(from_table_identifier, to_table_identifier)
 

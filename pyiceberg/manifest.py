@@ -28,9 +28,12 @@ from typing import (
     List,
     Literal,
     Optional,
+    Tuple,
     Type,
 )
 
+from cachetools import LRUCache, cached
+from cachetools.keys import hashkey
 from pydantic_core import to_json
 
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
@@ -620,6 +623,13 @@ class ManifestFile(Record):
             ]
 
 
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
+def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
+    file = io.new_input(manifest_list)
+    return tuple(read_manifest_list(file))
+
+
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     Read the manifests from the manifest list.
@@ -947,7 +957,11 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             format_version=1,
             output_file=output_file,
-            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
+            meta={
+                "snapshot-id": str(snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
+                "format-version": "1",
+            },
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -966,7 +980,7 @@ class ManifestListWriterV2(ManifestListWriter):
             output_file=output_file,
             meta={
                 "snapshot-id": str(snapshot_id),
-                "parent-snapshot-id": str(parent_snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
             },

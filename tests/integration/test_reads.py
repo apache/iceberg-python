@@ -294,9 +294,11 @@ def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
+    import daft
+
+    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     assert df.count_rows() == 3
@@ -306,6 +308,9 @@ def test_daft_nan(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
+    import daft
+
+    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     df = df.where(df["col_numeric"].float.is_nan())
@@ -673,7 +678,7 @@ def test_hive_locking(session_catalog_hive: HiveCatalog) -> None:
 
     database_name: str
     table_name: str
-    _, database_name, table_name = table.identifier
+    database_name, table_name = table.name()
 
     hive_client: _HiveClient = _HiveClient(session_catalog_hive.properties["uri"])
     blocking_lock_request: LockRequest = session_catalog_hive._create_lock_request(database_name, table_name)
@@ -694,7 +699,7 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
     table = create_table(session_catalog_hive)
     database_name: str
     table_name: str
-    _, database_name, table_name = table.identifier
+    database_name, table_name = table.name()
     session_catalog_hive._lock_check_min_wait_time = 0.1
     session_catalog_hive._lock_check_max_wait_time = 0.5
     session_catalog_hive._lock_check_retries = 5

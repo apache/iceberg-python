@@ -17,15 +17,15 @@
 from __future__ import annotations
 
 import time
+import warnings
 from collections import defaultdict
 from enum import Enum
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
 
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
@@ -183,7 +183,10 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     operation: Operation = Field()
     _additional_properties: Dict[str, str] = PrivateAttr()
 
-    def __init__(self, operation: Operation, **data: Any) -> None:
+    def __init__(self, operation: Optional[Operation] = None, **data: Any) -> None:
+        if operation is None:
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
@@ -231,13 +234,6 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
         )
 
 
-@lru_cache
-def _manifests(io: FileIO, manifest_list: str) -> List[ManifestFile]:
-    """Return the manifests from the manifest list."""
-    file = io.new_input(manifest_list)
-    return list(read_manifest_list(file))
-
-
 class Snapshot(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
@@ -260,7 +256,7 @@ class Snapshot(IcebergBaseModel):
     def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
         if self.manifest_list:
-            return _manifests(io, self.manifest_list)
+            return list(_manifests(io, self.manifest_list))
         return []
 
 

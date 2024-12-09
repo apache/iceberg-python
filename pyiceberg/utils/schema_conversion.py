@@ -447,7 +447,7 @@ class AvroSchemaConversion:
         """
         fields = avro_type["items"]["fields"]
         if len(fields) != 2:
-            raise ValueError(f'Invalid key-value pair schema: {avro_type["items"]}')
+            raise ValueError(f"Invalid key-value pair schema: {avro_type['items']}")
         key = self._convert_field(list(filter(lambda f: f["name"] == "key", fields))[0])
         value = self._convert_field(list(filter(lambda f: f["name"] == "value", fields))[0])
         return MapType(

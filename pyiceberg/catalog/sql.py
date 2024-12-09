@@ -76,6 +76,7 @@ if TYPE_CHECKING:
 
 DEFAULT_ECHO_VALUE = "false"
 DEFAULT_POOL_PRE_PING_VALUE = "false"
+DEFAULT_INIT_CATALOG_TABLES = "true"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -123,10 +124,12 @@ class SqlCatalog(MetastoreCatalog):
         echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
         echo = strtobool(echo_str) if echo_str != "debug" else "debug"
         pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+        init_catalog_tables = strtobool(self.properties.get("init_catalog_tables", DEFAULT_INIT_CATALOG_TABLES))
 
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
-        self._ensure_tables_exist()
+        if init_catalog_tables:
+            self._ensure_tables_exist()
 
     def _ensure_tables_exist(self) -> None:
         with Session(self.engine) as session:
@@ -416,7 +419,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = table.name()
         namespace_tuple = Catalog.namespace_from(table_identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(table_identifier)
@@ -427,7 +430,7 @@ class SqlCatalog(MetastoreCatalog):
         except NoSuchTableError:
             current_table = None
 
-        updated_staged_table = self._update_and_stage_table(current_table, table.identifier, requirements, updates)
+        updated_staged_table = self._update_and_stage_table(current_table, table.name(), requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
