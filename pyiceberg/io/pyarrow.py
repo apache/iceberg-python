@@ -102,6 +102,7 @@ from pyiceberg.io import (
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
+    S3_FORCE_VIRTUAL_ADDRESSING,
     S3_PROXY_URI,
     S3_REGION,
     S3_ROLE_ARN,
@@ -350,7 +351,7 @@ class PyArrowFileIO(FileIO):
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
-        if scheme in {"s3", "s3a", "s3n"}:
+        if scheme in {"s3", "s3a", "s3n", "oss"}:
             from pyarrow.fs import S3FileSystem
 
             client_kwargs: Dict[str, Any] = {
@@ -372,6 +373,9 @@ class PyArrowFileIO(FileIO):
 
             if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
                 client_kwargs["session_name"] = session_name
+
+            if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+                client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
 
             return S3FileSystem(**client_kwargs)
         elif scheme in ("hdfs", "viewfs"):
