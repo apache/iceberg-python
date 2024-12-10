@@ -411,9 +411,9 @@ city: large_string
 lat: double
 long: double
 ----
-city: [["New York"],["Amsterdam","Drachten","Paris"]]
-lat: [[40.7128],[52.371807,53.11254,48.864716]]
-long: [[74.006],[4.896029,6.0989,2.349014]]
+city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
+lat: [[40.7128],[52.371807,37.773972,53.11254]]
+long: [[74.006],[4.896029,-122.431297,6.0989]]
 ```
 
 If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.

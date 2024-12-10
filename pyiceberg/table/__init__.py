@@ -351,6 +351,48 @@ class Transaction:
 
         return updates, requirements
 
+    def _build_partition_predicate(self, partition_records: Set[Record]) -> BooleanExpression:
+        """Build a filter predicate matching any of the input partition records.
+
+        Args:
+            partition_records: A set of partition records to match
+        Returns:
+            A predicate matching any of the input partition records.
+        """
+        partition_spec = self.table_metadata.spec()
+        schema = self.table_metadata.schema()
+        partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
+
+        expr: BooleanExpression = AlwaysFalse()
+        for partition_record in partition_records:
+            match_partition_expression: BooleanExpression = AlwaysTrue()
+
+            for pos, partition_field in enumerate(partition_fields):
+                predicate = (
+                    EqualTo(Reference(partition_field), partition_record[pos])
+                    if partition_record[pos] is not None
+                    else IsNull(Reference(partition_field))
+                )
+                match_partition_expression = And(match_partition_expression, predicate)
+            expr = Or(expr, match_partition_expression)
+        return expr
+
+    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str]) -> _FastAppendFiles:
+        """Determine the append type based on table properties.
+
+        Args:
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        Returns:
+            Either a fast-append or a merge-append snapshot producer.
+        """
+        manifest_merge_enabled = property_as_bool(
+            self.table_metadata.properties,
+            TableProperties.MANIFEST_MERGE_ENABLED,
+            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+        )
+        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
+        return update_snapshot.merge_append() if manifest_merge_enabled else update_snapshot.fast_append()
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -405,15 +447,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        manifest_merge_enabled = property_as_bool(
-            self.table_metadata.properties,
-            TableProperties.MANIFEST_MERGE_ENABLED,
-            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
-        )
-        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
-        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
-
-        with append_method() as append_files:
+        with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
@@ -421,25 +455,6 @@ class Transaction:
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
-
-    def _build_partition_predicate(self, partition_records: Set[Record]) -> BooleanExpression:
-        partition_spec = self.table_metadata.spec()
-        schema = self.table_metadata.schema()
-        partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
-
-        expr: BooleanExpression = AlwaysFalse()
-        for partition_record in partition_records:
-            match_partition_expression: BooleanExpression = AlwaysTrue()
-
-            for pos, partition_field in enumerate(partition_fields):
-                predicate = (
-                    EqualTo(Reference(partition_field), partition_record[pos])
-                    if partition_record[pos] is not None
-                    else IsNull(Reference(partition_field))
-                )
-                match_partition_expression = And(match_partition_expression, predicate)
-            expr = Or(expr, match_partition_expression)
-        return expr
 
     def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -492,15 +507,7 @@ class Transaction:
         delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
         self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
 
-        manifest_merge_enabled = property_as_bool(
-            self.table_metadata.properties,
-            TableProperties.MANIFEST_MERGE_ENABLED,
-            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
-        )
-        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
-        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
-
-        with append_method() as append_files:
+        with self._append_snapshot_producer(snapshot_properties) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid
             for data_file in data_files:
                 append_files.append_data_file(data_file)
@@ -549,15 +556,7 @@ class Transaction:
 
         self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
 
-        manifest_merge_enabled = property_as_bool(
-            self.table_metadata.properties,
-            TableProperties.MANIFEST_MERGE_ENABLED,
-            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
-        )
-        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
-        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
-
-        with append_method() as append_files:
+        with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(

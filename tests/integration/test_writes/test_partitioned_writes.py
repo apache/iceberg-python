@@ -38,6 +38,9 @@ from pyiceberg.transforms import (
     TruncateTransform,
     YearTransform,
 )
+from pyiceberg.types import (
+    StringType,
+)
 from utils import TABLE_SCHEMA, _create_table
 
 
@@ -307,8 +310,12 @@ def test_query_filter_v1_v2_append_null(
         (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=HourTransform(), name="date_hour"))),
     ],
 )
+@pytest.mark.parametrize(
+    "format_version",
+    [1, 2],
+)
 def test_dynamic_partition_overwrite_non_identity_transform(
-    session_catalog: Catalog, arrow_table_with_null: pa.Table, spec: PartitionSpec
+    session_catalog: Catalog, arrow_table_with_null: pa.Table, spec: PartitionSpec, format_version: int
 ) -> None:
     identifier = "default.dynamic_partition_overwrite_non_identity_transform"
     try:
@@ -319,7 +326,7 @@ def test_dynamic_partition_overwrite_non_identity_transform(
     tbl = session_catalog.create_table(
         identifier=identifier,
         schema=TABLE_SCHEMA,
-        properties={"format-version": "2"},
+        properties={"format-version": format_version},
         partition_spec=spec,
     )
     with pytest.raises(
@@ -357,7 +364,7 @@ def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
     tbl = session_catalog.create_table(
         identifier=identifier,
         schema=TABLE_SCHEMA,
-        properties={"format-version": "2"},
+        properties={"format-version": format_version},
     )
     tbl.append(arrow_table_with_null)
     tbl.update_spec().add_field(part_col, IdentityTransform(), f"{part_col}_identity").commit()
@@ -579,6 +586,104 @@ def test_data_files_with_table_partitioned_with_null(
     assert [row.added_data_files_count for row in rows] == [3, 3, 3, 0, 3, 3, 3, 0, 0, 0, 2, 0, 0]
     assert [row.existing_data_files_count for row in rows] == [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1]
     assert [row.deleted_data_files_count for row in rows] == [0, 0, 0, 6, 0, 0, 0, 4, 0, 0, 0, 0, 0]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "format_version",
+    [1, 2],
+)
+def test_dynamic_partition_overwrite_rename_column(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    arrow_table = pa.Table.from_pydict(
+        {
+            "place": ["Amsterdam", "Drachten"],
+            "inhabitants": [921402, 44940],
+        },
+    )
+
+    identifier = f"default.partitioned_{format_version}_dynamic_partition_overwrite_rename_column"
+    with pytest.raises(NoSuchTableError):
+        session_catalog.drop_table(identifier)
+
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=arrow_table.schema,
+        properties={"format-version": str(format_version)},
+    )
+
+    with tbl.transaction() as tx:
+        with tx.update_spec() as schema:
+            schema.add_identity("place")
+
+    tbl.append(arrow_table)
+
+    with tbl.transaction() as tx:
+        with tx.update_schema() as schema:
+            schema.rename_column("place", "city")
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "city": ["Drachten"],
+            "inhabitants": [44941],  # A new baby was born!
+        },
+    )
+
+    tbl.dynamic_partition_overwrite(arrow_table)
+    result = tbl.scan().to_arrow()
+
+    assert result["city"].to_pylist() == ["Drachten", "Amsterdam"]
+    assert result["inhabitants"].to_pylist() == [44941, 921402]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "format_version",
+    [1, 2],
+)
+@pytest.mark.filterwarnings("ignore")
+def test_dynamic_partition_overwrite_evolve_partition(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    arrow_table = pa.Table.from_pydict(
+        {
+            "place": ["Amsterdam", "Drachten"],
+            "inhabitants": [921402, 44940],
+        },
+    )
+
+    identifier = f"default.partitioned_{format_version}_test_dynamic_partition_overwrite_evolve_partition"
+    with pytest.raises(NoSuchTableError):
+        session_catalog.drop_table(identifier)
+
+    tbl = session_catalog.create_table(
+        identifier=identifier,
+        schema=arrow_table.schema,
+        properties={"format-version": str(format_version)},
+    )
+
+    with tbl.transaction() as tx:
+        with tx.update_spec() as schema:
+            schema.add_identity("place")
+
+    tbl.append(arrow_table)
+
+    with tbl.transaction() as tx:
+        with tx.update_schema() as schema:
+            schema.add_column("country", StringType())
+        with tx.update_spec() as schema:
+            schema.add_identity("country")
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "place": ["Groningen"],
+            "country": ["Netherlands"],
+            "inhabitants": [238147],
+        },
+    )
+
+    tbl.dynamic_partition_overwrite(arrow_table)
+    result = tbl.scan().to_arrow()
+
+    assert result["place"].to_pylist() == ["Groningen", "Amsterdam", "Drachten"]
+    assert result["inhabitants"].to_pylist() == [238147, 921402, 44940]
 
 
 @pytest.mark.integration
