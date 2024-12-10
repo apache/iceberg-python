@@ -1129,6 +1129,19 @@ with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
+## Views
+
+PyIceberg supports view operations.
+
+### Check if a view exists
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+catalog.view_exists("default.bar")
+```
+
 ## Query the data
 
 To query a table, a table scan is needed. A table scan accepts a filter, columns, optionally a limit and a snapshot ID:
