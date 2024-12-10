@@ -531,7 +531,7 @@ class RestCatalog(Catalog):
 
     def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
         return StagedTable(
-            identifier=identifier_tuple if self.name else identifier_tuple,
+            identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
@@ -577,7 +577,6 @@ class RestCatalog(Catalog):
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
-        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:
             location = location.rstrip("/")
@@ -658,7 +657,6 @@ class RestCatalog(Catalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
-        identifier = self._identifier_to_tuple_without_catalog(identifier)
         namespace_and_table = self._split_identifier_for_path(identifier)
         request = RegisterTableRequest(
             name=namespace_and_table["table"],
@@ -690,25 +688,19 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        response = self._session.get(
-            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
-        )
+        response = self._session.get(self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)))
         try:
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchTableError})
 
         table_response = TableResponse(**response.json())
-        return self._response_to_table(identifier_tuple, table_response)
+        return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
     def drop_table(self, identifier: Union[str, Identifier], purge_requested: bool = False) -> None:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
-            self.url(
-                Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier_tuple)
-            ),
+            self.url(Endpoints.drop_table, prefixed=True, purge=purge_requested, **self._split_identifier_for_path(identifier)),
         )
         try:
             response.raise_for_status()
@@ -721,9 +713,8 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
         payload = {
-            "source": self._split_identifier_for_json(from_identifier_tuple),
+            "source": self._split_identifier_for_json(from_identifier),
             "destination": self._split_identifier_for_json(to_identifier),
         }
         response = self._session.post(self.url(Endpoints.rename_table), json=payload)
@@ -880,9 +871,8 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the table exists, False otherwise.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.head(
-            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier_tuple))
+            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier))
         )
 
         if response.status_code == 404:
@@ -899,11 +889,8 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def drop_view(self, identifier: Union[str]) -> None:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.delete(
-            self.url(
-                Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier_tuple, IdentifierKind.VIEW)
-            ),
+            self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )
         try:
             response.raise_for_status()
