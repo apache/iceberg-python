@@ -57,7 +57,7 @@ def test_create_table(
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested, get_s3_path(get_bucket_name(), database_name, table_name))
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (test_catalog.name,) + identifier
+    assert table.name() == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
 
@@ -78,7 +78,7 @@ def test_create_table_with_default_location(
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (test_catalog.name,) + identifier
+    assert table.name() == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
 
@@ -102,7 +102,7 @@ def test_create_table_if_not_exists_duplicated_table(
     test_catalog.create_namespace(database_name)
     table1 = test_catalog.create_table((database_name, table_name), table_schema_nested)
     table2 = test_catalog.create_table_if_not_exists((database_name, table_name), table_schema_nested)
-    assert table1.identifier == table2.identifier
+    assert table1.name() == table2.name()
 
 
 def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database_name: str, table_name: str) -> None:
@@ -110,7 +110,7 @@ def test_load_table(test_catalog: Catalog, table_schema_nested: Schema, database
     test_catalog.create_namespace(database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     loaded_table = test_catalog.load_table(identifier)
-    assert table.identifier == loaded_table.identifier
+    assert table.name() == loaded_table.name()
     assert table.metadata_location == loaded_table.metadata_location
     assert table.metadata == loaded_table.metadata
 
@@ -134,11 +134,11 @@ def test_rename_table(
     new_table_name = f"rename-{table_name}"
     identifier = (database_name, table_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (test_catalog.name,) + identifier
+    assert table.name() == identifier
     new_identifier = (new_database_name, new_table_name)
     test_catalog.rename_table(identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (test_catalog.name,) + new_identifier
+    assert new_table.name() == new_identifier
     assert new_table.metadata_location == table.metadata_location
     metadata_location = new_table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
@@ -150,7 +150,7 @@ def test_drop_table(test_catalog: Catalog, table_schema_nested: Schema, table_na
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (test_catalog.name,) + identifier
+    assert table.name() == identifier
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
@@ -163,7 +163,7 @@ def test_purge_table(
     test_catalog.create_namespace(database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (test_catalog.name,) + identifier
+    assert table.name() == identifier
     metadata_location = table.metadata_location.split(get_bucket_name())[1][1:]
     s3.head_object(Bucket=get_bucket_name(), Key=metadata_location)
     test_catalog.purge_table(identifier)

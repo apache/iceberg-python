@@ -30,6 +30,7 @@ from typing import (
     Optional,
     Tuple,
     Type,
+    Union,
 )
 
 from cachetools import LRUCache, cached
@@ -96,6 +97,13 @@ class FileFormat(str, Enum):
     AVRO = "AVRO"
     PARQUET = "PARQUET"
     ORC = "ORC"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Union[None, str]:
+        for member in cls:
+            if member.value == str(value).upper():
+                return member
+        return None
 
     def __repr__(self) -> str:
         """Return the string representation of the FileFormat class."""
@@ -957,7 +965,11 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             format_version=1,
             output_file=output_file,
-            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
+            meta={
+                "snapshot-id": str(snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
+                "format-version": "1",
+            },
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -976,7 +988,7 @@ class ManifestListWriterV2(ManifestListWriter):
             output_file=output_file,
             meta={
                 "snapshot-id": str(snapshot_id),
-                "parent-snapshot-id": str(parent_snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
             },

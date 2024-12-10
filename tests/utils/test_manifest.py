@@ -16,7 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 from tempfile import TemporaryDirectory
-from typing import Dict
+from typing import Dict, Optional
 from unittest.mock import patch
 
 import fastavro
@@ -526,14 +526,18 @@ def test_write_manifest(
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("parent_snapshot_id", [19, None])
 def test_write_manifest_list(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
+    generated_manifest_file_file_v1: str,
+    generated_manifest_file_file_v2: str,
+    format_version: TableVersion,
+    parent_snapshot_id: Optional[int],
 ) -> None:
     io = load_file_io()
 
     snapshot = Snapshot(
         snapshot_id=25,
-        parent_snapshot_id=19,
+        parent_snapshot_id=parent_snapshot_id,
         timestamp_ms=1602638573590,
         manifest_list=generated_manifest_file_file_v1 if format_version == 1 else generated_manifest_file_file_v2,
         summary=Summary(Operation.APPEND),
@@ -545,12 +549,20 @@ def test_write_manifest_list(
         path = tmp_dir + "/manifest-list.avro"
         output = io.new_output(path)
         with write_manifest_list(
-            format_version=format_version, output_file=output, snapshot_id=25, parent_snapshot_id=19, sequence_number=0
+            format_version=format_version,
+            output_file=output,
+            snapshot_id=25,
+            parent_snapshot_id=parent_snapshot_id,
+            sequence_number=0,
         ) as writer:
             writer.add_manifests(demo_manifest_list)
         new_manifest_list = list(read_manifest_list(io.new_input(path)))
 
-        expected_metadata = {"snapshot-id": "25", "parent-snapshot-id": "19", "format-version": str(format_version)}
+        if parent_snapshot_id:
+            expected_metadata = {"snapshot-id": "25", "parent-snapshot-id": "19", "format-version": str(format_version)}
+        else:
+            expected_metadata = {"snapshot-id": "25", "parent-snapshot-id": "null", "format-version": str(format_version)}
+
         if format_version == 2:
             expected_metadata["sequence-number"] = "0"
         _verify_metadata_with_fastavro(path, expected_metadata)
@@ -592,3 +604,26 @@ def test_write_manifest_list(
         assert entry.file_sequence_number == 0 if format_version == 1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
+
+
+@pytest.mark.parametrize(
+    "raw_file_format,expected_file_format",
+    [
+        ("avro", FileFormat("AVRO")),
+        ("AVRO", FileFormat("AVRO")),
+        ("parquet", FileFormat("PARQUET")),
+        ("PARQUET", FileFormat("PARQUET")),
+        ("orc", FileFormat("ORC")),
+        ("ORC", FileFormat("ORC")),
+        ("NOT_EXISTS", None),
+    ],
+)
+def test_file_format_case_insensitive(raw_file_format: str, expected_file_format: FileFormat) -> None:
+    if expected_file_format:
+        parsed_file_format = FileFormat(raw_file_format)
+        assert parsed_file_format == expected_file_format, (
+            f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        )
+    else:
+        with pytest.raises(ValueError):
+            _ = FileFormat(raw_file_format)

@@ -30,12 +30,7 @@ from typing import (
 import boto3
 
 from pyiceberg.catalog import (
-    DEPRECATED_ACCESS_KEY_ID,
     DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
     ICEBERG,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
@@ -102,18 +97,12 @@ class DynamoDbCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
 
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, DYNAMODB_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION, DEPRECATED_REGION),
+            profile_name=properties.get(DYNAMODB_PROFILE_NAME),
+            region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(
-                properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
-            ),
-            aws_secret_access_key=get_first_property_value(
-                properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
-            ),
-            aws_session_token=get_first_property_value(
-                properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
-            ),
+            aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         self.dynamodb = session.client(DYNAMODB_CLIENT)
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)
@@ -341,7 +330,7 @@ class DynamoDbCatalog(MetastoreCatalog):
                 log_message += f"Rolled back table creation for {to_database_name}.{to_table_name}."
             except (NoSuchTableError, GenericDynamoDbError):
                 log_message += (
-                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. " f"Please clean up manually"
+                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. Please clean up manually"
                 )
 
             raise ValueError(log_message) from e
@@ -649,7 +638,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         if table_type.lower() != ICEBERG:
             raise NoSuchIcebergTableError(
-                f"Property table_type is {table_type}, expected {ICEBERG}: " f"{database_name}.{table_name}"
+                f"Property table_type is {table_type}, expected {ICEBERG}: {database_name}.{table_name}"
             )
 
         io = load_file_io(properties=self.properties, location=metadata_location)

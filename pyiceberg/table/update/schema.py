@@ -179,7 +179,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         if required and not self._allow_incompatible_changes:
             # Table format version 1 and 2 cannot add required column because there is no initial value
-            raise ValueError(f'Incompatible change: cannot add required column: {".".join(path)}')
+            raise ValueError(f"Incompatible change: cannot add required column: {'.'.join(path)}")
 
         name = path[-1]
         parent = path[:-1]
@@ -770,7 +770,13 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
             self.update_schema.make_column_optional(full_name)
 
         if field.field_type.is_primitive and field.field_type != existing_field.field_type:
-            self.update_schema.update_column(full_name, field_type=field.field_type)
+            try:
+                # If the current type is wider than the new type, then
+                # we perform a noop
+                _ = promote(field.field_type, existing_field.field_type)
+            except ResolveError:
+                # If this is not the case, perform the type evolution
+                self.update_schema.update_column(full_name, field_type=field.field_type)
 
         if field.doc is not None and field.doc != existing_field.doc:
             self.update_schema.update_column(full_name, doc=field.doc)
