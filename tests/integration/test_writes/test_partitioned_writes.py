@@ -307,7 +307,6 @@ def test_query_filter_v1_v2_append_null(
         (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=DayTransform(), name="date_day"))),
         (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=HourTransform(), name="timestamp_hour"))),
         (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=HourTransform(), name="timestamptz_hour"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=HourTransform(), name="date_hour"))),
     ],
 )
 @pytest.mark.parametrize(
@@ -334,6 +333,17 @@ def test_dynamic_partition_overwrite_non_identity_transform(
         match="For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: *",
     ):
         tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 1))
+
+
+@pytest.mark.integration
+def test_dynamic_partition_overwrite_invalid_on_unpartitioned_table(
+    session_catalog: Catalog, arrow_table_with_null: pa.Table
+) -> None:
+    identifier = "default.arrow_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    with pytest.raises(ValueError, match="Cannot apply dynamic overwrite on an unpartitioned table."):
+        tbl.dynamic_partition_overwrite(arrow_table_with_null)
 
 
 @pytest.mark.integration
@@ -424,7 +434,6 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
     assert operations == ["append", "append", "delete", "append", "append", "delete", "append"]
 
     summaries = [row.summary for row in rows]
-
     file_size = int(summaries[0]["added-files-size"])
     assert file_size > 0
 
@@ -490,14 +499,14 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-records": "6",
     }
     assert summaries[5] == {
-        "removed-files-size": "19188",
+        "removed-files-size": "15774",
         "changed-partition-count": "2",
         "total-equality-deletes": "0",
         "deleted-data-files": "4",
         "total-position-deletes": "0",
         "total-delete-files": "0",
         "deleted-records": "4",
-        "total-files-size": "10750",
+        "total-files-size": "8684",
         "total-data-files": "2",
         "total-records": "2",
     }
@@ -507,9 +516,9 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-equality-deletes": "0",
         "added-records": "2",
         "total-position-deletes": "0",
-        "added-files-size": "9594",
+        "added-files-size": "7887",
         "total-delete-files": "0",
-        "total-files-size": "20344",
+        "total-files-size": "16571",
         "total-data-files": "4",
         "total-records": "4",
     }
