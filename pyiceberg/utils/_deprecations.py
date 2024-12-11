@@ -34,13 +34,14 @@ import warnings
 from argparse import Action
 from functools import wraps
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from packaging.version import InvalidVersion, Version
 
 if TYPE_CHECKING:
     from argparse import ArgumentParser, Namespace
-    from typing import Any, Callable, ParamSpec, TypeVar
+
+    from typing_extensions import ParamSpec, TypeVar
 
     T = TypeVar("T")
     P = ParamSpec("P")
