@@ -75,17 +75,20 @@ mkdir /tmp/warehouse
 Open a Python 3 REPL to set up the catalog:
 
 ```python
-from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.catalog import load_catalog
 
 warehouse_path = "/tmp/warehouse"
-catalog = SqlCatalog(
+catalog = load_catalog(
     "default",
     **{
+        'type': 'sql',
         "uri": f"sqlite:///{warehouse_path}/pyiceberg_catalog.db",
         "warehouse": f"file://{warehouse_path}",
     },
 )
 ```
+
+The `sql` catalog works for testing locally without needing another service. If you want to try out another catalog, please [check out the configuration](https://py.iceberg.apache.org/configuration/#catalogs).
 
 ## Write a PyArrow dataframe
 
