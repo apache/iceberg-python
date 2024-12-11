@@ -94,7 +94,7 @@ def _(result: ParseResults) -> Reference:
             deprecate_in="0.8.0",
             remove_in="0.9.0",
             prefix="Parsing expressions with table name",
-            topic="Only provide field names in the row_filter.",
+            addendum="Only provide field names in the row_filter.",
         )
     # TODO: Once this is removed, we will no longer take just the last index of parsed column result
     # And introduce support for parsing filter expressions with nested fields.

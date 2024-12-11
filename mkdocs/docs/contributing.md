@@ -186,7 +186,7 @@ Optionally, include a recommendation to guide users toward an alternative featur
 ```python
 from pyiceberg.utils._deprecations import deprecated
 
-@deprecated("1.5.0", "2.0.0", topic="Use `new_function` instead.")
+@deprecated("1.5.0", "2.0.0", addendum="Use `new_function` instead.")
 def old_function():
     pass
 ```
@@ -281,7 +281,7 @@ def some_function():
     # some logic
 
     if condition:
-        deprecated.topic("1.5.0", "2.0.0", topic="The <TOPIC>")
+        deprecated.topic("1.5.0", "2.0.0", addendum="The <TOPIC>")
 
     # more logic
 ```

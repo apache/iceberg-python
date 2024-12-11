@@ -322,7 +322,7 @@ class RestCatalog(Catalog):
                 deprecate_in="0.8.0",
                 remove_in="0.9.0",
                 prefix=f"The property {AUTH_URL}",
-                topic=f"Please use {OAUTH2_SERVER_URI} instead",
+                addendum=f"Please use {OAUTH2_SERVER_URI} instead",
             )
 
         self._warn_oauth_tokens_deprecation()
@@ -343,7 +343,7 @@ class RestCatalog(Catalog):
                 deprecate_in="0.8.0",
                 remove_in="1.0.0",
                 prefix="Default OAuth2 endpoint",
-                topic="Iceberg REST client is missing the OAuth2 server URI "
+                addendum="Iceberg REST client is missing the OAuth2 server URI "
                 f"configuration and defaults to {self.uri}{Endpoints.get_token}. "
                 "This automatic fallback will be removed in a future Iceberg release."
                 f"It is recommended to configure the OAuth2 endpoint using the '{OAUTH2_SERVER_URI}'"

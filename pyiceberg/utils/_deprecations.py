@@ -97,7 +97,7 @@ class DeprecationHandler:
         deprecate_in: str,
         remove_in: str,
         *,
-        topic: str | None = None,
+        addendum: str | None = None,
         stack: int = 0,
         deprecation_type: type[Warning] = DeprecationWarning,
     ) -> Callable[[Callable[P, T]], Callable[P, T]]:
@@ -105,7 +105,7 @@ class DeprecationHandler:
 
         :param deprecate_in: Version in which code will be marked as deprecated.
         :param remove_in: Version in which code is expected to be removed.
-        :param topic: Optional additional messaging. Useful to indicate what to do instead.
+        :param addendum: Optional additional messaging. Useful to indicate what to do instead.
         :param stack: Optional stacklevel increment.
         """
 
@@ -115,7 +115,7 @@ class DeprecationHandler:
                 deprecate_in=deprecate_in,
                 remove_in=remove_in,
                 prefix=f"{func.__module__}.{func.__qualname__}",
-                topic=topic,
+                addendum=addendum,
                 deprecation_type=deprecation_type,
             )
 
@@ -144,7 +144,7 @@ class DeprecationHandler:
         argument: str,
         *,
         rename: str | None = None,
-        topic: str | None = None,
+        addendum: str | None = None,
         stack: int = 0,
         deprecation_type: type[Warning] = DeprecationWarning,
     ) -> Callable[[Callable[P, T]], Callable[P, T]]:
@@ -154,7 +154,7 @@ class DeprecationHandler:
         :param remove_in: Version in which code is expected to be removed.
         :param argument: The argument to deprecate.
         :param rename: Optional new argument name.
-        :param topic: Optional additional messaging. Useful to indicate what to do instead.
+        :param addendum: Optional additional messaging. Useful to indicate what to do instead.
         :param stack: Optional stacklevel increment.
         """
 
@@ -164,8 +164,8 @@ class DeprecationHandler:
                 deprecate_in=deprecate_in,
                 remove_in=remove_in,
                 prefix=f"{func.__module__}.{func.__qualname__}({argument})",
-                # provide a default topic if renaming and no topic is provided
-                topic=(f"Use '{rename}' instead." if rename and not topic else topic),
+                # provide a default addendum if renaming and no addendum is provided
+                addendum=(f"Use '{rename}' instead." if rename and not addendum else addendum),
                 deprecation_type=deprecation_type,
             )
 
@@ -200,7 +200,7 @@ class DeprecationHandler:
         remove_in: str,
         action: ActionType,
         *,
-        topic: str | None = None,
+        addendum: str | None = None,
         stack: int = 0,
         deprecation_type: type[Warning] = FutureWarning,
     ) -> ActionType:
@@ -224,7 +224,7 @@ class DeprecationHandler:
                         # if not a flag/switch, use the destination itself
                         else f"`{inner_self.dest}`"
                     ),
-                    topic=topic,
+                    addendum=addendum,
                     deprecation_type=deprecation_type,
                 )
 
@@ -262,21 +262,21 @@ class DeprecationHandler:
         deprecate_in: str,
         remove_in: str,
         *,
-        topic: str | None = None,
+        addendum: str | None = None,
         stack: int = 0,
     ) -> None:
         """Deprecate function for modules.
 
         :param deprecate_in: Version in which code will be marked as deprecated.
         :param remove_in: Version in which code is expected to be removed.
-        :param topic: Optional additional messaging. Useful to indicate what to do instead.
+        :param addendum: Optional additional messaging. Useful to indicate what to do instead.
         :param stack: Optional stacklevel increment.
         """
         self.topic(
             deprecate_in=deprecate_in,
             remove_in=remove_in,
             prefix=self._get_module(stack)[1],
-            topic=topic,
+            addendum=addendum,
             stack=2 + stack,
         )
 
@@ -287,7 +287,7 @@ class DeprecationHandler:
         constant: str,
         value: Any,
         *,
-        topic: str | None = None,
+        addendum: str | None = None,
         stack: int = 0,
         deprecation_type: type[Warning] = DeprecationWarning,
     ) -> None:
@@ -297,7 +297,7 @@ class DeprecationHandler:
         :param remove_in: Version in which code is expected to be removed.
         :param constant:
         :param value:
-        :param topic: Optional additional messaging. Useful to indicate what to do instead.
+        :param addendum: Optional additional messaging. Useful to indicate what to do instead.
         :param stack: Optional stacklevel increment.
         """
         # detect calling module
@@ -307,7 +307,7 @@ class DeprecationHandler:
             deprecate_in=deprecate_in,
             remove_in=remove_in,
             prefix=f"{fullname}.{constant}",
-            topic=topic,
+            addendum=addendum,
             deprecation_type=deprecation_type,
         )
 
@@ -338,25 +338,26 @@ class DeprecationHandler:
         deprecate_in: str,
         remove_in: str,
         *,
-        topic: str | None = None,
+        addendum: str | None = None,
         prefix: str | None = None,
         stack: int = 0,
         deprecation_type: type[Warning] = DeprecationWarning,
     ) -> None:
-        """Deprecate function for a topic.
+        """Deprecate function for a addendum.
 
         :param deprecate_in: Version in which code will be marked as deprecated.
         :param remove_in: Version in which code is expected to be removed.
+        :param addendum: Optional additional messaging. Useful to indicate what to do instead.
         :param prefix: The topic being deprecated.
-        :param topic: Optional additional messaging. Useful to indicate what to do instead.
         :param stack: Optional stacklevel increment.
+        :param deprecation_type: The warning type to use for active deprecations.
         """
         # detect function name and generate message
         category, message = self._generate_message(
             deprecate_in=deprecate_in,
             remove_in=remove_in,
             prefix=prefix,
-            topic=topic,
+            addendum=addendum,
             deprecation_type=deprecation_type,
         )
 
@@ -411,19 +412,20 @@ class DeprecationHandler:
         deprecate_in: str,
         remove_in: str,
         prefix: str,
-        topic: str,
+        addendum: str,
     ) -> str:
         """Generate a deprecation message.
 
         :param deprecate_in: Version in which code will be marked as deprecated.
         :param remove_in: Version in which code is expected to be removed.
-        :param topic: The topic being deprecated.
+        :param prefix: The message prefix, usually what should be deprecated.
+        :param addendum: Additional messaging. Useful to indicate what to do instead.
         """
         _, message = self._generate_message(
             deprecate_in=deprecate_in,
             remove_in=remove_in,
             prefix=prefix,
-            topic=topic,
+            addendum=addendum,
         )
 
         return message
@@ -433,7 +435,7 @@ class DeprecationHandler:
         deprecate_in: str,
         remove_in: str,
         prefix: str | None,
-        topic: str | None,
+        addendum: str | None,
         deprecation_type: type[Warning] | None = None,
     ) -> tuple[type[Warning] | None, str]:
         """Generate the standardized deprecation message.
@@ -443,7 +445,7 @@ class DeprecationHandler:
         :param deprecate_in: Version in which code will be marked as deprecated.
         :param remove_in: Version in which code is expected to be removed.
         :param prefix: The message prefix, usually the function name.
-        :param topic: Additional messaging. Useful to indicate what to do instead.
+        :param addendum: Additional messaging. Useful to indicate what to do instead.
         :param deprecation_type: The warning type to use for active deprecations.
         :return: The warning category (if applicable) and the message.
         """
@@ -459,7 +461,7 @@ class DeprecationHandler:
             category = None
             warning = f"was slated for removal in {remove_in}."
 
-        return category, " ".join(filter(None, [prefix, warning, topic]))
+        return category, " ".join(filter(None, [prefix, warning, addendum]))
 
 
 deprecated = DeprecationHandler(__version__)

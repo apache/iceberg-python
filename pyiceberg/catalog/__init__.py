@@ -633,7 +633,7 @@ class Catalog(ABC):
     @deprecated(
         deprecate_in="0.8.0",
         remove_in="0.9.0",
-        topic="Please refer to the table using only its namespace and its table name.",
+        addendum="Please refer to the table using only its namespace and its table name.",
     )
     def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
         """Convert an identifier to a tuple and drop this catalog's name from the first element.
@@ -664,7 +664,7 @@ class Catalog(ABC):
                 deprecate_in="0.8.0",
                 remove_in="0.9.0",
                 prefix="Support for parsing catalog level identifier in Catalog identifiers",
-                topic="Please refer to the table using only its namespace and its table name.",
+                addendum="Please refer to the table using only its namespace and its table name.",
             )
             identifier_tuple = identifier_tuple[1:]
         return identifier_tuple
@@ -787,7 +787,7 @@ class MetastoreCatalog(Catalog, ABC):
                 deprecate_in="0.8.0",
                 remove_in="0.9.0",
                 prefix=f"The property {DEPRECATED_BOTOCORE_SESSION}",
-                topic="and will be removed.",
+                addendum="and will be removed.",
             )
 
     def create_table_transaction(

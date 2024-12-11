@@ -91,10 +91,11 @@ class AddSchemaUpdate(IcebergBaseModel):
     last_column_id: Optional[int] = Field(
         alias="last-column-id",
         default=None,
-        deprecated=deprecation_notice(
-            deprecated_in="0.9.0",
-            removed_in="0.10.0",
-            help_message="last-field-id is handled internally, and should not be part of the update.",
+        deprecated=deprecated.message(
+            deprecate_in="0.9.0",
+            remove_in="0.10.0",
+            prefix="last-column-id",
+            addendum="This property is handled internally, and should not be part of the update.",
         ),
     )
 
@@ -105,7 +106,7 @@ class AddSchemaUpdate(IcebergBaseModel):
             deprecate_in="0.8.0",
             remove_in="0.9.0",
             prefix="initial_change",
-            topic="CreateTableTransaction can work without this field",
+            addendum="CreateTableTransaction can work without this field",
         ),
     )
 
@@ -128,7 +129,7 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
             deprecate_in="0.8.0",
             remove_in="0.9.0",
             prefix="initial_change",
-            topic="CreateTableTransaction can work without this field",
+            addendum="CreateTableTransaction can work without this field",
         ),
     )
 
@@ -151,7 +152,7 @@ class AddSortOrderUpdate(IcebergBaseModel):
             deprecate_in="0.8.0",
             remove_in="0.9.0",
             prefix="initial_change",
-            topic="CreateTableTransaction can work without this field",
+            addendum="CreateTableTransaction can work without this field",
         ),
     )
 

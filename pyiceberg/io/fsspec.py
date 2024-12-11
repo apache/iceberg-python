@@ -177,7 +177,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
             deprecate_in="0.8.0",
             remove_in="0.9.0",
             prefix=f"The property {GCS_ENDPOINT}",
-            topic=f"please use {GCS_SERVICE_HOST} instead",
+            addendum=f"please use {GCS_SERVICE_HOST} instead",
         )
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
@@ -202,7 +202,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
                 deprecate_in="0.8.0",
                 remove_in="0.9.0",
                 prefix=f"The property {property_name}",
-                topic="Please use properties that start with adls.",
+                addendum="Please use properties that start with adls.",
             )
 
     return AzureBlobFileSystem(

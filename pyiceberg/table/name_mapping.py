@@ -78,7 +78,7 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
     @deprecated(
         deprecate_in="0.8.0",
         remove_in="0.9.0",
-        topic="Please use `apply_name_mapping` instead",
+        addendum="Please use `apply_name_mapping` instead",
     )
     def find(self, *names: str) -> MappedField:
         name = ".".join(names)

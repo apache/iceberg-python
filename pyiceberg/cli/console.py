@@ -40,7 +40,7 @@ from pyiceberg.utils.properties import property_as_int
 deprecated.constant(
     deprecate_in="0.8.0",
     remove_in="0.9.0",
-    topic="Use TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT instead.",
+    addendum="Use TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT instead.",
     constant="DEFAULT_MAX_SNAPSHOT_AGE_MS",
     value=TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT,
 )
@@ -48,7 +48,7 @@ deprecated.constant(
 deprecated.constant(
     deprecate_in="0.8.0",
     remove_in="0.9.0",
-    topic="Use TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT instead.",
+    addendum="Use TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT instead.",
     constant="DEFAULT_MIN_SNAPSHOTS_TO_KEEP",
     value=TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT,
 )

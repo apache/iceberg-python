@@ -411,7 +411,7 @@ class PyArrowFileIO(FileIO):
                         deprecate_in="0.8.0",
                         remove_in="0.9.0",
                         prefix=f"The property {GCS_ENDPOINT}",
-                        topic=f"please use {GCS_SERVICE_HOST} instead",
+                        addendum=f"please use {GCS_SERVICE_HOST} instead",
                     )
                 url_parts = urlparse(endpoint)
                 gcs_kwargs["scheme"] = url_parts.scheme
@@ -1532,7 +1532,7 @@ class ArrowScan:
 @deprecated(
     deprecate_in="0.8.0",
     remove_in="0.9.0",
-    topic="Use ArrowScan.to_table instead.",
+    addendum="Use ArrowScan.to_table instead.",
 )
 def project_table(
     tasks: Iterable[FileScanTask],
@@ -1631,7 +1631,7 @@ def project_table(
 @deprecated(
     deprecate_in="0.8.0",
     remove_in="0.9.0",
-    topic="Use ArrowScan.to_record_batches instead.",
+    addendum="Use ArrowScan.to_record_batches instead.",
 )
 def project_batches(
     tasks: Iterable[FileScanTask],

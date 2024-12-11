@@ -210,7 +210,7 @@ def test_topic(
 ) -> None:
     """Reaching a deprecated topic displays associated warning (or error)."""
     with pytest.warns(warning, match=message) if warning else pytest.raises(DeprecatedError):
-        deprecated.topic("2.0", "3.0", topic="Some special topic")
+        deprecated.topic("2.0", "3.0", addendum="Some special topic")
 
 
 @parametrize_dev
