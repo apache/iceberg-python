@@ -40,7 +40,7 @@ from packaging.version import InvalidVersion, Version
 
 if TYPE_CHECKING:
     from argparse import ArgumentParser, Namespace
-    from typing import Any, Callable, ParamSpec, Self, TypeVar
+    from typing import Any, Callable, ParamSpec, TypeVar
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -61,7 +61,7 @@ class DeprecationHandler:
     _version_tuple: tuple[int, ...] | None
     _version_object: Version | None
 
-    def __init__(self: Self, version: str) -> None:
+    def __init__(self, version: str) -> None:
         """Create a deprecation handle for the specified version.
 
         :param version: The version to compare against when checking deprecation statuses.
@@ -93,7 +93,7 @@ class DeprecationHandler:
         return self._version < target_version
 
     def __call__(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         *,
@@ -138,7 +138,7 @@ class DeprecationHandler:
         return deprecated_decorator
 
     def argument(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         argument: str,
@@ -195,7 +195,7 @@ class DeprecationHandler:
         return deprecated_decorator
 
     def action(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         action: ActionType,
@@ -210,7 +210,7 @@ class DeprecationHandler:
             category: type[Warning]
             help: str  # override argparse.Action's help type annotation
 
-            def __init__(inner_self: Self, *args: Any, **kwargs: Any) -> None:
+            def __init__(inner_self, *args: Any, **kwargs: Any) -> None:
                 super().__init__(*args, **kwargs)
 
                 category, message = self._generate_message(
@@ -236,7 +236,7 @@ class DeprecationHandler:
                 inner_self.help = message
 
             def __call__(
-                inner_self: Self,
+                inner_self,
                 parser: ArgumentParser,
                 namespace: Namespace,
                 values: Any,
@@ -258,7 +258,7 @@ class DeprecationHandler:
         return type(action.__name__, (DeprecationMixin, action), {})  # type: ignore[return-value]
 
     def module(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         *,
@@ -281,7 +281,7 @@ class DeprecationHandler:
         )
 
     def constant(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         constant: str,
@@ -323,7 +323,7 @@ class DeprecationHandler:
                 with warnings.catch_warnings():  # temporarily override warning handling
                     warnings.simplefilter("always", category)  # turn off filter
 
-                    warnings.warn(message, category, stacklevel=3 + stack)
+                    warnings.warn(message, category, stacklevel=2 + stack)
                 return value
 
             if super_getattr:
@@ -334,7 +334,7 @@ class DeprecationHandler:
         module.__getattr__ = __getattr__  # type: ignore[method-assign]
 
     def topic(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         *,
@@ -371,7 +371,7 @@ class DeprecationHandler:
 
             warnings.warn(message, category, stacklevel=2 + stack)
 
-    def _get_module(self: Self, stack: int) -> tuple[ModuleType, str]:
+    def _get_module(self, stack: int) -> tuple[ModuleType, str]:
         """Detect the module from which we are being called.
 
         :param stack: The stacklevel increment.
@@ -408,7 +408,7 @@ class DeprecationHandler:
         raise DeprecatedError("unable to determine the calling module")
 
     def message(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         prefix: str,
@@ -431,7 +431,7 @@ class DeprecationHandler:
         return message
 
     def _generate_message(
-        self: Self,
+        self,
         deprecate_in: str,
         remove_in: str,
         prefix: str | None,

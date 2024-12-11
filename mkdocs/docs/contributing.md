@@ -168,15 +168,19 @@ To deprecate functions, methods, or properties, use the `@deprecated` decorator.
 ```python
 from pyiceberg.utils._deprecations import deprecated
 
+
 @deprecated("1.5.0", "2.0.0")
 def old_function():
     pass
+
+
+old_function()
 ```
 
 This will warn:
 
 ```text
-Call to old_function, deprecated in 1.5.0, will be removed in 2.0.0.
+some_file.py:9: DeprecationWarning: __main__.old_function is deprecated and will be removed in 2.0.0.
 ```
 
 #### Adding a Recommendation
@@ -186,15 +190,19 @@ Optionally, include a recommendation to guide users toward an alternative featur
 ```python
 from pyiceberg.utils._deprecations import deprecated
 
+
 @deprecated("1.5.0", "2.0.0", addendum="Use `new_function` instead.")
 def old_function():
     pass
+
+
+old_function()
 ```
 
 This will warn:
 
 ```text
-Call to old_function, deprecated in 1.5.0, will be removed in 2.0.0. Use `new_function` instead.
+some_file.py:9: DeprecationWarning: __main__.old_function is deprecated and will be removed in 2.0.0. Use `new_function` instead.
 ```
 
 ### Keyword Arguments
@@ -206,15 +214,19 @@ To deprecate or rename keyword arguments, use the `@deprecated.argument` decorat
 ```python
 from pyiceberg.utils._deprecations import deprecated
 
+
 @deprecated.argument("1.5.0", "2.0.0", "old_arg")
 def my_function(*, old_arg=True):
     pass
+
+
+my_function(old_arg=False)
 ```
 
 This will warn:
 
 ```text
-Call to my_function(old_arg), deprecated in 1.5.0, will be removed in 2.0.0.
+some_file.py:9: DeprecationWarning: __main__.my_function(old_arg) is deprecated and will be removed in 2.0.0.
 ```
 
 #### Renaming a Keyword Argument
@@ -222,15 +234,19 @@ Call to my_function(old_arg), deprecated in 1.5.0, will be removed in 2.0.0.
 ```python
 from pyiceberg.utils._deprecations import deprecated
 
+
 @deprecated.argument("1.5.0", "2.0.0", "old_arg", rename="new_arg")
 def my_function(*, new_arg=True):
     pass
+
+
+my_function(old_arg=False)
 ```
 
 This will warn:
 
 ```text
-Call to my_function(old_arg), deprecated in 1.5.0, will be removed in 2.0.0. Use `new_arg` instead.
+some_file.py:9: DeprecationWarning: __main__.my_function(old_arg) is deprecated and will be removed in 2.0.0. Use 'new_arg' instead.
 ```
 
 ### Constants and Enums
@@ -240,20 +256,27 @@ To deprecate constants or enums, use the `deprecated.constant` function.
 #### Deprecating a Constant
 
 ```python
+# some_file.py
 from pyiceberg.utils._deprecations import deprecated
 
 deprecated.constant("1.5.0", "2.0.0", "OLD_CONSTANT", 42)
+
+# deprecated_constant.py
+from some_file import OLD_CONSTANT
+
+OLD_CONSTANT
 ```
 
 This will warn:
 
 ```text
-OLD_CONSTANT, deprecated in 1.5.0, will be removed in 2.0.0.
+deprecated_constant.py:3: DeprecationWarning: some_file.OLD_CONSTANT is deprecated and will be removed in 2.0.0.
 ```
 
 #### Deprecating an Enum
 
 ```python
+# some_file.py
 from enum import Enum
 from pyiceberg.utils._deprecations import deprecated
 
@@ -261,13 +284,17 @@ class MyEnum(Enum):
     OLD_VALUE = 42
 
 deprecated.constant("1.5.0", "2.0.0", "MyEnum", MyEnum)
+
 del MyEnum
+
+# deprecated_enum.py
+from some_file import MyEnum
 ```
 
 This will warn:
 
 ```text
-MyEnum, deprecated in 1.5.0, will be removed in 2.0.0.
+deprecated_constant.py:1: DeprecationWarning: some_file.MyEnum is deprecated and will be removed in 2.0.0.
 ```
 
 ### Topics
@@ -277,11 +304,12 @@ For deprecations that do not fit into the above categories, use the `deprecated.
 ```python
 from pyiceberg.utils._deprecations import deprecated
 
+
 def some_function():
     # some logic
 
     if condition:
-        deprecated.topic("1.5.0", "2.0.0", addendum="The <TOPIC>")
+        deprecated.topic("1.5.0", "2.0.0", prefix="The behaviour xyz", addendum="Do something else.")
 
     # more logic
 ```
@@ -289,7 +317,7 @@ def some_function():
 This will warn:
 
 ```text
-The <TOPIC>, deprecated in 1.5.0, will be removed in 2.0.0.
+some_file.py:8: DeprecationWarning: The behaviour xyz is deprecated and will be removed in 2.0.0. Do something else.
 ```
 
 ## Type annotations
