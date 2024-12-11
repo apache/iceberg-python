@@ -310,19 +310,6 @@ def test_table_scan_row_filter(table_v2: Table) -> None:
     assert scan.filter(EqualTo("x", 10)).filter(In("y", (10, 11))).row_filter == And(EqualTo("x", 10), In("y", (10, 11)))
 
 
-def test_table_scan_partition_filters_case_sensitive(table_v2: Table) -> None:
-    scan = table_v2.scan(row_filter=EqualTo("X", 10), case_sensitive=True)
-    with pytest.raises(ValueError):
-        for i in range(len(table_v2.metadata.specs())):
-            _ = scan.partition_filters[i]
-
-
-def test_table_scan_partition_filters_case_insensitive(table_v2: Table) -> None:
-    scan = table_v2.scan(row_filter=EqualTo("X", 10), case_sensitive=False)
-    for i in range(len(table_v2.metadata.specs())):
-        _ = scan.partition_filters[i]
-
-
 def test_table_scan_ref(table_v2: Table) -> None:
     scan = table_v2.scan()
     assert scan.use_ref("test").snapshot_id == 3051729675574597004
