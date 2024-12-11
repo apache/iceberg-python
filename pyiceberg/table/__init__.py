@@ -1311,7 +1311,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id])
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
 
     @cached_property
