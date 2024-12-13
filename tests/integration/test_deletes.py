@@ -28,14 +28,50 @@ from pyiceberg.expressions import AlwaysTrue, EqualTo
 from pyiceberg.manifest import ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, TimestampType
+from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, TimestampType, StringType
 
 
 def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
     for sql in sqls:
         spark.sql(sql)
+
+
+@pytest.fixture()
+def test_table(session_catalog: RestCatalog) -> Table:
+    identifier = "default.__test_table"
+
+    arrow_table = pa.Table.from_arrays(
+        [
+            pa.array([1, 2, 3, 4, 5]),
+            pa.array(["a", "b", "c", "d", "e"])
+        ],
+        names=["idx", "value"]
+    )
+
+    try:
+        session_catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    test_table = session_catalog.create_table(
+        identifier,
+        schema=Schema(
+            NestedField(1, "idx", LongType()),
+            NestedField(2, "value", StringType()),
+        )
+    )
+
+    test_table.append(arrow_table)
+
+    yield test_table
+
+    try:
+        session_catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
 
 
 @pytest.mark.integration
@@ -770,3 +806,67 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
 
     # Expect 8 records: 10 records - 2
     assert len(tbl.scan().to_arrow()) == 8
+
+
+@pytest.mark.integration
+def test_delete_with_filter_case_sensitive(test_table: Table) -> None:
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow()["idx"].to_pylist()
+
+    with pytest.raises(ValueError) as e:
+        test_table.delete("Idx == 2", case_sensitive=True)
+    assert "Could not find field with name Idx" in str(e.value)
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete("idx == 2", case_sensitive=True)
+    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_delete_with_filter_case_insensitive(test_table: Table) -> None:
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete("Idx == 2", case_sensitive=False)
+    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete("idx == 3", case_sensitive=False)
+    assert {"idx": 3, "value": "c"} not in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_overwrite_with_filter_case_sensitive(test_table: Table) -> None:
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+
+    new_table = pa.Table.from_arrays(
+        [
+            pa.array([10]),
+            pa.array(["x"]),
+        ],
+        names=["idx", "value"],
+    )
+
+    with pytest.raises(ValueError) as e:
+        test_table.overwrite(df=new_table, overwrite_filter="Idx == 2", case_sensitive=True)
+    assert "Could not find field with name Idx" in str(e.value)
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+    assert {"idx": 10, "value": "x"} not in test_table.scan().to_arrow().to_pylist()
+
+    test_table.overwrite(df=new_table, overwrite_filter="idx == 2", case_sensitive=True)
+    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
+    assert {"idx": 10, "value": "x"} in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_overwrite_with_filter_case_insensitive(test_table: Table) -> None:
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+
+    new_table = pa.Table.from_arrays(
+        [
+            pa.array([10]),
+            pa.array(["x"]),
+        ],
+        names=["idx", "value"],
+    )
+
+    test_table.overwrite(df=new_table, overwrite_filter="Idx == 2", case_sensitive=False)
+    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
+    assert {"idx": 10, "value": "x"} in test_table.scan().to_arrow().to_pylist()

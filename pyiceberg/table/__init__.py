@@ -268,12 +268,10 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE) -> DataScan:
+    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
         return DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=row_filter,
+            table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
 
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
@@ -507,14 +505,14 @@ class Transaction:
             delete_filter = _parse_row_filter(delete_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            delete_snapshot.delete_by_predicate(delete_filter)
+            delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
-            files = self._scan(row_filter=delete_filter).plan_files()
+            files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -995,6 +993,7 @@ class Table:
         self,
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        case_sensitive: bool = True,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         """
@@ -1010,10 +1009,13 @@ class Table:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
+            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         with self.transaction() as tx:
-            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+            tx.overwrite(
+                df=df, overwrite_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties
+            )
 
     def delete(
         self,
