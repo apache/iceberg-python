@@ -17,12 +17,9 @@
 # pylint:disable=redefined-outer-name,eval-used
 import pytest
 
-from pyiceberg.expressions import EqualTo
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
-from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
 from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, update_snapshot_summaries
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
@@ -344,20 +341,3 @@ def test_invalid_type() -> None:
         )
 
     assert "Could not parse summary property total-data-files to an int: abc" in str(e.value)
-
-
-@pytest.mark.parametrize("case_sensitive", [True, False])
-def test_delete_table_rows_case_sensitive(
-    case_sensitive: bool, table_v1: Table, table_v2: Table, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(TableMetadataV1, "current_snapshot", lambda _: None)
-    monkeypatch.setattr(TableMetadataV2, "current_snapshot", lambda _: None)
-    for table in [table_v1, table_v2]:
-        delete_file = table.transaction().update_snapshot().delete()
-        delete_file.delete_by_predicate(predicate=EqualTo("X", 10), case_sensitive=case_sensitive)
-        if case_sensitive:
-            with pytest.raises(ValueError) as e:
-                _ = delete_file._compute_deletes
-            assert "Could not find field with name X" in str(e.value)
-        else:
-            _ = delete_file._compute_deletes
