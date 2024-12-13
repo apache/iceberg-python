@@ -846,3 +846,95 @@ def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog
     inspect_files_asserts(files_df)
     inspect_files_asserts(data_files_df)
     inspect_files_asserts(delete_files_df)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pandas.testing import assert_frame_equal
+
+    identifier = "default.table_metadata_all_manifests"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+        TBLPROPERTIES ('write.update.mode'='merge-on-read',
+                       'write.delete.mode'='merge-on-read')
+    """
+    )
+    tbl = session_catalog.load_table(identifier)
+
+    # check all_manifests when there are no snapshots
+    lhs = tbl.inspect.all_manifests().to_pandas()
+    rhs = spark.table(f"{identifier}.all_manifests").toPandas()
+    assert_frame_equal(lhs, rhs, check_dtype=False)
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (2, 'b')")
+
+    spark.sql(f"UPDATE {identifier} SET data = 'c' WHERE id = 1")
+
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 2")
+
+    spark.sql(f"INSERT OVERWRITE {identifier} VALUES (1, 'a')")
+
+    tbl.refresh()
+    df = tbl.inspect.all_manifests()
+
+    assert df.column_names == [
+        "content",
+        "path",
+        "length",
+        "partition_spec_id",
+        "added_snapshot_id",
+        "added_data_files_count",
+        "existing_data_files_count",
+        "deleted_data_files_count",
+        "added_delete_files_count",
+        "existing_delete_files_count",
+        "deleted_delete_files_count",
+        "partition_summaries",
+        "reference_snapshot_id",
+    ]
+
+    int_cols = [
+        "content",
+        "length",
+        "partition_spec_id",
+        "added_snapshot_id",
+        "added_data_files_count",
+        "existing_data_files_count",
+        "deleted_data_files_count",
+        "added_delete_files_count",
+        "existing_delete_files_count",
+        "deleted_delete_files_count",
+        "reference_snapshot_id",
+    ]
+
+    for column in int_cols:
+        for value in df[column]:
+            assert isinstance(value.as_py(), int)
+
+    for value in df["path"]:
+        assert isinstance(value.as_py(), str)
+
+    for value in df["partition_summaries"]:
+        assert isinstance(value.as_py(), list)
+        for row in value:
+            assert isinstance(row["contains_null"].as_py(), bool)
+            assert isinstance(row["contains_nan"].as_py(), (bool, type(None)))
+            assert isinstance(row["lower_bound"].as_py(), (str, type(None)))
+            assert isinstance(row["upper_bound"].as_py(), (str, type(None)))
+
+    lhs = spark.table(f"{identifier}.all_manifests").toPandas()
+    rhs = df.to_pandas()
+    assert_frame_equal(lhs, rhs, check_dtype=False)
