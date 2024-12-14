@@ -39,6 +39,15 @@ def test_create_namespace(table_bucket_arn, database_name: str):
     namespaces = catalog.list_namespaces()
     assert (database_name,) in namespaces
 
+def test_drop_namespace(table_bucket_arn, database_name: str):
+    properties = {"warehouse": table_bucket_arn}
+    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+    catalog.create_namespace(namespace=database_name)
+    assert (database_name,) in catalog.list_namespaces()
+    catalog.drop_namespace(namespace=database_name)
+    assert (database_name,) not in catalog.list_namespaces()
+
+
 
 def test_create_table(table_bucket_arn, database_name: str, table_name:str, table_schema_nested: Schema):
     # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet

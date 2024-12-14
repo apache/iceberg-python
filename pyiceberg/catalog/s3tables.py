@@ -13,7 +13,7 @@ from pyiceberg.catalog import WAREHOUSE_LOCATION
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog import MetastoreCatalog
 from pyiceberg.catalog import PropertiesUpdateSummary
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import NamespaceNotEmptyError, NoSuchTableError
 from pyiceberg.exceptions import S3TablesError
 from pyiceberg.exceptions import TableBucketNotFound
 from pyiceberg.io import AWS_ACCESS_KEY_ID
@@ -179,7 +179,12 @@ class S3TableCatalog(MetastoreCatalog):
         return super().create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
 
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
-        return super().drop_namespace(namespace)
+        namespace = self._validate_namespace_identifier(namespace)
+        try:
+            self.s3tables.delete_namespace(tableBucketARN=self.table_bucket_arn, namespace=namespace)
+        except self.s3tables.exceptions.ConflictException as e:
+            raise NamespaceNotEmptyError(f"Namespace {namespace} is not empty.") from e
+
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
