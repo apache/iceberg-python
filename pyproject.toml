@@ -1211,6 +1211,7 @@ sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
 gcsfs = ["gcsfs"]
 rest-sigv4 = ["boto3"]
+s3tables = ["boto3"]
 pyiceberg-core = ["pyiceberg-core"]
 
 [tool.pytest.ini_options]

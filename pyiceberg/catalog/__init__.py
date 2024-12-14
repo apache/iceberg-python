@@ -942,8 +942,8 @@ class MetastoreCatalog(Catalog, ABC):
         raise ValueError("No default path is set, please specify a location when creating a table")
 
     @staticmethod
-    def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
-        ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
+    def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str, overwrite: bool = False) -> None:
+        ToOutputFile.table_metadata(metadata, io.new_output(metadata_path), overwrite=overwrite)
 
     @staticmethod
     def _get_metadata_location(location: str, new_version: int = 0) -> str:
