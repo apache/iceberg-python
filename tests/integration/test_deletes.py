@@ -16,7 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 from datetime import datetime
-from typing import List
+from typing import Generator, List
 
 import pyarrow as pa
 import pytest
@@ -31,7 +31,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, TimestampType, StringType
+from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
 
 
 def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
@@ -40,38 +40,21 @@ def run_spark_commands(spark: SparkSession, sqls: List[str]) -> None:
 
 
 @pytest.fixture()
-def test_table(session_catalog: RestCatalog) -> Table:
+def test_table(session_catalog: RestCatalog) -> Generator[Table, None, None]:
     identifier = "default.__test_table"
-
-    arrow_table = pa.Table.from_arrays(
-        [
-            pa.array([1, 2, 3, 4, 5]),
-            pa.array(["a", "b", "c", "d", "e"])
-        ],
-        names=["idx", "value"]
-    )
-
-    try:
-        session_catalog.drop_table(identifier)
-    except NoSuchTableError:
-        pass
-
+    arrow_table = pa.Table.from_arrays([pa.array([1, 2, 3, 4, 5]), pa.array(["a", "b", "c", "d", "e"])], names=["idx", "value"])
     test_table = session_catalog.create_table(
         identifier,
         schema=Schema(
             NestedField(1, "idx", LongType()),
             NestedField(2, "value", StringType()),
-        )
+        ),
     )
-
     test_table.append(arrow_table)
 
     yield test_table
 
-    try:
-        session_catalog.drop_table(identifier)
-    except NoSuchTableError:
-        pass
+    session_catalog.drop_table(identifier)
 
 
 @pytest.mark.integration
@@ -810,7 +793,7 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
 
 @pytest.mark.integration
 def test_delete_with_filter_case_sensitive(test_table: Table) -> None:
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow()["idx"].to_pylist()
+    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
 
     with pytest.raises(ValueError) as e:
         test_table.delete("Idx == 2", case_sensitive=True)
