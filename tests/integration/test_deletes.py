@@ -792,64 +792,111 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
 
 
 @pytest.mark.integration
-def test_delete_with_filter_case_sensitive(test_table: Table) -> None:
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+def test_delete_with_filter_case_sensitive_by_default(test_table: Table) -> None:
+    record_to_delete = {"idx": 2, "value": "b"}
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
 
     with pytest.raises(ValueError) as e:
-        test_table.delete("Idx == 2", case_sensitive=True)
+        test_table.delete(f"Idx == {record_to_delete['idx']}")
     assert "Could not find field with name Idx" in str(e.value)
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
 
-    test_table.delete("idx == 2", case_sensitive=True)
-    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
+    test_table.delete(f"idx == {record_to_delete['idx']}")
+    assert record_to_delete not in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_delete_with_filter_case_sensitive(test_table: Table) -> None:
+    record_to_delete = {"idx": 2, "value": "b"}
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
+
+    with pytest.raises(ValueError) as e:
+        test_table.delete(f"Idx == {record_to_delete['idx']}", case_sensitive=True)
+    assert "Could not find field with name Idx" in str(e.value)
+    assert record_to_delete in test_table.scan().to_arrow().to_pylist()
+
+    test_table.delete(f"idx == {record_to_delete['idx']}", case_sensitive=True)
+    assert record_to_delete not in test_table.scan().to_arrow().to_pylist()
 
 
 @pytest.mark.integration
 def test_delete_with_filter_case_insensitive(test_table: Table) -> None:
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+    record_to_delete_1 = {"idx": 2, "value": "b"}
+    record_to_delete_2 = {"idx": 3, "value": "c"}
+    assert record_to_delete_1 in test_table.scan().to_arrow().to_pylist()
+    assert record_to_delete_2 in test_table.scan().to_arrow().to_pylist()
 
-    test_table.delete("Idx == 2", case_sensitive=False)
-    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
+    test_table.delete(f"Idx == {record_to_delete_1['idx']}", case_sensitive=False)
+    assert record_to_delete_1 not in test_table.scan().to_arrow().to_pylist()
 
-    test_table.delete("idx == 3", case_sensitive=False)
-    assert {"idx": 3, "value": "c"} not in test_table.scan().to_arrow().to_pylist()
+    test_table.delete(f"idx == {record_to_delete_2['idx']}", case_sensitive=False)
+    assert record_to_delete_2 not in test_table.scan().to_arrow().to_pylist()
 
 
 @pytest.mark.integration
-def test_overwrite_with_filter_case_sensitive(test_table: Table) -> None:
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+def test_overwrite_with_filter_case_sensitive_by_default(test_table: Table) -> None:
+    record_to_overwrite = {"idx": 2, "value": "b"}
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
 
+    new_record_to_insert = {"idx": 10, "value": "x"}
     new_table = pa.Table.from_arrays(
         [
-            pa.array([10]),
-            pa.array(["x"]),
+            pa.array([new_record_to_insert["idx"]]),
+            pa.array([new_record_to_insert["value"]]),
         ],
         names=["idx", "value"],
     )
 
     with pytest.raises(ValueError) as e:
-        test_table.overwrite(df=new_table, overwrite_filter="Idx == 2", case_sensitive=True)
+        test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}")
     assert "Could not find field with name Idx" in str(e.value)
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
-    assert {"idx": 10, "value": "x"} not in test_table.scan().to_arrow().to_pylist()
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert not in test_table.scan().to_arrow().to_pylist()
 
-    test_table.overwrite(df=new_table, overwrite_filter="idx == 2", case_sensitive=True)
-    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
-    assert {"idx": 10, "value": "x"} in test_table.scan().to_arrow().to_pylist()
+    test_table.overwrite(df=new_table, overwrite_filter=f"idx == {record_to_overwrite['idx']}")
+    assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()
 
 
 @pytest.mark.integration
-def test_overwrite_with_filter_case_insensitive(test_table: Table) -> None:
-    assert {"idx": 2, "value": "b"} in test_table.scan().to_arrow().to_pylist()
+def test_overwrite_with_filter_case_sensitive(test_table: Table) -> None:
+    record_to_overwrite = {"idx": 2, "value": "b"}
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
 
+    new_record_to_insert = {"idx": 10, "value": "x"}
     new_table = pa.Table.from_arrays(
         [
-            pa.array([10]),
-            pa.array(["x"]),
+            pa.array([new_record_to_insert["idx"]]),
+            pa.array([new_record_to_insert["value"]]),
         ],
         names=["idx", "value"],
     )
 
-    test_table.overwrite(df=new_table, overwrite_filter="Idx == 2", case_sensitive=False)
-    assert {"idx": 2, "value": "b"} not in test_table.scan().to_arrow().to_pylist()
-    assert {"idx": 10, "value": "x"} in test_table.scan().to_arrow().to_pylist()
+    with pytest.raises(ValueError) as e:
+        test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}", case_sensitive=True)
+    assert "Could not find field with name Idx" in str(e.value)
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert not in test_table.scan().to_arrow().to_pylist()
+
+    test_table.overwrite(df=new_table, overwrite_filter=f"idx == {record_to_overwrite['idx']}", case_sensitive=True)
+    assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()
+
+
+@pytest.mark.integration
+def test_overwrite_with_filter_case_insensitive(test_table: Table) -> None:
+    record_to_overwrite = {"idx": 2, "value": "b"}
+    assert record_to_overwrite in test_table.scan().to_arrow().to_pylist()
+
+    new_record_to_insert = {"idx": 10, "value": "x"}
+    new_table = pa.Table.from_arrays(
+        [
+            pa.array([new_record_to_insert["idx"]]),
+            pa.array([new_record_to_insert["value"]]),
+        ],
+        names=["idx", "value"],
+    )
+
+    test_table.overwrite(df=new_table, overwrite_filter=f"Idx == {record_to_overwrite['idx']}", case_sensitive=False)
+    assert record_to_overwrite not in test_table.scan().to_arrow().to_pylist()
+    assert new_record_to_insert in test_table.scan().to_arrow().to_pylist()
