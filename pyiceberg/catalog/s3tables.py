@@ -14,7 +14,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.exceptions import S3TablesError
 from pyiceberg.exceptions import TableBucketNotFound
-from pyiceberg.io import AWS_ACCESS_KEY_ID
+from pyiceberg.io import AWS_ACCESS_KEY_ID, PY_IO_IMPL
 from pyiceberg.io import AWS_REGION
 from pyiceberg.io import AWS_SECRET_ACCESS_KEY
 from pyiceberg.io import AWS_SESSION_TOKEN
@@ -44,10 +44,15 @@ S3TABLES_SESSION_TOKEN = "s3tables.session-token"
 
 S3TABLES_ENDPOINT = "s3tables.endpoint"
 
+# pyarrow does not support writing to S3 Table buckets as of 2024-12-14 https://github.com/apache/iceberg-python/issues/1404#issuecomment-2543174146
+S3TABLES_FILE_IO_DEFAULT = "pyiceberg.io.fsspec.FsspecFileIO"
+
 
 class S3TableCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
+        # TODO: implement a proper check for FileIO
+        self.properties[PY_IO_IMPL] = S3TABLES_FILE_IO_DEFAULT
 
         session = boto3.Session(
             profile_name=properties.get(S3TABLES_PROFILE_NAME),
