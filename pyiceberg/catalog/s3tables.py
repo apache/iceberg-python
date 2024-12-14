@@ -8,18 +8,22 @@ from typing import Union
 
 import boto3
 
-from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, MetastoreCatalog
+from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION
 from pyiceberg.catalog import WAREHOUSE_LOCATION
 from pyiceberg.catalog import Catalog
+from pyiceberg.catalog import MetastoreCatalog
 from pyiceberg.catalog import PropertiesUpdateSummary
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.exceptions import S3TablesError
 from pyiceberg.exceptions import TableBucketNotFound
-from pyiceberg.io import AWS_ACCESS_KEY_ID, PY_IO_IMPL
+from pyiceberg.io import AWS_ACCESS_KEY_ID
 from pyiceberg.io import AWS_REGION
 from pyiceberg.io import AWS_SECRET_ACCESS_KEY
 from pyiceberg.io import AWS_SESSION_TOKEN
+from pyiceberg.io import PY_IO_IMPL
 from pyiceberg.io import load_file_io
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableResponse
@@ -27,9 +31,11 @@ from pyiceberg.table import CreateTableTransaction
 from pyiceberg.table import Table
 from pyiceberg.table import TableRequirement
 from pyiceberg.table.metadata import new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
+from pyiceberg.table.sorting import SortOrder
 from pyiceberg.table.update import TableUpdate
-from pyiceberg.typedef import EMPTY_DICT, Identifier
+from pyiceberg.typedef import EMPTY_DICT
+from pyiceberg.typedef import Identifier
 from pyiceberg.typedef import Properties
 from pyiceberg.utils.properties import get_first_property_value
 
@@ -176,7 +182,18 @@ class S3TableCatalog(MetastoreCatalog):
         return super().drop_namespace(namespace)
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
-        return super().drop_table(identifier)
+        namespace, table_name = self._validate_database_and_table_identifier(identifier)
+        try:
+            response = self.s3tables.get_table(
+                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
+            )
+        except self.s3tables.exceptions.NotFoundException as e:
+            raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
+
+        # TODO: handle conflicts due to versionToken mismatch that might occur
+        self.s3tables.delete_table(
+            tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, versionToken=response["versionToken"]
+        )
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         return super().drop_view(identifier)
@@ -198,9 +215,12 @@ class S3TableCatalog(MetastoreCatalog):
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
         # TODO: raise a NoSuchTableError if it does not exist
-        response = self.s3tables.get_table_metadata_location(
-            tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
-        )
+        try:
+            response = self.s3tables.get_table_metadata_location(
+                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
+            )
+        except self.s3tables.exceptions.NotFoundException as e:
+            raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
         # TODO: we might need to catch if table is not initialized i.e. does not have metadata setup yet
         metadata_location = response["metadataLocation"]
 

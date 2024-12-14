@@ -3,7 +3,7 @@ from pyiceberg.schema import Schema
 import pytest
 
 from pyiceberg.catalog.s3tables import S3TableCatalog
-from pyiceberg.exceptions import TableBucketNotFound
+from pyiceberg.exceptions import NoSuchTableError, TableBucketNotFound
 
 
 @pytest.fixture
@@ -50,3 +50,19 @@ def test_create_table(table_bucket_arn, database_name: str, table_name:str, tabl
     table = catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
     assert table == catalog.load_table(identifier)
+
+
+
+def test_drop_table(table_bucket_arn, database_name: str, table_name:str, table_schema_nested: Schema):
+    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
+    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+    identifier = (database_name, table_name)
+
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier=identifier, schema=table_schema_nested)
+
+    catalog.drop_table(identifier=identifier)
+
+    with pytest.raises(NoSuchTableError):
+        catalog.load_table(identifier=identifier)
