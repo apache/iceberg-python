@@ -13,7 +13,9 @@ from pyiceberg.catalog import WAREHOUSE_LOCATION
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog import MetastoreCatalog
 from pyiceberg.catalog import PropertiesUpdateSummary
-from pyiceberg.exceptions import NamespaceNotEmptyError, NoSuchTableError
+from pyiceberg.exceptions import CommitFailedException
+from pyiceberg.exceptions import NamespaceNotEmptyError
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.exceptions import S3TablesError
 from pyiceberg.exceptions import TableBucketNotFound
 from pyiceberg.io import AWS_ACCESS_KEY_ID
@@ -83,7 +85,47 @@ class S3TableCatalog(MetastoreCatalog):
     def commit_table(
         self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
     ) -> CommitTableResponse:
-        return super().commit_table(table, requirements, updates)
+        table_identifier = table.name()
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
+
+        # TODO: loading table and getting versionToken should be an atomic operation, otherwise
+        # the table can change between those two API calls without noticing
+        # -> change this into an internal API that returns table information along with versionToken
+        current_table = self.load_table(identifier=table_identifier)
+        version_token = self.s3tables.get_table(
+            tableBucketARN=self.table_bucket_arn, namespace=database_name, name=table_name
+        )["versionToken"]
+
+        updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
+        if current_table and updated_staged_table.metadata == current_table.metadata:
+            # no changes, do nothing
+            return CommitTableResponse(
+                metadata=current_table.metadata, metadata_location=current_table.metadata_location
+            )
+
+        self._write_metadata(
+            metadata=updated_staged_table.metadata,
+            io=updated_staged_table.io,
+            metadata_path=updated_staged_table.metadata_location,
+            overwrite=True,
+        )
+
+        # try to update metadata location which will fail if the versionToken changed meanwhile
+        try:
+            self.s3tables.update_table_metadata_location(
+                tableBucketARN=self.table_bucket_arn,
+                namespace=database_name,
+                name=table_name,
+                versionToken=version_token,
+                metadataLocation=updated_staged_table.metadata_location,
+            )
+        except self.s3tables.exceptions.ConflictException as e:
+            raise CommitFailedException(
+                f"Cannot commit {database_name}.{table_name} because of a concurrent update to the table version {version_token}."
+            ) from e
+        return CommitTableResponse(
+            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+        )
 
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = ...) -> None:
         valid_namespace: str = self._validate_namespace_identifier(namespace)
@@ -185,7 +227,6 @@ class S3TableCatalog(MetastoreCatalog):
         except self.s3tables.exceptions.ConflictException as e:
             raise NamespaceNotEmptyError(f"Namespace {namespace} is not empty.") from e
 
-
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
         try:
@@ -197,7 +238,10 @@ class S3TableCatalog(MetastoreCatalog):
 
         # TODO: handle conflicts due to versionToken mismatch that might occur
         self.s3tables.delete_table(
-            tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, versionToken=response["versionToken"]
+            tableBucketARN=self.table_bucket_arn,
+            namespace=namespace,
+            name=table_name,
+            versionToken=response["versionToken"],
         )
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:

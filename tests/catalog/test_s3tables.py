@@ -7,6 +7,7 @@ from pyiceberg.catalog.s3tables import S3TableCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.exceptions import TableBucketNotFound
 from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType
 
 
 @pytest.fixture
@@ -103,3 +104,32 @@ def test_drop_table(table_bucket_arn, database_name: str, table_name: str, table
 
     with pytest.raises(NoSuchTableError):
         catalog.load_table(identifier=identifier)
+
+
+def test_commit_table(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
+    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
+    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+    identifier = (database_name, table_name)
+
+    catalog.create_namespace(namespace=database_name)
+    table = catalog.create_table(identifier=identifier, schema=table_schema_nested)
+
+    last_updated_ms = table.metadata.last_updated_ms
+    original_table_metadata_location = table.metadata_location
+    original_table_last_updated_ms = table.metadata.last_updated_ms
+
+
+
+    transaction = table.transaction()
+    update = transaction.update_schema()
+    update.add_column(path="b", field_type=IntegerType())
+    update.commit()
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+    assert updated_table_metadata.current_schema_id == 1
+    assert len(updated_table_metadata.schemas) == 2
+    assert updated_table_metadata.last_updated_ms > last_updated_ms
+    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
+    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
