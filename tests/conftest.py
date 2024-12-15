@@ -150,6 +150,35 @@ def table_schema_simple() -> Schema:
 
 
 @pytest.fixture(scope="session")
+def table_schema_with_full_nested_fields() -> Schema:
+    return schema.Schema(
+        NestedField(
+            field_id=1,
+            name="foo",
+            field_type=StringType(),
+            required=False,
+            doc="foo doc",
+            initial_default="foo initial",
+            write_default="foo write",
+        ),
+        NestedField(
+            field_id=2, name="bar", field_type=IntegerType(), required=True, doc="bar doc", initial_default=42, write_default=43
+        ),
+        NestedField(
+            field_id=3,
+            name="baz",
+            field_type=BooleanType(),
+            required=False,
+            doc="baz doc",
+            initial_default=True,
+            write_default=False,
+        ),
+        schema_id=1,
+        identifier_field_ids=[2],
+    )
+
+
+@pytest.fixture(scope="session")
 def table_schema_nested() -> Schema:
     return schema.Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
