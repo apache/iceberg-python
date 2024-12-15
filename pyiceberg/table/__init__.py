@@ -419,8 +419,8 @@ class Transaction:
         self,
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
-        case_sensitive: bool = True,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -473,8 +473,8 @@ class Transaction:
     def delete(
         self,
         delete_filter: Union[str, BooleanExpression],
-        case_sensitive: bool = True,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -486,8 +486,8 @@ class Transaction:
 
         Args:
             delete_filter: A boolean expression to delete rows from a table
-            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
         """
         from pyiceberg.io.pyarrow import (
             ArrowScan,
@@ -993,8 +993,8 @@ class Table:
         self,
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
-        case_sensitive: bool = True,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1009,8 +1009,8 @@ class Table:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
-            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
         """
         with self.transaction() as tx:
             tx.overwrite(
@@ -1020,16 +1020,16 @@ class Table:
     def delete(
         self,
         delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
-        case_sensitive: bool = True,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
 
         Args:
             delete_filter: The predicate that used to remove rows
-            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
         """
         with self.transaction() as tx:
             tx.delete(delete_filter=delete_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
