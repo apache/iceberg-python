@@ -106,7 +106,7 @@ class FileFormat(str, Enum):
         return None
 
     def is_splittable(self) -> bool:
-        return self.name == "AVRO" or self.name == "PARQUET" or self.name == "ORC"
+        return self == FileFormat.AVRO or self == FileFormat.PARQUET or self == FileFormat.ORC
 
     def __repr__(self) -> str:
         """Return the string representation of the FileFormat class."""

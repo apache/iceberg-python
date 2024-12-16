@@ -1240,8 +1240,8 @@ class TableScan(ABC):
 
 
 class ScanTask(ABC):
-    def size_in_bytes(self) -> int:
-        raise NotImplementedError("size in bytes is not implemented")
+    @abstractmethod
+    def size_in_bytes(self) -> int: ...
 
 
 @dataclass(init=False)
@@ -1271,7 +1271,11 @@ class FileScanTask(ScanTask):
 
 @dataclass(init=False)
 class CombinedFileScanTask(ScanTask):
-    """Task representing combined multiple file scan tasks."""
+    """Task representing combined multiple file scan tasks.
+
+    Used in plan_tasks. File can be split into multiple FileScanTask based on
+    split_offsets and then combined into read.split.target-size.
+    """
 
     tasks: List[FileScanTask]
 
@@ -1483,12 +1487,12 @@ class DataScan(TableScan):
 
         def split(task: FileScanTask) -> List[FileScanTask]:
             data_file = task.file
-            if not data_file.split_offsets:
+            if not data_file.file_format.is_splittable() or not data_file.split_offsets:
                 return [task]
 
             split_offsets = data_file.split_offsets
             if not all(split_offsets[i] <= split_offsets[i + 1] for i in range(len(split_offsets) - 1)):
-                # split offsets are strictly ascending
+                # split offsets must be strictly ascending
                 return [task]
 
             all_tasks = []

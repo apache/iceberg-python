@@ -55,6 +55,7 @@ from pyiceberg.types import (
     StringType,
     TimestampType,
 )
+from pyiceberg.utils.bin_packing import PackingIterator
 from pyiceberg.utils.concurrent import ExecutorFactory
 
 DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
@@ -906,8 +907,12 @@ def test_plan_tasks(session_catalog: Catalog) -> None:
         )
     )
 
+    assert len(tbl.inspect.files()) == 1
+
     plan_files = list(tbl.scan().plan_files())
     assert len(plan_files) == 1
+    data_file = plan_files[0].file
+    assert data_file.split_offsets is not None and len(data_file.split_offsets) == 10
 
     plan_tasks = list(tbl.scan(options={TableProperties.READ_SPLIT_SIZE: 1}).plan_task())
     assert len(plan_tasks) == 10
@@ -918,3 +923,27 @@ def test_plan_tasks(session_catalog: Catalog) -> None:
         split_offsets.append(task.tasks[0].start)
 
     assert split_offsets == plan_files[0].file.split_offsets
+
+    split_sizes = []
+    for i in range(1, len(data_file.split_offsets)):
+        split_sizes.append(data_file.split_offsets[i] - data_file.split_offsets[i - 1])
+
+    split_sizes.append(data_file.file_size_in_bytes - data_file.split_offsets[-1])
+
+    read_split_size = int(data_file.file_size_in_bytes / 4)
+    read_split_open_file_cost = 1
+    read_split_lookback = 5
+
+    plan_tasks = list(
+        tbl.scan(
+            options={
+                TableProperties.READ_SPLIT_SIZE: read_split_size,
+                TableProperties.READ_SPLIT_OPEN_FILE_COST: read_split_open_file_cost,
+                TableProperties.READ_SPLIT_LOOKBACK: read_split_lookback,
+            }
+        ).plan_task()
+    )
+
+    assert len(plan_tasks) == len(
+        list(PackingIterator(split_sizes, read_split_size, read_split_lookback, lambda size: size, False))
+    )
