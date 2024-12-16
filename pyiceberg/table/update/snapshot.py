@@ -318,6 +318,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     """
 
     _predicate: BooleanExpression
+    _case_sensitive: bool
 
     def __init__(
         self,
@@ -329,6 +330,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     ):
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
         self._predicate = AlwaysFalse()
+        self._case_sensitive = True
 
     def _commit(self) -> UpdatesAndRequirements:
         # Only produce a commit when there is something to delete
@@ -340,7 +342,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         schema = self._transaction.table_metadata.schema()
         spec = self._transaction.table_metadata.specs()[spec_id]
-        project = inclusive_projection(schema, spec)
+        project = inclusive_projection(schema, spec, self._case_sensitive)
         return project(self._predicate)
 
     @cached_property
@@ -350,10 +352,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         schema = self._transaction.table_metadata.schema()
         spec = self._transaction.table_metadata.specs()[spec_id]
-        return manifest_evaluator(spec, schema, self.partition_filters[spec_id], case_sensitive=True)
+        return manifest_evaluator(spec, schema, self.partition_filters[spec_id], self._case_sensitive)
 
-    def delete_by_predicate(self, predicate: BooleanExpression) -> None:
+    def delete_by_predicate(self, predicate: BooleanExpression, case_sensitive: bool = True) -> None:
         self._predicate = Or(self._predicate, predicate)
+        self._case_sensitive = case_sensitive
 
     @cached_property
     def _compute_deletes(self) -> Tuple[List[ManifestFile], List[ManifestEntry], bool]:
@@ -376,8 +379,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
             )
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
-        inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(schema, self._predicate, case_sensitive=True).eval
+        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=self._case_sensitive).eval
+        inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(
+            schema, self._predicate, case_sensitive=self._case_sensitive
+        ).eval
 
         existing_manifests = []
         total_deleted_entries = []
