@@ -950,8 +950,8 @@ Using `add_column` you can add a column, without having to worry about the field
 ```python
 with table.update_schema() as update:
     update.add_column("retries", IntegerType(), "Number of retries to place the bid")
-    # In a struct
-    update.add_column("details.confirmed_by", StringType(), "Name of the exchange")
+    # In a struct - a struct must exist before columns can added to it 
+    update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
 ```
 
 ### Rename column
