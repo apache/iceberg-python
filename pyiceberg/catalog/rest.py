@@ -870,17 +870,9 @@ class RestCatalog(Catalog):
             updated=parsed_response.updated,
             missing=parsed_response.missing,
         )
-        
+
     @retry(**_RETRY_ARGS)
     def namespace_exists(self, namespace: Union[str, Identifier]) -> bool:
-        """Check if a namespace exists.
-
-        Args:
-            identifier (str | Identifier): namespace identifier.
-
-        Returns:
-            bool: True if the namespace exists, False otherwise.
-        """
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
         response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
