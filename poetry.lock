@@ -2243,13 +2243,13 @@ type = ["mypy (==1.11.2)"]
 
 [[package]]
 name = "moto"
-version = "5.0.22"
+version = "5.0.23"
 description = ""
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "moto-5.0.22-py3-none-any.whl", hash = "sha256:defae32e834ba5674f77cbbe996b41dc248dd81289af8032fa3e847284409b29"},
-    {file = "moto-5.0.22.tar.gz", hash = "sha256:daf47b8a1f5f190cd3eaa40018a643f38e542277900cf1db7f252cedbfed998f"},
+    {file = "moto-5.0.23-py3-none-any.whl", hash = "sha256:a8069f9c945e7503c43eccec30693f5656e0f8efb0256dfd814d99dedc38429e"},
+    {file = "moto-5.0.23.tar.gz", hash = "sha256:8a32636647e45a9b76c32de0ed15c4b083c62849993217f96aa60026a2ca1721"},
 ]
 
 [package.dependencies]
@@ -2258,7 +2258,7 @@ aws-xray-sdk = {version = ">=0.93,<0.96 || >0.96", optional = true, markers = "e
 boto3 = ">=1.9.201"
 botocore = ">=1.14.0,<1.35.45 || >1.35.45,<1.35.46 || >1.35.46"
 cfn-lint = {version = ">=0.40.0", optional = true, markers = "extra == \"server\""}
-cryptography = ">=3.3.1"
+cryptography = ">=35.0.0"
 docker = {version = ">=3.0.0", optional = true, markers = "extra == \"server\""}
 flask = {version = "<2.2.0 || >2.2.0,<2.2.1 || >2.2.1", optional = true, markers = "extra == \"server\""}
 flask-cors = {version = "*", optional = true, markers = "extra == \"server\""}
