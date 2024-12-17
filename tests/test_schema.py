@@ -421,17 +421,17 @@ def test_build_position_accessors_with_struct(table_schema_nested: Schema) -> No
     assert inner_accessor.get(container) == "name"
 
 
-def test_serialize_schema(table_schema_simple: Schema) -> None:
-    actual = table_schema_simple.model_dump_json()
-    expected = """{"type":"struct","fields":[{"id":1,"name":"foo","type":"string","required":false},{"id":2,"name":"bar","type":"int","required":true},{"id":3,"name":"baz","type":"boolean","required":false}],"schema-id":1,"identifier-field-ids":[2]}"""
+def test_serialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
+    actual = table_schema_with_full_nested_fields.model_dump_json()
+    expected = """{"type":"struct","fields":[{"id":1,"name":"foo","type":"string","required":false,"doc":"foo doc","initial-default":"foo initial","write-default":"foo write"},{"id":2,"name":"bar","type":"int","required":true,"doc":"bar doc","initial-default":42,"write-default":43},{"id":3,"name":"baz","type":"boolean","required":false,"doc":"baz doc","initial-default":true,"write-default":false}],"schema-id":1,"identifier-field-ids":[2]}"""
     assert actual == expected
 
 
-def test_deserialize_schema(table_schema_simple: Schema) -> None:
+def test_deserialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
     actual = Schema.model_validate_json(
-        """{"type": "struct", "fields": [{"id": 1, "name": "foo", "type": "string", "required": false}, {"id": 2, "name": "bar", "type": "int", "required": true}, {"id": 3, "name": "baz", "type": "boolean", "required": false}], "schema-id": 1, "identifier-field-ids": [2]}"""
+        """{"type": "struct", "fields": [{"id": 1, "name": "foo", "type": "string", "required": false, "doc": "foo doc", "initial-default": "foo initial", "write-default": "foo write"}, {"id": 2, "name": "bar", "type": "int", "required": true, "doc": "bar doc", "initial-default": 42, "write-default": 43}, {"id": 3, "name": "baz", "type": "boolean", "required": false, "doc": "baz doc", "initial-default": true, "write-default": false}], "schema-id": 1, "identifier-field-ids": [2]}"""
     )
-    expected = table_schema_simple
+    expected = table_schema_with_full_nested_fields
     assert actual == expected
 
 

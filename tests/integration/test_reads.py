@@ -623,6 +623,50 @@ def test_filter_on_new_column(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_sensitive_by_default(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    with pytest.raises(ValueError) as e:
+        _ = test_table_add_column.scan(row_filter="B == '2'").to_arrow()
+    assert "Could not find field with name B" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_sensitive(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'", case_sensitive=True).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    with pytest.raises(ValueError) as e:
+        _ = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=True).to_arrow()
+    assert "Could not find field with name B" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_insensitive(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'", case_sensitive=False).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    arrow_table = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=False).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_upgrade_table_version(catalog: Catalog) -> None:
     table_test_table_version = catalog.load_table("default.test_table_version")
 

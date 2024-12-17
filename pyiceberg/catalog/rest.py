@@ -94,6 +94,7 @@ class Endpoints:
     load_namespace_metadata: str = "namespaces/{namespace}"
     drop_namespace: str = "namespaces/{namespace}"
     update_namespace_properties: str = "namespaces/{namespace}/properties"
+    namespace_exists: str = "namespaces/{namespace}"
     list_tables: str = "namespaces/{namespace}/tables"
     create_table: str = "namespaces/{namespace}/tables"
     register_table = "namespaces/{namespace}/register"
@@ -869,6 +870,24 @@ class RestCatalog(Catalog):
             updated=parsed_response.updated,
             missing=parsed_response.missing,
         )
+
+    @retry(**_RETRY_ARGS)
+    def namespace_exists(self, namespace: Union[str, Identifier]) -> bool:
+        namespace_tuple = self._check_valid_namespace_identifier(namespace)
+        namespace = NAMESPACE_SEPARATOR.join(namespace_tuple)
+        response = self._session.head(self.url(Endpoints.namespace_exists, namespace=namespace))
+
+        if response.status_code == 404:
+            return False
+        elif response.status_code in (200, 204):
+            return True
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {})
+
+        return False
 
     @retry(**_RETRY_ARGS)
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
