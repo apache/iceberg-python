@@ -44,6 +44,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
     assign_fresh_sort_order_ids,
 )
+from pyiceberg.table.statistics import StatisticsFile
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -220,6 +221,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
     and the map values are snapshot reference objects.
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
+
+    statistics: List[StatisticsFile] = Field(default_factory=list)
+    """A optional list of table statistics files.
+    Table statistics files are valid Puffin files. Statistics are
+    informational. A reader can choose to ignore statistics
+    information. Statistics support is not required to read the
+    table correctly. A table can contain many statistics files
+    associated with different table snapshots."""
 
     # validators
     @field_validator("properties", mode="before")
