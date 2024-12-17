@@ -596,7 +596,7 @@ EXAMPLE_TABLE_METADATA_V1 = {
     "partition-spec": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}],
     "properties": {},
     "current-snapshot-id": -1,
-    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822}],
+    "snapshots": [{"snapshot-id": 1925, "timestamp-ms": 1602638573822, "manifest-list": "s3://bucket/test/manifest-list"}],
 }
 
 
