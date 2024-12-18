@@ -294,7 +294,14 @@ class S3TableCatalog(MetastoreCatalog):
         return super().rename_table(from_identifier, to_identifier)
 
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
-        return super().table_exists(identifier)
+        namespace, table_name = self._validate_database_and_table_identifier(identifier)
+        try:
+            self.s3tables.get_table(
+                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
+            )
+        except self.s3tables.exceptions.NotFoundException:
+            return False
+        return True
 
     def update_namespace_properties(
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = ...
