@@ -77,6 +77,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
@@ -1120,6 +1121,58 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 6
     assert repr(result_table.schema) == "id: int32"
+
+
+def test_projection_partition_inference(tmp_path: str, example_task: FileScanTask):
+    schema = Schema(
+        NestedField(1, "partition_field", IntegerType(), required=False),
+        NestedField(2, "other_field", StringType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "partition_field"))
+
+    table = TableMetadataV2(
+        location="file://a/b/c.json",
+        last_column_id=2,
+        format_version=2,
+        current_schema_id=0,
+        schemas=[schema],
+        partition_specs=[partition_spec],
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    pa_schema = pa.schema([pa.field("other_field", pa.string())])
+    pa_table = pa.table({"other_field": ["x"]}, schema=pa_schema)
+    pq.write_table(pa_table, f"{tmp_path}/datafile.parquet")
+
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=f"{tmp_path}/datafile.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(partition_id=123456),
+        file_size_in_bytes=os.path.getsize(f"{tmp_path}/datafile.parquet"),
+        sort_order_id=None,
+        spec_id=0,
+        equality_ids=None,
+        key_metadata=None,
+    )
+
+    table_result_scan = ArrowScan(
+        table_metadata=table,
+        io=load_file_io(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    ).to_table(tasks=[FileScanTask(data_file=data_file)])
+
+    assert (
+        str(table_result_scan)
+        == """pyarrow.Table
+partition_field: int64
+other_field: large_string
+----
+partition_field: [[123456]]
+other_field: [["x"]]"""
+    )
 
 
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:

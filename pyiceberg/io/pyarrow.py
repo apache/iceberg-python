@@ -1256,7 +1256,11 @@ def _task_to_record_batches(
                 if isinstance(partition_field.transform, IdentityTransform) and task.file.partition is not None:
                     projected_missing_fields = (partition_field.name, task.file.partition[0])
 
-            if nested_field := projected_schema.find_field(field_id) and projected_missing_fields is None and task.file.partition is None:
+            if (
+                nested_field := projected_schema.find_field(field_id)
+                and projected_missing_fields is None
+                and task.file.partition is None
+            ):
                 if nested_field.initial_default is not None:
                     projected_missing_fields(nested_field.name, nested_field)
 
