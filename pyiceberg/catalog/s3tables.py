@@ -253,7 +253,12 @@ class S3TableCatalog(MetastoreCatalog):
         return [tuple(namespace["namespace"]) for namespace in response["namespaces"]]
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        return super().list_tables(namespace)
+        namespace = self._validate_namespace_identifier(namespace)
+        paginator = self.s3tables.get_paginator("list_tables")
+        tables: List[str] = []
+        for page in paginator.paginate(tableBucketARN=self.table_bucket_arn, namespace=namespace):
+            tables.extend(table["name"] for table in page["tables"])
+        return tables
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         return super().list_views(namespace)
