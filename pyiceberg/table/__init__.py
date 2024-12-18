@@ -268,12 +268,10 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE) -> DataScan:
+    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
         return DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=row_filter,
+            table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
 
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
@@ -422,6 +420,7 @@ class Transaction:
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -436,6 +435,7 @@ class Transaction:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
+            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
@@ -459,7 +459,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+        self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             # skip writing data files if the dataframe is empty
@@ -470,11 +470,16 @@ class Transaction:
                 for data_file in data_files:
                     update_snapshot.append_data_file(data_file)
 
-    def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def delete(
+        self,
+        delete_filter: Union[str, BooleanExpression],
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
+    ) -> None:
         """
         Shorthand for deleting record from a table.
 
-        An deletee may produce zero or more snapshots based on the operation:
+        A delete may produce zero or more snapshots based on the operation:
 
             - DELETE: In case existing Parquet files can be dropped completely.
             - REPLACE: In case existing Parquet files need to be rewritten
@@ -482,6 +487,7 @@ class Transaction:
         Args:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
         """
         from pyiceberg.io.pyarrow import (
             ArrowScan,
@@ -499,14 +505,14 @@ class Transaction:
             delete_filter = _parse_row_filter(delete_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            delete_snapshot.delete_by_predicate(delete_filter)
+            delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
-            bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive=True)
+            bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
-            files = self._scan(row_filter=delete_filter).plan_files()
+            files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -988,6 +994,7 @@ class Table:
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1003,12 +1010,18 @@ class Table:
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
         """
         with self.transaction() as tx:
-            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+            tx.overwrite(
+                df=df, overwrite_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties
+            )
 
     def delete(
-        self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
@@ -1016,9 +1029,10 @@ class Table:
         Args:
             delete_filter: The predicate that used to remove rows
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
         """
         with self.transaction() as tx:
-            tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
+            tx.delete(delete_filter=delete_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
     def add_files(
         self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
@@ -1314,7 +1328,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id])
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
 
     @cached_property
