@@ -247,10 +247,17 @@ class S3TableCatalog(MetastoreCatalog):
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         return super().drop_view(identifier)
 
-    def list_namespaces(self, namespace: Union[str, Identifier] = ...) -> List[Identifier]:
-        # TODO: handle pagination
-        response = self.s3tables.list_namespaces(tableBucketARN=self.table_bucket_arn)
-        return [tuple(namespace["namespace"]) for namespace in response["namespaces"]]
+    def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
+        # TODO: s3tables only support single level namespaces
+        if namespace:
+            namespace = self._validate_namespace_identifier(namespace)
+        paginator = self.s3tables.get_paginator("list_namespaces")
+
+        namespaces: List[Identifier] = []
+        for page in paginator.paginate(tableBucketARN=self.table_bucket_arn):
+            namespaces.extend(tuple(entry["namespace"]) for entry in page["namespaces"])
+
+        return namespaces
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         namespace = self._validate_namespace_identifier(namespace)
