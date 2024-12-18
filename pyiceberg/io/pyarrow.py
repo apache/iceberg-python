@@ -138,7 +138,7 @@ from pyiceberg.schema import (
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
-from pyiceberg.transforms import TruncateTransform
+from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
     BinaryType,
@@ -1226,6 +1226,7 @@ def _task_to_record_batches(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     use_large_types: bool = True,
+    partition_spec: PartitionSpec = None,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
@@ -1247,6 +1248,17 @@ def _task_to_record_batches(
 
         if file_schema is None:
             raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
+
+        # Apply column projection rules for missing partitions and default values (ref: https://iceberg.apache.org/spec/#column-projection)
+        projected_missing_fields = None
+        for field_id in projected_field_ids.difference(file_project_schema.field_ids):
+            for partition_field in partition_spec.fields_by_source_id(field_id):
+                if isinstance(partition_field.transform, IdentityTransform) and task.file.partition is not None:
+                    projected_missing_fields = (partition_field.name, task.file.partition[0])
+
+            if nested_field := projected_schema.find_field(field_id) and projected_missing_fields is None and task.file.partition is None:
+                if nested_field.initial_default is not None:
+                    projected_missing_fields(nested_field.name, nested_field)
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -1286,13 +1298,19 @@ def _task_to_record_batches(
                         continue
                     output_batches = arrow_table.to_batches()
             for output_batch in output_batches:
-                yield _to_requested_schema(
+                result_batch = _to_requested_schema(
                     projected_schema,
                     file_project_schema,
                     output_batch,
                     downcast_ns_timestamp_to_us=True,
                     use_large_types=use_large_types,
                 )
+
+                if projected_missing_fields is not None:
+                    name, value = projected_missing_fields
+                    result_batch = result_batch.set_column(result_batch.schema.get_field_index(name), name, [value])
+
+                yield result_batch
 
 
 def _task_to_table(
@@ -1517,6 +1535,7 @@ class ArrowScan:
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
                 self._use_large_types,
+                self._table_metadata.spec(),
             )
             for batch in batches:
                 if self._limit is not None:
