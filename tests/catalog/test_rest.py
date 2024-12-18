@@ -681,6 +681,51 @@ def test_update_namespace_properties_200(rest_mock: Mocker) -> None:
     assert response == PropertiesUpdateSummary(removed=[], updated=["prop"], missing=["abc"])
 
 
+def test_namespace_exists_200(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert catalog.namespace_exists("fokko")
+
+
+def test_namespace_exists_204(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert catalog.namespace_exists("fokko")
+
+
+def test_namespace_exists_404(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert not catalog.namespace_exists("fokko")
+
+
+def test_namespace_exists_500(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=500,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(ServerError):
+        catalog.namespace_exists("fokko")
+
+
 def test_update_namespace_properties_404(rest_mock: Mocker) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/properties",
