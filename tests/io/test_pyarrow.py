@@ -1123,7 +1123,7 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_projection_partition_inference(tmp_path: str, example_task: FileScanTask):
+def test_projection_partition_inference(tmp_path: str):
     schema = Schema(
         NestedField(1, "partition_field", IntegerType(), required=False),
         NestedField(2, "other_field", StringType(), required=False),
@@ -1172,6 +1172,58 @@ other_field: large_string
 ----
 partition_field: [[123456]]
 other_field: [["x"]]"""
+    )
+
+
+def test_projection_initial_default_inference(tmp_path: str) -> None:
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "other_field_1", StringType(), required=False, initial_default="foo"),
+    )
+
+    table = TableMetadataV2(
+        location="file://a/b/c.json",
+        last_column_id=2,
+        format_version=2,
+        current_schema_id=0,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    pa_schema = pa.schema([pa.field("other_field", pa.string())])
+    pa_table = pa.table({"other_field": ["x"]}, schema=pa_schema)
+    pq.write_table(pa_table, f"{tmp_path}/datafile.parquet")
+
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=f"{tmp_path}/datafile.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        file_size_in_bytes=os.path.getsize(f"{tmp_path}/datafile.parquet"),
+        sort_order_id=None,
+        spec_id=0,
+        equality_ids=None,
+        key_metadata=None,
+    )
+
+    table_result_scan = ArrowScan(
+        table_metadata=table,
+        io=load_file_io(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    ).to_table(tasks=[FileScanTask(data_file=data_file)])
+
+    print(str(table_result_scan))
+
+    assert (
+        str(table_result_scan)
+        == """pyarrow.Table
+other_field: large_string
+other_field_1: string
+----
+other_field: [["x"]]
+other_field_1: [["foo"]]"""
     )
 
 
