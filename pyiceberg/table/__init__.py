@@ -132,7 +132,8 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
+from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecation_message as deprecation_message
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
