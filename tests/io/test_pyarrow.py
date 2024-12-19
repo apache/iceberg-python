@@ -1123,7 +1123,7 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_projection_partition_inference(tmp_path: str):
+def test_projection_partition_inference(tmp_path: str) -> None:
     schema = Schema(
         NestedField(1, "partition_field", IntegerType(), required=False),
         NestedField(2, "other_field", StringType(), required=False),

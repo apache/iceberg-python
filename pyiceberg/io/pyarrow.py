@@ -1226,7 +1226,7 @@ def _task_to_record_batches(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     use_large_types: bool = True,
-    partition_spec: PartitionSpec = None,
+    partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
@@ -1250,19 +1250,17 @@ def _task_to_record_batches(
 
         # Apply column projection rules for missing partitions and default values
         # https://iceberg.apache.org/spec/#column-projection
-
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
         projected_missing_fields = {}
 
         for field_id in projected_field_ids.difference(file_project_schema.field_ids):
-            for partition_field in partition_spec.fields_by_source_id(field_id):
-                if isinstance(partition_field.transform, IdentityTransform) and task.file.partition is not None:
-                    projected_missing_fields[partition_field.name] = task.file.partition[0]
-                    continue
-
             if nested_field := projected_schema.find_field(field_id):
                 if nested_field.initial_default is not None:
                     projected_missing_fields[nested_field.name] = nested_field.initial_default
+            if partition_spec is not None:
+                for partition_field in partition_spec.fields_by_source_id(field_id):
+                    if isinstance(partition_field.transform, IdentityTransform) and task.file.partition is not None:
+                        projected_missing_fields[partition_field.name] = task.file.partition[0]
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
