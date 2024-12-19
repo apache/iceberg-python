@@ -70,8 +70,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated as deprecated
-from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils.deprecated import deprecated, deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
