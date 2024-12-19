@@ -1238,24 +1238,27 @@ def _task_to_record_batches(
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
         # the table format version.
         file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
+
+        if file_schema is None:
+            raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
+
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
-
-        if file_schema is None:
-            raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
-
         # Apply column projection rules for missing partitions and default values
         # https://iceberg.apache.org/spec/#column-projection
+
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
         projected_missing_fields = {}
+
         for field_id in projected_field_ids.difference(file_project_schema.field_ids):
             for partition_field in partition_spec.fields_by_source_id(field_id):
                 if isinstance(partition_field.transform, IdentityTransform) and task.file.partition is not None:
                     projected_missing_fields[partition_field.name] = task.file.partition[0]
+                    continue
 
             if nested_field := projected_schema.find_field(field_id):
                 if nested_field.initial_default is not None:
