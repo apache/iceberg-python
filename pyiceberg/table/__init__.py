@@ -787,20 +787,6 @@ class Table:
         self.metadata_location = fresh.metadata_location
         return self
 
-    @property
-    def identifier(self) -> Identifier:
-        """Return the identifier of this table.
-
-        Returns:
-            An Identifier tuple of the table name
-        """
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message="Table.identifier property is deprecated. Please use Table.name() function instead.",
-        )
-        return (self.catalog.name,) + self._identifier
-
     def name(self) -> Identifier:
         """Return the identifier of this table.
 
