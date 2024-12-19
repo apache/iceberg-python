@@ -135,10 +135,12 @@ from pyiceberg.typedef import (
 from pyiceberg.types import (
     strtobool,
 )
+from pyiceberg.utils.bin_packing import ListPacker as ListPacker
+from pyiceberg.utils.bin_packing import PackingIterator
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.deprecated import deprecated, deprecation_message
-from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     import daft
@@ -195,6 +197,15 @@ class TableProperties:
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
     DELETE_MODE_MERGE_ON_READ = "merge-on-read"
     DELETE_MODE_DEFAULT = DELETE_MODE_COPY_ON_WRITE
+
+    READ_SPLIT_SIZE = "read.split.target-size"
+    READ_SPLIT_SIZE_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
+    READ_SPLIT_LOOKBACK = "read.split.planning-lookback"
+    READ_SPLIT_LOOKBACK_DEFAULT = 10
+
+    READ_SPLIT_OPEN_FILE_COST = "read.split.open-file-cost"
+    READ_SPLIT_OPEN_FILE_COST_DEFAULT = 4 * 1024 * 1024  # 4 MB
 
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
@@ -1348,7 +1359,8 @@ class TableScan(ABC):
 
 
 class ScanTask(ABC):
-    pass
+    @abstractmethod
+    def size_in_bytes(self) -> int: ...
 
 
 @dataclass(init=False)
@@ -1371,6 +1383,26 @@ class FileScanTask(ScanTask):
         self.delete_files = delete_files or set()
         self.start = start or 0
         self.length = length or data_file.file_size_in_bytes
+
+    def size_in_bytes(self) -> int:
+        return self.length + sum(f.file_size_in_bytes for f in self.delete_files)
+
+
+@dataclass(init=False)
+class CombinedFileScanTask(ScanTask):
+    """Task representing combined multiple file scan tasks.
+
+    Used in plan_tasks. File can be split into multiple FileScanTask based on
+    split_offsets and then combined into read.split.target-size.
+    """
+
+    tasks: List[FileScanTask]
+
+    def __init__(self, tasks: List[FileScanTask]) -> None:
+        self.tasks = tasks
+
+    def size_in_bytes(self) -> int:
+        return sum(f.size_in_bytes() for f in self.tasks)
 
 
 def _open_manifest(
@@ -1541,6 +1573,66 @@ class DataScan(TableScan):
             )
             for data_entry in data_entries
         ]
+
+    def _target_split_size(self) -> int:
+        table_value = property_as_int(
+            self.table_metadata.properties, TableProperties.READ_SPLIT_SIZE, TableProperties.READ_SPLIT_SIZE_DEFAULT
+        )
+        return property_as_int(self.options, TableProperties.READ_SPLIT_SIZE, table_value)  # type: ignore
+
+    def _loop_back(self) -> int:
+        table_value = property_as_int(
+            self.table_metadata.properties, TableProperties.READ_SPLIT_LOOKBACK, TableProperties.READ_SPLIT_LOOKBACK_DEFAULT
+        )
+        return property_as_int(self.options, TableProperties.READ_SPLIT_LOOKBACK, table_value)  # type: ignore
+
+    def _split_open_file_cost(self) -> int:
+        table_value = property_as_int(
+            self.table_metadata.properties,
+            TableProperties.READ_SPLIT_OPEN_FILE_COST,
+            TableProperties.READ_SPLIT_OPEN_FILE_COST_DEFAULT,
+        )
+        return property_as_int(self.options, TableProperties.READ_SPLIT_OPEN_FILE_COST, table_value)  # type: ignore
+
+    def plan_task(self) -> Iterable[CombinedFileScanTask]:
+        """Plan balanced combined tasks for this scan by splitting large and combining small tasks.
+
+        Returns:
+            List of CombinedFileScanTasks
+        """
+        split_size = self._target_split_size()
+        loop_back = self._loop_back()
+        open_file_cost = self._split_open_file_cost()
+
+        def split(task: FileScanTask) -> List[FileScanTask]:
+            data_file = task.file
+            if not data_file.file_format.is_splittable() or not data_file.split_offsets:
+                return [task]
+
+            split_offsets = data_file.split_offsets
+            if not all(split_offsets[i] <= split_offsets[i + 1] for i in range(len(split_offsets) - 1)):
+                # split offsets must be strictly ascending
+                return [task]
+
+            all_tasks = []
+            for i in range(len(split_offsets) - 1):
+                all_tasks.append(
+                    FileScanTask(data_file, task.delete_files, split_offsets[i], split_offsets[i + 1] - split_offsets[i])
+                )
+
+            all_tasks.append(
+                FileScanTask(data_file, task.delete_files, split_offsets[-1], data_file.file_size_in_bytes - split_offsets[-1])
+            )
+
+            return all_tasks
+
+        def weight_func(task: FileScanTask) -> int:
+            return max(task.size_in_bytes(), (1 + len(task.delete_files)) * open_file_cost)
+
+        file_tasks = self.plan_files()
+        split_file_tasks = list(itertools.chain.from_iterable(map(split, file_tasks)))
+        packing_iterator = PackingIterator(split_file_tasks, split_size, loop_back, weight_func, False)
+        return list(map(CombinedFileScanTask, packing_iterator))
 
     def to_arrow(self) -> pa.Table:
         """Read an Arrow table eagerly from this DataScan.

@@ -52,6 +52,14 @@ For example, `PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID`, sets `s3.access-ke
 
 Iceberg tables support table properties to configure table behavior.
 
+### Read options
+
+| Key                            | Options       | Default            | Description                                                                                         |
+|--------------------------------|---------------|--------------------|-----------------------------------------------------------------------------------------------------|
+| `read.split.target-size`       | Size in bytes | 134217728 (128 MB) | Target size when combining data input splits with `plan_tasks`                                      |
+| `read.split.planning-lookback` | Integer       | 10                 | Number of bins to consider when combining input splits with `plan_tasks`                            |
+| `read.split.open-file-cost`    | Integer       | 4194304 (4 MB)     | The estimated cost to open a file, used as a minimum weight when combining splits with `plan_tasks` |
+
 ### Write options
 
 | Key                                    | Options                           | Default | Description                                                                                 |
