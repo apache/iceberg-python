@@ -76,11 +76,9 @@ def fixture_random_table_identifier(warehouse: Path, database_name: str, table_n
 
 
 @pytest.fixture(name="random_table_identifier_with_catalog")
-def fixture_random_table_identifier_with_catalog(
-    warehouse: Path, catalog_name: str, database_name: str, table_name: str
-) -> Identifier:
+def fixture_random_table_identifier_with_catalog(warehouse: Path, database_name: str, table_name: str) -> Identifier:
     os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
-    return catalog_name, database_name, table_name
+    return database_name, table_name
 
 
 @pytest.fixture(name="another_random_table_identifier")
@@ -92,13 +90,11 @@ def fixture_another_random_table_identifier(warehouse: Path, database_name: str,
 
 
 @pytest.fixture(name="another_random_table_identifier_with_catalog")
-def fixture_another_random_table_identifier_with_catalog(
-    warehouse: Path, catalog_name: str, database_name: str, table_name: str
-) -> Identifier:
+def fixture_another_random_table_identifier_with_catalog(warehouse: Path, database_name: str, table_name: str) -> Identifier:
     database_name = database_name + "_new"
     table_name = table_name + "_new"
     os.makedirs(f"{warehouse}/{database_name}.db/{table_name}/metadata/", exist_ok=True)
-    return catalog_name, database_name, table_name
+    return database_name, table_name
 
 
 @pytest.fixture(name="random_hierarchical_identifier")
