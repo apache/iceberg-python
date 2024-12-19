@@ -1050,7 +1050,7 @@ with table.update_spec() as update:
 Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
 
 ```python
-with table.update_spec() as update:some_partition_name
+with table.update_spec() as update:
     # Remove the partition field with the name
     update.remove_field("some_partition_name")
 ```
