@@ -111,6 +111,11 @@ class ConditionalCheckFailedException(DynamoDbError):
 class GenericDynamoDbError(DynamoDbError):
     pass
 
+class S3TablesError(Exception):
+    pass
+
+class TableBucketNotFound(S3TablesError):
+    pass
 
 class CommitFailedException(Exception):
     """Commit failed, refresh and try again."""
