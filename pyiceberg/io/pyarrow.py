@@ -352,14 +352,17 @@ class PyArrowFileIO(FileIO):
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         if scheme in {"s3", "s3a", "s3n", "oss"}:
-            from pyarrow.fs import S3FileSystem
+            from pyarrow.fs import S3FileSystem, resolve_s3_region
+
+            if netloc:
+                netloc = resolve_s3_region(netloc)
 
             client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
                 "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
                 "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
                 "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-                "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+                "region": netloc or get_first_property_value(self.properties, S3_REGION, AWS_REGION),
             }
 
             if proxy_uri := self.properties.get(S3_PROXY_URI):
