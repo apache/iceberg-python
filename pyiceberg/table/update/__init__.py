@@ -98,14 +98,6 @@ class AddSchemaUpdate(IcebergBaseModel):
         ),
     )
 
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
-
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
     action: Literal["set-current-schema"] = Field(default="set-current-schema")
@@ -118,14 +110,6 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
-
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -137,14 +121,6 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
-
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
