@@ -88,9 +88,12 @@ class InMemoryCatalog(MetastoreCatalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
         table_uuid: Optional[uuid.UUID] = None,
     ) -> Table:
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        if not isinstance(schema, Schema):
+            schema: Schema = self._convert_to_iceberg_schema(schema)  # type: ignore
+            assign_fresh_ids = True
 
         identifier = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_from(identifier)
@@ -113,6 +116,7 @@ class InMemoryCatalog(MetastoreCatalog):
                 location=location,
                 properties=properties,
                 table_uuid=table_uuid,
+                assign_fresh_ids=assign_fresh_ids,
             )
             io = load_file_io({**self.properties, **properties}, location=location)
             self._write_metadata(metadata, io, metadata_location)
@@ -399,17 +403,15 @@ def test_create_table_removes_trailing_slash_from_location(catalog: InMemoryCata
     "schema,expected",
     [
         (lazy_fixture("pyarrow_schema_simple_without_ids"), lazy_fixture("iceberg_schema_simple_no_ids")),
-        (lazy_fixture("iceberg_schema_simple"), lazy_fixture("iceberg_schema_simple")),
-        (lazy_fixture("iceberg_schema_nested"), lazy_fixture("iceberg_schema_nested")),
         (lazy_fixture("pyarrow_schema_nested_without_ids"), lazy_fixture("iceberg_schema_nested_no_ids")),
     ],
 )
-def test_convert_schema_if_needed(
-    schema: Union[Schema, pa.Schema],
+def test_convert_to_iceberg_schema(
+    schema: pa.Schema,
     expected: Schema,
     catalog: InMemoryCatalog,
 ) -> None:
-    assert expected == catalog._convert_schema_if_needed(schema)
+    assert expected == catalog._convert_to_iceberg_schema(schema)
 
 
 def test_create_table_pyarrow_schema(catalog: InMemoryCatalog, pyarrow_schema_simple_without_ids: pa.Schema) -> None:
