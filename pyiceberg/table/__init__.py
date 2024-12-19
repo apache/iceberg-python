@@ -137,7 +137,8 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
+from pyiceberg.utils.deprecated import deprecated
+from pyiceberg.utils.deprecated import deprecation_message as deprecation_message
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
@@ -880,20 +881,6 @@ class Table:
         self.io = fresh.io
         self.metadata_location = fresh.metadata_location
         return self
-
-    @property
-    def identifier(self) -> Identifier:
-        """Return the identifier of this table.
-
-        Returns:
-            An Identifier tuple of the table name
-        """
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message="Table.identifier property is deprecated. Please use Table.name() function instead.",
-        )
-        return (self.catalog.name,) + self._identifier
 
     def name(self) -> Identifier:
         """Return the identifier of this table.

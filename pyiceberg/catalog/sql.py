@@ -200,9 +200,8 @@ class SqlCatalog(MetastoreCatalog):
         """
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
-        identifier_nocatalog = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_identifier = Catalog.namespace_from(identifier_nocatalog)
-        table_name = Catalog.table_name_from(identifier_nocatalog)
+        namespace_identifier = Catalog.namespace_from(identifier)
+        table_name = Catalog.table_name_from(identifier)
         if not self._namespace_exists(namespace_identifier):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace_identifier}")
 
@@ -246,10 +245,9 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If the table already exists
             NoSuchNamespaceError: If namespace does not exist
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         if not self._namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
@@ -285,10 +283,9 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         with Session(self.engine) as session:
             stmt = select(IcebergTables).where(
                 IcebergTables.catalog_name == self.name,
@@ -309,10 +306,9 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         with Session(self.engine) as session:
             if self.engine.dialect.supports_sane_rowcount:
                 res = session.execute(
@@ -356,14 +352,12 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If a table with the new name already exist.
             NoSuchNamespaceError: If the target namespace does not exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        to_identifier_tuple = self._identifier_to_tuple_without_catalog(to_identifier)
-        from_namespace_tuple = Catalog.namespace_from(from_identifier_tuple)
+        from_namespace_tuple = Catalog.namespace_from(from_identifier)
         from_namespace = Catalog.namespace_to_string(from_namespace_tuple)
-        from_table_name = Catalog.table_name_from(from_identifier_tuple)
-        to_namespace_tuple = Catalog.namespace_from(to_identifier_tuple)
+        from_table_name = Catalog.table_name_from(from_identifier)
+        to_namespace_tuple = Catalog.namespace_from(to_identifier)
         to_namespace = Catalog.namespace_to_string(to_namespace_tuple)
-        to_table_name = Catalog.table_name_from(to_identifier_tuple)
+        to_table_name = Catalog.table_name_from(to_identifier)
         if not self._namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
         with Session(self.engine) as session:
