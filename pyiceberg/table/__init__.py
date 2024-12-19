@@ -1333,6 +1333,9 @@ class TableScan(ABC):
     def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
         return self.update(case_sensitive=case_sensitive)
 
+    @abstractmethod
+    def count(self) -> int: ...
+
 
 class ScanTask(ABC):
     pass
@@ -1598,6 +1601,13 @@ class DataScan(TableScan):
         import ray
 
         return ray.data.from_arrow(self.to_arrow())
+
+    def count(self) -> int:
+        res = 0
+        tasks = self.plan_files()
+        for task in tasks:
+            res += task.file.record_count
+        return res
 
 
 @dataclass(frozen=True)
