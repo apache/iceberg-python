@@ -2519,7 +2519,6 @@ def _check_pyarrow_schema_compatible(
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
-
     _check_schema_compatible(requested_schema, provided_schema)
 
 
