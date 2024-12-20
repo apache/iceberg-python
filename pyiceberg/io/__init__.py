@@ -374,7 +374,7 @@ def _import_location_provider(location_provider_impl: str, table_location: str, 
     try:
         path_parts = location_provider_impl.split(".")
         if len(path_parts) < 2:
-            raise ValueError(f"{TableProperties.LOCATION_PROVIDER_IMPL_DEFAULT} should be full path (module.CustomLocationProvider), got: {location_provider_impl}")
+            raise ValueError(f"{TableProperties.WRITE_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}")
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
