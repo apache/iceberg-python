@@ -360,10 +360,11 @@ def test_pyarrow_s3_session_properties() -> None:
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
-    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
+        mock_s3_region_resolver.return_value = "us-east-1"
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
@@ -381,10 +382,11 @@ def test_pyarrow_unified_session_properties() -> None:
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
-    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
+        mock_s3_region_resolver.return_value = None
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
