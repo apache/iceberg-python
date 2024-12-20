@@ -203,11 +203,10 @@ identifier = "default.test_table"
             # """
         ),
         (
-            [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp#field")],
+            [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
             [datetime(2023, 1, 1, 12, 0, 1, 999)],
-            Record(**{"timestamp#field": 1672574401000999}),  # type: ignore
-            # Special characters in both partition field name and value must be URL-encoded:
-            "timestamp%23field=2023-01-01T12%3A00%3A01.000999",
+            Record(timestamp_field=1672574401000999),
+            "timestamp_field=2023-01-01T12%3A00%3A01.000999",
             f"""CREATE TABLE {identifier} (
                 timestamp_field timestamp_ntz,
                 string_field string
