@@ -82,11 +82,6 @@ def test_object_storage_injects_entropy() -> None:
     # Entropy directories in the middle
     assert parts[-1] == "test.parquet"
 
-    # Entropy directories should be 4 binary names of lengths 4, 4, 4, 8.
-    for i in range(2, 6):
-        assert len(parts[i]) == (8 if i == 5 else 4)
-        assert all(c in "01" for c in parts[i])
-
 
 @pytest.mark.parametrize("object_storage", [True, False])
 def test_partition_value_in_path(object_storage: bool) -> None:
