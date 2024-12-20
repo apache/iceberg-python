@@ -114,7 +114,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
-    _parse_location, LocationProvider, load_location_provider,
+    _parse_location,
 )
 from pyiceberg.manifest import (
     DataFile,
@@ -135,6 +135,10 @@ from pyiceberg.schema import (
     sanitize_column_names,
     visit,
     visit_with_partner,
+)
+from pyiceberg.table import (
+    LocationProvider,
+    load_location_provider,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
@@ -2415,7 +2419,9 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
-def write_file(io: FileIO, location_provider: LocationProvider, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+def write_file(
+    io: FileIO, location_provider: LocationProvider, table_metadata: TableMetadata, tasks: Iterator[WriteTask]
+) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
@@ -2447,7 +2453,7 @@ def write_file(io: FileIO, location_provider: LocationProvider, table_metadata: 
         ]
         arrow_table = pa.Table.from_batches(batches)
         file_path = location_provider.new_data_location(
-            data_file_name=task.generate_data_file_filename('parquet'),
+            data_file_name=task.generate_data_file_filename("parquet"),
             partition_key=task.partition_key,
         )
         fo = io.new_output(file_path)
@@ -2625,10 +2631,7 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
-    location_provider = load_location_provider(
-        table_location=table_metadata.location,
-        table_properties=table_metadata.properties
-    )
+    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
     name_mapping = table_metadata.schema().name_mapping
     downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     task_schema = pyarrow_to_schema(df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)

@@ -44,10 +44,7 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-from pyiceberg.partitioning import PartitionKey
-from pyiceberg.table import TableProperties
 from pyiceberg.typedef import EMPTY_DICT, Properties
-from pyiceberg.utils.properties import property_as_bool
 
 logger = logging.getLogger(__name__)
 
@@ -296,29 +293,6 @@ class FileIO(ABC):
         """
 
 
-class LocationProvider(ABC):
-    """A base class for location providers, that provide data file locations to write tasks."""
-
-    table_location: str
-    table_properties: Properties
-
-    def __init__(self, table_location: str, table_properties: Properties):
-        self.table_location = table_location
-        self.table_properties = table_properties
-
-    @abstractmethod
-    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
-        """Return a fully-qualified data file location for the given filename.
-
-        Args:
-            data_file_name (str): The name of the data file.
-            partition_key (Optional[PartitionKey]): The data file's partition key. If None, the data file is not partitioned.
-
-        Returns:
-            str: A fully-qualified location URI for the data file.
-        """
-
-
 LOCATION = "location"
 WAREHOUSE = "warehouse"
 
@@ -368,40 +342,6 @@ def _infer_file_io_from_scheme(path: str, properties: Properties) -> Optional[Fi
         else:
             warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}")
     return None
-
-
-def _import_location_provider(location_provider_impl: str, table_location: str, table_properties: Properties) -> Optional[LocationProvider]:
-    try:
-        path_parts = location_provider_impl.split(".")
-        if len(path_parts) < 2:
-            raise ValueError(f"{TableProperties.WRITE_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}")
-        module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
-        module = importlib.import_module(module_name)
-        class_ = getattr(module, class_name)
-        return class_(table_location, table_properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize LocationProvider: %s", location_provider_impl)
-        return None
-
-
-def load_location_provider(table_location: str, table_properties: Properties) -> LocationProvider:
-    table_location = table_location.rstrip("/")
-
-    if location_provider_impl := table_properties.get(TableProperties.WRITE_LOCATION_PROVIDER_IMPL):
-        if location_provider := _import_location_provider(location_provider_impl, table_location, table_properties):
-            logger.info("Loaded LocationProvider: %s", location_provider_impl)
-            return location_provider
-        else:
-            raise ValueError(f"Could not initialize LocationProvider: {location_provider_impl}")
-
-    if property_as_bool(table_properties, TableProperties.OBJECT_STORE_ENABLED, TableProperties.OBJECT_STORE_ENABLED_DEFAULT):
-        from pyiceberg.io.locations import ObjectStoreLocationProvider
-
-        return ObjectStoreLocationProvider(table_location, table_properties)
-    else:
-        from pyiceberg.io.locations import DefaultLocationProvider
-
-        return DefaultLocationProvider(table_location, table_properties)
 
 
 def load_file_io(properties: Properties = EMPTY_DICT, location: Optional[str] = None) -> FileIO:
