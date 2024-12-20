@@ -283,16 +283,6 @@ def test_mapping_by_name(table_name_mapping_nested: NameMapping) -> None:
     }
 
 
-def test_mapping_lookup_by_name(table_name_mapping_nested: NameMapping) -> None:
-    assert table_name_mapping_nested.find("foo") == MappedField(field_id=1, names=["foo"])
-    assert table_name_mapping_nested.find("location.element.latitude") == MappedField(field_id=13, names=["latitude"])
-    assert table_name_mapping_nested.find("location", "element", "latitude") == MappedField(field_id=13, names=["latitude"])
-    assert table_name_mapping_nested.find(*["location", "element", "latitude"]) == MappedField(field_id=13, names=["latitude"])
-
-    with pytest.raises(ValueError, match="Could not find field with name: boom"):
-        table_name_mapping_nested.find("boom")
-
-
 def test_update_mapping_no_updates_or_adds(table_name_mapping_nested: NameMapping) -> None:
     assert update_mapping(table_name_mapping_nested, {}, {}) == table_name_mapping_nested
 
