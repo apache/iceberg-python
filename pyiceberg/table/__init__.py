@@ -16,7 +16,9 @@
 # under the License.
 from __future__ import annotations
 
+import importlib
 import itertools
+import logging
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -145,6 +147,8 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
 
+logger = logging.getLogger(__name__)
+
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
@@ -186,6 +190,14 @@ class TableProperties:
 
     WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
+
+    WRITE_LOCATION_PROVIDER_IMPL = "write.location-provider.impl"
+
+    OBJECT_STORE_ENABLED = "write.object-storage.enabled"
+    OBJECT_STORE_ENABLED_DEFAULT = False
+
+    WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
+    WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
@@ -1611,13 +1623,6 @@ class WriteTask:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
 
-    def generate_data_file_path(self, extension: str) -> str:
-        if self.partition_key:
-            file_path = f"{self.partition_key.to_path()}/{self.generate_data_file_filename(extension)}"
-            return file_path
-        else:
-            return self.generate_data_file_filename(extension)
-
 
 @dataclass(frozen=True)
 class AddFileTask:
@@ -1625,6 +1630,67 @@ class AddFileTask:
 
     file_path: str
     partition_field_value: Record
+
+
+class LocationProvider(ABC):
+    """A base class for location providers, that provide data file locations for write tasks."""
+
+    table_location: str
+    table_properties: Properties
+
+    def __init__(self, table_location: str, table_properties: Properties):
+        self.table_location = table_location
+        self.table_properties = table_properties
+
+    @abstractmethod
+    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+        """Return a fully-qualified data file location for the given filename.
+
+        Args:
+            data_file_name (str): The name of the data file.
+            partition_key (Optional[PartitionKey]): The data file's partition key. If None, the data is not partitioned.
+
+        Returns:
+            str: A fully-qualified location URI for the data file.
+        """
+
+
+def _import_location_provider(
+    location_provider_impl: str, table_location: str, table_properties: Properties
+) -> Optional[LocationProvider]:
+    try:
+        path_parts = location_provider_impl.split(".")
+        if len(path_parts) < 2:
+            raise ValueError(
+                f"{TableProperties.WRITE_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
+            )
+        module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
+        module = importlib.import_module(module_name)
+        class_ = getattr(module, class_name)
+        return class_(table_location, table_properties)
+    except ModuleNotFoundError:
+        logger.warning("Could not initialize LocationProvider: %s", location_provider_impl)
+        return None
+
+
+def load_location_provider(table_location: str, table_properties: Properties) -> LocationProvider:
+    table_location = table_location.rstrip("/")
+
+    if location_provider_impl := table_properties.get(TableProperties.WRITE_LOCATION_PROVIDER_IMPL):
+        if location_provider := _import_location_provider(location_provider_impl, table_location, table_properties):
+            logger.info("Loaded LocationProvider: %s", location_provider_impl)
+            return location_provider
+        else:
+            raise ValueError(f"Could not initialize LocationProvider: {location_provider_impl}")
+
+    if property_as_bool(table_properties, TableProperties.OBJECT_STORE_ENABLED, TableProperties.OBJECT_STORE_ENABLED_DEFAULT):
+        from pyiceberg.table.locations import ObjectStoreLocationProvider
+
+        return ObjectStoreLocationProvider(table_location, table_properties)
+    else:
+        from pyiceberg.table.locations import DefaultLocationProvider
+
+        return DefaultLocationProvider(table_location, table_properties)
 
 
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
