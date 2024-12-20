@@ -113,14 +113,11 @@ from pyiceberg.table.update import (
     UpgradeFormatVersionUpdate,
     update_table_metadata,
 )
-from pyiceberg.table.update.schema import UpdateSchema, _Move, _MoveOperation
+from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import (
     ManageSnapshots,
     UpdateSnapshot,
-    _DeleteFiles,
     _FastAppendFiles,
-    _MergeAppendFiles,
-    _OverwriteFiles,
 )
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.transforms import IdentityTransform
@@ -139,7 +136,6 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.deprecated import deprecated
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
@@ -1706,57 +1702,3 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
     yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.Move has been changed to private class pyiceberg.table.update.schema._Move",
-)
-def Move(*args: Any, **kwargs: Any) -> _Move:
-    return _Move(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.MoveOperation has been changed to private class pyiceberg.table.update.schema._MoveOperation",
-)
-def MoveOperation(*args: Any, **kwargs: Any) -> _MoveOperation:
-    return _MoveOperation(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.DeleteFiles has been changed to private class pyiceberg.table.update.snapshot._DeleteFiles",
-)
-def DeleteFiles(*args: Any, **kwargs: Any) -> _DeleteFiles:
-    return _DeleteFiles(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.FastAppendFiles has been changed to private class pyiceberg.table.update.snapshot._FastAppendFiles",
-)
-def FastAppendFiles(*args: Any, **kwargs: Any) -> _FastAppendFiles:
-    return _FastAppendFiles(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.MergeAppendFiles has been changed to private class pyiceberg.table.update.snapshot._MergeAppendFiles",
-)
-def MergeAppendFiles(*args: Any, **kwargs: Any) -> _MergeAppendFiles:
-    return _MergeAppendFiles(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.OverwriteFiles has been changed to private class pyiceberg.table.update.snapshot._OverwriteFiles",
-)
-def OverwriteFiles(*args: Any, **kwargs: Any) -> _OverwriteFiles:
-    return _OverwriteFiles(*args, **kwargs)

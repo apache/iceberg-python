@@ -1411,22 +1411,22 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.3.15"
+version = "0.4.0"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 files = [
-    {file = "getdaft-0.3.15-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:7f85b0a4b5937419e8845b4718a473f097d900f1b43efa87140397fc7eff2e75"},
-    {file = "getdaft-0.3.15-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:3ece3de1a32c83e1ab641e41a3c8d4656cf356848b9c7d1b00564c359c30d6be"},
-    {file = "getdaft-0.3.15-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:add1ba84c4a45a57c909730f39c96b1e8c9716bf7646d78164680d62899c4f0e"},
-    {file = "getdaft-0.3.15-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7f5486f86056427665668a69efa7dbd8361eff262f20d3c73767906dee0f5d55"},
-    {file = "getdaft-0.3.15-cp38-abi3-win_amd64.whl", hash = "sha256:2c03a3ea203582004b664742f6bad5975fae9f02281942edc46b2b17622040a4"},
-    {file = "getdaft-0.3.15.tar.gz", hash = "sha256:101726149ff611c6976f59670bf4fae82c9b939ae4a8d812d88a1cb824c1bca1"},
+    {file = "getdaft-0.4.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:82464e2c809a3c659f14ed4887c430ed3eea959121cb1702cb48e32c499c17b8"},
+    {file = "getdaft-0.4.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:df5ded32e96167cbb30aa579b1f8b156e63d19221288eae9e5763c0a4c4425ba"},
+    {file = "getdaft-0.4.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:638b2f0497ec41343400ba8914f908581db9d3087611166579e700838f48876a"},
+    {file = "getdaft-0.4.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:df79ea828e9bc94cd1aea362c4a06bcd2e1363562df2ff95f8a1173d2b5f3320"},
+    {file = "getdaft-0.4.0-cp39-abi3-win_amd64.whl", hash = "sha256:56b8487e77caf6f4f973a9350f89893d8063736d2a38127bdd840e1555faf1b5"},
+    {file = "getdaft-0.4.0.tar.gz", hash = "sha256:15503f1930d9309d9d9caca1b4245064a33e00a111facd845380101d4cebc720"},
 ]
 
 [package.dependencies]
 fsspec = "*"
-pyarrow = ">=7.0.0"
+pyarrow = ">=8.0.0"
 tqdm = "*"
 typing-extensions = {version = ">=4.0.0", markers = "python_version < \"3.10\""}
 
@@ -2243,13 +2243,13 @@ type = ["mypy (==1.11.2)"]
 
 [[package]]
 name = "moto"
-version = "5.0.23"
+version = "5.0.24"
 description = ""
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "moto-5.0.23-py3-none-any.whl", hash = "sha256:a8069f9c945e7503c43eccec30693f5656e0f8efb0256dfd814d99dedc38429e"},
-    {file = "moto-5.0.23.tar.gz", hash = "sha256:8a32636647e45a9b76c32de0ed15c4b083c62849993217f96aa60026a2ca1721"},
+    {file = "moto-5.0.24-py3-none-any.whl", hash = "sha256:4d826f1574849f18ddd2fcbf614d97f82c8fddfb9d95fac1078da01a39b57c10"},
+    {file = "moto-5.0.24.tar.gz", hash = "sha256:dba6426bd770fbb9d892633fbd35253cbc181eeaa0eba97d6f058720a8fe9b42"},
 ]
 
 [package.dependencies]
