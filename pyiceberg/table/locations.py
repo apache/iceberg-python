@@ -45,7 +45,7 @@ class ObjectStoreLocationProvider(LocationProvider):
     def __init__(self, table_location: str, table_properties: Properties):
         super().__init__(table_location, table_properties)
         self._include_partition_paths = property_as_bool(
-            table_properties,
+            self.table_properties,
             TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS,
             TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT,
         )
