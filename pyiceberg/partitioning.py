@@ -236,7 +236,9 @@ class PartitionSpec(IcebergBaseModel):
 
             value_str = quote(value_str, safe="")
             value_strs.append(value_str)
-            field_strs.append(quote(partition_field.name, safe=""))
+
+            field_str = quote(partition_field.name, safe="")
+            field_strs.append(field_str)
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
         return path
