@@ -271,7 +271,14 @@ class S3TableCatalog(MetastoreCatalog):
         return super().list_views(namespace)
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
-        return super().load_namespace_properties(namespace)
+        namespace = self._validate_namespace_identifier(namespace)
+        response = self.s3tables.get_namespace(tableBucketARN=self.table_bucket_arn, namespace=namespace)
+        return {
+            "namespace": response["namespace"],
+            "createdAt": response["createdAt"],
+            "createdBy": response["createdBy"],
+            "ownerAccountId": response["ownerAccountId"],
+        }
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
@@ -316,7 +323,7 @@ class S3TableCatalog(MetastoreCatalog):
             name=from_table_name,
             newNamespaceName=to_namespace,
             newName=to_table_name,
-            versionToken=version_token
+            versionToken=version_token,
         )
 
         return self.load_table(to_identifier)
