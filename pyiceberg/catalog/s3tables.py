@@ -315,9 +315,10 @@ class S3TableCatalog(MetastoreCatalog):
         return True
 
     def update_namespace_properties(
-        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = ...
+        self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
-        return super().update_namespace_properties(namespace, removals, updates)
+        # namespace properties are read only
+        raise NotImplementedError
 
     def create_table_transaction(
         self,
