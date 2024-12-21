@@ -70,6 +70,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=12, name="fixed_field", field_type=FixedType(16), required=False),
     NestedField(field_id=13, name="decimal_field", field_type=DecimalType(5, 2), required=False),
     NestedField(field_id=14, name="uuid_field", field_type=UUIDType(), required=False),
+    NestedField(field_id=15, name="special#string#field", field_type=StringType(), required=False),
 )
 
 
@@ -720,6 +721,25 @@ identifier = "default.test_table"
             f"""INSERT INTO {identifier}
             VALUES
             (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), CAST('2023-01-01' AS DATE), 'some data');
+            """,
+        ),
+        # Test that special characters are URL-encoded
+        (
+            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string#field")],
+            ["special string"],
+            Record(**{"special#string#field": "special string"}),  # type: ignore
+            "special%23string%23field=special%20string",
+            f"""CREATE TABLE {identifier} (
+                `special#string#field` string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(`special#string#field`)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            ('special string')
             """,
         ),
     ],
