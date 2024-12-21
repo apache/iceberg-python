@@ -30,7 +30,7 @@ from typing import (
     Tuple,
     TypeVar,
 )
-from urllib.parse import quote
+from urllib.parse import quote_plus
 
 from pydantic import (
     BeforeValidator,
@@ -234,10 +234,10 @@ class PartitionSpec(IcebergBaseModel):
             partition_field = self.fields[pos]
             value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=data[pos])
 
-            value_str = quote(value_str, safe="")
+            value_str = quote_plus(value_str, safe="")
             value_strs.append(value_str)
 
-            field_str = quote(partition_field.name, safe="")
+            field_str = quote_plus(partition_field.name, safe="")
             field_strs.append(field_str)
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs)])
