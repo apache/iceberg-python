@@ -337,7 +337,7 @@ class S3TableCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
-        return super().register_table(identifier, metadata_location)
+        raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
