@@ -386,7 +386,7 @@ def test_pyarrow_unified_session_properties() -> None:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
-        mock_s3_region_resolver.return_value = None
+        mock_s3_region_resolver.return_value = "client.region"
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
@@ -2076,3 +2076,34 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
+    pyarrow_file_io = PyArrowFileIO()
+    us_east_1_region = "us-eas1-1"
+    ap_southeast_2_region = "ap-southeast-2"
+
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        # Call with new argument resolves region automatically
+        mock_s3_region_resolver.return_value = us_east_1_region
+        filesystem_us = pyarrow_file_io.fs_by_scheme("s3", "us-east-1-bucket")
+        assert filesystem_us.region == us_east_1_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().misses == 1  # type: ignore
+        assert pyarrow_file_io.fs_by_scheme.cache_info().currsize == 1  # type: ignore
+
+        # Call with different argument also resolves region automatically
+        mock_s3_region_resolver.return_value = ap_southeast_2_region
+        filesystem_ap_southeast_2 = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
+        assert filesystem_ap_southeast_2.region == ap_southeast_2_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().misses == 2  # type: ignore
+        assert pyarrow_file_io.fs_by_scheme.cache_info().currsize == 2  # type: ignore
+
+        # Call with same argument hits cache
+        filesystem_us_cached = pyarrow_file_io.fs_by_scheme("s3", "us-east-1-bucket")
+        assert filesystem_us_cached.region == us_east_1_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 1  # type: ignore
+
+        # Call with same argument hits cache
+        filesystem_ap_southeast_2_cached = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
+        assert filesystem_ap_southeast_2_cached.region == ap_southeast_2_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 2  # type: ignore
