@@ -28,13 +28,11 @@ from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT
 from pyiceberg.types import NestedField, StringType
 
-TABLE_SCHEMA = Schema(NestedField(field_id=2, name="field", field_type=StringType(), required=False))
-PARTITION_FIELD = PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="part#field")
-PARTITION_SPEC = PartitionSpec(PARTITION_FIELD)
+PARTITION_FIELD = PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="string_field")
 PARTITION_KEY = PartitionKey(
-    raw_partition_field_values=[PartitionFieldValue(PARTITION_FIELD, "example#val")],
-    partition_spec=PARTITION_SPEC,
-    schema=TABLE_SCHEMA,
+    raw_partition_field_values=[PartitionFieldValue(PARTITION_FIELD, "example_string")],
+    partition_spec=PartitionSpec(PARTITION_FIELD),
+    schema=Schema(NestedField(field_id=1, name="string_field", field_type=StringType(), required=False)),
 )
 
 
@@ -95,9 +93,7 @@ def test_partition_value_in_path(object_storage: bool) -> None:
     location = provider.new_data_location("test.parquet", PARTITION_KEY)
     partition_segment = location.split("/")[-2]
 
-    # Field name is not encoded but partition value is - this differs from the Java implementation
-    # https://github.com/apache/iceberg/blob/cdf748e8e5537f13d861aa4c617a51f3e11dc97c/core/src/test/java/org/apache/iceberg/TestLocationProvider.java#L304
-    assert partition_segment == "part#field=example%23val"
+    assert partition_segment == "string_field=example_string"
 
 
 def test_object_storage_exclude_partition_in_path() -> None:
