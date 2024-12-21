@@ -2581,7 +2581,7 @@ files = [
 name = "numpy"
 version = "1.26.4"
 description = "Fundamental package for array computing in Python"
-optional = false
+optional = true
 python-versions = ">=3.9"
 files = [
     {file = "numpy-1.26.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:9ff0f4f29c51e2803569d7a51c2304de5554655a60c5d776e35b4a41413830d0"},
@@ -4751,4 +4751,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9, !=3.9.7"
-content-hash = "4b53eab8166b5268a48755470ac4475792b08a7914db7c798cdca9242325b6b1"
+content-hash = "2084f03c93f2d1085a5671a171c6cbeb96d9688079270ceca38b0854fe9e0520"
