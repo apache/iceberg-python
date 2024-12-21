@@ -22,7 +22,17 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import FixedType, NestedField, UUIDType
 
-spark = SparkSession.builder.getOrCreate()
+# The configuration is important, otherwise we get many small
+# parquet files with a single row. When a positional delete
+# hits the Parquet file with one row, the parquet file gets
+# dropped instead of having a merge-on-read delete file.
+spark = (
+    SparkSession
+        .builder
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.default.parallelism", "1")
+        .getOrCreate()
+)
 
 catalogs = {
     'rest': load_catalog(
@@ -120,10 +130,6 @@ for catalog_name, catalog in catalogs.items():
     """
     )
 
-    # Partitioning is not really needed, but there is a bug:
-    # https://github.com/apache/iceberg/pull/7685
-    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes ADD PARTITION FIELD years(dt) AS dt_years")
-
     spark.sql(
         f"""
     INSERT INTO {catalog_name}.default.test_positional_mor_deletes
@@ -167,10 +173,6 @@ for catalog_name, catalog in catalogs.items():
       );
     """
     )
-
-    # Partitioning is not really needed, but there is a bug:
-    # https://github.com/apache/iceberg/pull/7685
-    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_double_deletes ADD PARTITION FIELD years(dt) AS dt_years")
 
     spark.sql(
         f"""
