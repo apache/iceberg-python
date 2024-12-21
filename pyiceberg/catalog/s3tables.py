@@ -10,7 +10,6 @@ import boto3
 
 from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION
 from pyiceberg.catalog import WAREHOUSE_LOCATION
-from pyiceberg.catalog import Catalog
 from pyiceberg.catalog import MetastoreCatalog
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.exceptions import CommitFailedException
@@ -157,6 +156,7 @@ class S3TableCatalog(MetastoreCatalog):
         namespace = self._validate_namespace_identifier(namespace)
 
         if not pattern.fullmatch(table_name):
+            # TODO: raise proper errors for invalid table_name
             ...
 
         return namespace, table_name
@@ -209,16 +209,6 @@ class S3TableCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-    def create_table_transaction(
-        self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
-        partition_spec: PartitionSpec = ...,
-        sort_order: SortOrder = ...,
-        properties: Properties = ...,
-    ) -> CreateTableTransaction:
-        return super().create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
 
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         namespace = self._validate_namespace_identifier(namespace)
@@ -244,9 +234,6 @@ class S3TableCatalog(MetastoreCatalog):
             versionToken=response["versionToken"],
         )
 
-    def drop_view(self, identifier: Union[str, Identifier]) -> None:
-        return super().drop_view(identifier)
-
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         # TODO: s3tables only support single level namespaces
         if namespace:
@@ -266,9 +253,6 @@ class S3TableCatalog(MetastoreCatalog):
         for page in paginator.paginate(tableBucketARN=self.table_bucket_arn, namespace=namespace):
             tables.extend((namespace, table["name"]) for table in page["tables"])
         return tables
-
-    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        return super().list_views(namespace)
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         namespace = self._validate_namespace_identifier(namespace)
@@ -303,12 +287,6 @@ class S3TableCatalog(MetastoreCatalog):
             catalog=self,
         )
 
-    def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        return super().purge_table(identifier)
-
-    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
-        return super().register_table(identifier, metadata_location)
-
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         from_namespace, from_table_name = self._validate_database_and_table_identifier(from_identifier)
         to_namespace, to_table_name = self._validate_database_and_table_identifier(to_identifier)
@@ -340,3 +318,26 @@ class S3TableCatalog(MetastoreCatalog):
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = ...
     ) -> PropertiesUpdateSummary:
         return super().update_namespace_properties(namespace, removals, updates)
+
+    def create_table_transaction(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = ...,
+        sort_order: SortOrder = ...,
+        properties: Properties = ...,
+    ) -> CreateTableTransaction:
+        return super().create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
+
+    def purge_table(self, identifier: Union[str, Identifier]) -> None:
+        return super().purge_table(identifier)
+
+    def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
+        return super().register_table(identifier, metadata_location)
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        return super().drop_view(identifier)
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        return super().list_views(namespace)
