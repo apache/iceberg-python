@@ -2254,6 +2254,7 @@ def spark() -> "SparkSession":
 
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
+        .config("spark.driver.host", "localhost")
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
