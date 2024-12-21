@@ -320,17 +320,6 @@ class S3TableCatalog(MetastoreCatalog):
         # namespace properties are read only
         raise NotImplementedError
 
-    def create_table_transaction(
-        self,
-        identifier: Union[str, Identifier],
-        schema: Union[Schema, "pa.Schema"],
-        location: Optional[str] = None,
-        partition_spec: PartitionSpec = ...,
-        sort_order: SortOrder = ...,
-        properties: Properties = ...,
-    ) -> CreateTableTransaction:
-        return super().create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
-
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         # purge is not supported as s3tables doesn't support delete operations
         # table maintenance is automated
