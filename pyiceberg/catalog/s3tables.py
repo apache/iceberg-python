@@ -331,7 +331,9 @@ class S3TableCatalog(MetastoreCatalog):
         return super().create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        return super().purge_table(identifier)
+        # purge is not supported as s3tables doesn't support delete operations
+        # table maintenance is automated
+        raise NotImplementedError
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         return super().register_table(identifier, metadata_location)
