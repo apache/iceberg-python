@@ -728,7 +728,7 @@ identifier = "default.test_table"
             [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string#field")],
             ["special string"],
             Record(**{"special#string#field": "special string"}),  # type: ignore
-            "special%23string%23field=special%20string",
+            "special%23string%23field=special+string",
             # Spark currently writes differently to PyIceberg w.r.t special column name sanitization so justification
             # (comparing expected value with Spark behavior) would fail: PyIceberg produces
             # Record[special_x23string_x23field='special string'], not Record[special#string#field='special string'].
