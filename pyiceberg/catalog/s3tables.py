@@ -1,43 +1,24 @@
 import re
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
-from typing import Set
-from typing import Tuple
-from typing import Union
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 import boto3
 
-from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION
-from pyiceberg.catalog import WAREHOUSE_LOCATION
-from pyiceberg.catalog import MetastoreCatalog
-from pyiceberg.catalog import PropertiesUpdateSummary
-from pyiceberg.exceptions import CommitFailedException
-from pyiceberg.exceptions import NamespaceNotEmptyError
-from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.exceptions import S3TablesError
-from pyiceberg.exceptions import TableBucketNotFound
-from pyiceberg.io import AWS_ACCESS_KEY_ID
-from pyiceberg.io import AWS_REGION
-from pyiceberg.io import AWS_SECRET_ACCESS_KEY
-from pyiceberg.io import AWS_SESSION_TOKEN
-from pyiceberg.io import PY_IO_IMPL
-from pyiceberg.io import load_file_io
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
+from pyiceberg.exceptions import (
+    CommitFailedException,
+    NamespaceNotEmptyError,
+    NoSuchTableError,
+    TableBucketNotFound,
+)
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, PY_IO_IMPL, load_file_io
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse
-from pyiceberg.table import CreateTableTransaction
-from pyiceberg.table import Table
-from pyiceberg.table import TableRequirement
+from pyiceberg.table import CommitTableResponse, Table, TableRequirement
 from pyiceberg.table.metadata import new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
-from pyiceberg.table.sorting import SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import TableUpdate
-from pyiceberg.typedef import EMPTY_DICT
-from pyiceberg.typedef import Identifier
-from pyiceberg.typedef import Properties
+from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.properties import get_first_property_value
 
 if TYPE_CHECKING:
@@ -66,9 +47,7 @@ class S3TableCatalog(MetastoreCatalog):
             region_name=get_first_property_value(properties, S3TABLES_REGION, AWS_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
             aws_access_key_id=get_first_property_value(properties, S3TABLES_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            aws_secret_access_key=get_first_property_value(
-                properties, S3TABLES_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY
-            ),
+            aws_secret_access_key=get_first_property_value(properties, S3TABLES_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             aws_session_token=get_first_property_value(properties, S3TABLES_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         # TODO: s3tables client only supported from boto3>=1.35.74 so this can crash
@@ -91,16 +70,14 @@ class S3TableCatalog(MetastoreCatalog):
         # the table can change between those two API calls without noticing
         # -> change this into an internal API that returns table information along with versionToken
         current_table = self.load_table(identifier=table_identifier)
-        version_token = self.s3tables.get_table(
-            tableBucketARN=self.table_bucket_arn, namespace=database_name, name=table_name
-        )["versionToken"]
+        version_token = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=database_name, name=table_name)[
+            "versionToken"
+        ]
 
         updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
-            return CommitTableResponse(
-                metadata=current_table.metadata, metadata_location=current_table.metadata_location
-            )
+            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
 
         self._write_metadata(
             metadata=updated_staged_table.metadata,
@@ -175,9 +152,7 @@ class S3TableCatalog(MetastoreCatalog):
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         # TODO: check whether namespace exists and if it does, whether table_name already exists
-        self.s3tables.create_table(
-            tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG"
-        )
+        self.s3tables.create_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG")
 
         # location is given by s3 table bucket
         response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
@@ -209,7 +184,6 @@ class S3TableCatalog(MetastoreCatalog):
 
         return self.load_table(identifier=identifier)
 
-
     def drop_namespace(self, namespace: Union[str, Identifier]) -> None:
         namespace = self._validate_namespace_identifier(namespace)
         try:
@@ -220,9 +194,7 @@ class S3TableCatalog(MetastoreCatalog):
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
         try:
-            response = self.s3tables.get_table(
-                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
-            )
+            response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
         except self.s3tables.exceptions.NotFoundException as e:
             raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
 
