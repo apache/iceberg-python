@@ -4,8 +4,7 @@ import boto3
 import pytest
 
 from pyiceberg.catalog.s3tables import S3TableCatalog
-from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.exceptions import TableBucketNotFound
+from pyiceberg.exceptions import NoSuchTableError, TableBucketNotFound
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
 
@@ -35,9 +34,7 @@ def table_bucket_arn():
 def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn, database_name, table_name):
     client = boto3.client("s3tables")
     client.create_namespace(tableBucketARN=table_bucket_arn, namespace=[database_name])
-    response = client.create_table(
-        tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG"
-    )
+    response = client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
     version_token = response["versionToken"]
     scrambled_version_token = version_token[::-1]
 
