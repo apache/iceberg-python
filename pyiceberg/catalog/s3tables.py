@@ -303,14 +303,28 @@ class S3TableCatalog(MetastoreCatalog):
         return super().register_table(identifier, metadata_location)
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
-        return super().rename_table(from_identifier, to_identifier)
+        from_namespace, from_table_name = self._validate_database_and_table_identifier(from_identifier)
+        to_namespace, to_table_name = self._validate_database_and_table_identifier(to_identifier)
+
+        version_token = self.s3tables.get_table(
+            tableBucketARN=self.table_bucket_arn, namespace=from_namespace, name=from_table_name
+        )["versionToken"]
+
+        self.s3tables.rename_table(
+            tableBucketARN=self.table_bucket_arn,
+            namespace=from_namespace,
+            name=from_table_name,
+            newNamespaceName=to_namespace,
+            newName=to_table_name,
+            versionToken=version_token
+        )
+
+        return self.load_table(to_identifier)
 
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
         try:
-            self.s3tables.get_table(
-                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
-            )
+            self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
         except self.s3tables.exceptions.NotFoundException:
             return False
         return True
