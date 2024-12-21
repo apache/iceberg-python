@@ -70,6 +70,13 @@ def test_create_namespace(table_bucket_arn, database_name: str):
     assert (database_name,) in namespaces
 
 
+def test_load_namespace_properties(table_bucket_arn, database_name: str):
+    properties = {"warehouse": table_bucket_arn}
+    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+    catalog.create_namespace(namespace=database_name)
+    assert database_name in catalog.load_namespace_properties(database_name)["namespace"]
+
+
 def test_drop_namespace(table_bucket_arn, database_name: str):
     properties = {"warehouse": table_bucket_arn}
     catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
@@ -161,8 +168,6 @@ def test_commit_table(table_bucket_arn, database_name: str, table_name: str, tab
     last_updated_ms = table.metadata.last_updated_ms
     original_table_metadata_location = table.metadata_location
     original_table_last_updated_ms = table.metadata.last_updated_ms
-
-
 
     transaction = table.transaction()
     update = transaction.update_schema()
