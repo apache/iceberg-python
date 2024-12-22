@@ -84,12 +84,14 @@ class Config:
                     return file_config_lowercase
             return None
 
-        # Give priority to the PYICEBERG_HOME directory
-        if pyiceberg_home_config := _load_yaml(os.environ.get(PYICEBERG_HOME)):
-            return pyiceberg_home_config
-        # Look into the home directory
-        if pyiceberg_home_config := _load_yaml(os.path.expanduser("~")):
-            return pyiceberg_home_config
+        # Directories to search for the configuration file
+        # The current search order is: PYICEBERG_HOME, home directory, then current directory
+        search_dirs = [os.environ.get(PYICEBERG_HOME), os.path.expanduser("~"), os.getcwd()]
+
+        for directory in search_dirs:
+            if config := _load_yaml(directory):
+                return config
+
         # Didn't find a config
         return None
 
