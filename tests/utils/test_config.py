@@ -93,3 +93,57 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 
     assert Config().get_bool("legacy-current-snapshot-id")
     assert Config().get_int("max-workers") == 4
+
+
+@pytest.mark.parametrize(
+    "config_location, config_content, expected_result",
+    [
+        (
+            "config",
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+        ),
+        (
+            "home",
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+        ),
+        (
+            "current",
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+        ),
+        ("none", None, None),
+    ],
+)
+def test_from_multiple_configuration_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory, config_location, config_content, expected_result
+):
+    def create_config_file(directory: str, content: dict) -> None:
+        config_file_path = os.path.join(directory, ".pyiceberg.yaml")
+        with open(config_file_path, "w", encoding="utf-8") as file:
+            yaml_str = as_document(content).as_yaml() if content else ""
+            file.write(yaml_str)
+
+    config_path = str(tmp_path_factory.mktemp("config"))
+    home_path = str(tmp_path_factory.mktemp("home"))
+    current_path = str(tmp_path_factory.mktemp("current"))
+
+    location_to_path = {
+        "config": config_path,
+        "home": home_path,
+        "current": current_path,
+    }
+
+    if config_location in location_to_path and config_content:
+        create_config_file(location_to_path[config_location], config_content)
+
+    monkeypatch.setenv("PYICEBERG_HOME", config_path)
+    monkeypatch.setattr(os.path, "expanduser", lambda _: home_path)
+
+    if config_location == "current":
+        monkeypatch.chdir(current_path)
+
+    assert (
+        Config()._from_configuration_files() == expected_result
+    ), f"Unexpected configuration result for content: {config_content}"
