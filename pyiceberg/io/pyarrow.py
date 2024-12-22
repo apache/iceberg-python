@@ -380,7 +380,7 @@ class PyArrowFileIO(FileIO):
             # Override the default s3.region if netloc(bucket) resolves to a different region
             try:
                 client_kwargs["region"] = resolve_s3_region(netloc)
-            except OSError:
+            except (OSError, TypeError):
                 pass
 
             return S3FileSystem(**client_kwargs)
