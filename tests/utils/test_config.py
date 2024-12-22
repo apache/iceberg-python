@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import os
+from typing import Any, Dict, Optional
 from unittest import mock
 
 import pytest
@@ -117,9 +118,13 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
     ],
 )
 def test_from_multiple_configuration_files(
-    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory, config_location, config_content, expected_result
-):
-    def create_config_file(directory: str, content: dict) -> None:
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    config_location: str,
+    config_content: Optional[Dict[str, Any]],
+    expected_result: Optional[Dict[str, Any]],
+) -> None:
+    def create_config_file(directory: str, content: Optional[Dict[str, Any]]) -> None:
         config_file_path = os.path.join(directory, ".pyiceberg.yaml")
         with open(config_file_path, "w", encoding="utf-8") as file:
             yaml_str = as_document(content).as_yaml() if content else ""
@@ -144,6 +149,6 @@ def test_from_multiple_configuration_files(
     if config_location == "current":
         monkeypatch.chdir(current_path)
 
-    assert (
-        Config()._from_configuration_files() == expected_result
-    ), f"Unexpected configuration result for content: {config_content}"
+    assert Config()._from_configuration_files() == expected_result, (
+        f"Unexpected configuration result for content: {config_content}"
+    )

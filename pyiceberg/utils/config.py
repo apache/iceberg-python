@@ -85,6 +85,7 @@ class Config:
             return None
 
         # Directories to search for the configuration file
+        # The current search order is: PYICEBERG_HOME, home directory, then current directory
         search_dirs = [os.environ.get(PYICEBERG_HOME), os.path.expanduser("~"), os.getcwd()]
 
         for directory in search_dirs:
