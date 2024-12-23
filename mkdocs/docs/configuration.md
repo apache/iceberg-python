@@ -88,6 +88,7 @@ Iceberg works with the concept of a FileIO which is a pluggable module for readi
 - **file**: `PyArrowFileIO`
 - **hdfs**: `PyArrowFileIO`
 - **abfs**, **abfss**: `FsspecFileIO`
+- **oss**: `PyArrowFileIO`
 
 You can also set the FileIO explicitly:
 
@@ -115,6 +116,7 @@ For the FileIO there are several configuration options available:
 | s3.region            | us-west-2                  | Sets the region of the bucket                                                                                                                                                                                                                             |
 | s3.proxy-uri         | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                      |
 | s3.connect-timeout   | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                          |
+| s3.force-virtual-addressing   | False                       | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access.                                                                                                                                                                                                       |
 
 <!-- markdown-link-check-enable-->
 
@@ -164,6 +166,22 @@ For the FileIO there are several configuration options available:
 | gcs.service.host            | <http://0.0.0.0:4443> | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
 | gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
 | gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
+
+<!-- markdown-link-check-enable-->
+
+### Alibaba Cloud Object Storage Service (OSS)
+
+<!-- markdown-link-check-disable -->
+
+PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html) class to connect to OSS bucket as the service is [compatible with S3 SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss) as long as the endpoint is addressed with virtual hosted style.
+
+| Key                  | Example             | Description                                      |
+| -------------------- | ------------------- | ------------------------------------------------ |
+| s3.endpoint          | <https://s3.oss-your-bucket-region.aliyuncs.com/>      | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
+| s3.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
+| s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
+| s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
+| s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This must be set to True as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
 
 <!-- markdown-link-check-enable-->
 
@@ -234,6 +252,12 @@ catalog:
     credential: t-1234:secret
     header.content-type: application/vnd.api+json
 ```
+
+Specific headers defined by the RESTCatalog spec include:
+
+| Key                                  | Options                               | Default              | Description                                                                                                                                                                                        |
+| ------------------------------------ | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `header.X-Iceberg-Access-Delegation` | `{vended-credentials,remote-signing}` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms |
 
 ### SQL Catalog
 

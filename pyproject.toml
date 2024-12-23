@@ -85,7 +85,7 @@ pytest = "7.4.4"
 pytest-checkdocs = "2.10.1"
 pytest-lazy-fixture = "0.6.3"
 pre-commit = "4.0.1"
-fastavro = "1.9.7"
+fastavro = "1.10.0"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
@@ -886,6 +886,7 @@ zstandard = ["zstandard"]
 sql-postgres = ["sqlalchemy", "psycopg2-binary"]
 sql-sqlite = ["sqlalchemy"]
 gcsfs = ["gcsfs"]
+rest-sigv4 = ["boto3"]
 
 [tool.pytest.ini_options]
 markers = [
@@ -907,6 +908,8 @@ filterwarnings = [
   "ignore:datetime.datetime.utcfromtimestamp\\(\\) is deprecated and scheduled for removal in a future version.",
   # Remove this once https://github.com/boto/boto3/issues/3889 is fixed.
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated and scheduled for removal in a future version.",
+  # Latest PySpark version (v3.5.3) throws this error, remove in a future release of PySpark (possibly v4.0.0).
+  "ignore:is_datetime64tz_dtype is deprecated and will be removed in a future version.",
 ]
 
 [tool.black]

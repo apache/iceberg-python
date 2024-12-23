@@ -34,7 +34,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04, windows-2022, macos-12, macos-13, macos-14 ]
+        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
 
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +63,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21.3
+        uses: pypa/cibuildwheel@v2.22.0
         with:
           output-dir: wheelhouse
           config-file: "pyproject.toml"
@@ -84,7 +84,17 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "release-${{ matrix.os }}"
+          path: ./wheelhouse/*
+  merge:
+    runs-on: ubuntu-latest
+    needs: build_wheels
+    steps:
+      - name: Merge Artifacts
+        uses: actions/upload-artifact/merge@v4
         with:
           name: "release-${{ github.event.inputs.version }}"
-          path: ./wheelhouse/*
+          pattern: release-*
+          delete-merged: true

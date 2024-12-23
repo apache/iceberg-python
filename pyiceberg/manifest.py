@@ -30,6 +30,7 @@ from typing import (
     Optional,
     Tuple,
     Type,
+    Union,
 )
 
 from cachetools import LRUCache, cached
@@ -96,6 +97,13 @@ class FileFormat(str, Enum):
     AVRO = "AVRO"
     PARQUET = "PARQUET"
     ORC = "ORC"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Union[None, str]:
+        for member in cls:
+            if member.value == str(value).upper():
+                return member
+        return None
 
     def __repr__(self) -> str:
         """Return the string representation of the FileFormat class."""

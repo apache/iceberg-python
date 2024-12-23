@@ -1243,18 +1243,3 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
-
-
-def test_table_module_refactoring_backward_compatibility() -> None:
-    # TODO: Remove this in 0.9.0
-    try:
-        from pyiceberg.table import (  # noqa: F401
-            DeleteFiles,
-            FastAppendFiles,
-            MergeAppendFiles,
-            Move,
-            MoveOperation,
-            OverwriteFiles,
-        )
-    except Exception as exc:
-        raise pytest.fail("Importing moved modules should not raise an exception") from exc

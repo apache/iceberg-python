@@ -94,13 +94,13 @@ logger = logging.getLogger(__name__)
 
 
 def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> AWSRequest:
-    if TOKEN not in properties:
-        raise SignError("Signer set, but token is not available")
-
     signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
     signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
-    signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
+    signer_headers = {}
+    if token := properties.get(TOKEN):
+        signer_headers = {"Authorization": f"Bearer {token}"}
+
     signer_body = {
         "method": request.method,
         "region": request.context["client_region"],

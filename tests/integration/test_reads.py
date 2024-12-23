@@ -294,9 +294,11 @@ def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
+    import daft
+
+    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     assert df.count_rows() == 3
@@ -306,6 +308,9 @@ def test_daft_nan(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
+    import daft
+
+    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     df = df.where(df["col_numeric"].float.is_nan())
@@ -614,6 +619,50 @@ def test_filter_on_new_column(catalog: Catalog) -> None:
 
     arrow_table = test_table_add_column.scan(row_filter="b is null").to_arrow()
     assert arrow_table["b"].to_pylist() == [None]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_sensitive_by_default(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    with pytest.raises(ValueError) as e:
+        _ = test_table_add_column.scan(row_filter="B == '2'").to_arrow()
+    assert "Could not find field with name B" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_sensitive(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'", case_sensitive=True).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    with pytest.raises(ValueError) as e:
+        _ = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=True).to_arrow()
+    assert "Could not find field with name B" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_insensitive(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'", case_sensitive=False).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    arrow_table = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=False).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
 
 
 @pytest.mark.integration
