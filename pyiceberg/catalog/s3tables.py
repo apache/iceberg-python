@@ -32,6 +32,8 @@ S3TABLES_ACCESS_KEY_ID = "s3tables.access-key-id"
 S3TABLES_SECRET_ACCESS_KEY = "s3tables.secret-access-key"
 S3TABLES_SESSION_TOKEN = "s3tables.session-token"
 
+S3TABLES_TABLE_BUCKET_ARN = "s3tables.table-bucket-arn"
+
 S3TABLES_ENDPOINT = "s3tables.endpoint"
 
 # pyarrow does not support writing to S3 Table buckets as of 2024-12-14 https://github.com/apache/iceberg-python/issues/1404#issuecomment-2543174146
@@ -43,6 +45,8 @@ class S3TableCatalog(MetastoreCatalog):
         super().__init__(name, **properties)
         # TODO: implement a proper check for FileIO
         self.properties[PY_IO_IMPL] = S3TABLES_FILE_IO_DEFAULT
+
+        self.table_bucket_arn = self.properties[S3TABLES_TABLE_BUCKET_ARN]
 
         session = boto3.Session(
             profile_name=properties.get(S3TABLES_PROFILE_NAME),
@@ -57,8 +61,6 @@ class S3TableCatalog(MetastoreCatalog):
         except UnknownServiceError as e:
             raise S3TablesError("'s3tables' requires boto3>=1.35.74. Current version: {boto3.__version__}.") from e
 
-        # TODO: handle malformed properties instead of just raising a key error here
-        self.table_bucket_arn = self.properties[WAREHOUSE_LOCATION]
         try:
             self.s3tables.get_table_bucket(tableBucketARN=self.table_bucket_arn)
         except self.s3tables.exceptions.NotFoundException as e:
