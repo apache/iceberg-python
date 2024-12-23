@@ -2080,7 +2080,7 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
 
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
     pyarrow_file_io = PyArrowFileIO()
-    us_east_1_region = "us-eas1-1"
+    us_east_1_region = "us-east-1"
     ap_southeast_2_region = "ap-southeast-2"
 
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
