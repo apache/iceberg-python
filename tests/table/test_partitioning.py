@@ -135,7 +135,7 @@ def test_partition_spec_to_path() -> None:
 
     record = Record(**{"my#str%bucket": "my+str", "other str+bucket": "( )", "my!int:bucket": 10})  # type: ignore
 
-    # Both partition names fields and values should be URL encoded, with spaces mapping to plus signs, to match the Java
+    # Both partition field names and values should be URL encoded, with spaces mapping to plus signs, to match the Java
     # behaviour: https://github.com/apache/iceberg/blob/ca3db931b0f024f0412084751ac85dd4ef2da7e7/api/src/main/java/org/apache/iceberg/PartitionSpec.java#L198-L204
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
 
