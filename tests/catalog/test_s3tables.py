@@ -32,7 +32,7 @@ def table_bucket_arn():
 
 @pytest.fixture
 def catalog(table_bucket_arn):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrow does not work with S3 Table Buckets yet
+    # pyarrow does not support writing to S3 Table buckets as of 2024-12-14 https://github.com/apache/iceberg-python/issues/1404#issuecomment-2543174146
     properties = {"s3tables.table-bucket-arn": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
     return S3TableCatalog(name="test_s3tables_catalog", **properties)
 

@@ -36,15 +36,10 @@ S3TABLES_TABLE_BUCKET_ARN = "s3tables.table-bucket-arn"
 
 S3TABLES_ENDPOINT = "s3tables.endpoint"
 
-# pyarrow does not support writing to S3 Table buckets as of 2024-12-14 https://github.com/apache/iceberg-python/issues/1404#issuecomment-2543174146
-S3TABLES_FILE_IO_DEFAULT = "pyiceberg.io.fsspec.FsspecFileIO"
-
 
 class S3TableCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        # TODO: implement a proper check for FileIO
-        self.properties[PY_IO_IMPL] = S3TABLES_FILE_IO_DEFAULT
 
         self.table_bucket_arn = self.properties[S3TABLES_TABLE_BUCKET_ARN]
 
