@@ -364,7 +364,8 @@ def test_pyarrow_s3_session_properties() -> None:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
-        mock_s3_region_resolver.return_value = "us-east-1"
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
