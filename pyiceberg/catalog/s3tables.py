@@ -53,7 +53,7 @@ class S3TableCatalog(MetastoreCatalog):
             aws_session_token=get_first_property_value(properties, S3TABLES_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
         try:
-            self.s3tables = session.client("s3tables")
+            self.s3tables = session.client("s3tables", endpoint_url=properties.get(S3TABLES_ENDPOINT))
         except UnknownServiceError as e:
             raise S3TablesError("'s3tables' requires boto3>=1.35.74. Current version: {boto3.__version__}.") from e
 
