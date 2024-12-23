@@ -18,7 +18,7 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, List
+from typing import Any, Callable, List, Optional
 
 import pytest
 from pyspark.sql import SparkSession
@@ -78,7 +78,7 @@ identifier = "default.test_table"
 
 
 @pytest.mark.parametrize(
-    "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification",
+    "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification, make_compatible_name",
     [
         # # Identity Transform
         (
@@ -99,6 +99,7 @@ identifier = "default.test_table"
             VALUES
             (false, 'Boolean field set to false');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="string_field")],
@@ -118,6 +119,7 @@ identifier = "default.test_table"
             VALUES
             ('sample_string', 'Another string value')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="int_field")],
@@ -137,6 +139,7 @@ identifier = "default.test_table"
             VALUES
             (42, 'Associated string value for int 42')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=5, field_id=1001, transform=IdentityTransform(), name="long_field")],
@@ -156,6 +159,7 @@ identifier = "default.test_table"
             VALUES
             (1234567890123456789, 'Associated string value for long 1234567890123456789')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=6, field_id=1001, transform=IdentityTransform(), name="float_field")],
@@ -179,6 +183,7 @@ identifier = "default.test_table"
             # VALUES
             # (3.14, 'Associated string value for float 3.14')
             # """
+            None,
         ),
         (
             [PartitionField(source_id=7, field_id=1001, transform=IdentityTransform(), name="double_field")],
@@ -202,6 +207,7 @@ identifier = "default.test_table"
             # VALUES
             # (6.282, 'Associated string value for double 6.282')
             # """
+            None,
         ),
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
@@ -221,6 +227,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 12:00:01.000999' AS TIMESTAMP_NTZ), 'Associated string value for timestamp 2023-01-01T12:00:00')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
@@ -240,6 +247,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 12:00:01' AS TIMESTAMP_NTZ), 'Associated string value for timestamp 2023-01-01T12:00:00')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=8, field_id=1001, transform=IdentityTransform(), name="timestamp_field")],
@@ -264,6 +272,7 @@ identifier = "default.test_table"
             # VALUES
             # (CAST('2023-01-01 12:00:00' AS TIMESTAMP_NTZ), 'Associated string value for timestamp 2023-01-01T12:00:00')
             # """
+            None,
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=IdentityTransform(), name="timestamptz_field")],
@@ -288,6 +297,7 @@ identifier = "default.test_table"
             # VALUES
             # (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Associated string value for timestamp 2023-01-01 12:00:01.000999+03:00')
             # """
+            None,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=IdentityTransform(), name="date_field")],
@@ -307,6 +317,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01' AS DATE), 'Associated string value for date 2023-01-01')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=14, field_id=1001, transform=IdentityTransform(), name="uuid_field")],
@@ -326,6 +337,7 @@ identifier = "default.test_table"
             VALUES
             ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Associated string value for UUID f47ac10b-58cc-4372-a567-0e02b2c3d479')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=IdentityTransform(), name="binary_field")],
@@ -345,6 +357,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('example' AS BINARY), 'Associated string value for binary `example`')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=13, field_id=1001, transform=IdentityTransform(), name="decimal_field")],
@@ -364,6 +377,7 @@ identifier = "default.test_table"
             VALUES
             (123.45, 'Associated string value for decimal 123.45')
             """,
+            None,
         ),
         # # Year Month Day Hour Transform
         # Month Transform
@@ -385,6 +399,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP_NTZ), 'Event at 2023-01-01 11:55:59.999999');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=MonthTransform(), name="timestamptz_field_month")],
@@ -404,6 +419,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=MonthTransform(), name="date_field_month")],
@@ -423,6 +439,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01' AS DATE), 'Event on 2023-01-01');
             """,
+            None,
         ),
         # Year Transform
         (
@@ -443,6 +460,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), 'Event at 2023-01-01 11:55:59.999999');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=YearTransform(), name="timestamptz_field_year")],
@@ -462,6 +480,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=YearTransform(), name="date_field_year")],
@@ -481,6 +500,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01' AS DATE), 'Event on 2023-01-01');
             """,
+            None,
         ),
         # # Day Transform
         (
@@ -501,6 +521,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01' AS DATE), 'Event on 2023-01-01');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=DayTransform(), name="timestamptz_field_day")],
@@ -520,6 +541,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=10, field_id=1001, transform=DayTransform(), name="date_field_day")],
@@ -539,6 +561,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01' AS DATE), 'Event on 2023-01-01');
             """,
+            None,
         ),
         # Hour Transform
         (
@@ -559,6 +582,7 @@ identifier = "default.test_table"
                 VALUES
                 (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), 'Event within the 11th hour of 2023-01-01');
                 """,
+            None,
         ),
         (
             [PartitionField(source_id=9, field_id=1001, transform=HourTransform(), name="timestamptz_field_hour")],
@@ -578,6 +602,7 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 12:00:01.000999+03:00' AS TIMESTAMP), 'Event at 2023-01-01 12:00:01.000999+03:00');
             """,
+            None,
         ),
         # Truncate Transform
         (
@@ -598,6 +623,7 @@ identifier = "default.test_table"
                 VALUES
                 (12345, 'Sample data for int');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=5, field_id=1001, transform=TruncateTransform(2), name="bigint_field_trunc")],
@@ -617,6 +643,7 @@ identifier = "default.test_table"
             VALUES
             (4294967297, 'Sample data for long');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(3), name="string_field_trunc")],
@@ -636,6 +663,7 @@ identifier = "default.test_table"
             VALUES
             ('abcdefg', 'Another sample for string');
             """,
+            None,
         ),
         (
             [PartitionField(source_id=13, field_id=1001, transform=TruncateTransform(width=5), name="decimal_field_trunc")],
@@ -655,6 +683,7 @@ identifier = "default.test_table"
             VALUES
             (678.90, 'Associated string value for decimal 678.90')
             """,
+            None,
         ),
         (
             [PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(10), name="binary_field_trunc")],
@@ -674,6 +703,7 @@ identifier = "default.test_table"
                 VALUES
                 (binary('HELLOICEBERG'), 'Sample data for binary');
             """,
+            None,
         ),
         # Bucket Transform
         (
@@ -694,6 +724,7 @@ identifier = "default.test_table"
             VALUES
             (10, 'Integer with value 10');
             """,
+            None,
         ),
         # Test multiple field combinations could generate the Partition record and hive partition path correctly
         (
@@ -722,30 +753,27 @@ identifier = "default.test_table"
             VALUES
             (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), CAST('2023-01-01' AS DATE), 'some data');
             """,
+            None,
         ),
         # Test that special characters are URL-encoded
         (
-            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string#field")],
+            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string+field")],
             ["special string"],
-            Record(**{"special#string#field": "special string"}),  # type: ignore
-            "special%23string%23field=special+string",
-            # Spark currently writes differently to PyIceberg w.r.t special column name sanitization so justification
-            # (comparing expected value with Spark behavior) would fail: PyIceberg produces
-            # Record[special_x23string_x23field='special string'], not Record[special#string#field='special string'].
-            # None,
-            # None,
+            Record(**{"special#string+field": "special string"}),  # type: ignore
+            "special%23string%2Bfield=special+string",
             f"""CREATE TABLE {identifier} (
-                `special#string#field` string
+                `special#string+field` string
             )
             USING iceberg
             PARTITIONED BY (
-                identity(`special#string#field`)
+                identity(`special#string+field`)
             )
             """,
             f"""INSERT INTO {identifier}
             VALUES
             ('special string')
             """,
+            lambda name: name.replace("#", "_x23").replace("+", "_x2B"),
         ),
     ],
 )
@@ -759,6 +787,7 @@ def test_partition_key(
     expected_hive_partition_path_slice: str,
     spark_create_table_sql_for_justification: str,
     spark_data_insert_sql_for_justification: str,
+    make_compatible_name: Optional[Callable[[str], str]],
 ) -> None:
     partition_field_values = [PartitionFieldValue(field, value) for field, value in zip(partition_fields, partition_values)]
     spec = PartitionSpec(*partition_fields)
@@ -793,5 +822,12 @@ def test_partition_key(
         spark_path_for_justification = (
             snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
         )
-        assert spark_partition_for_justification == expected_partition_record
+        # Special characters in partition value are sanitized when written to the data file's partition field
+        # Use `make_compatible_name` to match the sanitize behavior
+        sanitized_record = (
+            Record(**{make_compatible_name(k): v for k, v in vars(expected_partition_record).items()})
+            if make_compatible_name
+            else expected_partition_record
+        )
+        assert spark_partition_for_justification == sanitized_record
         assert expected_hive_partition_path_slice in spark_path_for_justification
