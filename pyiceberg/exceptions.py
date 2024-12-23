@@ -115,6 +115,13 @@ class GenericDynamoDbError(DynamoDbError):
 class S3TablesError(Exception):
     pass
 
+class InvalidNamespaceName(S3TablesError):
+    pass
+
+
+class InvalidTableName(S3TablesError):
+    pass
+
 
 class TableBucketNotFound(S3TablesError):
     pass
