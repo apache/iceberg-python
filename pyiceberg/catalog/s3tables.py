@@ -2,6 +2,7 @@ import re
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 import boto3
+from boto3.session import UnknownServiceError
 
 from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import (
@@ -9,6 +10,7 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchTableError,
     TableBucketNotFound,
+    S3TablesError
 )
 from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -50,9 +52,11 @@ class S3TableCatalog(MetastoreCatalog):
             aws_secret_access_key=get_first_property_value(properties, S3TABLES_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             aws_session_token=get_first_property_value(properties, S3TABLES_SESSION_TOKEN, AWS_SESSION_TOKEN),
         )
-        # TODO: s3tables client only supported from boto3>=1.35.74 so this can crash
-        # TODO: set a custom user-agent for api calls like the Java implementation
-        self.s3tables = session.client("s3tables")
+        try:
+            self.s3tables = session.client("s3tables")
+        except UnknownServiceError as e:
+            raise S3TablesError("'s3tables' requires boto3>=1.35.74. Current version: {boto3.__version__}.") from e
+
         # TODO: handle malformed properties instead of just raising a key error here
         self.table_bucket_arn = self.properties[WAREHOUSE_LOCATION]
         try:
