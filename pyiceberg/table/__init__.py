@@ -294,6 +294,9 @@ class Transaction:
             return self._apply((UpgradeFormatVersionUpdate(format_version=format_version),))
 
         return self
+    
+    def replace_sort_order(self) -> None:
+        ...
 
     def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: Any) -> Transaction:
         """Set properties.
