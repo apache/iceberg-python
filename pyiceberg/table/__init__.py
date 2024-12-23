@@ -117,6 +117,7 @@ from pyiceberg.table.update.snapshot import (
     UpdateSnapshot,
     _FastAppendFiles,
 )
+from pyiceberg.table.update.sort_order import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
@@ -295,8 +296,6 @@ class Transaction:
 
         return self
 
-    def replace_sort_order(self) -> None: ...
-
     def set_properties(self, properties: Properties = EMPTY_DICT, **kwargs: Any) -> Transaction:
         """Set properties.
 
@@ -405,6 +404,14 @@ class Transaction:
             case_sensitive=case_sensitive,
             name_mapping=self.table_metadata.name_mapping(),
         )
+
+    def replace_sort_order(self) -> UpdateSortOrder:
+        """Create a new UpdateSortOrder to replace the sort order of this table.
+
+        Returns:
+            A new UpdateSortOrder.
+        """
+        return UpdateSortOrder(self)
 
     def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
