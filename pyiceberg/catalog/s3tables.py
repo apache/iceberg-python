@@ -4,13 +4,15 @@ from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 import boto3
 from boto3.session import UnknownServiceError
 
-from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, WAREHOUSE_LOCATION, MetastoreCatalog, PropertiesUpdateSummary
+from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import (
     CommitFailedException,
     NamespaceNotEmptyError,
     NoSuchTableError,
     TableBucketNotFound,
-    S3TablesError
+    S3TablesError,
+    InvalidNamespaceName,
+    InvalidTableName,
 )
 from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -35,6 +37,10 @@ S3TABLES_SESSION_TOKEN = "s3tables.session-token"
 S3TABLES_TABLE_BUCKET_ARN = "s3tables.table-bucket-arn"
 
 S3TABLES_ENDPOINT = "s3tables.endpoint"
+
+# for naming rules see: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-naming.html
+S3TABLES_VALID_NAME_REGEX = pattern = re.compile("[a-z0-9][a-z0-9_]{2,62}")
+S3TABLES_RESERVED_NAMESPACE = "aws_s3_metadata"
 
 
 class S3TableCatalog(MetastoreCatalog):
@@ -109,33 +115,20 @@ class S3TableCatalog(MetastoreCatalog):
         self.s3tables.create_namespace(tableBucketARN=self.table_bucket_arn, namespace=[valid_namespace])
 
     def _validate_namespace_identifier(self, namespace: Union[str, Identifier]) -> str:
-        # for naming rules see: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-naming.html
-        # TODO: extract into constant variables
-        pattern = re.compile("[a-z0-9][a-z0-9_]{2,62}")
-        reserved = "aws_s3_metadata"
-
         namespace = self.identifier_to_database(namespace)
 
-        if not pattern.fullmatch(namespace):
-            ...
-
-        if namespace == reserved:
-            ...
+        if not S3TABLES_VALID_NAME_REGEX.fullmatch(namespace) or namespace == S3TABLES_RESERVED_NAMESPACE:
+            raise InvalidNamespaceName("The specified namespace name is not valid.")
 
         return namespace
 
     def _validate_database_and_table_identifier(self, identifier: Union[str, Identifier]) -> Tuple[str, str]:
-        # for naming rules see: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-naming.html
-        # TODO: extract into constant variables
-        pattern = re.compile("[a-z0-9][a-z0-9_]{2,62}")
-
         namespace, table_name = self.identifier_to_database_and_table(identifier)
 
         namespace = self._validate_namespace_identifier(namespace)
 
-        if not pattern.fullmatch(table_name):
-            # TODO: raise proper errors for invalid table_name
-            ...
+        if not S3TABLES_VALID_NAME_REGEX.fullmatch(table_name):
+            raise InvalidTableName("The specified table name is not valid.")
 
         return namespace, table_name
 
