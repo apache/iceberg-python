@@ -30,6 +30,12 @@ def table_bucket_arn():
 
     return os.environ["ARN"]
 
+@pytest.fixture
+def catalog(table_bucket_arn):
+    # setting FileIO to FsspecFileIO explicitly is required as pyarrow does not work with S3 Table Buckets yet
+    properties = {"s3tables.table-bucket-arn": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    return S3TableCatalog(name="test_s3tables_catalog", **properties)
+
 
 def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn, database_name, table_name):
     client = boto3.client("s3tables")
@@ -54,39 +60,30 @@ def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn, dat
 
 
 def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn):
-    properties = {"warehouse": f"{table_bucket_arn}-modified"}
+    properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified"}
     with pytest.raises(TableBucketNotFound):
         S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
-def test_create_namespace(table_bucket_arn, database_name: str):
-    properties = {"warehouse": table_bucket_arn}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_create_namespace(catalog, database_name: str):
     catalog.create_namespace(namespace=database_name)
     namespaces = catalog.list_namespaces()
     assert (database_name,) in namespaces
 
 
-def test_load_namespace_properties(table_bucket_arn, database_name: str):
-    properties = {"warehouse": table_bucket_arn}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_load_namespace_properties(catalog, database_name: str):
     catalog.create_namespace(namespace=database_name)
     assert database_name in catalog.load_namespace_properties(database_name)["namespace"]
 
 
-def test_drop_namespace(table_bucket_arn, database_name: str):
-    properties = {"warehouse": table_bucket_arn}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_drop_namespace(catalog, database_name: str):
     catalog.create_namespace(namespace=database_name)
     assert (database_name,) in catalog.list_namespaces()
     catalog.drop_namespace(namespace=database_name)
     assert (database_name,) not in catalog.list_namespaces()
 
 
-def test_create_table(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
-    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_create_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -95,10 +92,7 @@ def test_create_table(table_bucket_arn, database_name: str, table_name: str, tab
     assert table == catalog.load_table(identifier)
 
 
-def test_table_exists(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
-    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_table_exists(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -107,10 +101,7 @@ def test_table_exists(table_bucket_arn, database_name: str, table_name: str, tab
     assert catalog.table_exists(identifier=identifier)
 
 
-def test_rename_table(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
-    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_rename_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -126,10 +117,7 @@ def test_rename_table(table_bucket_arn, database_name: str, table_name: str, tab
     assert catalog.table_exists(identifier=to_identifier)
 
 
-def test_list_tables(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
-    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_list_tables(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -138,10 +126,7 @@ def test_list_tables(table_bucket_arn, database_name: str, table_name: str, tabl
     assert catalog.list_tables(namespace=database_name)
 
 
-def test_drop_table(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
-    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_drop_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -153,10 +138,7 @@ def test_drop_table(table_bucket_arn, database_name: str, table_name: str, table
         catalog.load_table(identifier=identifier)
 
 
-def test_commit_table(table_bucket_arn, database_name: str, table_name: str, table_schema_nested: Schema):
-    # setting FileIO to FsspecFileIO explicitly is required as pyarrwo does not work with S3 Table Buckets yet
-    properties = {"warehouse": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
-    catalog = S3TableCatalog(name="test_s3tables_catalog", **properties)
+def test_commit_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
