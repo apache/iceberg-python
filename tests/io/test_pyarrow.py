@@ -2129,12 +2129,12 @@ def test_pyarrow_io_new_input_multi_region() -> None:
         raise OSError("Unknown bucket")
 
     # For one single pyarrow io instance with configured default s3 region
-    pyarrow_file_io = PyArrowFileIO({"s3.region": "ap-southeast-2"})
+    pyarrow_file_io = PyArrowFileIO({"s3.region": "ap-southeast-1"})
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         mock_s3_region_resolver.side_effect = _s3_region_map
 
         # The filesystem region is set by provided property by default (when bucket region cannot be resolved)
-        assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == "ap-southeast-2"
+        assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == "ap-southeast-1"
 
         # The filesystem region is overwritten by provided bucket region (when bucket region resolves to a different one)
         for bucket_region in bucket_regions:
