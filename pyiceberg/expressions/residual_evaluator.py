@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from abc import ABC
-from typing import Any, List, Set
+from typing import Any, Set
 
 from pyiceberg.expressions import And, Or
 from pyiceberg.expressions.literals import Literal
@@ -47,7 +47,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         self.case_sensitive = case_sensitive
         self.expr = expr
 
-    def eval(self, partition_data: Record):
+    def eval(self, partition_data: Record) -> BooleanExpression:
         self.struct = partition_data
         return visit(self.expr, visitor=self)
 
@@ -66,82 +66,94 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left_result, right_result)
 
-    def visit_is_null(self, term: BoundTerm[L]) -> bool:
-        return term.eval(self.struct) is None
+    def visit_is_null(self, term: BoundTerm[L]) -> BooleanExpression:
+        if term.eval(self.struct) is None:
+            return AlwaysTrue()
+        else:
+            return AlwaysFalse()
 
-    def visit_not_null(self, term: BoundTerm[L]) -> bool:
-        return term.eval(self.struct) is not None
+    def visit_not_null(self, term: BoundTerm[L]) -> BooleanExpression:
+        if term.eval(self.struct) is not None:
+            return AlwaysTrue()
+        else:
+            return AlwaysFalse()
 
-    def visit_is_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_is_nan(self, term: BoundTerm[L]) -> BooleanExpression:
         val = term.eval(self.struct)
         if val is None:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_not_nan(self, term: BoundTerm[L]) -> bool:
+    def visit_not_nan(self, term: BoundTerm[L]) -> BooleanExpression:
         val = term.eval(self.struct)
         if val is not None:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_less_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) <= literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) > literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_greater_than_or_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) >= literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) == literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_not_equal(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) != literal.value:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> BooleanExpression:
         if term.eval(self.struct) in literals:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
+    def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> BooleanExpression:
         if term.eval(self.struct) not in literals:
             return self.visit_true()
         else:
             return self.visit_false()
 
-    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
+    def visit_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         eval_res = term.eval(self.struct)
-        return eval_res is not None and str(eval_res).startswith(str(literal.value))
+        if eval_res is not None and str(eval_res).startswith(str(literal.value)):
+            return AlwaysTrue()
+        else:
+            return AlwaysFalse()
 
-    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> bool:
-        return not self.visit_starts_with(term, literal)
+    def visit_not_starts_with(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
+        if not self.visit_starts_with(term, literal):
+            return AlwaysTrue()
+        else:
+            return AlwaysFalse()
 
-    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> List[str]:
+    def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> BooleanExpression:
         """
         If there is no strict projection or if it evaluates to false, then return the predicate.
 
@@ -168,7 +180,6 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
             if strict_projection is not None:
                 bound = strict_projection.bind(struct_to_schema(self.spec.partition_type(self.schema)))
-                assert isinstance(bound, BoundPredicate)
                 if isinstance(bound, BoundPredicate):
                     strict_result = super().visit_bound_predicate(bound)
                 else:
@@ -211,7 +222,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
 
 class ResidualEvaluator(ResidualVisitor):
-    def residual_for(self, partition_data):
+    def residual_for(self, partition_data: Record) -> BooleanExpression:
         return self.eval(partition_data)
 
 
@@ -223,7 +234,7 @@ class UnpartitionedResidualEvaluator(ResidualEvaluator):
         super().__init__(schema=schema, spec=UNPARTITIONED_PARTITION_SPEC, expr=expr, case_sensitive=False)
         self.expr = expr
 
-    def residual_for(self, partition_data):
+    def residual_for(self, partition_data: Record) -> BooleanExpression:
         return self.expr
 
 
