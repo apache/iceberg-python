@@ -15,26 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 from abc import ABC
-from pyiceberg.expressions.visitors import (
-    BoundBooleanExpressionVisitor,
-    BooleanExpression,
-    UnboundPredicate,
-    BoundPredicate,
-    visit,
-    BoundTerm,
-    AlwaysFalse,
-    AlwaysTrue
-)
+from typing import Any, List, Set
+
+from pyiceberg.expressions import And, Or
 from pyiceberg.expressions.literals import Literal
-from pyiceberg.expressions import (
-    And,
-    Or
+from pyiceberg.expressions.visitors import (
+    AlwaysFalse,
+    AlwaysTrue,
+    BooleanExpression,
+    BoundBooleanExpressionVisitor,
+    BoundPredicate,
+    BoundTerm,
+    Not,
+    UnboundPredicate,
+    visit,
 )
-from pyiceberg.types import L
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from typing import Any, List, Set
 from pyiceberg.typedef import Record
+from pyiceberg.types import L
 
 
 class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
@@ -48,11 +47,9 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         self.case_sensitive = case_sensitive
         self.expr = expr
 
-
     def eval(self, partition_data: Record):
         self.struct = partition_data
         return visit(self.expr, visitor=self)
-
 
     def visit_true(self) -> BooleanExpression:
         return AlwaysTrue()
@@ -62,12 +59,12 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_not(self, child_result: BooleanExpression) -> BooleanExpression:
         return Not(child_result)
+
     def visit_and(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return And(left_result, right_result)
 
     def visit_or(self, left_result: BooleanExpression, right_result: BooleanExpression) -> BooleanExpression:
         return Or(left_result, right_result)
-
 
     def visit_is_null(self, term: BoundTerm[L]) -> bool:
         return term.eval(self.struct) is None
@@ -125,12 +122,12 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         else:
             return self.visit_false()
 
-
     def visit_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
         if term.eval(self.struct) in literals:
             return self.visit_true()
         else:
             return self.visit_false()
+
     def visit_not_in(self, term: BoundTerm[L], literals: Set[L]) -> bool:
         if term.eval(self.struct) not in literals:
             return self.visit_true()
@@ -146,19 +143,26 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_bound_predicate(self, predicate: BoundPredicate[Any]) -> List[str]:
         """
-        called from eval
-        input
+        If there is no strict projection or if it evaluates to false, then return the predicate.
+
+        Get the strict projection and inclusive projection of this predicate in partition data,
+        then use them to determine whether to return the original predicate. The strict projection
+        returns true iff the original predicate would have returned true, so the predicate can be
+        eliminated if the strict projection evaluates to true. Similarly the inclusive projection
+        returns false iff the original predicate would have returned false, so the predicate can
+        also be eliminated if the inclusive projection evaluates to false.
+
         """
         parts = self.spec.fields_by_source_id(predicate.term.ref().field.field_id)
         if parts == []:
             return predicate
 
         from pyiceberg.types import StructType
+
         def struct_to_schema(struct: StructType) -> Schema:
             return Schema(*[f for f in struct.fields])
 
         for part in parts:
-
             strict_projection = part.transform.strict_project(part.name, predicate)
             strict_result = None
 
@@ -206,17 +210,16 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         return bound
 
 
-
-
-
 class ResidualEvaluator(ResidualVisitor):
     def residual_for(self, partition_data):
         return self.eval(partition_data)
 
-class UnpartitionedResidualEvaluator(ResidualEvaluator):
 
-    def __init__(self, schema: Schema,expr: BooleanExpression):
+class UnpartitionedResidualEvaluator(ResidualEvaluator):
+    # Finds the residuals for an Expression the partitions in the given PartitionSpec
+    def __init__(self, schema: Schema, expr: BooleanExpression):
         from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+
         super().__init__(schema=schema, spec=UNPARTITIONED_PARTITION_SPEC, expr=expr, case_sensitive=False)
         self.expr = expr
 
@@ -225,12 +228,9 @@ class UnpartitionedResidualEvaluator(ResidualEvaluator):
 
 
 def residual_evaluator_of(
-        spec: PartitionSpec,
-        expr: BooleanExpression,
-        case_sensitive: bool,
-        schema: Schema
+    spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
 ) -> ResidualEvaluator:
     if len(spec.fields) != 0:
         return ResidualEvaluator(spec=spec, expr=expr, schema=schema, case_sensitive=case_sensitive)
     else:
-        return UnpartitionedResidualEvaluator(schema=schema,expr=expr)
+        return UnpartitionedResidualEvaluator(schema=schema, expr=expr)
