@@ -30,6 +30,7 @@ from pyiceberg.exceptions import (
     NoSuchNamespaceError,
     NoSuchTableError,
     NoSuchViewError,
+    OAuthError,
     TableAlreadyExistsError,
 )
 from pyiceberg.io import load_file_io
@@ -43,6 +44,8 @@ from pyiceberg.transforms import IdentityTransform, TruncateTransform
 TEST_NAMESPACE_IDENTIFIER = ("rest_integration_ns",)
 TEST_TABLE_IDENTIFIER = ("rest_integration_ns", "rest_integration_tbl")
 TEST_TABLE_IDENTIFIER_RENAME = ("rest_integration_ns", "renamed_rest_integration_tbl")
+TEST_URI = "http://localhost:8181"
+TEST_CREDENTIALS = "client:secret"
 
 EXAMPLE_table_metadata_no_snapshot_v2 = {
     "format-version": 2,
@@ -329,7 +332,7 @@ def test_load_table_honor_access_delegation(
     catalog = RestCatalog(
         "rest",
         **{
-            "uri": "http://localhost:8181",
+            "uri": TEST_URI,
             "token": "Some-jwt-token",
             "header.X-Iceberg-Access-Delegation": "remote-signing",
         },
@@ -744,7 +747,7 @@ def test_update_namespace_properties_invalid_namespace(catalog: RestCatalog, cle
 @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
 def test_request_session_with_ssl_client_cert(catalog: RestCatalog, clean_up: Any) -> None:
     catalog_properties = {
-        "uri": "http://localhost:8181",
+        "uri": TEST_URI,
         "token": "some-jwt-token",
         "ssl": {
             "client": {
@@ -798,3 +801,55 @@ def test_drop_view_404(catalog: RestCatalog, clean_up: Any) -> None:
         catalog.drop_view((TEST_NAMESPACE_IDENTIFIER[0], "NO_VIEW"))
 
     assert "View does not exist" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+def test_properties_sets_headers(catalog: RestCatalog, clean_up: Any) -> None:
+    catalog = RestCatalog(
+        "rest",
+        uri=TEST_URI,
+        warehouse="s3://some-bucket",
+        **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
+    )
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.skip(reason="Not raising OAuthError")
+def test_token_400(catalog: RestCatalog, clean_up: Any) -> None:
+    with pytest.raises(OAuthError) as e:
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    assert str(e.value) == "invalid_client: Credentials for key invalid_key do not match"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.skip(reason="Not raising OAuthError")
+def test_token_401(catalog: RestCatalog, clean_up: Any) -> None:
+    with pytest.raises(OAuthError) as e:
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    assert "invalid_client" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.skip(reason="Not raising OSError")
+def test_request_session_with_ssl_ca_bundle(catalog: RestCatalog, clean_up: Any) -> None:
+    catalog_properties = {
+        "uri": "http://localhost:8181",
+        "token": "some-jwt-token",
+        "ssl": {
+            "cabundle": "path_to_ca_bundle",
+        },
+    }
+
+    with pytest.raises(OSError) as e:
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "Empty namespace identifier" in str(e.value)
