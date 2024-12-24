@@ -352,7 +352,7 @@ class PyArrowFileIO(FileIO):
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         if scheme in {"s3", "s3a", "s3n", "oss"}:
-            from pyarrow.fs import S3FileSystem
+            from pyarrow.fs import S3FileSystem, resolve_s3_region
 
             client_kwargs: Dict[str, Any] = {
                 "endpoint_override": self.properties.get(S3_ENDPOINT),
@@ -361,6 +361,12 @@ class PyArrowFileIO(FileIO):
                 "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
                 "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
             }
+
+            # Override the default s3.region if netloc(bucket) resolves to a different region
+            try:
+                client_kwargs["region"] = resolve_s3_region(netloc)
+            except (OSError, TypeError):
+                pass
 
             if proxy_uri := self.properties.get(S3_PROXY_URI):
                 client_kwargs["proxy_options"] = proxy_uri
@@ -1326,13 +1332,14 @@ def _task_to_table(
         return None
 
 
-def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
+def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
     deletes_per_file: Dict[str, List[ChunkedArray]] = {}
     unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args), [(fs, delete) for delete in unique_deletes]
+            lambda args: _read_deletes(*args),
+            [(_fs_from_file_path(delete_file.file_path, io), delete_file) for delete_file in unique_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1366,7 +1373,6 @@ def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
-    _fs: FileSystem
     _projected_schema: Schema
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
@@ -1376,7 +1382,6 @@ class ArrowScan:
     Attributes:
         _table_metadata: Current table metadata of the Iceberg table
         _io: PyIceberg FileIO implementation from which to fetch the io properties
-        _fs: PyArrow FileSystem to use to read the files
         _projected_schema: Iceberg Schema to project onto the data files
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
@@ -1394,7 +1399,6 @@ class ArrowScan:
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
-        self._fs = _fs_from_file_path(table_metadata.location, io)  # TODO: use different FileSystem per file
         self._projected_schema = projected_schema
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
@@ -1434,7 +1438,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
         executor = ExecutorFactory.get_or_create()
 
         def _table_from_scan_task(task: FileScanTask) -> pa.Table:
@@ -1497,7 +1501,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
         return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
     def _record_batches_from_scan_tasks_and_deletes(
@@ -1508,7 +1512,7 @@ class ArrowScan:
             if self._limit is not None and total_row_count >= self._limit:
                 break
             batches = _task_to_record_batches(
-                self._fs,
+                _fs_from_file_path(task.file.file_path, self._io),
                 task,
                 self._bound_row_filter,
                 self._projected_schema,
