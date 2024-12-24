@@ -362,6 +362,12 @@ class PyArrowFileIO(FileIO):
                 "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
             }
 
+            # Override the default s3.region if netloc(bucket) resolves to a different region
+            try:
+                client_kwargs["region"] = resolve_s3_region(netloc)
+            except (OSError, TypeError):
+                pass
+
             if proxy_uri := self.properties.get(S3_PROXY_URI):
                 client_kwargs["proxy_options"] = proxy_uri
 
@@ -376,12 +382,6 @@ class PyArrowFileIO(FileIO):
 
             if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
                 client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
-
-            # Override the default s3.region if netloc(bucket) resolves to a different region
-            try:
-                client_kwargs["region"] = resolve_s3_region(netloc)
-            except (OSError, TypeError):
-                pass
 
             return S3FileSystem(**client_kwargs)
         elif scheme in ("hdfs", "viewfs"):
