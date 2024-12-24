@@ -2080,6 +2080,9 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
 
 
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # Refer to: https://github.com/apache/arrow/issues/43713
+
     pyarrow_file_io = PyArrowFileIO()
     us_east_1_region = "us-east-1"
     ap_southeast_2_region = "ap-southeast-2"
@@ -2111,6 +2114,9 @@ def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
 
 
 def test_pyarrow_io_new_input_multi_region() -> None:
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # Refer to: https://github.com/apache/arrow/issues/43713
+
     bucket_regions = [
         ("us-east-2-bucket", "us-east-2"),
         ("ap-southeast-2-bucket", "ap-southeast-2"),
