@@ -353,6 +353,127 @@ lat: [[52.371807,37.773972,53.11254],[53.21917]]
 long: [[4.896029,-122.431297,6.0989],[6.56667]]
 ```
 
+### Partial overwrites
+
+When using the `overwrite` API, you can use an `overwrite_filter` to delete data that matches the filter before appending new data into the table.
+
+For example, with an iceberg table created as:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+And with initial data populating the table:
+
+```python
+import pyarrow as pa
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+You can overwrite the record of `Paris` with a record of `New York`:
+
+```python
+from pyiceberg.expressions import EqualTo
+df = pa.Table.from_pylist(
+    [
+        {"city": "New York", "lat": 40.7128, "long": 74.0060},
+    ]
+)
+tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
+```
+
+This produces the following result with `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
+lat: [[40.7128],[52.371807,37.773972,53.11254]]
+long: [[74.006],[4.896029,-122.431297,6.0989]]
+```
+
+If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
+For example, with an iceberg table with a partition specified on `"city"` field:
+
+```python
+from pyiceberg.schema import Schema
+from pyiceberg.types import DoubleType, NestedField, StringType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table(
+    "default.cities",
+    schema=schema,
+    partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="city_identity"))
+)
+```
+
+And we want to overwrite the data for the partition of `"Paris"`:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": -48.864716, "long": -2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+Then we can call `dynamic_partition_overwrite` with this arrow table:
+
+```python
+df_corrected = pa.Table.from_pylist([
+    {"city": "Paris", "lat": 48.864716, "long": 2.349014}
+])
+tbl.dynamic_partition_overwrite(df_corrected)
+```
+
+This produces the following result with `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["Paris"],["Amsterdam"],["Drachten"],["San Francisco"]]
+lat: [[48.864716],[52.371807],[53.11254],[37.773972]]
+long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
+```
+
 ## Inspecting tables
 
 To explore the table metadata, tables can be inspected.
@@ -1050,7 +1171,7 @@ with table.update_spec() as update:
 Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
 
 ```python
-with table.update_spec() as update:some_partition_name
+with table.update_spec() as update:
     # Remove the partition field with the name
     update.remove_field("some_partition_name")
 ```
