@@ -1584,3 +1584,20 @@ def test_bucket_pyarrow_transforms(
 ) -> None:
     transform: Transform[Any, Any] = BucketTransform(num_buckets=num_buckets)
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
+
+
+@pytest.mark.parametrize(
+    "source_type, input_arr, expected, width",
+    [
+        (StringType(), pa.array(["hello", "iceberg"]), pa.array(["hel", "ice"]), 3),
+        (IntegerType(), pa.array([1, -1]), pa.array([0, -10]), 10),
+    ],
+)
+def test_truncate_pyarrow_transforms(
+    source_type: PrimitiveType,
+    input_arr: Union[pa.Array, pa.ChunkedArray],
+    expected: Union[pa.Array, pa.ChunkedArray],
+    width: int,
+) -> None:
+    transform: Transform[Any, Any] = TruncateTransform(width=width)
+    assert expected == transform.pyarrow_transform(source_type)(input_arr)

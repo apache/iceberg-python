@@ -719,50 +719,105 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog) -> Non
 @pytest.mark.parametrize(
     "spec",
     [
-        # mixed with non-identity is not supported
-        (
-            PartitionSpec(
-                PartitionField(source_id=4, field_id=1001, transform=BucketTransform(2), name="int_bucket"),
-                PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="bool"),
-            )
-        ),
-        # none of non-identity is supported
-        (PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=BucketTransform(2), name="int_bucket"))),
-        (PartitionSpec(PartitionField(source_id=5, field_id=1001, transform=BucketTransform(2), name="long_bucket"))),
-        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=BucketTransform(2), name="date_bucket"))),
-        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=BucketTransform(2), name="timestamp_bucket"))),
-        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=BucketTransform(2), name="timestamptz_bucket"))),
-        (PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=BucketTransform(2), name="string_bucket"))),
-        (PartitionSpec(PartitionField(source_id=12, field_id=1001, transform=BucketTransform(2), name="fixed_bucket"))),
-        (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=BucketTransform(2), name="binary_bucket"))),
         (PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=TruncateTransform(2), name="int_trunc"))),
         (PartitionSpec(PartitionField(source_id=5, field_id=1001, transform=TruncateTransform(2), name="long_trunc"))),
         (PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(2), name="string_trunc"))),
-        (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(2), name="binary_trunc"))),
     ],
 )
-def test_unsupported_transform(
-    spec: PartitionSpec, spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_truncate_transform(
+    spec: PartitionSpec,
+    spark: SparkSession,
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    format_version: int,
 ) -> None:
-    identifier = "default.unsupported_transform"
+    identifier = "default.truncate_transform"
 
     try:
         session_catalog.drop_table(identifier=identifier)
     except NoSuchTableError:
         pass
 
-    tbl = session_catalog.create_table(
+    tbl = _create_table(
+        session_catalog=session_catalog,
         identifier=identifier,
-        schema=TABLE_SCHEMA,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_with_null],
         partition_spec=spec,
-        properties={"format-version": "1"},
     )
 
-    with pytest.raises(
-        ValueError,
-        match="Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: *",
-    ):
-        tbl.append(arrow_table_with_null)
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    assert df.count() == 3, f"Expected 3 total rows for {identifier}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    assert tbl.inspect.partitions().num_rows == 3
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "spec, expected_rows",
+    [
+        # none of non-identity is supported
+        (PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=BucketTransform(2), name="int_bucket")), 3),
+        (PartitionSpec(PartitionField(source_id=5, field_id=1001, transform=BucketTransform(2), name="long_bucket")), 3),
+        (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=BucketTransform(2), name="date_bucket")), 3),
+        (PartitionSpec(PartitionField(source_id=8, field_id=1001, transform=BucketTransform(2), name="timestamp_bucket")), 3),
+        (PartitionSpec(PartitionField(source_id=9, field_id=1001, transform=BucketTransform(2), name="timestamptz_bucket")), 3),
+        (PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=BucketTransform(2), name="string_bucket")), 3),
+        (PartitionSpec(PartitionField(source_id=12, field_id=1001, transform=BucketTransform(2), name="fixed_bucket")), 2),
+        (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=BucketTransform(2), name="binary_bucket")), 2),
+    ],
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_bucket_transform(
+    spark: SparkSession,
+    session_catalog: Catalog,
+    arrow_table_with_null: pa.Table,
+    spec: PartitionSpec,
+    expected_rows: int,
+    format_version: int,
+) -> None:
+    identifier = "default.bucket_transform"
+
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=identifier,
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_with_null],
+        partition_spec=spec,
+    )
+
+    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    df = spark.table(identifier)
+    assert df.count() == 3, f"Expected 3 total rows for {identifier}"
+    for col in arrow_table_with_null.column_names:
+        assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col}"
+        assert df.where(f"{col} is null").count() == 1, f"Expected 1 null row for {col} is null"
+
+    assert tbl.inspect.partitions().num_rows == expected_rows
+    files_df = spark.sql(
+        f"""
+            SELECT *
+            FROM {identifier}.files
+        """
+    )
+    assert files_df.count() == expected_rows
 
 
 @pytest.mark.integration
