@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import inspect
+from _decimal import Decimal
 from copy import copy
 from datetime import date, datetime, time
 from enum import Enum
@@ -23,7 +24,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from _decimal import Decimal
 from fastavro import reader, writer
 
 import pyiceberg.avro.file as avro

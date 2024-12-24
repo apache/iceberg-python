@@ -22,7 +22,7 @@ help:  ## Display this help
 install-poetry:  ## Install poetry if the user has not done that yet.
 	 @if ! command -v poetry &> /dev/null; then \
          echo "Poetry could not be found. Installing..."; \
-         pip install --user poetry==1.8.3; \
+         pip install --user poetry==1.8.5; \
      else \
          echo "Poetry is already installed."; \
      fi

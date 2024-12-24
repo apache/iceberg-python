@@ -1301,7 +1301,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (9, b"\x00\x9bj\xca8\xf1\x05\x00"),
             (10, b"\x9eK\x00\x00"),
             (11, b"\x01"),
-            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" b"\x00\x00\x00\x00"),
+            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
         ]
         assert tbl_a_data_file["nan_value_counts"] == []
         assert tbl_a_data_file["null_value_counts"] == [
@@ -1334,7 +1334,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (9, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
             (10, b"\xd9K\x00\x00"),
             (11, b"\x12"),
-            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11" b"\x11\x11\x11\x11"),
+            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11"),
         ]
         assert tbl_a_data_file["value_counts"] == [
             (1, 3),
@@ -1368,10 +1368,9 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
     identifier = "default.lower.table_v1_with_null_nested_namespace"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-    # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
-    # that supports HEAD request on table endpoint
 
-    # assert session_catalog.table_exists(identifier)
+    assert session_catalog.load_table(identifier) is not None
+    assert session_catalog.table_exists(identifier)
 
     # We expect no error here
     session_catalog.drop_table(identifier)

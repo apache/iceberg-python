@@ -88,13 +88,13 @@ class AddSchemaUpdate(IcebergBaseModel):
     action: Literal["add-schema"] = Field(default="add-schema")
     schema_: Schema = Field(alias="schema")
     # This field is required: https://github.com/apache/iceberg/pull/7445
-    last_column_id: int = Field(alias="last-column-id")
-
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
+    last_column_id: Optional[int] = Field(
+        alias="last-column-id",
+        default=None,
         deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
+            deprecated_in="0.9.0",
+            removed_in="0.10.0",
+            help_message="last-field-id is handled internally, and should not be part of the update.",
         ),
     )
 
@@ -110,14 +110,6 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
-
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -129,14 +121,6 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
-
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
@@ -318,11 +302,8 @@ def _(update: RemovePropertiesUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(AddSchemaUpdate)
 def _(update: AddSchemaUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.last_column_id < base_metadata.last_column_id:
-        raise ValueError(f"Invalid last column id {update.last_column_id}, must be >= {base_metadata.last_column_id}")
-
     metadata_updates: Dict[str, Any] = {
-        "last_column_id": update.last_column_id,
+        "last_column_id": max(base_metadata.last_column_id, update.schema_.highest_field_id),
         "schemas": base_metadata.schemas + [update.schema_],
     }
 

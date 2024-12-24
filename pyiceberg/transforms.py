@@ -1005,7 +1005,7 @@ def _truncate_number_strict(
     elif isinstance(pred, BoundGreaterThanOrEqual):
         return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
     elif isinstance(pred, BoundNotEqualTo):
-        return EqualTo(Reference(name), _transform_literal(transform, boundary))
+        return NotEqualTo(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):
         # there is no predicate that guarantees equality because adjacent longs transform to the
         # same value

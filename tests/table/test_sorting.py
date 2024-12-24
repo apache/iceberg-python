@@ -41,6 +41,13 @@ def sort_order() -> SortOrder:
     )
 
 
+def test_serialize_sort_order_default() -> None:
+    assert (
+        SortOrder(SortField(source_id=19)).model_dump_json()
+        == '{"order-id":1,"fields":[{"source-id":19,"transform":"identity","direction":"asc","null-order":"nulls-first"}]}'
+    )
+
+
 def test_serialize_sort_order_unsorted() -> None:
     assert UNSORTED_SORT_ORDER.model_dump_json() == '{"order-id":0,"fields":[]}'
 

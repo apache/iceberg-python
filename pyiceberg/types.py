@@ -328,8 +328,8 @@ class NestedField(IcebergType):
         data["type"] = data["type"] if "type" in data else field_type
         data["required"] = required
         data["doc"] = doc
-        data["initial-default"] = initial_default
-        data["write-default"] = write_default
+        data["initial-default"] = data["initial-default"] if "initial-default" in data else initial_default
+        data["write-default"] = data["write-default"] if "write-default" in data else write_default
         super().__init__(**data)
 
     def __str__(self) -> str:

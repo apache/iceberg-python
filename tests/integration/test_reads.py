@@ -294,9 +294,11 @@ def test_pyarrow_limit_with_multiple_files(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan(catalog: Catalog) -> None:
+    import daft
+
+    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     assert df.count_rows() == 3
@@ -306,6 +308,9 @@ def test_daft_nan(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_daft_nan_rewritten(catalog: Catalog) -> None:
+    import daft
+
+    daft.context.set_runner_native()
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     df = table_test_null_nan_rewritten.to_daft()
     df = df.where(df["col_numeric"].float.is_nan())
@@ -618,6 +623,50 @@ def test_filter_on_new_column(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_sensitive_by_default(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'").to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    with pytest.raises(ValueError) as e:
+        _ = test_table_add_column.scan(row_filter="B == '2'").to_arrow()
+    assert "Could not find field with name B" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_sensitive(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'", case_sensitive=True).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    with pytest.raises(ValueError) as e:
+        _ = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=True).to_arrow()
+    assert "Could not find field with name B" in str(e.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filter_case_insensitive(catalog: Catalog) -> None:
+    test_table_add_column = catalog.load_table("default.test_table_add_column")
+    arrow_table = test_table_add_column.scan().to_arrow()
+    assert "2" in arrow_table["b"].to_pylist()
+
+    arrow_table = test_table_add_column.scan(row_filter="b == '2'", case_sensitive=False).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+    arrow_table = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=False).to_arrow()
+    assert arrow_table["b"].to_pylist() == ["2"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_upgrade_table_version(catalog: Catalog) -> None:
     table_test_table_version = catalog.load_table("default.test_table_version")
 
@@ -673,7 +722,7 @@ def test_hive_locking(session_catalog_hive: HiveCatalog) -> None:
 
     database_name: str
     table_name: str
-    _, database_name, table_name = table.identifier
+    database_name, table_name = table.name()
 
     hive_client: _HiveClient = _HiveClient(session_catalog_hive.properties["uri"])
     blocking_lock_request: LockRequest = session_catalog_hive._create_lock_request(database_name, table_name)
@@ -694,7 +743,7 @@ def test_hive_locking_with_retry(session_catalog_hive: HiveCatalog) -> None:
     table = create_table(session_catalog_hive)
     database_name: str
     table_name: str
-    _, database_name, table_name = table.identifier
+    database_name, table_name = table.name()
     session_catalog_hive._lock_check_min_wait_time = 0.1
     session_catalog_hive._lock_check_max_wait_time = 0.5
     session_catalog_hive._lock_check_retries = 5

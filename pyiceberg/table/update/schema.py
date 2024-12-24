@@ -179,7 +179,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         if required and not self._allow_incompatible_changes:
             # Table format version 1 and 2 cannot add required column because there is no initial value
-            raise ValueError(f'Incompatible change: cannot add required column: {".".join(path)}')
+            raise ValueError(f"Incompatible change: cannot add required column: {'.'.join(path)}")
 
         name = path[-1]
         parent = path[:-1]

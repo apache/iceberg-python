@@ -244,8 +244,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         dynamo_table_item = self._get_iceberg_table_item(database_name=database_name, table_name=table_name)
         return self._convert_dynamo_table_item_to_iceberg_table(dynamo_table_item=dynamo_table_item)
 
@@ -258,8 +257,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         try:
             self._delete_dynamo_item(
@@ -289,8 +287,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             NoSuchPropertyException: When from table miss some required properties.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
 
         from_table_item = self._get_iceberg_table_item(database_name=from_database_name, table_name=from_table_name)
@@ -321,7 +318,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             raise TableAlreadyExistsError(f"Table {to_database_name}.{to_table_name} already exists") from e
 
         try:
-            self.drop_table(from_identifier_tuple)
+            self.drop_table(from_identifier)
         except (NoSuchTableError, GenericDynamoDbError) as e:
             log_message = f"Failed to drop old table {from_database_name}.{from_table_name}. "
 
@@ -330,7 +327,7 @@ class DynamoDbCatalog(MetastoreCatalog):
                 log_message += f"Rolled back table creation for {to_database_name}.{to_table_name}."
             except (NoSuchTableError, GenericDynamoDbError):
                 log_message += (
-                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. " f"Please clean up manually"
+                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. Please clean up manually"
                 )
 
             raise ValueError(log_message) from e
@@ -635,7 +632,7 @@ class DynamoDbCatalog(MetastoreCatalog):
 
         if table_type.lower() != ICEBERG:
             raise NoSuchIcebergTableError(
-                f"Property table_type is {table_type}, expected {ICEBERG}: " f"{database_name}.{table_name}"
+                f"Property table_type is {table_type}, expected {ICEBERG}: {database_name}.{table_name}"
             )
 
         io = load_file_io(properties=self.properties, location=metadata_location)

@@ -299,19 +299,19 @@ def test_properties_sets_headers(requests_mock: Mocker) -> None:
         **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
     )
 
-    assert (
-        catalog._session.headers.get("Content-type") == "application/json"
-    ), "Expected 'Content-Type' default header not to be overwritten"
-    assert (
-        requests_mock.last_request.headers["Content-type"] == "application/json"
-    ), "Config request did not include expected 'Content-Type' header"
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
+        "Config request did not include expected 'Content-Type' header"
+    )
 
-    assert (
-        catalog._session.headers.get("Customized-Header") == "some/value"
-    ), "Expected 'Customized-Header' header to be 'some/value'"
-    assert (
-        requests_mock.last_request.headers["Customized-Header"] == "some/value"
-    ), "Config request did not include expected 'Customized-Header' header"
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
+        "Config request did not include expected 'Customized-Header' header"
+    )
 
 
 def test_config_sets_headers(requests_mock: Mocker) -> None:
@@ -328,19 +328,19 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
     catalog.create_namespace(namespace)
 
-    assert (
-        catalog._session.headers.get("Content-type") == "application/json"
-    ), "Expected 'Content-Type' default header not to be overwritten"
-    assert (
-        requests_mock.last_request.headers["Content-type"] == "application/json"
-    ), "Create namespace request did not include expected 'Content-Type' header"
+    assert catalog._session.headers.get("Content-type") == "application/json", (
+        "Expected 'Content-Type' default header not to be overwritten"
+    )
+    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
+        "Create namespace request did not include expected 'Content-Type' header"
+    )
 
-    assert (
-        catalog._session.headers.get("Customized-Header") == "some/value"
-    ), "Expected 'Customized-Header' header to be 'some/value'"
-    assert (
-        requests_mock.last_request.headers["Customized-Header"] == "some/value"
-    ), "Create namespace request did not include expected 'Customized-Header' header"
+    assert catalog._session.headers.get("Customized-Header") == "some/value", (
+        "Expected 'Customized-Header' header to be 'some/value'"
+    )
+    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
+        "Create namespace request did not include expected 'Customized-Header' header"
+    )
 
 
 def test_token_400(rest_mock: Mocker) -> None:
@@ -681,6 +681,51 @@ def test_update_namespace_properties_200(rest_mock: Mocker) -> None:
     assert response == PropertiesUpdateSummary(removed=[], updated=["prop"], missing=["abc"])
 
 
+def test_namespace_exists_200(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert catalog.namespace_exists("fokko")
+
+
+def test_namespace_exists_204(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert catalog.namespace_exists("fokko")
+
+
+def test_namespace_exists_404(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert not catalog.namespace_exists("fokko")
+
+
+def test_namespace_exists_500(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko",
+        status_code=500,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(ServerError):
+        catalog.namespace_exists("fokko")
+
+
 def test_update_namespace_properties_404(rest_mock: Mocker) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/properties",
@@ -763,7 +808,7 @@ def test_load_table_from_self_identifier_200(
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     table = catalog.load_table(("pdames", "table"))
-    actual = catalog.load_table(table.identifier)
+    actual = catalog.load_table(table.name())
     expected = Table(
         identifier=("pdames", "table"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
@@ -801,7 +846,7 @@ def test_table_exists_200(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    assert not catalog.table_exists(("fokko", "table"))
+    assert catalog.table_exists(("fokko", "table"))
 
 
 def test_table_exists_204(rest_mock: Mocker) -> None:
@@ -1111,7 +1156,7 @@ def test_register_table_200(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual.metadata_location == expected.metadata_location
-    assert actual.identifier == expected.identifier
+    assert actual.name() == expected.name()
 
 
 def test_register_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
@@ -1174,7 +1219,7 @@ def test_delete_table_from_self_identifier_204(
         status_code=204,
         request_headers=TEST_HEADERS,
     )
-    catalog.drop_table(table.identifier)
+    catalog.drop_table(table.name())
 
 
 def test_rename_table_200(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: Dict[str, Any]) -> None:
@@ -1236,7 +1281,7 @@ def test_rename_table_from_self_identifier_200(
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    actual = catalog.rename_table(table.identifier, to_identifier)
+    actual = catalog.rename_table(table.name(), to_identifier)
     expected = Table(
         identifier=("pdames", "destination"),
         metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
