@@ -70,7 +70,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=12, name="fixed_field", field_type=FixedType(16), required=False),
     NestedField(field_id=13, name="decimal_field", field_type=DecimalType(5, 2), required=False),
     NestedField(field_id=14, name="uuid_field", field_type=UUIDType(), required=False),
-    NestedField(field_id=15, name="special#string#field", field_type=StringType(), required=False),
+    NestedField(field_id=15, name="special#string+field", field_type=StringType(), required=False),
 )
 
 
