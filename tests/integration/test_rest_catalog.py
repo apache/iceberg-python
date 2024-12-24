@@ -190,22 +190,13 @@ def table_metadata_no_snapshot_rest(table_metadata_no_snapshot_v2: Dict[str, Any
 @pytest.fixture(scope="function")
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up")])
 def test_clean_up(catalog: RestCatalog) -> None:
-    print("BEGINNING TEST CLEAN UP")
     for namespaces_tuple in catalog.list_namespaces():
-        print(namespaces_tuple)
         namespace_name = namespaces_tuple[0]
-        print(namespace_name)
         if TEST_NAMESPACE_IDENTIFIER[0] in namespace_name:
             for identifier in catalog.list_tables(namespace_name):
-                print(identifier)
                 catalog.purge_table(identifier)
-            print(namespace_name)
-            print(catalog.list_namespaces())
             if catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
                 catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
-            print(catalog.list_namespaces())
-
-    print("FINISHED TEST CLEAN UP")
 
 
 @pytest.mark.integration
@@ -247,7 +238,7 @@ def test_drop_namespace_409(catalog: RestCatalog, table_schema_simple: Schema, c
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
 
-    with pytest.raises(BadRequestError) as e:  
+    with pytest.raises(BadRequestError) as e:
         catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
     assert f"Namespace {TEST_NAMESPACE_IDENTIFIER[0]} is not empty" in str(e.value)
 
@@ -258,7 +249,6 @@ def test_load_namespace_properties_200(catalog: RestCatalog, clean_up: Any) -> N
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER, properties={"prop": "yes"})
 
     assert "yes" == catalog.load_namespace_properties(TEST_NAMESPACE_IDENTIFIER)["prop"]
-
 
 
 @pytest.mark.integration
@@ -399,8 +389,6 @@ def test_load_table_404(catalog: RestCatalog, clean_up: Any) -> None:
     with pytest.raises(NoSuchTableError) as e:
         catalog.load_table((TEST_NAMESPACE_IDENTIFIER[0], "does_not_exist"))
     assert "Table does not exist" in str(e.value)
-
-
 
 
 @pytest.mark.integration
@@ -630,8 +618,6 @@ def test_delete_table_404(catalog: RestCatalog, clean_up: Any) -> None:
     assert "Table does not exist" in str(e.value)
 
 
-
-
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
 def test_rename_table_200(
@@ -754,22 +740,6 @@ def test_update_namespace_properties_invalid_namespace(catalog: RestCatalog, cle
     assert "Empty namespace identifier" in str(e.value)
 
 
-# @pytest.mark.integration
-# def test_request_session_with_ssl_ca_bundle() -> None:
-#     catalog_properties = {
-#         "uri": "http://localhost:8181",
-#         "token": "some-jwt-token",
-#         "ssl": {
-#             "cabundle": "path_to_ca_bundle",
-#         },
-#     }
-#     catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
-#     print(catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER))
-#     with pytest.raises(NoSuchNamespaceError) as e:
-#         RestCatalog("rest", **catalog_properties)  # type: ignore
-#     assert "Empty namespace identifier" in str(e.value)
-
-
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
 def test_request_session_with_ssl_client_cert(catalog: RestCatalog, clean_up: Any) -> None:
@@ -786,31 +756,6 @@ def test_request_session_with_ssl_client_cert(catalog: RestCatalog, clean_up: An
     with pytest.raises(OSError) as e:
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
-
-
-# @pytest.mark.integration
-# @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-# def test_table_identifier_in_commit_table_request(
-#     catalog: RestCatalog, clean_up: Any,table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
-# ) -> None:
-#     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
-#     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
-#     table = Table(
-#         identifier=TEST_TABLE_IDENTIFIER,
-#         metadata=table_metadata_no_snapshot_rest,  # type:ignore
-#         metadata_location=None,  # type:ignore
-#         io=None,  # type:ignore
-#         catalog=catalog,
-#     )
-
-#     actual = catalog.commit_table(table, (), ())
-#     print("ACTUAL")
-#     print(actual)
-#     catalog._session.
-#     assert not catalog.table_exists(TEST_TABLE_IDENTIFIER)
-
-#     catalog.drop_table(TEST_TABLE_IDENTIFIER)
-#     catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
 
 
 @pytest.mark.integration
@@ -853,14 +798,3 @@ def test_drop_view_404(catalog: RestCatalog, clean_up: Any) -> None:
         catalog.drop_view((TEST_NAMESPACE_IDENTIFIER[0], "NO_VIEW"))
 
     assert "View does not exist" in str(e.value)
-
-
-# @pytest.mark.integration
-# @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-# def test_drop_view_204(catalog: RestCatalog, clean_up: Any,table_schema_simple: Schema) -> None:
-#     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
-#     catalog.create_table(TEST_TABLE_IDENTIFIER)
-#     print(catalog.list_views(TEST_NAMESPACE_IDENTIFIER))
-
-#     assert False
-#     catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
