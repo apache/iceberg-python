@@ -768,7 +768,6 @@ def test_truncate_transform(
 @pytest.mark.parametrize(
     "spec, expected_rows",
     [
-        # none of non-identity is supported
         (PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=BucketTransform(2), name="int_bucket")), 3),
         (PartitionSpec(PartitionField(source_id=5, field_id=1001, transform=BucketTransform(2), name="long_bucket")), 3),
         (PartitionSpec(PartitionField(source_id=10, field_id=1001, transform=BucketTransform(2), name="date_bucket")), 3),
