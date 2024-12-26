@@ -527,7 +527,7 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         new_schema = table.transaction().update_schema().update_column("y", doc=COMMENT2)._apply()
         assert new_schema.find_field("y").doc == COMMENT2, "failed to update existing field doc"
 
-        # update existing doc to an emtpy string
+        # update existing doc to an empty string
         assert new_schema.find_field("y").doc == COMMENT2
         new_schema2 = table.transaction().update_schema().update_column("y", doc="")._apply()
         assert new_schema2.find_field("y").doc == "", "failed to remove existing field doc"
