@@ -69,7 +69,10 @@ from pyiceberg.io.pyarrow import (
     _read_deletes,
     _to_requested_schema,
     bin_pack_arrow_table,
+    compute_statistics_plan,
+    data_file_statistics_from_parquet_metadata,
     expression_to_pyarrow,
+    parquet_path_to_id_mapping,
     schema_to_pyarrow,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -100,6 +103,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
@@ -1123,108 +1127,61 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_projection_partition_inference(tmp_path: str) -> None:
+def test_projection_partition_inference(tmp_path: str, catalog: InMemoryCatalog) -> None:
     schema = Schema(
-        NestedField(1, "partition_field", IntegerType(), required=False),
-        NestedField(2, "other_field", StringType(), required=False),
+        NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
     )
 
-    partition_spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "partition_field"))
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_id"))
 
-    table = TableMetadataV2(
-        location="file://a/b/c.json",
-        last_column_id=2,
-        format_version=2,
-        current_schema_id=0,
-        schemas=[schema],
-        partition_specs=[partition_spec],
+    table = catalog.create_table(
+        "default.test_projection_partition_inference",
+        schema=schema,
+        partition_spec=partition_spec,
         properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
-    pa_schema = pa.schema([pa.field("other_field", pa.string())])
-    pa_table = pa.table({"other_field": ["x"]}, schema=pa_schema)
-    pq.write_table(pa_table, f"{tmp_path}/datafile.parquet")
+    file_data = pa.array(["foo"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
 
-    data_file = DataFile(
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile(
         content=DataFileContent.DATA,
-        file_path=f"{tmp_path}/datafile.parquet",
+        file_path=file_loc,
         file_format=FileFormat.PARQUET,
-        partition=Record(partition_id=123456),
-        file_size_in_bytes=os.path.getsize(f"{tmp_path}/datafile.parquet"),
+        partition=Record(partition_id=1),
+        file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
-        spec_id=0,
+        spec_id=table.metadata.default_spec_id,
         equality_ids=None,
         key_metadata=None,
+        **statistics.to_serialized_dict(),
     )
 
-    table_result_scan = ArrowScan(
-        table_metadata=table,
-        io=load_file_io(),
-        projected_schema=schema,
-        row_filter=AlwaysTrue(),
-    ).to_table(tasks=[FileScanTask(data_file=data_file)])
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
 
     assert (
-        str(table_result_scan)
-        == """pyarrow.Table
-partition_field: int64
-other_field: large_string
-----
-partition_field: [[123456]]
-other_field: [["x"]]"""
-    )
-
-
-def test_projection_initial_default_inference(tmp_path: str) -> None:
-    schema = Schema(
-        NestedField(1, "other_field", StringType(), required=False),
-        NestedField(2, "other_field_1", StringType(), required=False, initial_default="foo"),
-    )
-
-    table = TableMetadataV2(
-        location="file://a/b/c.json",
-        last_column_id=2,
-        format_version=2,
-        current_schema_id=0,
-        schemas=[schema],
-        partition_specs=[PartitionSpec()],
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
-    )
-
-    pa_schema = pa.schema([pa.field("other_field", pa.string())])
-    pa_table = pa.table({"other_field": ["x"]}, schema=pa_schema)
-    pq.write_table(pa_table, f"{tmp_path}/datafile.parquet")
-
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path=f"{tmp_path}/datafile.parquet",
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        file_size_in_bytes=os.path.getsize(f"{tmp_path}/datafile.parquet"),
-        sort_order_id=None,
-        spec_id=0,
-        equality_ids=None,
-        key_metadata=None,
-    )
-
-    table_result_scan = ArrowScan(
-        table_metadata=table,
-        io=load_file_io(),
-        projected_schema=schema,
-        row_filter=AlwaysTrue(),
-    ).to_table(tasks=[FileScanTask(data_file=data_file)])
-
-    print(str(table_result_scan))
-
-    assert (
-        str(table_result_scan)
+        str(table.scan().to_arrow())
         == """pyarrow.Table
 other_field: large_string
-other_field_1: string
+partition_id: int64
 ----
-other_field: [["x"]]
-other_field_1: [["foo"]]"""
+other_field: [["foo"]]
+partition_id: [[1]]"""
     )
+
+
+@pytest.fixture
+def catalog() -> InMemoryCatalog:
+    return InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
 
 
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:

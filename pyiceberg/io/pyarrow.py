@@ -1216,6 +1216,25 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
         return -1
 
 
+def _get_column_projection_values(
+    file: DataFile,
+    projected_schema: Schema,
+    projected_field_ids: Set[int],
+    file_project_schema: Schema,
+    partition_spec: Optional[PartitionSpec] = None,
+) -> Dict[str, object]:
+    """Apply Column Projection rules to File Schema."""
+    projected_missing_fields = {}
+
+    for field_id in projected_field_ids.difference(file_project_schema.field_ids):
+        if partition_spec is not None:
+            for partition_field in partition_spec.fields_by_source_id(field_id):
+                if isinstance(partition_field.transform, IdentityTransform) and partition_field.name in file.partition.__dict__:
+                    projected_missing_fields[partition_field.name] = file.partition.__dict__[partition_field.name]
+
+    return projected_missing_fields
+
+
 def _task_to_record_batches(
     fs: FileSystem,
     task: FileScanTask,
@@ -1239,9 +1258,6 @@ def _task_to_record_batches(
         # the table format version.
         file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
 
-        if file_schema is None:
-            raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
-
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
@@ -1251,16 +1267,10 @@ def _task_to_record_batches(
         # Apply column projection rules for missing partitions and default values
         # https://iceberg.apache.org/spec/#column-projection
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
-        projected_missing_fields = {}
 
-        for field_id in projected_field_ids.difference(file_project_schema.field_ids):
-            if nested_field := projected_schema.find_field(field_id):
-                if nested_field.initial_default is not None:
-                    projected_missing_fields[nested_field.name] = nested_field.initial_default
-            if partition_spec is not None:
-                for partition_field in partition_spec.fields_by_source_id(field_id):
-                    if isinstance(partition_field.transform, IdentityTransform) and task.file.partition is not None:
-                        projected_missing_fields[partition_field.name] = task.file.partition[0]
+        projected_missing_fields = _get_column_projection_values(
+            task.file, projected_schema, projected_field_ids, file_project_schema, partition_spec
+        )
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
