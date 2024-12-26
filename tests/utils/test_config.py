@@ -97,58 +97,73 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 
 
 @pytest.mark.parametrize(
-    "config_location, config_content, expected_result",
+    "config_setup, expected_result",
     [
+        # Validate lookup works with: config > home > cwd
         (
-            "config",
-            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+            {"config_location": "config", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
             {"catalog": {"default": {"uri": "https://service.io/api"}}},
         ),
         (
-            "home",
-            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+            {"config_location": "home", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
             {"catalog": {"default": {"uri": "https://service.io/api"}}},
         ),
         (
-            "current",
-            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+            {"config_location": "current", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
             {"catalog": {"default": {"uri": "https://service.io/api"}}},
         ),
-        ("none", None, None),
+        (
+            {"config_location": "none", "config_content": None},
+            None,
+        ),
+        # Validate lookup order: home > cwd if present in both
+        (
+            {
+                "config_location": "both",
+                "home_content": {"catalog": {"default": {"uri": "https://service.io/home"}}},
+                "current_content": {"catalog": {"default": {"uri": "https://service.io/current"}}},
+            },
+            {"catalog": {"default": {"uri": "https://service.io/home"}}},
+        ),
     ],
 )
 def test_from_multiple_configuration_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
-    config_location: str,
-    config_content: Optional[Dict[str, Any]],
+    config_setup: Dict[str, Any],
     expected_result: Optional[Dict[str, Any]],
 ) -> None:
-    def create_config_file(directory: str, content: Optional[Dict[str, Any]]) -> None:
-        config_file_path = os.path.join(directory, ".pyiceberg.yaml")
-        with open(config_file_path, "w", encoding="utf-8") as file:
-            yaml_str = as_document(content).as_yaml() if content else ""
-            file.write(yaml_str)
+    def create_config_files(
+        paths: Dict[str, str],
+        contents: Dict[str, Optional[Dict[str, Any]]],
+    ) -> None:
+        """Helper to create configuration files in specified paths."""
+        for location, content in contents.items():
+            if content:
+                config_file_path = os.path.join(paths[location], ".pyiceberg.yaml")
+                with open(config_file_path, "w", encoding="UTF8") as file:
+                    yaml_str = as_document(content).as_yaml() if content else ""
+                    file.write(yaml_str)
 
-    config_path = str(tmp_path_factory.mktemp("config"))
-    home_path = str(tmp_path_factory.mktemp("home"))
-    current_path = str(tmp_path_factory.mktemp("current"))
-
-    location_to_path = {
-        "config": config_path,
-        "home": home_path,
-        "current": current_path,
+    paths = {
+        "config": str(tmp_path_factory.mktemp("config")),
+        "home": str(tmp_path_factory.mktemp("home")),
+        "current": str(tmp_path_factory.mktemp("current")),
     }
 
-    if config_location in location_to_path and config_content:
-        create_config_file(location_to_path[config_location], config_content)
+    contents = {
+        "config": config_setup.get("config_content") if config_setup.get("config_location") == "config" else None,
+        "home": config_setup.get("home_content") if config_setup.get("config_location") in ["home", "both"] else None,
+        "current": config_setup.get("current_content") if config_setup.get("config_location") in ["current", "both"] else None,
+    }
 
-    monkeypatch.setenv("PYICEBERG_HOME", config_path)
-    monkeypatch.setattr(os.path, "expanduser", lambda _: home_path)
+    create_config_files(paths, contents)
 
-    if config_location == "current":
-        monkeypatch.chdir(current_path)
+    monkeypatch.setenv("PYICEBERG_HOME", paths["config"])
+    monkeypatch.setattr(os.path, "expanduser", lambda _: paths["home"])
+    if config_setup.get("config_location") in ["current", "both"]:
+        monkeypatch.chdir(paths["current"])
 
     assert Config()._from_configuration_files() == expected_result, (
-        f"Unexpected configuration result for content: {config_content}"
+        f"Unexpected configuration result for content: {expected_result}"
     )
