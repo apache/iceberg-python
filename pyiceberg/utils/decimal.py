@@ -85,7 +85,7 @@ def bytes_to_decimal(value: bytes, scale: int) -> Decimal:
     """Return a decimal from the bytes.
 
     Args:
-        value (bytes): tbe bytes to be converted into a decimal.
+        value (bytes): the bytes to be converted into a decimal.
         scale (int): the scale of the decimal.
 
     Returns:
