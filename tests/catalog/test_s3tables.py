@@ -4,7 +4,7 @@ import boto3
 import pytest
 
 from pyiceberg.catalog.s3tables import S3TableCatalog
-from pyiceberg.exceptions import NoSuchTableError, TableBucketNotFound, NoSuchNamespaceError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, TableBucketNotFound
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
 
@@ -29,6 +29,7 @@ def table_bucket_arn():
     # in one of the supported regions.
 
     return os.environ["ARN"]
+
 
 @pytest.fixture
 def catalog(table_bucket_arn):
@@ -100,13 +101,13 @@ def test_create_table(catalog, database_name: str, table_name: str, table_schema
     assert table == catalog.load_table(identifier)
 
 
-def test_create_table_in_invalid_namespace_raises_exception(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_create_table_in_invalid_namespace_raises_exception(
+    catalog, database_name: str, table_name: str, table_schema_nested: Schema
+):
     identifier = (database_name, table_name)
 
     with pytest.raises(NoSuchNamespaceError):
         catalog.create_table(identifier=identifier, schema=table_schema_nested)
-
-
 
 
 def test_table_exists(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
