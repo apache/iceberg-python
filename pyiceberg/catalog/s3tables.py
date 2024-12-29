@@ -164,17 +164,20 @@ class S3TableCatalog(MetastoreCatalog):
 
         io = load_file_io(properties=self.properties, location=metadata_location)
         # TODO: this triggers unsupported list operation error, setting overwrite=True is a workaround for now
-        # TODO: we can perform this check manually maybe?
         self._write_metadata(metadata, io, metadata_location, overwrite=True)
-        # TODO: after writing need to update table metadata location
-        # can this operation fail if the version token does not match?
-        self.s3tables.update_table_metadata_location(
-            tableBucketARN=self.table_bucket_arn,
-            namespace=namespace,
-            name=table_name,
-            versionToken=version_token,
-            metadataLocation=metadata_location,
-        )
+
+        try:
+            self.s3tables.update_table_metadata_location(
+                tableBucketARN=self.table_bucket_arn,
+                namespace=namespace,
+                name=table_name,
+                versionToken=version_token,
+                metadataLocation=metadata_location,
+            )
+        except self.s3tables.exceptions.ConflictException as e:
+            raise CommitFailedException(
+                f"Cannot create {namespace}.{table_name} because of a concurrent update to the table version {version_token}."
+            ) from e
 
         return self.load_table(identifier=identifier)
 
