@@ -195,13 +195,18 @@ class S3TableCatalog(MetastoreCatalog):
         except self.s3tables.exceptions.NotFoundException as e:
             raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
 
-        # TODO: handle conflicts due to versionToken mismatch that might occur
-        self.s3tables.delete_table(
-            tableBucketARN=self.table_bucket_arn,
-            namespace=namespace,
-            name=table_name,
-            versionToken=response["versionToken"],
-        )
+        version_token = response["versionToken"]
+        try:
+            self.s3tables.delete_table(
+                tableBucketARN=self.table_bucket_arn,
+                namespace=namespace,
+                name=table_name,
+                versionToken=version_token,
+            )
+        except self.s3tables.exceptions.ConflictException as e:
+            raise CommitFailedException(
+                f"Cannot delete {namespace}.{table_name} because of a concurrent update to the table version {version_token}."
+            ) from e
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         # TODO: s3tables only support single level namespaces
