@@ -209,7 +209,6 @@ class S3TableCatalog(MetastoreCatalog):
             ) from e
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
-        # TODO: s3tables only support single level namespaces
         if namespace:
             namespace = self._validate_namespace_identifier(namespace)
         paginator = self.s3tables.get_paginator("list_namespaces")
@@ -240,7 +239,7 @@ class S3TableCatalog(MetastoreCatalog):
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
-        # TODO: raise a NoSuchTableError if it does not exist
+
         try:
             response = self.s3tables.get_table_metadata_location(
                 tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name
