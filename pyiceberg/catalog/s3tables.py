@@ -246,8 +246,10 @@ class S3TableCatalog(MetastoreCatalog):
             )
         except self.s3tables.exceptions.NotFoundException as e:
             raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
-        # TODO: we might need to catch if table is not initialized i.e. does not have metadata setup yet
-        metadata_location = response["metadataLocation"]
+
+        metadata_location = response.get("metadataLocation")
+        if not metadata_location:
+            raise S3TablesError("No table metadata found.")
 
         io = load_file_io(properties=self.properties, location=metadata_location)
         file = io.new_input(metadata_location)
