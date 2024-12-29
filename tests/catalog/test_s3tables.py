@@ -4,7 +4,7 @@ import boto3
 import pytest
 
 from pyiceberg.catalog.s3tables import S3TableCatalog
-from pyiceberg.exceptions import NoSuchTableError, TableBucketNotFound
+from pyiceberg.exceptions import NoSuchTableError, TableBucketNotFound, NoSuchNamespaceError
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
 
@@ -59,6 +59,14 @@ def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn, dat
         )
 
 
+def test_s3tables_api_raises_on_preexisting_table(table_bucket_arn, database_name, table_name):
+    client = boto3.client("s3tables")
+    client.create_namespace(tableBucketARN=table_bucket_arn, namespace=[database_name])
+    client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
+    with pytest.raises(client.exceptions.ConflictException):
+        client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
+
+
 def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn):
     properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified"}
     with pytest.raises(TableBucketNotFound):
@@ -90,6 +98,15 @@ def test_create_table(catalog, database_name: str, table_name: str, table_schema
     table = catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
     assert table == catalog.load_table(identifier)
+
+
+def test_create_table_in_invalid_namespace_raises_exception(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+    identifier = (database_name, table_name)
+
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.create_table(identifier=identifier, schema=table_schema_nested)
+
+
 
 
 def test_table_exists(catalog, database_name: str, table_name: str, table_schema_nested: Schema):

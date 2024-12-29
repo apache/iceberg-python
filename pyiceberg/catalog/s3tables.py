@@ -13,6 +13,8 @@ from pyiceberg.exceptions import (
     S3TablesError,
     InvalidNamespaceName,
     InvalidTableName,
+    TableAlreadyExistsError,
+    NoSuchNamespaceError
 )
 from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -145,10 +147,17 @@ class S3TableCatalog(MetastoreCatalog):
 
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
-        # TODO: check whether namespace exists and if it does, whether table_name already exists
-        self.s3tables.create_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG")
+        try:
+            self.s3tables.create_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG")
+        except self.s3tables.exceptions.NotFoundException as e:
+            raise NoSuchNamespaceError(
+                f"Cannot create {namespace}.{table_name} because no such namespace exists."
+            ) from e
+        except self.s3tables.exceptions.ConflictException as e:
+            raise TableAlreadyExistsError(
+                f"Cannot create {namespace}.{table_name} because a table of the same name already exists in the namespace."
+            ) from e
 
-        # location is given by s3 table bucket
         response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
         version_token = response["versionToken"]
 
