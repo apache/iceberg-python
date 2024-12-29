@@ -26,7 +26,7 @@ hide:
 
 Pyiceberg comes with a CLI that's available after installing the `pyiceberg` package.
 
-You can pass the path to the Catalog using the `--uri` and `--credential` argument, but it is recommended to setup a `~/.pyiceberg.yaml` or `./.pyiceberg.yaml` config as described in the [Catalog](configuration.md) section.
+You can pass the path to the Catalog using the `--uri` and `--credential` argument, but it is recommended to setup a `~/.pyiceberg.yaml` config as described in the [Catalog](configuration.md) section.
 
 ```sh
 ➜  pyiceberg --help
