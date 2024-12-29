@@ -366,6 +366,7 @@ class PyArrowFileIO(FileIO):
             try:
                 client_kwargs["region"] = resolve_s3_region(netloc)
             except (OSError, TypeError):
+                logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {client_kwargs["region"]}")
                 pass
 
             if proxy_uri := self.properties.get(S3_PROXY_URI):
