@@ -75,13 +75,7 @@ class S3TableCatalog(MetastoreCatalog):
         table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
-        # TODO: loading table and getting versionToken should be an atomic operation, otherwise
-        # the table can change between those two API calls without noticing
-        # -> change this into an internal API that returns table information along with versionToken
-        current_table = self.load_table(identifier=table_identifier)
-        version_token = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=database_name, name=table_name)[
-            "versionToken"
-        ]
+        current_table, version_token = self._load_table_and_version(identifier=table_identifier)
 
         updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
@@ -172,7 +166,7 @@ class S3TableCatalog(MetastoreCatalog):
         )
 
         io = load_file_io(properties=self.properties, location=metadata_location)
-        # TODO: this triggers unsupported list operation error, setting overwrite=True is a workaround for now
+        # this triggers unsupported list operation error, setting overwrite=True is a workaround for now
         self._write_metadata(metadata, io, metadata_location, overwrite=True)
 
         try:
@@ -247,6 +241,10 @@ class S3TableCatalog(MetastoreCatalog):
         }
 
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
+        table, _ = self._load_table_and_version(identifier)
+        return table
+
+    def _load_table_and_version(self, identifier: Union[str, Identifier]) -> Tuple[Table, str]:
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
 
         try:
@@ -260,6 +258,8 @@ class S3TableCatalog(MetastoreCatalog):
         if not metadata_location:
             raise S3TablesError("No table metadata found.")
 
+        version_token = response["versionToken"]
+
         io = load_file_io(properties=self.properties, location=metadata_location)
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
@@ -269,7 +269,7 @@ class S3TableCatalog(MetastoreCatalog):
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),
             catalog=self,
-        )
+        ), version_token
 
     def rename_table(self, from_identifier: Union[str, Identifier], to_identifier: Union[str, Identifier]) -> Table:
         from_namespace, from_table_name = self._validate_database_and_table_identifier(from_identifier)
