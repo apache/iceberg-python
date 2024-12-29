@@ -7,16 +7,16 @@ from boto3.session import UnknownServiceError
 from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import (
     CommitFailedException,
-    NamespaceNotEmptyError,
-    NoSuchTableError,
-    TableBucketNotFound,
-    S3TablesError,
     InvalidNamespaceName,
     InvalidTableName,
+    NamespaceNotEmptyError,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+    S3TablesError,
     TableAlreadyExistsError,
-    NoSuchNamespaceError
+    TableBucketNotFound,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, PY_IO_IMPL, load_file_io
+from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
@@ -142,11 +142,11 @@ class S3TableCatalog(MetastoreCatalog):
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         try:
-            self.s3tables.create_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG")
+            self.s3tables.create_table(
+                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG"
+            )
         except self.s3tables.exceptions.NotFoundException as e:
-            raise NoSuchNamespaceError(
-                f"Cannot create {namespace}.{table_name} because no such namespace exists."
-            ) from e
+            raise NoSuchNamespaceError(f"Cannot create {namespace}.{table_name} because no such namespace exists.") from e
         except self.s3tables.exceptions.ConflictException as e:
             raise TableAlreadyExistsError(
                 f"Cannot create {namespace}.{table_name} because a table of the same name already exists in the namespace."
