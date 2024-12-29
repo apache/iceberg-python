@@ -2,7 +2,6 @@ import re
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 import boto3
-from boto3.session import UnknownServiceError
 
 from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import (
@@ -20,10 +19,10 @@ from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, A
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse, Table, TableRequirement
+from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
-from pyiceberg.table.update import TableUpdate
+from pyiceberg.table.update import TableRequirement, TableUpdate
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.utils.properties import get_first_property_value
 
@@ -61,7 +60,7 @@ class S3TableCatalog(MetastoreCatalog):
         )
         try:
             self.s3tables = session.client("s3tables", endpoint_url=properties.get(S3TABLES_ENDPOINT))
-        except UnknownServiceError as e:
+        except boto3.session.UnknownServiceError as e:
             raise S3TablesError("'s3tables' requires boto3>=1.35.74. Current version: {boto3.__version__}.") from e
 
         try:
@@ -106,7 +105,7 @@ class S3TableCatalog(MetastoreCatalog):
             metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
         )
 
-    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = ...) -> None:
+    def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         valid_namespace: str = self._validate_namespace_identifier(namespace)
         self.s3tables.create_namespace(tableBucketARN=self.table_bucket_arn, namespace=[valid_namespace])
 
@@ -155,10 +154,10 @@ class S3TableCatalog(MetastoreCatalog):
         response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
         version_token = response["versionToken"]
 
-        location = response["warehouseLocation"]
-        metadata_location = self._get_metadata_location(location=location)
+        warehouse_location = response["warehouseLocation"]
+        metadata_location = self._get_metadata_location(location=warehouse_location)
         metadata = new_table_metadata(
-            location=location,
+            location=warehouse_location,
             schema=schema,
             partition_spec=partition_spec,
             sort_order=sort_order,

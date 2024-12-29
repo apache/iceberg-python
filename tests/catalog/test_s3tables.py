@@ -10,19 +10,19 @@ from pyiceberg.types import IntegerType
 
 
 @pytest.fixture
-def database_name(database_name):
+def database_name(database_name: str) -> str:
     # naming rules prevent "-" in namespaces for s3 table buckets
     return database_name.replace("-", "_")
 
 
 @pytest.fixture
-def table_name(table_name):
+def table_name(table_name: str) -> str:
     # naming rules prevent "-" in table namees for s3 table buckets
     return table_name.replace("-", "_")
 
 
 @pytest.fixture
-def table_bucket_arn():
+def table_bucket_arn() -> str:
     import os
 
     # since the moto library does not support s3tables as of 2024-12-14 we have to test against a real AWS endpoint
@@ -32,13 +32,13 @@ def table_bucket_arn():
 
 
 @pytest.fixture
-def catalog(table_bucket_arn):
+def catalog(table_bucket_arn: str) -> S3TableCatalog:
     # pyarrow does not support writing to S3 Table buckets as of 2024-12-14 https://github.com/apache/iceberg-python/issues/1404#issuecomment-2543174146
     properties = {"s3tables.table-bucket-arn": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
     return S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
-def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn, database_name, table_name):
+def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn: str, database_name: str, table_name: str) -> None:
     client = boto3.client("s3tables")
     client.create_namespace(tableBucketARN=table_bucket_arn, namespace=[database_name])
     response = client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
@@ -60,7 +60,7 @@ def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn, dat
         )
 
 
-def test_s3tables_api_raises_on_preexisting_table(table_bucket_arn, database_name, table_name):
+def test_s3tables_api_raises_on_preexisting_table(table_bucket_arn: str, database_name: str, table_name: str) -> None:
     client = boto3.client("s3tables")
     client.create_namespace(tableBucketARN=table_bucket_arn, namespace=[database_name])
     client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
@@ -68,31 +68,31 @@ def test_s3tables_api_raises_on_preexisting_table(table_bucket_arn, database_nam
         client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
 
 
-def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn):
+def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str) -> None:
     properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified"}
     with pytest.raises(TableBucketNotFound):
         S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
-def test_create_namespace(catalog, database_name: str):
+def test_create_namespace(catalog: S3TableCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     namespaces = catalog.list_namespaces()
     assert (database_name,) in namespaces
 
 
-def test_load_namespace_properties(catalog, database_name: str):
+def test_load_namespace_properties(catalog: S3TableCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     assert database_name in catalog.load_namespace_properties(database_name)["namespace"]
 
 
-def test_drop_namespace(catalog, database_name: str):
+def test_drop_namespace(catalog: S3TableCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     assert (database_name,) in catalog.list_namespaces()
     catalog.drop_namespace(namespace=database_name)
     assert (database_name,) not in catalog.list_namespaces()
 
 
-def test_create_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_create_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -102,15 +102,15 @@ def test_create_table(catalog, database_name: str, table_name: str, table_schema
 
 
 def test_create_table_in_invalid_namespace_raises_exception(
-    catalog, database_name: str, table_name: str, table_schema_nested: Schema
-):
+    catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema
+) -> None:
     identifier = (database_name, table_name)
 
     with pytest.raises(NoSuchNamespaceError):
         catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
-def test_table_exists(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_table_exists(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -119,7 +119,7 @@ def test_table_exists(catalog, database_name: str, table_name: str, table_schema
     assert catalog.table_exists(identifier=identifier)
 
 
-def test_rename_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_rename_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -135,7 +135,7 @@ def test_rename_table(catalog, database_name: str, table_name: str, table_schema
     assert catalog.table_exists(identifier=to_identifier)
 
 
-def test_list_tables(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_list_tables(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -144,7 +144,7 @@ def test_list_tables(catalog, database_name: str, table_name: str, table_schema_
     assert catalog.list_tables(namespace=database_name)
 
 
-def test_drop_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_drop_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -156,7 +156,7 @@ def test_drop_table(catalog, database_name: str, table_name: str, table_schema_n
         catalog.load_table(identifier=identifier)
 
 
-def test_commit_table(catalog, database_name: str, table_name: str, table_schema_nested: Schema):
+def test_commit_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
