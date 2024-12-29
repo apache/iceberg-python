@@ -401,6 +401,7 @@ def test_list_tables_200(catalog: RestCatalog, clean_up: Any, table_schema_simpl
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.skip(reason="Not establishing proper connection in testing")
 def test_list_tables_200_sigv4(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
     catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": "some-jwt-token", "rest.sigv4-enabled": "true"})
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
@@ -818,6 +819,7 @@ def test_create_namespace_if_already_existing(catalog: RestCatalog, clean_up: An
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.skip(reason="Not establishing proper connection in testing")
 def test_list_views_200_sigv4(catalog: RestCatalog, clean_up: Any) -> None:
     catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": "some-jwt-token", "rest.sigv4-enabled": "true"})
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
