@@ -902,7 +902,7 @@ class Table:
 
         Args:
             row_filter:
-                A string or BooleanExpression that decsribes the
+                A string or BooleanExpression that describes the
                 desired rows
             selected_fields:
                 A tuple of strings representing the column names
