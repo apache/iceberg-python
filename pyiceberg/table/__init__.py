@@ -1344,6 +1344,7 @@ class FileScanTask(ScanTask):
     delete_files: Set[DataFile]
     start: int
     length: int
+    residual: BooleanExpression
 
     def __init__(
         self,
@@ -1351,12 +1352,13 @@ class FileScanTask(ScanTask):
         delete_files: Optional[Set[DataFile]] = None,
         start: Optional[int] = None,
         length: Optional[int] = None,
+        residual: BooleanExpression = None
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
         self.start = start or 0
         self.length = length or data_file.file_size_in_bytes
-
+        self.residual = residual
 
 def _open_manifest(
     io: FileIO,
@@ -1516,13 +1518,23 @@ class DataScan(TableScan):
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
+
+
+        from pyiceberg.expressions.residual_evaluator import residual_evaluator_of
+        residual_evaluator = residual_evaluator_of(
+            spec=self.table_metadata.spec(),
+            expr=self.row_filter,
+            case_sensitive=self.case_sensitive,
+            schema=self.table_metadata.schema()
+        )
         return [
             FileScanTask(
-                data_entry.data_file,
+                data_file=data_entry.data_file,
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
                 ),
+                residual=residual_evaluator.residual_for(data_entry.data_file.partition)
             )
             for data_entry in data_entries
         ]
@@ -1598,10 +1610,26 @@ class DataScan(TableScan):
         return ray.data.from_arrow(self.to_arrow())
 
     def count(self) -> int:
+        """
+        Usage: calutates the total number of records in a Scan that haven't had positional deletes
+        """
         res = 0
+        # every task is a FileScanTask
         tasks = self.plan_files()
+
         for task in tasks:
-            res += task.file.record_count
+            # task.residual is a Boolean Expression if the fiter condition is fully satisfied by the
+            # partition value and task.delete_files represents that positional delete haven't been merged yet
+            # hence those files have to read as a pyarrow table applying the filter and deletes
+            if task.residual == AlwaysTrue() and not len(task.delete_files):
+                # Every File has a metadata stat that stores the file record count
+                res += task.file.record_count
+            else:
+                from pyiceberg.io.pyarrow import ArrowScan
+                tbl = ArrowScan(
+                    self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+                ).to_table([task])
+                res += len(tbl)
         return res
 
 
