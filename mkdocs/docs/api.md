@@ -1005,7 +1005,7 @@ tbl.add_files(file_paths=file_paths)
 
 ## Schema evolution
 
-PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).
+PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overridden).
 
 In the examples below, the `.update_schema()` is called from the table itself.
 
