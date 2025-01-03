@@ -35,6 +35,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table.sorting import SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Properties
 from pyiceberg.types import IntegerType
@@ -124,6 +125,61 @@ def test_create_table_with_default_warehouse(
     assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+
+
+@mock_aws
+def test_create_table_with_fresh_ids_assignment(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    database_name: str,
+    table_name: str,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+    iceberg_schema_with_fresh_ids: Schema,
+    partition_spec_with_fresh_ids: PartitionSpec,
+    sort_order_with_fresh_ids: SortOrder,
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=True,
+    )
+    assert table.schema() == iceberg_schema_with_fresh_ids
+    assert table.spec() == partition_spec_with_fresh_ids
+    assert table.sort_order() == sort_order_with_fresh_ids
+
+
+@mock_aws
+def test_create_table_without_fresh_ids_assignment(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    database_name: str,
+    table_name: str,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier,
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=False,
+    )
+    assert table.schema() == iceberg_schema_without_fresh_ids
+    assert table.spec() == partition_spec_without_fresh_ids
+    assert table.sort_order() == sort_order_without_fresh_ids
 
 
 @mock_aws

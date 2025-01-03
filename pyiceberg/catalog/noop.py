@@ -51,6 +51,7 @@ class NoopCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> Table:
         raise NotImplementedError
 
@@ -62,6 +63,7 @@ class NoopCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> CreateTableTransaction:
         raise NotImplementedError
 
