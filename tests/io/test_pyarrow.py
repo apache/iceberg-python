@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
-
+import logging
 import os
 import tempfile
 import uuid
@@ -2113,10 +2113,10 @@ def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
         assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 2  # type: ignore
 
 
-def test_pyarrow_io_new_input_multi_region() -> None:
+def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
     # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
     # Refer to: https://github.com/apache/arrow/issues/43713
-
+    user_provided_region = "ap-southeast-1"
     bucket_regions = [
         ("us-east-2-bucket", "us-east-2"),
         ("ap-southeast-2-bucket", "ap-southeast-2"),
@@ -2128,17 +2128,24 @@ def test_pyarrow_io_new_input_multi_region() -> None:
                 return bucket_region[1]
         raise OSError("Unknown bucket")
 
-    # For one single pyarrow io instance with configured default s3 region
-    pyarrow_file_io = PyArrowFileIO({"s3.region": "ap-southeast-1"})
+    # For a pyarrow io instance with configured default s3 region
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region})
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         mock_s3_region_resolver.side_effect = _s3_region_map
 
-        # The filesystem region is set by provided property by default (when bucket region cannot be resolved)
-        assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == "ap-southeast-1"
+        # The region is set to provided region if bucket region cannot be resolved
+        with caplog.at_level(logging.WARNING):
+            assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
+        assert f"Unable to resolve region for bucket non-exist-bucket, using default region {user_provided_region}" in caplog.text
 
-        # The filesystem region is overwritten by provided bucket region (when bucket region resolves to a different one)
         for bucket_region in bucket_regions:
-            assert pyarrow_file_io.new_input(f"s3://{bucket_region[0]}/path/to/file")._filesystem.region == bucket_region[1]
+            # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region
+            with caplog.at_level(logging.WARNING):
+                assert pyarrow_file_io.new_input(f"s3://{bucket_region[0]}/path/to/file")._filesystem.region == bucket_region[1]
+            assert f"PyArrow FileIO overriding S3 bucket region for bucket {bucket_region[0]}: provided region {user_provided_region}, actual region {bucket_region[1]}"
+
+            # For oss scheme, user provided region is used instead
+            assert pyarrow_file_io.new_input(f"oss://{bucket_region[0]}/path/to/file")._filesystem.region == user_provided_region
 
 
 def test_pyarrow_io_multi_fs() -> None:
