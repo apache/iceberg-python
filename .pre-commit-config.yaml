@@ -69,6 +69,10 @@ repos:
           # --line-length is set to a high value to deal with very long lines
           - --line-length
           - '99999'
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
 ci:
     autofix_commit_msg: |
         [pre-commit.ci] auto fixes from pre-commit.com hooks

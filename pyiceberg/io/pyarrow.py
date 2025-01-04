@@ -1540,7 +1540,7 @@ def _to_requested_schema(
     include_field_ids: bool = False,
     use_large_types: bool = True,
 ) -> pa.RecordBatch:
-    # We could re-use some of these visitors
+    # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
