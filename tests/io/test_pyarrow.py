@@ -27,7 +27,7 @@ from uuid import uuid4
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from pyarrow.fs import FileType, LocalFileSystem
+from pyarrow.fs import FileType, LocalFileSystem, S3FileSystem
 
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
@@ -2139,3 +2139,16 @@ def test_pyarrow_io_new_input_multi_region() -> None:
         # The filesystem region is overwritten by provided bucket region (when bucket region resolves to a different one)
         for bucket_region in bucket_regions:
             assert pyarrow_file_io.new_input(f"s3://{bucket_region[0]}/path/to/file")._filesystem.region == bucket_region[1]
+
+
+def test_pyarrow_io_multi_fs() -> None:
+    pyarrow_file_io = PyArrowFileIO({"s3.region": "ap-southeast-1"})
+
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.return_value = None
+
+        # The PyArrowFileIO instance resolves s3 file input to S3FileSystem
+        assert isinstance(pyarrow_file_io.new_input("s3://bucket/path/to/file")._filesystem, S3FileSystem)
+
+        # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
+        assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
