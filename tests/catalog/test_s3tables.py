@@ -147,3 +147,4 @@ def test_commit_table(catalog: S3TableCatalog, database_name: str, table_name: s
     assert updated_table_metadata.last_updated_ms > last_updated_ms
     assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
     assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
+    assert table.schema().columns[-1].name == "b"
