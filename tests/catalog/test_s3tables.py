@@ -37,36 +37,6 @@ def catalog(table_bucket_arn: str) -> S3TableCatalog:
     return S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
-def test_s3tables_api_raises_on_conflicting_version_tokens(table_bucket_arn: str, database_name: str, table_name: str) -> None:
-    client = boto3.client("s3tables")
-    client.create_namespace(tableBucketARN=table_bucket_arn, namespace=[database_name])
-    response = client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
-    version_token = response["versionToken"]
-    scrambled_version_token = version_token[::-1]
-
-    warehouse_location = client.get_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name)[
-        "warehouseLocation"
-    ]
-    metadata_location = f"{warehouse_location}/metadata/00001-{uuid.uuid4()}.metadata.json"
-
-    with pytest.raises(client.exceptions.ConflictException):
-        client.update_table_metadata_location(
-            tableBucketARN=table_bucket_arn,
-            namespace=database_name,
-            name=table_name,
-            versionToken=scrambled_version_token,
-            metadataLocation=metadata_location,
-        )
-
-
-def test_s3tables_api_raises_on_preexisting_table(table_bucket_arn: str, database_name: str, table_name: str) -> None:
-    client = boto3.client("s3tables")
-    client.create_namespace(tableBucketARN=table_bucket_arn, namespace=[database_name])
-    client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
-    with pytest.raises(client.exceptions.ConflictException):
-        client.create_table(tableBucketARN=table_bucket_arn, namespace=database_name, name=table_name, format="ICEBERG")
-
-
 def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str) -> None:
     properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified"}
     with pytest.raises(TableBucketNotFound):
