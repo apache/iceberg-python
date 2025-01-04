@@ -2142,7 +2142,10 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
             # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region
             with caplog.at_level(logging.WARNING):
                 assert pyarrow_file_io.new_input(f"s3://{bucket_region[0]}/path/to/file")._filesystem.region == bucket_region[1]
-            assert f"PyArrow FileIO overriding S3 bucket region for bucket {bucket_region[0]}: provided region {user_provided_region}, actual region {bucket_region[1]}"
+            assert (
+                f"PyArrow FileIO overriding S3 bucket region for bucket {bucket_region[0]}: "
+                f"provided region {user_provided_region}, actual region {bucket_region[1]}" in caplog.text
+            )
 
             # For oss scheme, user provided region is used instead
             assert pyarrow_file_io.new_input(f"oss://{bucket_region[0]}/path/to/file")._filesystem.region == user_provided_region
