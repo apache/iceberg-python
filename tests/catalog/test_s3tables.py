@@ -33,8 +33,7 @@ def table_bucket_arn() -> str:
 
 @pytest.fixture
 def catalog(table_bucket_arn: str) -> S3TableCatalog:
-    # pyarrow does not support writing to S3 Table buckets as of 2024-12-14 https://github.com/apache/iceberg-python/issues/1404#issuecomment-2543174146
-    properties = {"s3tables.table-bucket-arn": table_bucket_arn, "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    properties = {"s3tables.table-bucket-arn": table_bucket_arn}
     return S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
