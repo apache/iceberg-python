@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import os
+from typing import Any, Dict, Optional
 from unittest import mock
 
 import pytest
@@ -93,3 +94,76 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 
     assert Config().get_bool("legacy-current-snapshot-id")
     assert Config().get_int("max-workers") == 4
+
+
+@pytest.mark.parametrize(
+    "config_setup, expected_result",
+    [
+        # Validate lookup works with: config > home > cwd
+        (
+            {"config_location": "config", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+        ),
+        (
+            {"config_location": "home", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+        ),
+        (
+            {"config_location": "current", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
+            {"catalog": {"default": {"uri": "https://service.io/api"}}},
+        ),
+        (
+            {"config_location": "none", "config_content": None},
+            None,
+        ),
+        # Validate lookup order: home > cwd if present in both
+        (
+            {
+                "config_location": "both",
+                "home_content": {"catalog": {"default": {"uri": "https://service.io/home"}}},
+                "current_content": {"catalog": {"default": {"uri": "https://service.io/current"}}},
+            },
+            {"catalog": {"default": {"uri": "https://service.io/home"}}},
+        ),
+    ],
+)
+def test_from_multiple_configuration_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    config_setup: Dict[str, Any],
+    expected_result: Optional[Dict[str, Any]],
+) -> None:
+    def create_config_files(
+        paths: Dict[str, str],
+        contents: Dict[str, Optional[Dict[str, Any]]],
+    ) -> None:
+        """Helper to create configuration files in specified paths."""
+        for location, content in contents.items():
+            if content:
+                config_file_path = os.path.join(paths[location], ".pyiceberg.yaml")
+                with open(config_file_path, "w", encoding="UTF8") as file:
+                    yaml_str = as_document(content).as_yaml() if content else ""
+                    file.write(yaml_str)
+
+    paths = {
+        "config": str(tmp_path_factory.mktemp("config")),
+        "home": str(tmp_path_factory.mktemp("home")),
+        "current": str(tmp_path_factory.mktemp("current")),
+    }
+
+    contents = {
+        "config": config_setup.get("config_content") if config_setup.get("config_location") == "config" else None,
+        "home": config_setup.get("home_content") if config_setup.get("config_location") in ["home", "both"] else None,
+        "current": config_setup.get("current_content") if config_setup.get("config_location") in ["current", "both"] else None,
+    }
+
+    create_config_files(paths, contents)
+
+    monkeypatch.setenv("PYICEBERG_HOME", paths["config"])
+    monkeypatch.setattr(os.path, "expanduser", lambda _: paths["home"])
+    if config_setup.get("config_location") in ["current", "both"]:
+        monkeypatch.chdir(paths["current"])
+
+    assert Config()._from_configuration_files() == expected_result, (
+        f"Unexpected configuration result for content: {expected_result}"
+    )

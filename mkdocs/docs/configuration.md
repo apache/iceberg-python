@@ -28,7 +28,7 @@ hide:
 
 There are three ways to pass in configuration:
 
-- Using the `~/.pyiceberg.yaml` configuration file
+- Using the `.pyiceberg.yaml` configuration file stored in either the directory specified by the `PYICEBERG_HOME` environment variable, the home directory, or current working directory.
 - Through environment variables
 - By passing in credentials through the CLI or the Python API
 
