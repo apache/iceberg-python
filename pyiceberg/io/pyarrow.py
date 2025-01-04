@@ -1396,7 +1396,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[st
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(_fs_from_file_path(delete_file.file_path, io), delete_file) for delete_file in unique_deletes],
+            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in unique_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1408,7 +1408,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[st
     return deletes_per_file
 
 
-def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
+def _fs_from_file_path(io: FileIO, file_path: str) -> FileSystem:
     scheme, netloc, _ = _parse_location(file_path)
     if isinstance(io, PyArrowFileIO):
         return io.fs_by_scheme(scheme, netloc)
@@ -1569,7 +1569,7 @@ class ArrowScan:
             if self._limit is not None and total_row_count >= self._limit:
                 break
             batches = _task_to_record_batches(
-                _fs_from_file_path(task.file.file_path, self._io),
+                _fs_from_file_path(self._io, task.file.file_path),
                 task,
                 self._bound_row_filter,
                 self._projected_schema,
