@@ -899,7 +899,7 @@ def test_projection_truncate_string_set_same_result(bound_reference_str: BoundRe
 def test_projection_truncate_string_set_in(bound_reference_str: BoundReference[str]) -> None:
     assert TruncateTransform(3).project(
         "name", BoundIn(term=bound_reference_str, literals={literal("hello"), literal("world")})
-    ) == In(term="name", literals={literal("hel"), literal("wor")})
+    ) == In(term="name", literals={literal("hel"), literal("wor")})  # codespell:ignore hel
 
 
 def test_projection_truncate_string_set_not_in(bound_reference_str: BoundReference[str]) -> None:
