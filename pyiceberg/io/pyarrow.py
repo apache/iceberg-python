@@ -190,13 +190,6 @@ UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 T = TypeVar("T")
 
 
-class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
-    def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
-        # In LocalFileSystem, parent directories must be first created before opening an output stream
-        self.create_dir(os.path.dirname(path), recursive=True)
-        return super().open_output_stream(path, *args, **kwargs)
-
-
 class PyArrowFile(InputFile, OutputFile):
     """A combined InputFile and OutputFile implementation that uses a pyarrow filesystem to generate pyarrow.lib.NativeFile instances.
 
@@ -351,82 +344,146 @@ class PyArrowFileIO(FileIO):
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
-        if scheme in {"s3", "s3a", "s3n", "oss"}:
-            from pyarrow.fs import S3FileSystem, resolve_s3_region
+        """Initialize FileSystem for different scheme."""
+        if scheme in {"oss"}:
+            return self._initialize_oss_fs(scheme, netloc)
 
-            client_kwargs: Dict[str, Any] = {
-                "endpoint_override": self.properties.get(S3_ENDPOINT),
-                "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-                "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-                "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-                "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
-            }
+        elif scheme in {"s3", "s3a", "s3n"}:
+            return self._initialize_s3_fs(scheme, netloc)
 
-            # Override the default s3.region if netloc(bucket) resolves to a different region
-            try:
-                client_kwargs["region"] = resolve_s3_region(netloc)
-            except (OSError, TypeError):
-                logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {client_kwargs['region']}")
-
-            if proxy_uri := self.properties.get(S3_PROXY_URI):
-                client_kwargs["proxy_options"] = proxy_uri
-
-            if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-                client_kwargs["connect_timeout"] = float(connect_timeout)
-
-            if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-                client_kwargs["role_arn"] = role_arn
-
-            if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-                client_kwargs["session_name"] = session_name
-
-            if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-                client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
-
-            return S3FileSystem(**client_kwargs)
         elif scheme in ("hdfs", "viewfs"):
-            from pyarrow.fs import HadoopFileSystem
+            return self._initialize_hdfs_fs(scheme, netloc)
 
-            hdfs_kwargs: Dict[str, Any] = {}
-            if netloc:
-                return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
-            if host := self.properties.get(HDFS_HOST):
-                hdfs_kwargs["host"] = host
-            if port := self.properties.get(HDFS_PORT):
-                # port should be an integer type
-                hdfs_kwargs["port"] = int(port)
-            if user := self.properties.get(HDFS_USER):
-                hdfs_kwargs["user"] = user
-            if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
-                hdfs_kwargs["kerb_ticket"] = kerb_ticket
-
-            return HadoopFileSystem(**hdfs_kwargs)
         elif scheme in {"gs", "gcs"}:
-            from pyarrow.fs import GcsFileSystem
+            return self._initialize_gcs_fs(scheme, netloc)
 
-            gcs_kwargs: Dict[str, Any] = {}
-            if access_token := self.properties.get(GCS_TOKEN):
-                gcs_kwargs["access_token"] = access_token
-            if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
-                gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-            if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
-                gcs_kwargs["default_bucket_location"] = bucket_location
-            if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
-                if self.properties.get(GCS_ENDPOINT):
-                    deprecation_message(
-                        deprecated_in="0.8.0",
-                        removed_in="0.9.0",
-                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
-                    )
-                url_parts = urlparse(endpoint)
-                gcs_kwargs["scheme"] = url_parts.scheme
-                gcs_kwargs["endpoint_override"] = url_parts.netloc
+        elif scheme in {"file"}:
+            return self._initialize_local_fs(scheme, netloc)
 
-            return GcsFileSystem(**gcs_kwargs)
-        elif scheme == "file":
-            return PyArrowLocalFileSystem()
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
+
+    def _initialize_oss_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import S3FileSystem
+
+        client_kwargs: Dict[str, Any] = {
+            "endpoint_override": self.properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+        }
+
+        if proxy_uri := self.properties.get(S3_PROXY_URI):
+            client_kwargs["proxy_options"] = proxy_uri
+
+        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+            client_kwargs["role_arn"] = role_arn
+
+        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+            client_kwargs["session_name"] = session_name
+
+        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+
+        return S3FileSystem(**client_kwargs)
+
+    def _initialize_s3_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import S3FileSystem, resolve_s3_region
+
+        # Resolve region from netloc(bucket), fallback to user-provided region
+        provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+
+        try:
+            bucket_region = resolve_s3_region(netloc)
+        except (OSError, TypeError):
+            bucket_region = None
+            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
+
+        bucket_region = bucket_region or provided_region
+        if bucket_region != provided_region:
+            logger.warning(
+                f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
+                f"provided region {provided_region}, actual region {bucket_region}"
+            )
+
+        client_kwargs: Dict[str, Any] = {
+            "endpoint_override": self.properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": bucket_region,
+        }
+
+        if proxy_uri := self.properties.get(S3_PROXY_URI):
+            client_kwargs["proxy_options"] = proxy_uri
+
+        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+            client_kwargs["role_arn"] = role_arn
+
+        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+            client_kwargs["session_name"] = session_name
+
+        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+
+        return S3FileSystem(**client_kwargs)
+
+    def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import HadoopFileSystem
+
+        hdfs_kwargs: Dict[str, Any] = {}
+        if netloc:
+            return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
+        if host := self.properties.get(HDFS_HOST):
+            hdfs_kwargs["host"] = host
+        if port := self.properties.get(HDFS_PORT):
+            # port should be an integer type
+            hdfs_kwargs["port"] = int(port)
+        if user := self.properties.get(HDFS_USER):
+            hdfs_kwargs["user"] = user
+        if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
+            hdfs_kwargs["kerb_ticket"] = kerb_ticket
+
+        return HadoopFileSystem(**hdfs_kwargs)
+
+    def _initialize_gcs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import GcsFileSystem
+
+        gcs_kwargs: Dict[str, Any] = {}
+        if access_token := self.properties.get(GCS_TOKEN):
+            gcs_kwargs["access_token"] = access_token
+        if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
+            gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
+        if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
+            gcs_kwargs["default_bucket_location"] = bucket_location
+        if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
+            if self.properties.get(GCS_ENDPOINT):
+                deprecation_message(
+                    deprecated_in="0.8.0",
+                    removed_in="0.9.0",
+                    help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+                )
+            url_parts = urlparse(endpoint)
+            gcs_kwargs["scheme"] = url_parts.scheme
+            gcs_kwargs["endpoint_override"] = url_parts.netloc
+
+        return GcsFileSystem(**gcs_kwargs)
+
+    def _initialize_local_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
+            def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
+                # In LocalFileSystem, parent directories must be first created before opening an output stream
+                self.create_dir(os.path.dirname(path), recursive=True)
+                return super().open_output_stream(path, *args, **kwargs)
+
+        return PyArrowLocalFileSystem()
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
