@@ -1,6 +1,3 @@
-import uuid
-
-import boto3
 import pytest
 
 from pyiceberg.catalog.s3tables import S3TableCatalog
@@ -125,7 +122,9 @@ def test_drop_table(catalog: S3TableCatalog, database_name: str, table_name: str
         catalog.load_table(identifier=identifier)
 
 
-def test_commit_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_commit_new_column_to_table(
+    catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema
+) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -148,3 +147,27 @@ def test_commit_table(catalog: S3TableCatalog, database_name: str, table_name: s
     assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
     assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
     assert table.schema().columns[-1].name == "b"
+
+
+def test_commit_new_data_to_table(
+    catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema
+) -> None:
+    identifier = (database_name, table_name)
+
+    catalog.create_namespace(namespace=database_name)
+    table = catalog.create_table(identifier=identifier, schema=table_schema_nested)
+
+    row_count = table.scan().to_arrow().num_rows
+    last_updated_ms = table.metadata.last_updated_ms
+    original_table_metadata_location = table.metadata_location
+    original_table_last_updated_ms = table.metadata.last_updated_ms
+
+    transaction = table.transaction()
+    transaction.append(table.scan().to_arrow())
+    transaction.commit_transaction()
+
+    updated_table_metadata = table.metadata
+    assert updated_table_metadata.last_updated_ms > last_updated_ms
+    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
+    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
+    assert table.scan().to_arrow().num_rows == 2 * row_count
