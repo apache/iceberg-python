@@ -1274,6 +1274,8 @@ manifest_file_records_v2 = [
 
 @pytest.fixture(scope="session")
 def avro_schema_manifest_file_v1() -> Dict[str, Any]:
+    # minimal requirement for v1 table manifest lists
+    # https://iceberg.apache.org/spec/#manifest-lists
     return {
         "type": "record",
         "name": "manifest_file",
@@ -1287,88 +1289,6 @@ def avro_schema_manifest_file_v1() -> Dict[str, Any]:
                 "doc": "Snapshot ID that added the manifest",
                 "default": None,
                 "field-id": 503,
-            },
-            {
-                "name": "added_data_files_count",
-                "type": ["null", "int"],
-                "doc": "Added entry count",
-                "default": None,
-                "field-id": 504,
-            },
-            {
-                "name": "existing_data_files_count",
-                "type": ["null", "int"],
-                "doc": "Existing entry count",
-                "default": None,
-                "field-id": 505,
-            },
-            {
-                "name": "deleted_data_files_count",
-                "type": ["null", "int"],
-                "doc": "Deleted entry count",
-                "default": None,
-                "field-id": 506,
-            },
-            {
-                "name": "partitions",
-                "type": [
-                    "null",
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "record",
-                            "name": "r508",
-                            "fields": [
-                                {
-                                    "name": "contains_null",
-                                    "type": "boolean",
-                                    "doc": "True if any file has a null partition value",
-                                    "field-id": 509,
-                                },
-                                {
-                                    "name": "contains_nan",
-                                    "type": ["null", "boolean"],
-                                    "doc": "True if any file has a nan partition value",
-                                    "default": None,
-                                    "field-id": 518,
-                                },
-                                {
-                                    "name": "lower_bound",
-                                    "type": ["null", "bytes"],
-                                    "doc": "Partition lower bound for all files",
-                                    "default": None,
-                                    "field-id": 510,
-                                },
-                                {
-                                    "name": "upper_bound",
-                                    "type": ["null", "bytes"],
-                                    "doc": "Partition upper bound for all files",
-                                    "default": None,
-                                    "field-id": 511,
-                                },
-                            ],
-                        },
-                        "element-id": 508,
-                    },
-                ],
-                "doc": "Summary for each partition",
-                "default": None,
-                "field-id": 507,
-            },
-            {"name": "added_rows_count", "type": ["null", "long"], "doc": "Added rows count", "default": None, "field-id": 512},
-            {
-                "name": "existing_rows_count",
-                "type": ["null", "long"],
-                "doc": "Existing rows count",
-                "default": None,
-                "field-id": 513,
-            },
-            {
-                "name": "deleted_rows_count",
-                "type": ["null", "long"],
-                "doc": "Deleted rows count",
-                "default": None,
-                "field-id": 514,
             },
         ],
     }
