@@ -404,10 +404,8 @@ class Transaction:
             case_sensitive=case_sensitive,
             name_mapping=self.table_metadata.name_mapping(),
         )
-        
-    
-    def replace_sort_order(self) -> None:
-        ...
+
+    def replace_sort_order(self) -> None: ...
 
     def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
@@ -1061,7 +1059,7 @@ class Table:
         Returns:
             A new UpdateSortOrder.
         """
-        return UpdateSortOrder(self)
+        return UpdateSortOrder(transaction=Transaction(self, autocommit=True))
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""

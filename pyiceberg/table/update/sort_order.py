@@ -16,11 +16,12 @@
 # under the License.
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-)
+from typing import TYPE_CHECKING, Tuple
 
 from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+    UpdatesAndRequirements,
     UpdateTableMetadata,
 )
 
@@ -28,8 +29,15 @@ if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 
-class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
+class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     _transaction: Transaction
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """Apply the pending changes and commit."""
+        requirements: Tuple[TableRequirement, ...] = ()
+        updates: Tuple[TableUpdate, ...] = ()
+
+        return updates, requirements
