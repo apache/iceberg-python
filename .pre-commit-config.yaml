@@ -42,11 +42,6 @@ repos:
       - id: mypy
         args:
           [--install-types, --non-interactive, --config=pyproject.toml]
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v2.4.0
-    hooks:
-      - id: pycln
-        args: [--config=pyproject.toml]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.43.0
     hooks:
