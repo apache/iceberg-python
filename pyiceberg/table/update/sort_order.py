@@ -16,15 +16,16 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Tuple, Any
+from typing import TYPE_CHECKING, Any, Tuple
 
-from pyiceberg.transforms import Transform, IdentityTransform
 from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+from pyiceberg.transforms import Transform
+from pyiceberg.table.sorting import NullOrder
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -35,12 +36,12 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
-        
-    def asc(self, source_column_name: str, transform: Transform[Any, Any] = IdentityTransform()) -> UpdateSortOrder:
-        ...
-        
-    def desc(self, source_column_name: str, transform: Transform[Any, Any] = IdentityTransform()) -> UpdateSortOrder:
-        ...
+
+    def asc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
+        return self
+
+    def desc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
+        return self
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
