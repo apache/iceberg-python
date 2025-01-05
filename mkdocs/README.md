@@ -23,5 +23,5 @@ The pyiceberg docs are stored in `docs/`.
 
 ```sh
 make install
-make docs
+make docs-serve
 ```
