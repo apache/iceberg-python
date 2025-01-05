@@ -242,8 +242,10 @@ class JsonOutput(Output):
         self._out({"version": version})
 
     def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
-        self._out([
-            {"name": name, "type": type, detail_key: detail_val}
-            for name, type, detail in refs
-            for detail_key, detail_val in detail.items()
-        ])
+        self._out(
+            [
+                {"name": name, "type": type, detail_key: detail_val}
+                for name, type, detail in refs
+                for detail_key, detail_val in detail.items()
+            ]
+        )
