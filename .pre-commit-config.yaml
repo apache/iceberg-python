@@ -29,14 +29,14 @@ repos:
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version (Used for linting)
-    rev: v0.7.4
+    rev: v0.8.6
     hooks:
       - id: ruff
         args: [ --fix, --exit-non-zero-on-fix, --preview ]
       - id: ruff-format
         args: [ --preview ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v1.14.1
     hooks:
       - id: mypy
         args:
@@ -47,7 +47,7 @@ repos:
       - id: pycln
         args: [--config=pyproject.toml]
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.42.0
+    rev: v0.43.0
     hooks:
       - id: markdownlint
         args: ["--fix"]
