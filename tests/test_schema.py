@@ -1618,11 +1618,13 @@ def test_append_nested_lists() -> None:
 def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
     base_schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True))
 
-    pa_schema = pa.schema([
-        pa.field("foo", pa.string(), nullable=False),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
 
     new_schema = UpdateSchema(transaction=None, schema=base_schema).union_by_name(pa_schema)._apply()  # type: ignore
 
@@ -1642,10 +1644,12 @@ def test_arrow_schema() -> None:
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
     )
 
-    expected_schema = pa.schema([
-        pa.field("foo", pa.large_string(), nullable=False),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ])
+    expected_schema = pa.schema(
+        [
+            pa.field("foo", pa.large_string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
 
     assert base_schema.as_arrow() == expected_schema

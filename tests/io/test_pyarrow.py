@@ -547,11 +547,13 @@ def test_binary_type_to_pyarrow() -> None:
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
-    expected = pa.struct([
-        pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
-        pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
-        pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
-    ])
+    expected = pa.struct(
+        [
+            pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
+            pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
+            pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
+        ]
+    )
     assert visit(table_schema_simple.as_struct(), _ConvertToArrowSchema()) == expected
 
 
@@ -1771,11 +1773,13 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.decimal128(18, 6), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.decimal128(18, 6), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = r"""Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1792,11 +1796,13 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1813,11 +1819,13 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 
 
 def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=False),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=False),
+        )
+    )
 
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
@@ -1826,10 +1834,12 @@ def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1851,9 +1861,11 @@ def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Sc
         6,
         pa.field(
             "person",
-            pa.struct([
-                pa.field("age", pa.int32(), nullable=False),
-            ]),
+            pa.struct(
+                [
+                    pa.field("age", pa.int32(), nullable=False),
+                ]
+            ),
             nullable=True,
         ),
     )
@@ -1869,9 +1881,11 @@ def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Sche
         6,
         pa.field(
             "person",
-            pa.struct([
-                pa.field("name", pa.string(), nullable=True),
-            ]),
+            pa.struct(
+                [
+                    pa.field("name", pa.string(), nullable=True),
+                ]
+            ),
             nullable=True,
         ),
     )
@@ -1920,12 +1934,14 @@ def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-        pa.field("new_field", pa.date32(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("new_field", pa.date32(), nullable=True),
+        )
+    )
 
     with pytest.raises(
         ValueError, match=r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
@@ -1942,10 +1958,12 @@ def test_schema_compatible(table_schema_simple: Schema) -> None:
 
 def test_schema_projection(table_schema_simple: Schema) -> None:
     # remove optional `baz` field from `table_schema_simple`
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+        )
+    )
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
     except Exception:
@@ -1954,11 +1972,13 @@ def test_schema_projection(table_schema_simple: Schema) -> None:
 
 def test_schema_downcast(table_schema_simple: Schema) -> None:
     # large_string type is compatible with string type
-    other_schema = pa.schema((
-        pa.field("foo", pa.large_string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.large_string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
@@ -2037,11 +2057,13 @@ def test_identity_partition_on_multi_columns() -> None:
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
         assert concatenated_arrow_table.num_rows == arrow_table.num_rows
-        assert concatenated_arrow_table.sort_by([
-            ("born_year", "ascending"),
-            ("n_legs", "ascending"),
-            ("animal", "ascending"),
-        ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
+        assert concatenated_arrow_table.sort_by(
+            [
+                ("born_year", "ascending"),
+                ("n_legs", "ascending"),
+                ("animal", "ascending"),
+            ]
+        ) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
 
 
 def test__to_requested_schema_timestamps(
