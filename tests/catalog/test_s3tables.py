@@ -30,12 +30,12 @@ def table_bucket_arn() -> str:
 
 @pytest.fixture
 def catalog(table_bucket_arn: str) -> S3TableCatalog:
-    properties = {"s3tables.table-bucket-arn": table_bucket_arn}
+    properties = {"s3tables.table-bucket-arn": table_bucket_arn, "s3tables.region": "us-east-1", "s3.region": "us-east-1"}
     return S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
 def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str) -> None:
-    properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified"}
+    properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified", "s3tables.region": "us-east-1"}
     with pytest.raises(TableBucketNotFound):
         S3TableCatalog(name="test_s3tables_catalog", **properties)
 
