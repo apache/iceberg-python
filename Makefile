@@ -97,3 +97,6 @@ clean: ## Clean up the project Python working environment
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleanup complete"
+
+docs:
+	poetry run mkdocs serve -f mkdocs/mkdocs.yml
