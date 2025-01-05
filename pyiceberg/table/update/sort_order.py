@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 
-class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
+class SortOrderBuilder(UpdateTableMetadata["SortOrderBuilder"]):
     _transaction: Transaction
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
