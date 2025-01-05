@@ -99,4 +99,7 @@ clean: ## Clean up the project Python working environment
 	@echo "Cleanup complete"
 
 docs:
-	poetry run mkdocs serve -f mkdocs/mkdocs.yml --strict
+	poetry run mkdocs serve -f mkdocs/mkdocs.yml
+
+docs-build:
+	poetry run mkdocs build -f mkdocs/mkdocs.yml --strict

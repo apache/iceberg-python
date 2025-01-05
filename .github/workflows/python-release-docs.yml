@@ -35,11 +35,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install
-        working-directory: ./mkdocs
-        run: pip install -r requirements.txt
-      - name: Build
-        working-directory: ./mkdocs
-        run: mkdocs build --strict
+        run: make install
+      - name: Build docs
+        run: make docs-build
       - name: Copy
         working-directory: ./mkdocs
         run: mv ./site /tmp/site
