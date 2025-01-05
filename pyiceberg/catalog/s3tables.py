@@ -140,6 +140,9 @@ class S3TableCatalog(MetastoreCatalog):
 
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
+        # creating a new table with S3 Tables is a two step process. We first have to create an S3 Table with the
+        # S3 Tables API and then write the new metadata.json to the warehouseLocaiton associated with the newly
+        # created S3 Table.
         try:
             self.s3tables.create_table(
                 tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG"
@@ -165,7 +168,8 @@ class S3TableCatalog(MetastoreCatalog):
         )
 
         io = load_file_io(properties=self.properties, location=metadata_location)
-        # this triggers unsupported list operation error, setting overwrite=True is a workaround for now
+        # this triggers unsupported list operation error as S3 Table Buckets only support a subset of the S3 Bucket API,
+        # setting overwrite=True is a workaround for now since it prevents a call to list_objects
         self._write_metadata(metadata, io, metadata_location, overwrite=True)
 
         try:
