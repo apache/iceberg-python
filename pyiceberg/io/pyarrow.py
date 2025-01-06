@@ -2510,27 +2510,31 @@ def _dataframe_to_data_files(
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                for batches in bin_pack_arrow_table(df, target_file_size)
-            ]),
+            tasks=iter(
+                [
+                    WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                    for batches in bin_pack_arrow_table(df, target_file_size)
+                ]
+            ),
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(
-                    write_uuid=write_uuid,
-                    task_id=next(counter),
-                    record_batches=batches,
-                    partition_key=partition.partition_key,
-                    schema=task_schema,
-                )
-                for partition in partitions
-                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
-            ]),
+            tasks=iter(
+                [
+                    WriteTask(
+                        write_uuid=write_uuid,
+                        task_id=next(counter),
+                        record_batches=batches,
+                        partition_key=partition.partition_key,
+                        schema=task_schema,
+                    )
+                    for partition in partitions
+                    for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+                ]
+            ),
         )
 
 
@@ -2595,10 +2599,12 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     partition_columns: List[Tuple[PartitionField, NestedField]] = [
         (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
     ]
-    partition_values_table = pa.table({
-        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
-        for partition, field in partition_columns
-    })
+    partition_values_table = pa.table(
+        {
+            str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+            for partition, field in partition_columns
+        }
+    )
 
     # Sort by partitions
     sort_indices = pa.compute.sort_indices(

@@ -685,11 +685,13 @@ def test_rename_simple(simple_table: Table) -> None:
     )
 
     # Check that the name mapping gets updated
-    assert simple_table.name_mapping() == NameMapping([
-        MappedField(field_id=1, names=["foo", "vo"]),
-        MappedField(field_id=2, names=["bar", "var"]),
-        MappedField(field_id=3, names=["baz"]),
-    ])
+    assert simple_table.name_mapping() == NameMapping(
+        [
+            MappedField(field_id=1, names=["foo", "vo"]),
+            MappedField(field_id=2, names=["bar", "var"]),
+            MappedField(field_id=3, names=["baz"]),
+        ]
+    )
 
 
 @pytest.mark.integration
@@ -719,9 +721,11 @@ def test_rename_simple_nested(catalog: Catalog) -> None:
     )
 
     # Check that the name mapping gets updated
-    assert tbl.name_mapping() == NameMapping([
-        MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=2, names=["bar", "vo"])]),
-    ])
+    assert tbl.name_mapping() == NameMapping(
+        [
+            MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=2, names=["bar", "vo"])]),
+        ]
+    )
 
 
 @pytest.mark.integration

@@ -834,12 +834,14 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
 
     result_table = tbl.scan().to_arrow()
 
-    expected_schema = pa.schema([
-        pa.field("string", pa.large_string()),
-        pa.field("string-to-binary", pa.large_binary()),
-        pa.field("binary", pa.large_binary()),
-        pa.field("list", pa.large_list(pa.large_string())),
-    ])
+    expected_schema = pa.schema(
+        [
+            pa.field("string", pa.large_string()),
+            pa.field("string-to-binary", pa.large_binary()),
+            pa.field("binary", pa.large_binary()),
+            pa.field("list", pa.large_list(pa.large_string())),
+        ]
+    )
     assert result_table.schema.equals(expected_schema)
 
 
@@ -875,12 +877,14 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     tbl.io.properties[PYARROW_USE_LARGE_TYPES_ON_READ] = "False"
     result_table = tbl.scan().to_arrow()
 
-    expected_schema = pa.schema([
-        pa.field("string", pa.string()),
-        pa.field("string-to-binary", pa.binary()),
-        pa.field("binary", pa.binary()),
-        pa.field("list", pa.list_(pa.string())),
-    ])
+    expected_schema = pa.schema(
+        [
+            pa.field("string", pa.string()),
+            pa.field("string-to-binary", pa.binary()),
+            pa.field("binary", pa.binary()),
+            pa.field("list", pa.list_(pa.string())),
+        ]
+    )
     assert result_table.schema.equals(expected_schema)
 
 
