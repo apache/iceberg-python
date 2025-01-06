@@ -405,7 +405,7 @@ class PyArrowFileIO(FileIO):
         provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
 
         try:
-            bucket_region = resolve_s3_region(netloc)
+            bucket_region = resolve_s3_region(bucket=netloc)
         except (OSError, TypeError):
             bucket_region = None
             logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
