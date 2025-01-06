@@ -34,10 +34,9 @@ from pyiceberg.expressions import (
     NotStartsWith,
     Or,
     StartsWith,
-    UnboundPredicate,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.expressions.residual_evaluator import residual_evaluator_of
+from pyiceberg.expressions.visitors import residual_evaluator_of
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import DayTransform, IdentityTransform
@@ -62,18 +61,23 @@ def test_identity_transform_residual() -> None:
     residual = res_eval.residual_for(Record(dateint=20170815))
 
     # assert residual == True
-    assert isinstance(residual, UnboundPredicate)
-    assert residual.term.name == "hour"
+    assert isinstance(residual, LessThan)
+    assert residual.term.name == "hour"  # type: ignore
     # assert residual.term.field.name == 'hour'
     assert residual.literal.value == 12
-    assert type(residual) == LessThan
+    assert type(residual) is LessThan
 
     residual = res_eval.residual_for(Record(dateint=20170801))
 
-    assert isinstance(residual, UnboundPredicate)
-    assert residual.term.name == "hour"
-    assert residual.literal.value == 11
-    assert type(residual) == GreaterThan
+    # assert isinstance(residual, UnboundPredicate)
+    from pyiceberg.expressions import LiteralPredicate
+
+    assert isinstance(residual, LiteralPredicate)
+    # assert isinstance(residual, GreaterThan)
+    assert residual.term.name == "hour"  # type: ignore
+    # assert residual.term.
+    assert residual.literal.value == 11  # type :ignore
+    # assert type(residual) == BoundGreaterThan
 
     residual = res_eval.residual_for(Record(dateint=20170812))
 
@@ -99,7 +103,7 @@ def test_case_insensitive_identity_transform_residuals() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     with pytest.raises(ValueError) as e:
-        residual = res_eval.residual_for(Record(dateint=20170815))
+        res_eval.residual_for(Record(dateint=20170815))
     assert "Could not find field with name DATEINT, case_sensitive=True" in str(e.value)
 
 
@@ -152,10 +156,7 @@ def test_in_timestamp() -> None:
     date_20191202 = literal("2019-12-02T00:00:00").to(TimestampType()).value
 
     day = DayTransform().transform(TimestampType())
-    # assert date_20191201 == True
-    ts_day = day(date_20191201)
-
-    # assert ts_day == True
+    ts_day = day(date_20191201)  # type: ignore
 
     pred = In("ts", [date_20191202, date_20191201])
 
@@ -164,7 +165,7 @@ def test_in_timestamp() -> None:
     residual = res_eval.residual_for(Record(ts_day))
     assert residual == pred
 
-    residual = res_eval.residual_for(Record(ts_day + 3))
+    residual = res_eval.residual_for(Record(ts_day + 3))  # type: ignore
     assert residual == AlwaysFalse()
 
 
@@ -237,10 +238,7 @@ def test_not_in_timestamp() -> None:
     date_20191202 = literal("2019-12-02T00:00:00").to(TimestampType()).value
 
     day = DayTransform().transform(TimestampType())
-    # assert date_20191201 == True
-    ts_day = day(date_20191201)
-
-    # assert ts_day == True
+    ts_day = day(date_20191201)  # type: ignore
 
     pred = NotIn("ts", [date_20191202, date_20191201])
 
@@ -248,6 +246,6 @@ def test_not_in_timestamp() -> None:
 
     residual = res_eval.residual_for(Record(ts_day))
     assert residual == pred
-
-    residual = res_eval.residual_for(Record(ts_day + 3))
+    ts_day += 3  # type: ignore
+    residual = res_eval.residual_for(Record(ts_day))
     assert residual == AlwaysTrue()

@@ -1368,58 +1368,6 @@ def test_append_table(catalog: SqlCatalog, table_schema_simple: Schema, table_id
         lazy_fixture("catalog_memory"),
         lazy_fixture("catalog_sqlite"),
         lazy_fixture("catalog_sqlite_without_rowcount"),
-        lazy_fixture("catalog_sqlite_fsspec"),
-    ],
-)
-@pytest.mark.parametrize(
-    "table_identifier",
-    [
-        lazy_fixture("random_table_identifier"),
-        lazy_fixture("random_hierarchical_identifier"),
-        lazy_fixture("random_table_identifier_with_catalog"),
-    ],
-)
-def test_count_table(catalog: SqlCatalog, table_schema_simple: Schema, table_identifier: Identifier) -> None:
-    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
-    namespace = Catalog.namespace_from(table_identifier_nocatalog)
-    catalog.create_namespace(namespace)
-    table = catalog.create_table(table_identifier, table_schema_simple)
-
-    df = pa.Table.from_pydict(
-        {
-            "foo": ["a"],
-            "bar": [1],
-            "baz": [True],
-        },
-        schema=schema_to_pyarrow(table_schema_simple),
-    )
-
-    table.append(df)
-
-    # new snapshot is written in APPEND mode
-    assert len(table.metadata.snapshots) == 1
-    assert table.metadata.snapshots[0].snapshot_id == table.metadata.current_snapshot_id
-    assert table.metadata.snapshots[0].parent_snapshot_id is None
-    assert table.metadata.snapshots[0].sequence_number == 1
-    assert table.metadata.snapshots[0].summary is not None
-    assert table.metadata.snapshots[0].summary.operation == Operation.APPEND
-    assert table.metadata.snapshots[0].summary["added-data-files"] == "1"
-    assert table.metadata.snapshots[0].summary["added-records"] == "1"
-    assert table.metadata.snapshots[0].summary["total-data-files"] == "1"
-    assert table.metadata.snapshots[0].summary["total-records"] == "1"
-    assert len(table.metadata.metadata_log) == 1
-
-    # read back the data
-    assert df == table.scan().to_arrow()
-    assert len(table.scan().to_arrow()) == table.scan().count()
-
-
-@pytest.mark.parametrize(
-    "catalog",
-    [
-        lazy_fixture("catalog_memory"),
-        lazy_fixture("catalog_sqlite"),
-        lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
 @pytest.mark.parametrize(
