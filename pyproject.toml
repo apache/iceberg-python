@@ -95,6 +95,8 @@ pyspark = "3.5.3"
 cython = "3.0.11"
 deptry = ">=0.14,<0.22"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
+
+[tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
 griffe = "1.5.4"

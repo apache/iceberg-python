@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install
-        run: make install
+        run: make docs-install
       - name: Build docs
         run: make docs-build
       - name: Copy

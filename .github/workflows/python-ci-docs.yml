@@ -40,6 +40,6 @@ jobs:
         with:
           python-version: 3.12
       - name: Install
-        run: make install
+        run: make docs-install
       - name: Build docs
         run: make docs-build
