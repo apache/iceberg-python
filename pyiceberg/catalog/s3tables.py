@@ -106,6 +106,8 @@ class S3TableCatalog(MetastoreCatalog):
         )
 
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
+        if properties:
+            raise NotImplementedError("Setting namespace properties is not supported.")
         valid_namespace: str = self._validate_namespace_identifier(namespace)
         self.s3tables.create_namespace(tableBucketARN=self.table_bucket_arn, namespace=[valid_namespace])
 
@@ -305,7 +307,7 @@ class S3TableCatalog(MetastoreCatalog):
         self, namespace: Union[str, Identifier], removals: Optional[Set[str]] = None, updates: Properties = EMPTY_DICT
     ) -> PropertiesUpdateSummary:
         # namespace properties are read only
-        raise NotImplementedError("Namespace properties are read only")
+        raise NotImplementedError("Namespace properties are read only.")
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
         # purge is not supported as s3tables doesn't support delete operations
