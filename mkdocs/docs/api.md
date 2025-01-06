@@ -964,7 +964,7 @@ Renaming a field in an Iceberg table is simple:
 with table.update_schema() as update:
     update.rename_column("retries", "num_retries")
     # This will rename `confirmed_by` to `exchange` in the `details` struct
-    update.rename_column("details", "confirmed_by"), "exchange")
+    update.rename_column(("details", "confirmed_by"), ("detail", "exchange"))
 ```
 
 ### Move column
@@ -977,7 +977,7 @@ with table.update_schema() as update:
     # This will move `bid` after `ask`
     update.move_after("bid", "ask")
     # This will move `confirmed_by` before `exchange` in the `details` struct
-    update.move_before("details", "confirmed_by"), ("details", "exchange"))
+    update.move_before(("details", "confirmed_by"), ("details", "exchange"))
 ```
 
 ### Update column
@@ -1010,7 +1010,7 @@ Delete a field, careful this is a incompatible change (readers/writers might exp
 with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
     # In a struct
-    update.delete_column("details", "confirmed_by"))
+    update.delete_column(("details", "confirmed_by"))
 ```
 
 ## Partition evolution
