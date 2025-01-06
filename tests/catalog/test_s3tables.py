@@ -26,11 +26,14 @@ def table_bucket_arn() -> str:
     # in one of the supported regions.
 
     return os.environ["ARN"]
+
+
 @pytest.fixture
 def aws_region() -> str:
     import os
 
     return os.environ["AWS_REGION"]
+
 
 @pytest.fixture
 def catalog(table_bucket_arn: str, aws_region: str) -> S3TableCatalog:
@@ -153,15 +156,62 @@ def test_commit_new_column_to_table(
     assert table.schema().columns[-1].name == "b"
 
 
-def test_commit_new_data_to_table(
-    catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema
-) -> None:
+def test_write_pyarrow_table(catalog: S3TableCatalog, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
-
     catalog.create_namespace(namespace=database_name)
-    table = catalog.create_table(identifier=identifier, schema=table_schema_nested)
+
+    import pyarrow as pa
+
+    pyarrow_table = pa.Table.from_arrays(
+        [
+            pa.array([None, "A", "B", "C"]),  # 'foo' column
+            pa.array([1, 2, 3, 4]),  # 'bar' column
+            pa.array([True, None, False, True]),  # 'baz' column
+            pa.array([None, "A", "B", "C"]),  # 'large' column
+        ],
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.large_string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=False),
+                pa.field("baz", pa.bool_(), nullable=True),
+                pa.field("large", pa.large_string(), nullable=True),
+            ]
+        ),
+    )
+    table = catalog.create_table(identifier=identifier, schema=pyarrow_table.schema)
+    table.append(pyarrow_table)
+
+    assert table.scan().to_arrow().num_rows == pyarrow_table.num_rows
+
+
+def test_commit_new_data_to_table(catalog: S3TableCatalog, database_name: str, table_name: str) -> None:
+    identifier = (database_name, table_name)
+    catalog.create_namespace(namespace=database_name)
+
+    import pyarrow as pa
+
+    pyarrow_table = pa.Table.from_arrays(
+        [
+            pa.array([None, "A", "B", "C"]),  # 'foo' column
+            pa.array([1, 2, 3, 4]),  # 'bar' column
+            pa.array([True, None, False, True]),  # 'baz' column
+            pa.array([None, "A", "B", "C"]),  # 'large' column
+        ],
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.large_string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=False),
+                pa.field("baz", pa.bool_(), nullable=True),
+                pa.field("large", pa.large_string(), nullable=True),
+            ]
+        ),
+    )
+
+    table = catalog.create_table(identifier=identifier, schema=pyarrow_table.schema)
+    table.append(pyarrow_table)
 
     row_count = table.scan().to_arrow().num_rows
+    assert row_count
     last_updated_ms = table.metadata.last_updated_ms
     original_table_metadata_location = table.metadata_location
     original_table_last_updated_ms = table.metadata.last_updated_ms
@@ -172,6 +222,6 @@ def test_commit_new_data_to_table(
 
     updated_table_metadata = table.metadata
     assert updated_table_metadata.last_updated_ms > last_updated_ms
-    assert updated_table_metadata.metadata_log[0].metadata_file == original_table_metadata_location
-    assert updated_table_metadata.metadata_log[0].timestamp_ms == original_table_last_updated_ms
+    assert updated_table_metadata.metadata_log[-1].metadata_file == original_table_metadata_location
+    assert updated_table_metadata.metadata_log[-1].timestamp_ms == original_table_last_updated_ms
     assert table.scan().to_arrow().num_rows == 2 * row_count
