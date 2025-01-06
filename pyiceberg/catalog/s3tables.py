@@ -141,7 +141,7 @@ class S3TableCatalog(MetastoreCatalog):
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
         # creating a new table with S3 Tables is a two step process. We first have to create an S3 Table with the
-        # S3 Tables API and then write the new metadata.json to the warehouseLocaiton associated with the newly
+        # S3 Tables API and then write the new metadata.json to the warehouseLocation associated with the newly
         # created S3 Table.
         try:
             self.s3tables.create_table(

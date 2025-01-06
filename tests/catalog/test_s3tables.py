@@ -26,11 +26,15 @@ def table_bucket_arn() -> str:
     # in one of the supported regions.
 
     return os.environ["ARN"]
+@pytest.fixture
+def aws_region() -> str:
+    import os
 
+    return os.environ["AWS_REGION"]
 
 @pytest.fixture
-def catalog(table_bucket_arn: str) -> S3TableCatalog:
-    properties = {"s3tables.table-bucket-arn": table_bucket_arn, "s3tables.region": "us-east-1", "s3.region": "us-east-1"}
+def catalog(table_bucket_arn: str, aws_region: str) -> S3TableCatalog:
+    properties = {"s3tables.table-bucket-arn": table_bucket_arn, "s3tables.region": aws_region}
     return S3TableCatalog(name="test_s3tables_catalog", **properties)
 
 
