@@ -190,6 +190,13 @@ UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 T = TypeVar("T")
 
 
+class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
+    def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
+        # In LocalFileSystem, parent directories must be first created before opening an output stream
+        self.create_dir(os.path.dirname(path), recursive=True)
+        return super().open_output_stream(path, *args, **kwargs)
+
+
 class PyArrowFile(InputFile, OutputFile):
     """A combined InputFile and OutputFile implementation that uses a pyarrow filesystem to generate pyarrow.lib.NativeFile instances.
 
@@ -346,24 +353,24 @@ class PyArrowFileIO(FileIO):
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
         """Initialize FileSystem for different scheme."""
         if scheme in {"oss"}:
-            return self._initialize_oss_fs(scheme, netloc)
+            return self._initialize_oss_fs()
 
         elif scheme in {"s3", "s3a", "s3n"}:
-            return self._initialize_s3_fs(scheme, netloc)
+            return self._initialize_s3_fs(netloc)
 
-        elif scheme in ("hdfs", "viewfs"):
+        elif scheme in {"hdfs", "viewfs"}:
             return self._initialize_hdfs_fs(scheme, netloc)
 
         elif scheme in {"gs", "gcs"}:
-            return self._initialize_gcs_fs(scheme, netloc)
+            return self._initialize_gcs_fs()
 
         elif scheme in {"file"}:
-            return self._initialize_local_fs(scheme, netloc)
+            return self._initialize_local_fs()
 
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
-    def _initialize_oss_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+    def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
         client_kwargs: Dict[str, Any] = {
@@ -391,7 +398,7 @@ class PyArrowFileIO(FileIO):
 
         return S3FileSystem(**client_kwargs)
 
-    def _initialize_s3_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+    def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
         from pyarrow.fs import S3FileSystem, resolve_s3_region
 
         # Resolve region from netloc(bucket), fallback to user-provided region
@@ -453,7 +460,7 @@ class PyArrowFileIO(FileIO):
 
         return HadoopFileSystem(**hdfs_kwargs)
 
-    def _initialize_gcs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+    def _initialize_gcs_fs(self) -> FileSystem:
         from pyarrow.fs import GcsFileSystem
 
         gcs_kwargs: Dict[str, Any] = {}
@@ -476,13 +483,7 @@ class PyArrowFileIO(FileIO):
 
         return GcsFileSystem(**gcs_kwargs)
 
-    def _initialize_local_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
-        class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
-            def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
-                # In LocalFileSystem, parent directories must be first created before opening an output stream
-                self.create_dir(os.path.dirname(path), recursive=True)
-                return super().open_output_stream(path, *args, **kwargs)
-
+    def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
 
     def new_input(self, location: str) -> PyArrowFile:
