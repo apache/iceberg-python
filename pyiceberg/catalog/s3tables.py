@@ -44,7 +44,7 @@ S3TABLES_VALID_NAME_REGEX = pattern = re.compile("[a-z0-9][a-z0-9_]{2,62}")
 S3TABLES_RESERVED_NAMESPACE = "aws_s3_metadata"
 
 
-class S3TableCatalog(MetastoreCatalog):
+class S3TablesCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 

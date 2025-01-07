@@ -1,6 +1,6 @@
 import pytest
 
-from pyiceberg.catalog.s3tables import S3TableCatalog
+from pyiceberg.catalog.s3tables import S3TablesCatalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, TableBucketNotFound
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
@@ -36,36 +36,36 @@ def aws_region() -> str:
 
 
 @pytest.fixture
-def catalog(table_bucket_arn: str, aws_region: str) -> S3TableCatalog:
+def catalog(table_bucket_arn: str, aws_region: str) -> S3TablesCatalog:
     properties = {"s3tables.table-bucket-arn": table_bucket_arn, "s3tables.region": aws_region}
-    return S3TableCatalog(name="test_s3tables_catalog", **properties)
+    return S3TablesCatalog(name="test_s3tables_catalog", **properties)
 
 
 def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str) -> None:
     properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified", "s3tables.region": "us-east-1"}
     with pytest.raises(TableBucketNotFound):
-        S3TableCatalog(name="test_s3tables_catalog", **properties)
+        S3TablesCatalog(name="test_s3tables_catalog", **properties)
 
 
-def test_create_namespace(catalog: S3TableCatalog, database_name: str) -> None:
+def test_create_namespace(catalog: S3TablesCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     namespaces = catalog.list_namespaces()
     assert (database_name,) in namespaces
 
 
-def test_load_namespace_properties(catalog: S3TableCatalog, database_name: str) -> None:
+def test_load_namespace_properties(catalog: S3TablesCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     assert database_name in catalog.load_namespace_properties(database_name)["namespace"]
 
 
-def test_drop_namespace(catalog: S3TableCatalog, database_name: str) -> None:
+def test_drop_namespace(catalog: S3TablesCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     assert (database_name,) in catalog.list_namespaces()
     catalog.drop_namespace(namespace=database_name)
     assert (database_name,) not in catalog.list_namespaces()
 
 
-def test_create_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_create_table(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -75,7 +75,7 @@ def test_create_table(catalog: S3TableCatalog, database_name: str, table_name: s
 
 
 def test_create_table_in_invalid_namespace_raises_exception(
-    catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema
+    catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema
 ) -> None:
     identifier = (database_name, table_name)
 
@@ -83,7 +83,7 @@ def test_create_table_in_invalid_namespace_raises_exception(
         catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
 
-def test_table_exists(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_table_exists(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -92,7 +92,7 @@ def test_table_exists(catalog: S3TableCatalog, database_name: str, table_name: s
     assert catalog.table_exists(identifier=identifier)
 
 
-def test_rename_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_rename_table(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -108,7 +108,7 @@ def test_rename_table(catalog: S3TableCatalog, database_name: str, table_name: s
     assert catalog.table_exists(identifier=to_identifier)
 
 
-def test_list_tables(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_list_tables(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -117,7 +117,7 @@ def test_list_tables(catalog: S3TableCatalog, database_name: str, table_name: st
     assert catalog.list_tables(namespace=database_name)
 
 
-def test_drop_table(catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_drop_table(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
@@ -130,7 +130,7 @@ def test_drop_table(catalog: S3TableCatalog, database_name: str, table_name: str
 
 
 def test_commit_new_column_to_table(
-    catalog: S3TableCatalog, database_name: str, table_name: str, table_schema_nested: Schema
+    catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema
 ) -> None:
     identifier = (database_name, table_name)
 
@@ -156,7 +156,7 @@ def test_commit_new_column_to_table(
     assert table.schema().columns[-1].name == "b"
 
 
-def test_write_pyarrow_table(catalog: S3TableCatalog, database_name: str, table_name: str) -> None:
+def test_write_pyarrow_table(catalog: S3TablesCatalog, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     catalog.create_namespace(namespace=database_name)
 
@@ -184,7 +184,7 @@ def test_write_pyarrow_table(catalog: S3TableCatalog, database_name: str, table_
     assert table.scan().to_arrow().num_rows == pyarrow_table.num_rows
 
 
-def test_commit_new_data_to_table(catalog: S3TableCatalog, database_name: str, table_name: str) -> None:
+def test_commit_new_data_to_table(catalog: S3TablesCatalog, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
     catalog.create_namespace(namespace=database_name)
 
