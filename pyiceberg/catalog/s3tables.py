@@ -220,7 +220,8 @@ class S3TablesCatalog(MetastoreCatalog):
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         if namespace:
-            namespace = self._validate_namespace_identifier(namespace)
+            # hierarchical namespaces are not supported
+            return []
         paginator = self.s3tables.get_paginator("list_namespaces")
 
         namespaces: List[Identifier] = []
