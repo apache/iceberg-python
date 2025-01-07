@@ -20,19 +20,25 @@ def table_name(table_name: str) -> str:
 
 @pytest.fixture
 def table_bucket_arn() -> str:
+    """Set the environment variable AWS_TEST_S3_TABLE_BUCKET_ARN for an S3 table bucket to test."""
     import os
 
-    # since the moto library does not support s3tables as of 2024-12-14 we have to test against a real AWS endpoint
-    # in one of the supported regions.
-
-    return os.environ["ARN"]
+    table_bucket_arn = os.getenv("AWS_TEST_S3_TABLE_BUCKET_ARN")
+    if not table_bucket_arn:
+        raise ValueError(
+            "Please specify a table bucket arn to run the test by setting environment variable AWS_TEST_S3_TABLE_BUCKET_ARN"
+        )
+    return table_bucket_arn
 
 
 @pytest.fixture
 def aws_region() -> str:
     import os
 
-    return os.environ["AWS_REGION"]
+    aws_region = os.getenv("AWS_REGION")
+    if not aws_region:
+        raise ValueError("Please specify an AWS region to run the test by setting environment variable AWS_REGION")
+    return aws_region
 
 
 @pytest.fixture
