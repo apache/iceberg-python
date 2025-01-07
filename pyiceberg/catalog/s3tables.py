@@ -35,7 +35,7 @@ S3TABLES_ACCESS_KEY_ID = "s3tables.access-key-id"
 S3TABLES_SECRET_ACCESS_KEY = "s3tables.secret-access-key"
 S3TABLES_SESSION_TOKEN = "s3tables.session-token"
 
-S3TABLES_TABLE_BUCKET_ARN = "s3tables.table-bucket-arn"
+S3TABLES_TABLE_BUCKET_ARN = "s3tables.warehouse"
 
 S3TABLES_ENDPOINT = "s3tables.endpoint"
 

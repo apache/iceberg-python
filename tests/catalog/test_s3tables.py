@@ -37,12 +37,12 @@ def aws_region() -> str:
 
 @pytest.fixture
 def catalog(table_bucket_arn: str, aws_region: str) -> S3TablesCatalog:
-    properties = {"s3tables.table-bucket-arn": table_bucket_arn, "s3tables.region": aws_region}
+    properties = {"s3tables.warehouse": table_bucket_arn, "s3tables.region": aws_region}
     return S3TablesCatalog(name="test_s3tables_catalog", **properties)
 
 
 def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str) -> None:
-    properties = {"s3tables.table-bucket-arn": f"{table_bucket_arn}-modified", "s3tables.region": "us-east-1"}
+    properties = {"s3tables.warehouse": f"{table_bucket_arn}-modified", "s3tables.region": "us-east-1"}
     with pytest.raises(TableBucketNotFound):
         S3TablesCatalog(name="test_s3tables_catalog", **properties)
 
