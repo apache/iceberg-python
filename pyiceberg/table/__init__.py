@@ -117,7 +117,7 @@ from pyiceberg.table.update.snapshot import (
     UpdateSnapshot,
     _FastAppendFiles,
 )
-from pyiceberg.table.update.sorting import SortOrderBuilder
+from pyiceberg.table.update.sorting import ReplaceSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
@@ -1053,13 +1053,13 @@ class Table:
             name_mapping=self.name_mapping(),
         )
 
-    def replace_sort_order(self) -> SortOrderBuilder:
-        """Create a new SortOrderBuilder to replace the sort order of this table.
+    def replace_sort_order(self) -> ReplaceSortOrder:
+        """Create a new ReplaceSortOrder to replace the sort order of this table.
 
         Returns:
-            A new SortOrderBuilder.
+            A new ReplaceSortOrder.
         """
-        return SortOrderBuilder(transaction=Transaction(self, autocommit=True))
+        return ReplaceSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=True)
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
