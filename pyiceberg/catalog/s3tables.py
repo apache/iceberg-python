@@ -43,6 +43,8 @@ S3TABLES_ENDPOINT = "s3tables.endpoint"
 S3TABLES_VALID_NAME_REGEX = pattern = re.compile("[a-z0-9][a-z0-9_]{2,62}")
 S3TABLES_RESERVED_NAMESPACE = "aws_s3_metadata"
 
+S3TABLES_FORMAT = "ICEBERG"
+
 
 class S3TablesCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
@@ -149,7 +151,7 @@ class S3TablesCatalog(MetastoreCatalog):
         # created S3 Table.
         try:
             self.s3tables.create_table(
-                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format="ICEBERG"
+                tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format=S3TABLES_FORMAT
             )
         except self.s3tables.exceptions.NotFoundException as e:
             raise NoSuchNamespaceError(f"Cannot create {namespace}.{table_name} because no such namespace exists.") from e
