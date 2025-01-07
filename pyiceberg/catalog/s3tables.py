@@ -158,7 +158,7 @@ class S3TablesCatalog(MetastoreCatalog):
                 f"Cannot create {namespace}.{table_name} because a table of the same name already exists in the namespace."
             ) from e
 
-        response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
+        response = self.s3tables.get_table_metadata_location(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
         version_token = response["versionToken"]
 
         warehouse_location = response["warehouseLocation"]
