@@ -138,6 +138,8 @@ class S3TablesCatalog(MetastoreCatalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
     ) -> Table:
+        if location:
+            raise NotImplementedError("S3 Tables does not support user specified table locations.")
         namespace, table_name = self._validate_database_and_table_identifier(identifier)
 
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
