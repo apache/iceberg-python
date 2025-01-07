@@ -43,6 +43,7 @@ class SortOrderBuilder:
         direction: SortDirection,
         null_order: NullOrder,
     ) -> SortOrderBuilder:
+        """Add a sort field to the sort order list."""
         self._fields.append(
             SortField(
                 source_id=source_id,
@@ -55,6 +56,7 @@ class SortOrderBuilder:
 
     @property
     def sort_order(self) -> SortOrder:  # todo: add sort order id?
+        """Return the sort order."""
         return SortOrder(*self._fields)
 
 
@@ -66,7 +68,7 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
-        self._builder = SortOrderBuilder(case_sensitive)
+        self._builder = SortOrderBuilder(case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._last_sort_order_id = transaction.table_metadata.default_sort_order_id
 
