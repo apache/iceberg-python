@@ -40,7 +40,7 @@ S3TABLES_TABLE_BUCKET_ARN = "s3tables.warehouse"
 S3TABLES_ENDPOINT = "s3tables.endpoint"
 
 # for naming rules see: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-naming.html
-S3TABLES_VALID_NAME_REGEX = pattern = re.compile("[a-z0-9][a-z0-9_]{2,62}")
+S3TABLES_VALID_NAME_REGEX = pattern = re.compile("[a-z0-9][a-z0-9_]{1,61}[a-z0-9]")
 S3TABLES_RESERVED_NAMESPACE = "aws_s3_metadata"
 
 S3TABLES_FORMAT = "ICEBERG"
