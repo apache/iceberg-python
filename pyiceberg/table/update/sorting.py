@@ -16,8 +16,9 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Tuple, Dict, List
+from typing import TYPE_CHECKING, Any, List, Tuple
 
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
@@ -25,18 +26,16 @@ from pyiceberg.table.update import (
     UpdateTableMetadata,
 )
 from pyiceberg.transforms import Transform
-from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 
 class SortOrderBuilder:
-    
     def __init__(self, case_sensitive: bool = True) -> None:
         self._fields: List[SortField] = []
         self._case_sensitive = case_sensitive
-        
+
     def add_sort_field(
         self,
         source_id: int,
@@ -53,9 +52,9 @@ class SortOrderBuilder:
             )
         )
         return self
-    
+
     @property
-    def sort_order(self) -> SortOrder: # todo: add sort order id?
+    def sort_order(self) -> SortOrder:  # todo: add sort order id?
         return SortOrder(*self._fields)
 
 
@@ -72,10 +71,14 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
         self._last_sort_order_id = transaction.table_metadata.default_sort_order_id
 
     def _column_name_to_id(self, column_name: str) -> int:
-        return self._transaction.table_metadata.schema().find_field(
-            name_or_id=column_name,
-            case_sensitive=self._case_sensitive,
-        ).field_id
+        return (
+            self._transaction.table_metadata.schema()
+            .find_field(
+                name_or_id=column_name,
+                case_sensitive=self._case_sensitive,
+            )
+            .field_id
+        )
 
     def asc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> ReplaceSortOrder:
         self._builder.add_sort_field(
