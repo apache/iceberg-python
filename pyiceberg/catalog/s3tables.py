@@ -150,9 +150,9 @@ class S3TablesCatalog(MetastoreCatalog):
         # S3 Tables API and then write the new metadata.json to the warehouseLocation associated with the newly
         # created S3 Table.
         try:
-            self.s3tables.create_table(
+            version_token = self.s3tables.create_table(
                 tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name, format=S3TABLES_FORMAT
-            )
+            )["versionToken"]
         except self.s3tables.exceptions.NotFoundException as e:
             raise NoSuchNamespaceError(f"Cannot create {namespace}.{table_name} because no such namespace exists.") from e
         except self.s3tables.exceptions.ConflictException as e:
@@ -160,36 +160,39 @@ class S3TablesCatalog(MetastoreCatalog):
                 f"Cannot create {namespace}.{table_name} because a table of the same name already exists in the namespace."
             ) from e
 
-        response = self.s3tables.get_table_metadata_location(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
-        version_token = response["versionToken"]
-
-        warehouse_location = response["warehouseLocation"]
-        metadata_location = self._get_metadata_location(location=warehouse_location)
-        metadata = new_table_metadata(
-            location=warehouse_location,
-            schema=schema,
-            partition_spec=partition_spec,
-            sort_order=sort_order,
-            properties=properties,
-        )
-
-        io = load_file_io(properties=self.properties, location=metadata_location)
-        # this triggers unsupported list operation error as S3 Table Buckets only support a subset of the S3 Bucket API,
-        # setting overwrite=True is a workaround for now since it prevents a call to list_objects
-        self._write_metadata(metadata, io, metadata_location, overwrite=True)
-
         try:
-            self.s3tables.update_table_metadata_location(
-                tableBucketARN=self.table_bucket_arn,
-                namespace=namespace,
-                name=table_name,
-                versionToken=version_token,
-                metadataLocation=metadata_location,
+            response = self.s3tables.get_table_metadata_location(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
+            warehouse_location = response["warehouseLocation"]
+
+            metadata_location = self._get_metadata_location(location=warehouse_location)
+            metadata = new_table_metadata(
+                location=warehouse_location,
+                schema=schema,
+                partition_spec=partition_spec,
+                sort_order=sort_order,
+                properties=properties,
             )
-        except self.s3tables.exceptions.ConflictException as e:
-            raise CommitFailedException(
-                f"Cannot create {namespace}.{table_name} because of a concurrent update to the table version {version_token}."
-            ) from e
+
+            io = load_file_io(properties=self.properties, location=metadata_location)
+            # this triggers unsupported list operation error as S3 Table Buckets only support a subset of the S3 Bucket API,
+            # setting overwrite=True is a workaround for now since it prevents a call to list_objects
+            self._write_metadata(metadata, io, metadata_location, overwrite=True)
+
+            try:
+                self.s3tables.update_table_metadata_location(
+                    tableBucketARN=self.table_bucket_arn,
+                    namespace=namespace,
+                    name=table_name,
+                    versionToken=version_token,
+                    metadataLocation=metadata_location,
+                )
+            except self.s3tables.exceptions.ConflictException as e:
+                raise CommitFailedException(
+                    f"Cannot create {namespace}.{table_name} because of a concurrent update to the table version {version_token}."
+                ) from e
+        except:
+            self.s3tables.delete_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
+            raise
 
         return self.load_table(identifier=identifier)
 
