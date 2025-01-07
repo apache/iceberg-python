@@ -117,7 +117,7 @@ class S3TablesCatalog(MetastoreCatalog):
         namespace = self.identifier_to_database(namespace)
 
         if not S3TABLES_VALID_NAME_REGEX.fullmatch(namespace) or namespace == S3TABLES_RESERVED_NAMESPACE:
-            raise InvalidNamespaceName("The specified namespace name is not valid.")
+            raise InvalidNamespaceName("The specified namespace name is not valid. See https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-naming.html for naming rules.")
 
         return namespace
 
@@ -127,7 +127,7 @@ class S3TablesCatalog(MetastoreCatalog):
         namespace = self._validate_namespace_identifier(namespace)
 
         if not S3TABLES_VALID_NAME_REGEX.fullmatch(table_name):
-            raise InvalidTableName("The specified table name is not valid.")
+            raise InvalidTableName("The specified table name is not valid. See https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-naming.html for naming rules.")
 
         return namespace, table_name
 
