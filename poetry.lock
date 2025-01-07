@@ -2879,17 +2879,17 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.35.87"
-description = "Type annotations for boto3 Glue 1.35.87 service generated with mypy-boto3-builder 8.7.0"
+version = "1.35.93"
+description = "Type annotations for boto3 Glue 1.35.93 service generated with mypy-boto3-builder 8.8.0"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "mypy_boto3_glue-1.35.87-py3-none-any.whl", hash = "sha256:c4c62daf80e99ad539491b63814b7cf94a5e4f1fca732540a9aaae458af52691"},
-    {file = "mypy_boto3_glue-1.35.87.tar.gz", hash = "sha256:d1d5f1bb5c5297045a1a650a6672c46a319e3cf373085d2303c2179dc5b46d7d"},
+    {file = "mypy_boto3_glue-1.35.93-py3-none-any.whl", hash = "sha256:cf46553f68048124bad65345b593ec5ba3806bd9bd15a1d7516d0cb3d79a0652"},
+    {file = "mypy_boto3_glue-1.35.93.tar.gz", hash = "sha256:27759a83ffa5414b2589da83625816a3c7cb97600fec68578bd3012a9ae20ee8"},
 ]
 
 [package.dependencies]
-typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.12\""}
+typing-extensions = {version = "*", markers = "python_version < \"3.12\""}
 
 [[package]]
 name = "natsort"
