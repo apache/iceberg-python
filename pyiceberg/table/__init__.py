@@ -117,7 +117,7 @@ from pyiceberg.table.update.snapshot import (
     UpdateSnapshot,
     _FastAppendFiles,
 )
-from pyiceberg.table.update.sort_order import SortOrderBuilder
+from pyiceberg.table.update.sorting import SortOrderBuilder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
