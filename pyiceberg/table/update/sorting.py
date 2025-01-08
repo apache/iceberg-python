@@ -32,9 +32,10 @@ if TYPE_CHECKING:
 
 
 class SortOrderBuilder:
-    def __init__(self, case_sensitive: bool = True) -> None:
+    def __init__(self,  last_sort_order_id: int, case_sensitive: bool = True) -> None:
         self._fields: List[SortField] = []
         self._case_sensitive = case_sensitive
+        self._last_sort_order_id = last_sort_order_id
 
     def add_sort_field(
         self,
@@ -57,7 +58,7 @@ class SortOrderBuilder:
     @property
     def sort_order(self) -> SortOrder:  # todo: add sort order id?
         """Return the sort order."""
-        return SortOrder(*self._fields)
+        return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
 
 
 class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
@@ -68,9 +69,11 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
-        self._builder = SortOrderBuilder(case_sensitive=case_sensitive)
+        self._builder = SortOrderBuilder(
+            case_sensitive=case_sensitive,
+            last_sort_order_id=transaction.table_metadata.default_sort_order_id,
+        )
         self._case_sensitive = case_sensitive
-        self._last_sort_order_id = transaction.table_metadata.default_sort_order_id
 
     def _column_name_to_id(self, column_name: str) -> int:
         return (
