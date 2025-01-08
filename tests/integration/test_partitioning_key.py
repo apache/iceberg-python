@@ -725,21 +725,16 @@ identifier = "default.test_table"
         ),
         # Test that special characters are URL-encoded
         (
-            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string#field")],
+            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string+field")],
             ["special string"],
-            Record(**{"special#string#field": "special string"}),  # type: ignore
-            "special%23string%23field=special+string",
-            # Spark currently writes differently to PyIceberg w.r.t special column name sanitization so justification
-            # (comparing expected value with Spark behavior) would fail: PyIceberg produces
-            # Record[special_x23string_x23field='special string'], not Record[special#string#field='special string'].
-            # None,
-            # None,
+            Record(**{"special#string+field": "special string"}),  # type: ignore
+            "special%23string%2Bfield=special+string",
             f"""CREATE TABLE {identifier} (
-                `special#string#field` string
+                `special#string+field` string
             )
             USING iceberg
             PARTITIONED BY (
-                identity(`special#string#field`)
+                identity(`special#string+field`)
             )
             """,
             f"""INSERT INTO {identifier}
