@@ -18,12 +18,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, List, Tuple
 
+from pyiceberg.table import AddSortOrderUpdate, SetDefaultSortOrderUpdate
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
     UpdatesAndRequirements,
     UpdateTableMetadata,
+    AssertDefaultSortOrderId
 )
 from pyiceberg.transforms import Transform
 
@@ -56,7 +58,7 @@ class SortOrderBuilder:
         return self
 
     @property
-    def sort_order(self) -> SortOrder:  # todo: add sort order id?
+    def sort_order(self) -> SortOrder:
         """Return the sort order."""
         return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
 
