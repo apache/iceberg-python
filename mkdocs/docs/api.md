@@ -964,7 +964,7 @@ Renaming a field in an Iceberg table is simple:
 with table.update_schema() as update:
     update.rename_column("retries", "num_retries")
     # This will rename `confirmed_by` to `processed_by` in the `details` struct
-    update.rename_column(("details", "confirmed_by"), ("detail", "processed_by"))
+    update.rename_column(("details", "confirmed_by"), "processed_by")
 ```
 
 ### Move column
