@@ -72,7 +72,12 @@ from pyarrow.fs import (
 from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
-from pyiceberg.exceptions import ResolveError
+from pyiceberg.exceptions import (
+    ResolveError,
+    UnsupportedPyArrowIntegerTypeException,
+    UnsupportedPyArrowTimestampTypeException,
+    UnsupportedPyArrowTypeException,
+)
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
@@ -1091,8 +1096,10 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
     _field_names: List[str]
+    _field: Optional[pa.Field]
 
     def __init__(self, downcast_ns_timestamp_to_us: bool = False) -> None:
+        self._field = None
         self._field_names = []
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
@@ -1133,6 +1140,12 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
+        field_name = None
+        unsupported_prefix = "Unsupported"
+        if len(self._field_names) > 0:
+            field_name = self._field_names[-1]
+            unsupported_prefix = f"Column '{field_name}' has an unsupported"
+
         if pa.types.is_boolean(primitive):
             return BooleanType()
         elif pa.types.is_integer(primitive):
@@ -1143,7 +1156,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                 return LongType()
             else:
                 # Does not exist (yet)
-                raise TypeError(f"Unsupported integer type: {primitive}")
+                raise UnsupportedPyArrowIntegerTypeException(self._field, f"{unsupported_prefix} integer type: {primitive}")
         elif pa.types.is_float32(primitive):
             return FloatType()
         elif pa.types.is_float64(primitive):
@@ -1166,11 +1179,17 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                 if self._downcast_ns_timestamp_to_us:
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
                 else:
-                    raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                    column_name_message = ""
+                    if field_name:
+                        column_name_message = f", making the column '{field_name}' unsupported"
+                    raise UnsupportedPyArrowTimestampTypeException(
+                        self._field,
+                        f"Iceberg does not yet support 'ns' timestamp precision{column_name_message}. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
                     )
             else:
-                raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
+                raise UnsupportedPyArrowTimestampTypeException(
+                    self._field, f"{unsupported_prefix} precision for timestamp type: {primitive.unit}"
+                )
 
             if primitive.tz in UTC_ALIASES:
                 return TimestamptzType()
@@ -1183,13 +1202,15 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
 
-        raise TypeError(f"Unsupported type: {primitive}")
+        raise UnsupportedPyArrowTypeException(self._field, f"{unsupported_prefix} type: {primitive}")
 
     def before_field(self, field: pa.Field) -> None:
         self._field_names.append(field.name)
+        self._field = field
 
     def after_field(self, field: pa.Field) -> None:
         self._field_names.pop()
+        self._field = None
 
     def before_list_element(self, element: pa.Field) -> None:
         self._field_names.append(LIST_ELEMENT_NAME)

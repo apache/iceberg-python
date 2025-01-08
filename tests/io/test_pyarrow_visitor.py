@@ -21,6 +21,7 @@ from typing import Any
 import pyarrow as pa
 import pytest
 
+from pyiceberg.exceptions import UnsupportedPyArrowTimestampTypeException, UnsupportedPyArrowTypeException
 from pyiceberg.expressions import (
     And,
     BoundEqualTo,
@@ -90,7 +91,7 @@ def test_pyarrow_decimal256_to_iceberg() -> None:
     precision = 26
     scale = 20
     pyarrow_type = pa.decimal256(precision, scale)
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: decimal256(26, 20)")):
+    with pytest.raises(UnsupportedPyArrowTypeException, match=re.escape("Unsupported type: decimal256(26, 20)")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
@@ -150,16 +151,16 @@ def test_pyarrow_date32_to_iceberg() -> None:
 
 def test_pyarrow_date64_to_iceberg() -> None:
     pyarrow_type = pa.date64()
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: date64")):
+    with pytest.raises(UnsupportedPyArrowTypeException, match=re.escape("Unsupported type: date64")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
 def test_pyarrow_time32_to_iceberg() -> None:
     pyarrow_type = pa.time32("ms")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: time32[ms]")):
+    with pytest.raises(UnsupportedPyArrowTypeException, match=re.escape("Unsupported type: time32[ms]")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     pyarrow_type = pa.time32("s")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: time32[s]")):
+    with pytest.raises(UnsupportedPyArrowTypeException, match=re.escape("Unsupported type: time32[s]")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
@@ -172,7 +173,7 @@ def test_pyarrow_time64_us_to_iceberg() -> None:
 
 def test_pyarrow_time64_ns_to_iceberg() -> None:
     pyarrow_type = pa.time64("ns")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: time64[ns]")):
+    with pytest.raises(UnsupportedPyArrowTypeException, match=re.escape("Unsupported type: time64[ns]")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
@@ -188,7 +189,7 @@ def test_pyarrow_timestamp_to_iceberg(precision: str) -> None:
 def test_pyarrow_timestamp_invalid_units() -> None:
     pyarrow_type = pa.timestamp(unit="ns")
     with pytest.raises(
-        TypeError,
+        UnsupportedPyArrowTimestampTypeException,
         match=re.escape(
             "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
         ),
@@ -210,7 +211,7 @@ def test_pyarrow_timestamp_tz_to_iceberg() -> None:
 def test_pyarrow_timestamp_tz_invalid_units() -> None:
     pyarrow_type = pa.timestamp(unit="ns", tz="UTC")
     with pytest.raises(
-        TypeError,
+        UnsupportedPyArrowTimestampTypeException,
         match=re.escape(
             "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
         ),
@@ -220,7 +221,7 @@ def test_pyarrow_timestamp_tz_invalid_units() -> None:
 
 def test_pyarrow_timestamp_tz_invalid_tz() -> None:
     pyarrow_type = pa.timestamp(unit="us", tz="US/Pacific")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: timestamp[us, tz=US/Pacific]")):
+    with pytest.raises(UnsupportedPyArrowTypeException, match=re.escape("Unsupported type: timestamp[us, tz=US/Pacific]")):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
@@ -583,21 +584,35 @@ def test_pyarrow_schema_to_schema_fresh_ids_nested_schema(
     assert visit_pyarrow(pyarrow_schema_nested_without_ids, _ConvertToIcebergWithoutIDs()) == iceberg_schema_nested_no_ids
 
 
-def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:
-    expected_schema = pa.schema(
+def test_pyarrow_schema_unsupported_type() -> None:
+    lat_field = pa.field("latitude", pa.decimal256(20, 26), nullable=False)
+    schema = pa.schema(
         [
-            pa.field("foo", pa.large_string(), nullable=False),
-            pa.field("bar", pa.int32(), nullable=False),
-            pa.field("baz", pa.bool_(), nullable=True),
-            pa.field("qux", pa.large_list(pa.large_string()), nullable=False),
+            pa.field("foo", pa.string(), nullable=False),
             pa.field(
-                "quux",
-                pa.map_(
-                    pa.large_string(),
-                    pa.map_(pa.large_string(), pa.int32()),
+                "location",
+                pa.large_list(
+                    pa.struct(
+                        [
+                            lat_field,
+                            pa.field("longitude", pa.float32(), nullable=False),
+                        ]
+                    ),
                 ),
                 nullable=False,
             ),
+        ]
+    )
+    with pytest.raises(
+        UnsupportedPyArrowTypeException, match=re.escape("Column 'latitude' has an unsupported type: decimal256(20, 26)")
+    ) as exc_info:
+        visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+    assert exc_info.value.field == lat_field
+
+    foo_field = pa.field("foo", pa.timestamp(unit="ns"), nullable=False)
+    schema = pa.schema(
+        [
+            foo_field,
             pa.field(
                 "location",
                 pa.large_list(
@@ -610,19 +625,16 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
                 ),
                 nullable=False,
             ),
-            pa.field(
-                "person",
-                pa.struct(
-                    [
-                        pa.field("name", pa.large_string(), nullable=True),
-                        pa.field("age", pa.int32(), nullable=False),
-                    ]
-                ),
-                nullable=True,
-            ),
         ]
     )
-    assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
+    with pytest.raises(
+        UnsupportedPyArrowTypeException,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' timestamp precision, making the column 'foo' unsupported. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ) as exc_info:
+        visit_pyarrow(schema, _ConvertToIcebergWithoutIDs())
+    assert exc_info.value.field == foo_field
 
 
 def test_pyarrow_schema_round_trip_ensure_large_types_and_then_small_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:

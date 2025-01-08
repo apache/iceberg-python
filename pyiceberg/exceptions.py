@@ -14,6 +14,9 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from typing import Any
+
+import pyarrow as pa
 
 
 class TableAlreadyExistsError(Exception):
@@ -122,3 +125,19 @@ class CommitStateUnknownException(RESTError):
 
 class WaitingForLockException(Exception):
     """Need to wait for a lock, try again."""
+
+
+class UnsupportedPyArrowTypeException(Exception):
+    """Cannot convert PyArrow type to corresponding Iceberg type."""
+
+    def __init__(self, field: pa.Field, *args: Any):
+        self.field = field
+        super().__init__(*args)
+
+
+class UnsupportedPyArrowIntegerTypeException(UnsupportedPyArrowTypeException):
+    """Cannot convert PyArrow integer type to corresponding Iceberg type."""
+
+
+class UnsupportedPyArrowTimestampTypeException(UnsupportedPyArrowTypeException):
+    """Cannot convert PyArrow timestamp type to corresponding Iceberg type."""
