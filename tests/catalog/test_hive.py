@@ -699,7 +699,7 @@ def test_load_table(hive_table: HiveTable) -> None:
         last_sequence_number=34,
     )
 
-    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert table.name() == ("default", "new_tabl2e")
     assert expected == table.metadata
 
 
@@ -709,7 +709,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog._client = MagicMock()
     catalog._client.__enter__().get_table.return_value = hive_table
     intermediate = catalog.load_table(("default", "new_tabl2e"))
-    table = catalog.load_table(intermediate.identifier)
+    table = catalog.load_table(intermediate.name())
 
     catalog._client.__enter__().get_table.assert_called_with(dbname="default", tbl_name="new_tabl2e")
 
@@ -800,7 +800,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
         last_sequence_number=34,
     )
 
-    assert table.identifier == (HIVE_CATALOG_NAME, "default", "new_tabl2e")
+    assert table.name() == ("default", "new_tabl2e")
     assert expected == table.metadata
 
 
@@ -819,7 +819,7 @@ def test_rename_table(hive_table: HiveTable) -> None:
     to_identifier = ("default", "new_tabl3e")
     table = catalog.rename_table(from_identifier, to_identifier)
 
-    assert table.identifier == ("hive",) + to_identifier
+    assert table.name() == to_identifier
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
@@ -843,9 +843,9 @@ def test_rename_table_from_self_identifier(hive_table: HiveTable) -> None:
     catalog._client.__enter__().get_table.side_effect = [hive_table, renamed_table]
     catalog._client.__enter__().alter_table.return_value = None
     to_identifier = ("default", "new_tabl3e")
-    table = catalog.rename_table(from_table.identifier, to_identifier)
+    table = catalog.rename_table(from_table.name(), to_identifier)
 
-    assert table.identifier == ("hive",) + to_identifier
+    assert table.name() == to_identifier
 
     calls = [call(dbname="default", tbl_name="new_tabl2e"), call(dbname="default", tbl_name="new_tabl3e")]
     catalog._client.__enter__().get_table.assert_has_calls(calls)
@@ -966,7 +966,7 @@ def test_drop_table_from_self_identifier(hive_table: HiveTable) -> None:
     table = catalog.load_table(("default", "new_tabl2e"))
 
     catalog._client.__enter__().get_all_databases.return_value = ["namespace1", "namespace2"]
-    catalog.drop_table(table.identifier)
+    catalog.drop_table(table.name())
 
     catalog._client.__enter__().drop_table.assert_called_with(dbname="default", name="new_tabl2e", deleteData=False)
 

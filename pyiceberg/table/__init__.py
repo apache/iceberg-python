@@ -44,10 +44,14 @@ from sortedcontainers import SortedList
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.expressions import (
+    AlwaysFalse,
     AlwaysTrue,
     And,
     BooleanExpression,
     EqualTo,
+    IsNull,
+    Or,
+    Reference,
 )
 from pyiceberg.expressions.visitors import (
     _InclusiveMetricsEvaluator,
@@ -107,16 +111,14 @@ from pyiceberg.table.update import (
     UpgradeFormatVersionUpdate,
     update_table_metadata,
 )
-from pyiceberg.table.update.schema import UpdateSchema, _Move, _MoveOperation
+from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import (
     ManageSnapshots,
     UpdateSnapshot,
-    _DeleteFiles,
     _FastAppendFiles,
-    _MergeAppendFiles,
-    _OverwriteFiles,
 )
 from pyiceberg.table.update.spec import UpdateSpec
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -132,7 +134,6 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
@@ -268,12 +269,10 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE) -> DataScan:
+    def _scan(self, row_filter: Union[str, BooleanExpression] = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
         return DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=row_filter,
+            table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
 
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
@@ -346,6 +345,48 @@ class Transaction:
 
         return updates, requirements
 
+    def _build_partition_predicate(self, partition_records: Set[Record]) -> BooleanExpression:
+        """Build a filter predicate matching any of the input partition records.
+
+        Args:
+            partition_records: A set of partition records to match
+        Returns:
+            A predicate matching any of the input partition records.
+        """
+        partition_spec = self.table_metadata.spec()
+        schema = self.table_metadata.schema()
+        partition_fields = [schema.find_field(field.source_id).name for field in partition_spec.fields]
+
+        expr: BooleanExpression = AlwaysFalse()
+        for partition_record in partition_records:
+            match_partition_expression: BooleanExpression = AlwaysTrue()
+
+            for pos, partition_field in enumerate(partition_fields):
+                predicate = (
+                    EqualTo(Reference(partition_field), partition_record[pos])
+                    if partition_record[pos] is not None
+                    else IsNull(Reference(partition_field))
+                )
+                match_partition_expression = And(match_partition_expression, predicate)
+            expr = Or(expr, match_partition_expression)
+        return expr
+
+    def _append_snapshot_producer(self, snapshot_properties: Dict[str, str]) -> _FastAppendFiles:
+        """Determine the append type based on table properties.
+
+        Args:
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        Returns:
+            Either a fast-append or a merge-append snapshot producer.
+        """
+        manifest_merge_enabled = property_as_bool(
+            self.table_metadata.properties,
+            TableProperties.MANIFEST_MERGE_ENABLED,
+            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+        )
+        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
+        return update_snapshot.merge_append() if manifest_merge_enabled else update_snapshot.fast_append()
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -400,15 +441,7 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        manifest_merge_enabled = property_as_bool(
-            self.table_metadata.properties,
-            TableProperties.MANIFEST_MERGE_ENABLED,
-            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
-        )
-        update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties)
-        append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
-
-        with append_method() as append_files:
+        with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
@@ -417,11 +450,68 @@ class Transaction:
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
 
+    def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """
+        Shorthand for overwriting existing partitions with a PyArrow table.
+
+        The function detects partition values in the provided arrow table using the current
+        partition spec, and deletes existing partitions matching these values. Finally, the
+        data in the table is appended to the table.
+
+        Args:
+            df: The Arrow dataframe that will be used to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
+        if self.table_metadata.spec().is_unpartitioned():
+            raise ValueError("Cannot apply dynamic overwrite on an unpartitioned table.")
+
+        for field in self.table_metadata.spec().fields:
+            if not isinstance(field.transform, IdentityTransform):
+                raise ValueError(
+                    f"For now dynamic overwrite does not support a table with non-identity-transform field in the latest partition spec: {field}"
+                )
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
+
+        # If dataframe does not have data, there is no need to overwrite
+        if df.shape[0] == 0:
+            return
+
+        append_snapshot_commit_uuid = uuid.uuid4()
+        data_files: List[DataFile] = list(
+            _dataframe_to_data_files(
+                table_metadata=self._table.metadata, write_uuid=append_snapshot_commit_uuid, df=df, io=self._table.io
+            )
+        )
+
+        partitions_to_overwrite = {data_file.partition for data_file in data_files}
+        delete_filter = self._build_partition_predicate(partition_records=partitions_to_overwrite)
+        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
+
+        with self._append_snapshot_producer(snapshot_properties) as append_files:
+            append_files.commit_uuid = append_snapshot_commit_uuid
+            for data_file in data_files:
+                append_files.append_data_file(data_file)
+
     def overwrite(
         self,
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for adding a table overwrite with a PyArrow table to the transaction.
@@ -436,6 +526,7 @@ class Transaction:
             df: The Arrow dataframe that will be used to overwrite the table
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
+            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
             snapshot_properties: Custom properties to be added to the snapshot summary
         """
         try:
@@ -459,22 +550,27 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+        self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
-        with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
+        with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=update_snapshot.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
                 )
                 for data_file in data_files:
-                    update_snapshot.append_data_file(data_file)
+                    append_files.append_data_file(data_file)
 
-    def delete(self, delete_filter: Union[str, BooleanExpression], snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+    def delete(
+        self,
+        delete_filter: Union[str, BooleanExpression],
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
+    ) -> None:
         """
         Shorthand for deleting record from a table.
 
-        An deletee may produce zero or more snapshots based on the operation:
+        A delete may produce zero or more snapshots based on the operation:
 
             - DELETE: In case existing Parquet files can be dropped completely.
             - REPLACE: In case existing Parquet files need to be rewritten
@@ -482,6 +578,7 @@ class Transaction:
         Args:
             delete_filter: A boolean expression to delete rows from a table
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
         """
         from pyiceberg.io.pyarrow import (
             ArrowScan,
@@ -499,14 +596,14 @@ class Transaction:
             delete_filter = _parse_row_filter(delete_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties).delete() as delete_snapshot:
-            delete_snapshot.delete_by_predicate(delete_filter)
+            delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
-            bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive=True)
+            bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter)
 
-            files = self._scan(row_filter=delete_filter).plan_files()
+            files = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive).plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -532,23 +629,24 @@ class Transaction:
                 if len(filtered_df) == 0:
                     replaced_files.append((original_file.file, []))
                 elif len(df) != len(filtered_df):
-                    replaced_files.append((
-                        original_file.file,
-                        list(
-                            _dataframe_to_data_files(
-                                io=self._table.io,
-                                df=filtered_df,
-                                table_metadata=self.table_metadata,
-                                write_uuid=commit_uuid,
-                                counter=counter,
-                            )
-                        ),
-                    ))
+                    replaced_files.append(
+                        (
+                            original_file.file,
+                            list(
+                                _dataframe_to_data_files(
+                                    io=self._table.io,
+                                    df=filtered_df,
+                                    table_metadata=self.table_metadata,
+                                    write_uuid=commit_uuid,
+                                    counter=counter,
+                                )
+                            ),
+                        )
+                    )
 
             if len(replaced_files) > 0:
-                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite(
-                    commit_uuid=commit_uuid
-                ) as overwrite_snapshot:
+                with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as overwrite_snapshot:
+                    overwrite_snapshot.commit_uuid = commit_uuid
                     for original_data_file, replaced_data_files in replaced_files:
                         overwrite_snapshot.delete_data_file(original_data_file)
                         for replaced_data_file in replaced_data_files:
@@ -584,9 +682,9 @@ class Transaction:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
         if self.table_metadata.name_mapping() is None:
-            self.set_properties(**{
-                TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()
-            })
+            self.set_properties(
+                **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
+            )
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
@@ -781,27 +879,13 @@ class Table:
         self.metadata_location = fresh.metadata_location
         return self
 
-    @property
-    def identifier(self) -> Identifier:
-        """Return the identifier of this table.
-
-        Returns:
-            An Identifier tuple of the table name
-        """
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message="Table.identifier property is deprecated. Please use Table.name() function instead.",
-        )
-        return (self.catalog.name,) + self._identifier
-
     def name(self) -> Identifier:
         """Return the identifier of this table.
 
         Returns:
             An Identifier tuple of the table name
         """
-        return self.identifier
+        return self._identifier
 
     def scan(
         self,
@@ -820,7 +904,7 @@ class Table:
 
         Args:
             row_filter:
-                A string or BooleanExpression that decsribes the
+                A string or BooleanExpression that describes the
                 desired rows
             selected_fields:
                 A tuple of strings representing the column names
@@ -983,11 +1067,23 @@ class Table:
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties)
 
+    def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
+        """Shorthand for dynamic overwriting the table with a PyArrow table.
+
+        Old partitions are auto detected and replaced with data files created for input arrow table.
+        Args:
+            df: The Arrow dataframe that will be used to overwrite the table
+            snapshot_properties: Custom properties to be added to the snapshot summary
+        """
+        with self.transaction() as tx:
+            tx.dynamic_partition_overwrite(df=df, snapshot_properties=snapshot_properties)
+
     def overwrite(
         self,
         df: pa.Table,
         overwrite_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
         snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for overwriting the table with a PyArrow table.
@@ -1003,12 +1099,18 @@ class Table:
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
         """
         with self.transaction() as tx:
-            tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties)
+            tx.overwrite(
+                df=df, overwrite_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties
+            )
 
     def delete(
-        self, delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE, snapshot_properties: Dict[str, str] = EMPTY_DICT
+        self,
+        delete_filter: Union[BooleanExpression, str] = ALWAYS_TRUE,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand for deleting rows from the table.
@@ -1016,9 +1118,10 @@ class Table:
         Args:
             delete_filter: The predicate that used to remove rows
             snapshot_properties: Custom properties to be added to the snapshot summary
+            case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
         """
         with self.transaction() as tx:
-            tx.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties)
+            tx.delete(delete_filter=delete_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
     def add_files(
         self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
@@ -1311,7 +1414,7 @@ def _match_deletes_to_data_file(data_entry: ManifestEntry, positional_delete_ent
 
 class DataScan(TableScan):
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id])
+        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
 
     @cached_property
@@ -1535,57 +1638,3 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
     yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.Move has been changed to private class pyiceberg.table.update.schema._Move",
-)
-def Move(*args: Any, **kwargs: Any) -> _Move:
-    return _Move(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.MoveOperation has been changed to private class pyiceberg.table.update.schema._MoveOperation",
-)
-def MoveOperation(*args: Any, **kwargs: Any) -> _MoveOperation:
-    return _MoveOperation(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.DeleteFiles has been changed to private class pyiceberg.table.update.snapshot._DeleteFiles",
-)
-def DeleteFiles(*args: Any, **kwargs: Any) -> _DeleteFiles:
-    return _DeleteFiles(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.FastAppendFiles has been changed to private class pyiceberg.table.update.snapshot._FastAppendFiles",
-)
-def FastAppendFiles(*args: Any, **kwargs: Any) -> _FastAppendFiles:
-    return _FastAppendFiles(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.MergeAppendFiles has been changed to private class pyiceberg.table.update.snapshot._MergeAppendFiles",
-)
-def MergeAppendFiles(*args: Any, **kwargs: Any) -> _MergeAppendFiles:
-    return _MergeAppendFiles(*args, **kwargs)
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="pyiceberg.table.OverwriteFiles has been changed to private class pyiceberg.table.update.snapshot._OverwriteFiles",
-)
-def OverwriteFiles(*args: Any, **kwargs: Any) -> _OverwriteFiles:
-    return _OverwriteFiles(*args, **kwargs)

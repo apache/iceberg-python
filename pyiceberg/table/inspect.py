@@ -59,14 +59,16 @@ class InspectTable:
     def snapshots(self) -> "pa.Table":
         import pyarrow as pa
 
-        snapshots_schema = pa.schema([
-            pa.field("committed_at", pa.timestamp(unit="ms"), nullable=False),
-            pa.field("snapshot_id", pa.int64(), nullable=False),
-            pa.field("parent_id", pa.int64(), nullable=True),
-            pa.field("operation", pa.string(), nullable=True),
-            pa.field("manifest_list", pa.string(), nullable=False),
-            pa.field("summary", pa.map_(pa.string(), pa.string()), nullable=True),
-        ])
+        snapshots_schema = pa.schema(
+            [
+                pa.field("committed_at", pa.timestamp(unit="ms"), nullable=False),
+                pa.field("snapshot_id", pa.int64(), nullable=False),
+                pa.field("parent_id", pa.int64(), nullable=True),
+                pa.field("operation", pa.string(), nullable=True),
+                pa.field("manifest_list", pa.string(), nullable=False),
+                pa.field("summary", pa.map_(pa.string(), pa.string()), nullable=True),
+            ]
+        )
         snapshots = []
         for snapshot in self.tbl.metadata.snapshots:
             if summary := snapshot.summary:
@@ -76,14 +78,16 @@ class InspectTable:
                 operation = None
                 additional_properties = None
 
-            snapshots.append({
-                "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
-                "snapshot_id": snapshot.snapshot_id,
-                "parent_id": snapshot.parent_snapshot_id,
-                "operation": str(operation),
-                "manifest_list": snapshot.manifest_list,
-                "summary": additional_properties,
-            })
+            snapshots.append(
+                {
+                    "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
+                    "snapshot_id": snapshot.snapshot_id,
+                    "parent_id": snapshot.parent_snapshot_id,
+                    "operation": str(operation),
+                    "manifest_list": snapshot.manifest_list,
+                    "summary": additional_properties,
+                }
+            )
 
         return pa.Table.from_pylist(
             snapshots,
@@ -101,14 +105,16 @@ class InspectTable:
 
         def _readable_metrics_struct(bound_type: PrimitiveType) -> pa.StructType:
             pa_bound_type = schema_to_pyarrow(bound_type)
-            return pa.struct([
-                pa.field("column_size", pa.int64(), nullable=True),
-                pa.field("value_count", pa.int64(), nullable=True),
-                pa.field("null_value_count", pa.int64(), nullable=True),
-                pa.field("nan_value_count", pa.int64(), nullable=True),
-                pa.field("lower_bound", pa_bound_type, nullable=True),
-                pa.field("upper_bound", pa_bound_type, nullable=True),
-            ])
+            return pa.struct(
+                [
+                    pa.field("column_size", pa.int64(), nullable=True),
+                    pa.field("value_count", pa.int64(), nullable=True),
+                    pa.field("null_value_count", pa.int64(), nullable=True),
+                    pa.field("nan_value_count", pa.int64(), nullable=True),
+                    pa.field("lower_bound", pa_bound_type, nullable=True),
+                    pa.field("upper_bound", pa_bound_type, nullable=True),
+                ]
+            )
 
         for field in self.tbl.metadata.schema().fields:
             readable_metrics_struct.append(
@@ -118,35 +124,39 @@ class InspectTable:
         partition_record = self.tbl.metadata.specs_struct()
         pa_record_struct = schema_to_pyarrow(partition_record)
 
-        entries_schema = pa.schema([
-            pa.field("status", pa.int8(), nullable=False),
-            pa.field("snapshot_id", pa.int64(), nullable=False),
-            pa.field("sequence_number", pa.int64(), nullable=False),
-            pa.field("file_sequence_number", pa.int64(), nullable=False),
-            pa.field(
-                "data_file",
-                pa.struct([
-                    pa.field("content", pa.int8(), nullable=False),
-                    pa.field("file_path", pa.string(), nullable=False),
-                    pa.field("file_format", pa.string(), nullable=False),
-                    pa.field("partition", pa_record_struct, nullable=False),
-                    pa.field("record_count", pa.int64(), nullable=False),
-                    pa.field("file_size_in_bytes", pa.int64(), nullable=False),
-                    pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
-                    pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
-                    pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
-                    pa.field("key_metadata", pa.binary(), nullable=True),
-                    pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
-                    pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
-                    pa.field("sort_order_id", pa.int32(), nullable=True),
-                ]),
-                nullable=False,
-            ),
-            pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
-        ])
+        entries_schema = pa.schema(
+            [
+                pa.field("status", pa.int8(), nullable=False),
+                pa.field("snapshot_id", pa.int64(), nullable=False),
+                pa.field("sequence_number", pa.int64(), nullable=False),
+                pa.field("file_sequence_number", pa.int64(), nullable=False),
+                pa.field(
+                    "data_file",
+                    pa.struct(
+                        [
+                            pa.field("content", pa.int8(), nullable=False),
+                            pa.field("file_path", pa.string(), nullable=False),
+                            pa.field("file_format", pa.string(), nullable=False),
+                            pa.field("partition", pa_record_struct, nullable=False),
+                            pa.field("record_count", pa.int64(), nullable=False),
+                            pa.field("file_size_in_bytes", pa.int64(), nullable=False),
+                            pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                            pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                            pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                            pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                            pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+                            pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+                            pa.field("key_metadata", pa.binary(), nullable=True),
+                            pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
+                            pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
+                            pa.field("sort_order_id", pa.int32(), nullable=True),
+                        ]
+                    ),
+                    nullable=False,
+                ),
+                pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
+            ]
+        )
 
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
@@ -181,32 +191,34 @@ class InspectTable:
                     for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
                 }
 
-                entries.append({
-                    "status": entry.status.value,
-                    "snapshot_id": entry.snapshot_id,
-                    "sequence_number": entry.sequence_number,
-                    "file_sequence_number": entry.file_sequence_number,
-                    "data_file": {
-                        "content": entry.data_file.content,
-                        "file_path": entry.data_file.file_path,
-                        "file_format": entry.data_file.file_format,
-                        "partition": partition_record_dict,
-                        "record_count": entry.data_file.record_count,
-                        "file_size_in_bytes": entry.data_file.file_size_in_bytes,
-                        "column_sizes": dict(entry.data_file.column_sizes),
-                        "value_counts": dict(entry.data_file.value_counts),
-                        "null_value_counts": dict(entry.data_file.null_value_counts),
-                        "nan_value_counts": entry.data_file.nan_value_counts,
-                        "lower_bounds": entry.data_file.lower_bounds,
-                        "upper_bounds": entry.data_file.upper_bounds,
-                        "key_metadata": entry.data_file.key_metadata,
-                        "split_offsets": entry.data_file.split_offsets,
-                        "equality_ids": entry.data_file.equality_ids,
-                        "sort_order_id": entry.data_file.sort_order_id,
-                        "spec_id": entry.data_file.spec_id,
-                    },
-                    "readable_metrics": readable_metrics,
-                })
+                entries.append(
+                    {
+                        "status": entry.status.value,
+                        "snapshot_id": entry.snapshot_id,
+                        "sequence_number": entry.sequence_number,
+                        "file_sequence_number": entry.file_sequence_number,
+                        "data_file": {
+                            "content": entry.data_file.content,
+                            "file_path": entry.data_file.file_path,
+                            "file_format": entry.data_file.file_format,
+                            "partition": partition_record_dict,
+                            "record_count": entry.data_file.record_count,
+                            "file_size_in_bytes": entry.data_file.file_size_in_bytes,
+                            "column_sizes": dict(entry.data_file.column_sizes),
+                            "value_counts": dict(entry.data_file.value_counts),
+                            "null_value_counts": dict(entry.data_file.null_value_counts),
+                            "nan_value_counts": entry.data_file.nan_value_counts,
+                            "lower_bounds": entry.data_file.lower_bounds,
+                            "upper_bounds": entry.data_file.upper_bounds,
+                            "key_metadata": entry.data_file.key_metadata,
+                            "split_offsets": entry.data_file.split_offsets,
+                            "equality_ids": entry.data_file.equality_ids,
+                            "sort_order_id": entry.data_file.sort_order_id,
+                            "spec_id": entry.data_file.spec_id,
+                        },
+                        "readable_metrics": readable_metrics,
+                    }
+                )
 
         return pa.Table.from_pylist(
             entries,
@@ -216,26 +228,30 @@ class InspectTable:
     def refs(self) -> "pa.Table":
         import pyarrow as pa
 
-        ref_schema = pa.schema([
-            pa.field("name", pa.string(), nullable=False),
-            pa.field("type", pa.dictionary(pa.int32(), pa.string()), nullable=False),
-            pa.field("snapshot_id", pa.int64(), nullable=False),
-            pa.field("max_reference_age_in_ms", pa.int64(), nullable=True),
-            pa.field("min_snapshots_to_keep", pa.int32(), nullable=True),
-            pa.field("max_snapshot_age_in_ms", pa.int64(), nullable=True),
-        ])
+        ref_schema = pa.schema(
+            [
+                pa.field("name", pa.string(), nullable=False),
+                pa.field("type", pa.dictionary(pa.int32(), pa.string()), nullable=False),
+                pa.field("snapshot_id", pa.int64(), nullable=False),
+                pa.field("max_reference_age_in_ms", pa.int64(), nullable=True),
+                pa.field("min_snapshots_to_keep", pa.int32(), nullable=True),
+                pa.field("max_snapshot_age_in_ms", pa.int64(), nullable=True),
+            ]
+        )
 
         ref_results = []
         for ref in self.tbl.metadata.refs:
             if snapshot_ref := self.tbl.metadata.refs.get(ref):
-                ref_results.append({
-                    "name": ref,
-                    "type": snapshot_ref.snapshot_ref_type.upper(),
-                    "snapshot_id": snapshot_ref.snapshot_id,
-                    "max_reference_age_in_ms": snapshot_ref.max_ref_age_ms,
-                    "min_snapshots_to_keep": snapshot_ref.min_snapshots_to_keep,
-                    "max_snapshot_age_in_ms": snapshot_ref.max_snapshot_age_ms,
-                })
+                ref_results.append(
+                    {
+                        "name": ref,
+                        "type": snapshot_ref.snapshot_ref_type.upper(),
+                        "snapshot_id": snapshot_ref.snapshot_id,
+                        "max_reference_age_in_ms": snapshot_ref.max_ref_age_ms,
+                        "min_snapshots_to_keep": snapshot_ref.min_snapshots_to_keep,
+                        "max_snapshot_age_in_ms": snapshot_ref.max_snapshot_age_ms,
+                    }
+                )
 
         return pa.Table.from_pylist(ref_results, schema=ref_schema)
 
@@ -244,27 +260,31 @@ class InspectTable:
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-        table_schema = pa.schema([
-            pa.field("record_count", pa.int64(), nullable=False),
-            pa.field("file_count", pa.int32(), nullable=False),
-            pa.field("total_data_file_size_in_bytes", pa.int64(), nullable=False),
-            pa.field("position_delete_record_count", pa.int64(), nullable=False),
-            pa.field("position_delete_file_count", pa.int32(), nullable=False),
-            pa.field("equality_delete_record_count", pa.int64(), nullable=False),
-            pa.field("equality_delete_file_count", pa.int32(), nullable=False),
-            pa.field("last_updated_at", pa.timestamp(unit="ms"), nullable=True),
-            pa.field("last_updated_snapshot_id", pa.int64(), nullable=True),
-        ])
+        table_schema = pa.schema(
+            [
+                pa.field("record_count", pa.int64(), nullable=False),
+                pa.field("file_count", pa.int32(), nullable=False),
+                pa.field("total_data_file_size_in_bytes", pa.int64(), nullable=False),
+                pa.field("position_delete_record_count", pa.int64(), nullable=False),
+                pa.field("position_delete_file_count", pa.int32(), nullable=False),
+                pa.field("equality_delete_record_count", pa.int64(), nullable=False),
+                pa.field("equality_delete_file_count", pa.int32(), nullable=False),
+                pa.field("last_updated_at", pa.timestamp(unit="ms"), nullable=True),
+                pa.field("last_updated_snapshot_id", pa.int64(), nullable=True),
+            ]
+        )
 
         partition_record = self.tbl.metadata.specs_struct()
         has_partitions = len(partition_record.fields) > 0
 
         if has_partitions:
             pa_record_struct = schema_to_pyarrow(partition_record)
-            partitions_schema = pa.schema([
-                pa.field("partition", pa_record_struct, nullable=False),
-                pa.field("spec_id", pa.int32(), nullable=False),
-            ])
+            partitions_schema = pa.schema(
+                [
+                    pa.field("partition", pa_record_struct, nullable=False),
+                    pa.field("spec_id", pa.int32(), nullable=False),
+                ]
+            )
 
             table_schema = pa.unify_schemas([partitions_schema, table_schema])
 
@@ -330,27 +350,31 @@ class InspectTable:
     def _get_manifests_schema(self) -> "pa.Schema":
         import pyarrow as pa
 
-        partition_summary_schema = pa.struct([
-            pa.field("contains_null", pa.bool_(), nullable=False),
-            pa.field("contains_nan", pa.bool_(), nullable=True),
-            pa.field("lower_bound", pa.string(), nullable=True),
-            pa.field("upper_bound", pa.string(), nullable=True),
-        ])
+        partition_summary_schema = pa.struct(
+            [
+                pa.field("contains_null", pa.bool_(), nullable=False),
+                pa.field("contains_nan", pa.bool_(), nullable=True),
+                pa.field("lower_bound", pa.string(), nullable=True),
+                pa.field("upper_bound", pa.string(), nullable=True),
+            ]
+        )
 
-        manifest_schema = pa.schema([
-            pa.field("content", pa.int8(), nullable=False),
-            pa.field("path", pa.string(), nullable=False),
-            pa.field("length", pa.int64(), nullable=False),
-            pa.field("partition_spec_id", pa.int32(), nullable=False),
-            pa.field("added_snapshot_id", pa.int64(), nullable=False),
-            pa.field("added_data_files_count", pa.int32(), nullable=False),
-            pa.field("existing_data_files_count", pa.int32(), nullable=False),
-            pa.field("deleted_data_files_count", pa.int32(), nullable=False),
-            pa.field("added_delete_files_count", pa.int32(), nullable=False),
-            pa.field("existing_delete_files_count", pa.int32(), nullable=False),
-            pa.field("deleted_delete_files_count", pa.int32(), nullable=False),
-            pa.field("partition_summaries", pa.list_(partition_summary_schema), nullable=False),
-        ])
+        manifest_schema = pa.schema(
+            [
+                pa.field("content", pa.int8(), nullable=False),
+                pa.field("path", pa.string(), nullable=False),
+                pa.field("length", pa.int64(), nullable=False),
+                pa.field("partition_spec_id", pa.int32(), nullable=False),
+                pa.field("added_snapshot_id", pa.int64(), nullable=False),
+                pa.field("added_data_files_count", pa.int32(), nullable=False),
+                pa.field("existing_data_files_count", pa.int32(), nullable=False),
+                pa.field("deleted_data_files_count", pa.int32(), nullable=False),
+                pa.field("added_delete_files_count", pa.int32(), nullable=False),
+                pa.field("existing_delete_files_count", pa.int32(), nullable=False),
+                pa.field("deleted_delete_files_count", pa.int32(), nullable=False),
+                pa.field("partition_summaries", pa.list_(partition_summary_schema), nullable=False),
+            ]
+        )
         return manifest_schema
 
     def _get_all_manifests_schema(self) -> "pa.Schema":
@@ -388,12 +412,14 @@ class InspectTable:
                     if field_summary.upper_bound
                     else None
                 )
-                rows.append({
-                    "contains_null": field_summary.contains_null,
-                    "contains_nan": field_summary.contains_nan,
-                    "lower_bound": lower_bound,
-                    "upper_bound": upper_bound,
-                })
+                rows.append(
+                    {
+                        "contains_null": field_summary.contains_null,
+                        "contains_nan": field_summary.contains_nan,
+                        "lower_bound": lower_bound,
+                        "upper_bound": upper_bound,
+                    }
+                )
             return rows
 
         specs = self.tbl.metadata.specs()
@@ -435,13 +461,15 @@ class InspectTable:
 
         from pyiceberg.table.snapshots import MetadataLogEntry
 
-        table_schema = pa.schema([
-            pa.field("timestamp", pa.timestamp(unit="ms"), nullable=False),
-            pa.field("file", pa.string(), nullable=False),
-            pa.field("latest_snapshot_id", pa.int64(), nullable=True),
-            pa.field("latest_schema_id", pa.int32(), nullable=True),
-            pa.field("latest_sequence_number", pa.int64(), nullable=True),
-        ])
+        table_schema = pa.schema(
+            [
+                pa.field("timestamp", pa.timestamp(unit="ms"), nullable=False),
+                pa.field("file", pa.string(), nullable=False),
+                pa.field("latest_snapshot_id", pa.int64(), nullable=True),
+                pa.field("latest_schema_id", pa.int32(), nullable=True),
+                pa.field("latest_sequence_number", pa.int64(), nullable=True),
+            ]
+        )
 
         def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
             latest_snapshot = self.tbl.snapshot_as_of_timestamp(metadata_entry.timestamp_ms)
@@ -467,12 +495,14 @@ class InspectTable:
     def history(self) -> "pa.Table":
         import pyarrow as pa
 
-        history_schema = pa.schema([
-            pa.field("made_current_at", pa.timestamp(unit="ms"), nullable=False),
-            pa.field("snapshot_id", pa.int64(), nullable=False),
-            pa.field("parent_id", pa.int64(), nullable=True),
-            pa.field("is_current_ancestor", pa.bool_(), nullable=False),
-        ])
+        history_schema = pa.schema(
+            [
+                pa.field("made_current_at", pa.timestamp(unit="ms"), nullable=False),
+                pa.field("snapshot_id", pa.int64(), nullable=False),
+                pa.field("parent_id", pa.int64(), nullable=True),
+                pa.field("is_current_ancestor", pa.bool_(), nullable=False),
+            ]
+        )
 
         ancestors_ids = {snapshot.snapshot_id for snapshot in ancestors_of(self.tbl.current_snapshot(), self.tbl.metadata)}
 
@@ -482,12 +512,14 @@ class InspectTable:
         for snapshot_entry in metadata.snapshot_log:
             snapshot = metadata.snapshot_by_id(snapshot_entry.snapshot_id)
 
-            history.append({
-                "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=timezone.utc),
-                "snapshot_id": snapshot_entry.snapshot_id,
-                "parent_id": snapshot.parent_snapshot_id if snapshot else None,
-                "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
-            })
+            history.append(
+                {
+                    "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=timezone.utc),
+                    "snapshot_id": snapshot_entry.snapshot_id,
+                    "parent_id": snapshot.parent_snapshot_id if snapshot else None,
+                    "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
+                }
+            )
 
         return pa.Table.from_pylist(history, schema=history_schema)
 
@@ -501,39 +533,43 @@ class InspectTable:
 
         def _readable_metrics_struct(bound_type: PrimitiveType) -> pa.StructType:
             pa_bound_type = schema_to_pyarrow(bound_type)
-            return pa.struct([
-                pa.field("column_size", pa.int64(), nullable=True),
-                pa.field("value_count", pa.int64(), nullable=True),
-                pa.field("null_value_count", pa.int64(), nullable=True),
-                pa.field("nan_value_count", pa.int64(), nullable=True),
-                pa.field("lower_bound", pa_bound_type, nullable=True),
-                pa.field("upper_bound", pa_bound_type, nullable=True),
-            ])
+            return pa.struct(
+                [
+                    pa.field("column_size", pa.int64(), nullable=True),
+                    pa.field("value_count", pa.int64(), nullable=True),
+                    pa.field("null_value_count", pa.int64(), nullable=True),
+                    pa.field("nan_value_count", pa.int64(), nullable=True),
+                    pa.field("lower_bound", pa_bound_type, nullable=True),
+                    pa.field("upper_bound", pa_bound_type, nullable=True),
+                ]
+            )
 
         for field in self.tbl.metadata.schema().fields:
             readable_metrics_struct.append(
                 pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
             )
 
-        files_schema = pa.schema([
-            pa.field("content", pa.int8(), nullable=False),
-            pa.field("file_path", pa.string(), nullable=False),
-            pa.field("file_format", pa.dictionary(pa.int32(), pa.string()), nullable=False),
-            pa.field("spec_id", pa.int32(), nullable=False),
-            pa.field("record_count", pa.int64(), nullable=False),
-            pa.field("file_size_in_bytes", pa.int64(), nullable=False),
-            pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
-            pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
-            pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
-            pa.field("key_metadata", pa.binary(), nullable=True),
-            pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
-            pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
-            pa.field("sort_order_id", pa.int32(), nullable=True),
-            pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
-        ])
+        files_schema = pa.schema(
+            [
+                pa.field("content", pa.int8(), nullable=False),
+                pa.field("file_path", pa.string(), nullable=False),
+                pa.field("file_format", pa.dictionary(pa.int32(), pa.string()), nullable=False),
+                pa.field("spec_id", pa.int32(), nullable=False),
+                pa.field("record_count", pa.int64(), nullable=False),
+                pa.field("file_size_in_bytes", pa.int64(), nullable=False),
+                pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+                pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
+                pa.field("key_metadata", pa.binary(), nullable=True),
+                pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
+                pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
+                pa.field("sort_order_id", pa.int32(), nullable=True),
+                pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
+            ]
+        )
 
         files: list[dict[str, Any]] = []
 
@@ -571,25 +607,29 @@ class InspectTable:
                     }
                     for field in self.tbl.metadata.schema().fields
                 }
-                files.append({
-                    "content": data_file.content,
-                    "file_path": data_file.file_path,
-                    "file_format": data_file.file_format,
-                    "spec_id": data_file.spec_id,
-                    "record_count": data_file.record_count,
-                    "file_size_in_bytes": data_file.file_size_in_bytes,
-                    "column_sizes": dict(data_file.column_sizes) if data_file.column_sizes is not None else None,
-                    "value_counts": dict(data_file.value_counts) if data_file.value_counts is not None else None,
-                    "null_value_counts": dict(data_file.null_value_counts) if data_file.null_value_counts is not None else None,
-                    "nan_value_counts": dict(data_file.nan_value_counts) if data_file.nan_value_counts is not None else None,
-                    "lower_bounds": dict(data_file.lower_bounds) if data_file.lower_bounds is not None else None,
-                    "upper_bounds": dict(data_file.upper_bounds) if data_file.upper_bounds is not None else None,
-                    "key_metadata": data_file.key_metadata,
-                    "split_offsets": data_file.split_offsets,
-                    "equality_ids": data_file.equality_ids,
-                    "sort_order_id": data_file.sort_order_id,
-                    "readable_metrics": readable_metrics,
-                })
+                files.append(
+                    {
+                        "content": data_file.content,
+                        "file_path": data_file.file_path,
+                        "file_format": data_file.file_format,
+                        "spec_id": data_file.spec_id,
+                        "record_count": data_file.record_count,
+                        "file_size_in_bytes": data_file.file_size_in_bytes,
+                        "column_sizes": dict(data_file.column_sizes) if data_file.column_sizes is not None else None,
+                        "value_counts": dict(data_file.value_counts) if data_file.value_counts is not None else None,
+                        "null_value_counts": dict(data_file.null_value_counts)
+                        if data_file.null_value_counts is not None
+                        else None,
+                        "nan_value_counts": dict(data_file.nan_value_counts) if data_file.nan_value_counts is not None else None,
+                        "lower_bounds": dict(data_file.lower_bounds) if data_file.lower_bounds is not None else None,
+                        "upper_bounds": dict(data_file.upper_bounds) if data_file.upper_bounds is not None else None,
+                        "key_metadata": data_file.key_metadata,
+                        "split_offsets": data_file.split_offsets,
+                        "equality_ids": data_file.equality_ids,
+                        "sort_order_id": data_file.sort_order_id,
+                        "readable_metrics": readable_metrics,
+                    }
+                )
 
         return pa.Table.from_pylist(
             files,

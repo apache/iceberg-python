@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
-
+import logging
 import os
 import tempfile
 import uuid
@@ -27,7 +27,7 @@ from uuid import uuid4
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from pyarrow.fs import FileType, LocalFileSystem
+from pyarrow.fs import FileType, LocalFileSystem, S3FileSystem
 
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
@@ -360,10 +360,12 @@ def test_pyarrow_s3_session_properties() -> None:
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
-    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
+        # Mock `resolve_s3_region` to prevent from the location used resolving to a different s3 region
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
@@ -381,10 +383,11 @@ def test_pyarrow_unified_session_properties() -> None:
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
-    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs:
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         s3_fileio = PyArrowFileIO(properties=session_properties)
         filename = str(uuid.uuid4())
 
+        mock_s3_region_resolver.return_value = "client.region"
         s3_fileio.new_input(location=f"s3://warehouse/{filename}")
 
         mock_s3fs.assert_called_with(
@@ -547,11 +550,13 @@ def test_binary_type_to_pyarrow() -> None:
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
-    expected = pa.struct([
-        pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
-        pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
-        pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
-    ])
+    expected = pa.struct(
+        [
+            pa.field("foo", pa.large_string(), nullable=True, metadata={"field_id": "1"}),
+            pa.field("bar", pa.int32(), nullable=False, metadata={"field_id": "2"}),
+            pa.field("baz", pa.bool_(), nullable=True, metadata={"field_id": "3"}),
+        ]
+    )
     assert visit(table_schema_simple.as_struct(), _ConvertToArrowSchema()) == expected
 
 
@@ -1771,11 +1776,13 @@ def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
 
 
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.decimal128(18, 6), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.decimal128(18, 6), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = r"""Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1792,11 +1799,13 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1813,11 +1822,13 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
 
 
 def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=False),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=False),
+        )
+    )
 
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
@@ -1826,10 +1837,12 @@ def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None
 
 
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     expected = """Mismatch in fields:
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -1851,9 +1864,11 @@ def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Sc
         6,
         pa.field(
             "person",
-            pa.struct([
-                pa.field("age", pa.int32(), nullable=False),
-            ]),
+            pa.struct(
+                [
+                    pa.field("age", pa.int32(), nullable=False),
+                ]
+            ),
             nullable=True,
         ),
     )
@@ -1869,9 +1884,11 @@ def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Sche
         6,
         pa.field(
             "person",
-            pa.struct([
-                pa.field("name", pa.string(), nullable=True),
-            ]),
+            pa.struct(
+                [
+                    pa.field("name", pa.string(), nullable=True),
+                ]
+            ),
             nullable=True,
         ),
     )
@@ -1920,12 +1937,14 @@ def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
 
 
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-        pa.field("new_field", pa.date32(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("new_field", pa.date32(), nullable=True),
+        )
+    )
 
     with pytest.raises(
         ValueError, match=r"PyArrow table contains more columns: new_field. Update the schema first \(hint, use union_by_name\)."
@@ -1942,10 +1961,12 @@ def test_schema_compatible(table_schema_simple: Schema) -> None:
 
 def test_schema_projection(table_schema_simple: Schema) -> None:
     # remove optional `baz` field from `table_schema_simple`
-    other_schema = pa.schema((
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+        )
+    )
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
     except Exception:
@@ -1954,11 +1975,13 @@ def test_schema_projection(table_schema_simple: Schema) -> None:
 
 def test_schema_downcast(table_schema_simple: Schema) -> None:
     # large_string type is compatible with string type
-    other_schema = pa.schema((
-        pa.field("foo", pa.large_string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.large_string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        )
+    )
 
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
@@ -2037,11 +2060,13 @@ def test_identity_partition_on_multi_columns() -> None:
         assert {table_partition.partition_key.partition for table_partition in result} == expected
         concatenated_arrow_table = pa.concat_tables([table_partition.arrow_table_partition for table_partition in result])
         assert concatenated_arrow_table.num_rows == arrow_table.num_rows
-        assert concatenated_arrow_table.sort_by([
-            ("born_year", "ascending"),
-            ("n_legs", "ascending"),
-            ("animal", "ascending"),
-        ]) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
+        assert concatenated_arrow_table.sort_by(
+            [
+                ("born_year", "ascending"),
+                ("n_legs", "ascending"),
+                ("animal", "ascending"),
+            ]
+        ) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
 
 
 def test__to_requested_schema_timestamps(
@@ -2074,3 +2099,88 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # Refer to: https://github.com/apache/arrow/issues/43713
+
+    pyarrow_file_io = PyArrowFileIO()
+    us_east_1_region = "us-east-1"
+    ap_southeast_2_region = "ap-southeast-2"
+
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        # Call with new argument resolves region automatically
+        mock_s3_region_resolver.return_value = us_east_1_region
+        filesystem_us = pyarrow_file_io.fs_by_scheme("s3", "us-east-1-bucket")
+        assert filesystem_us.region == us_east_1_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().misses == 1  # type: ignore
+        assert pyarrow_file_io.fs_by_scheme.cache_info().currsize == 1  # type: ignore
+
+        # Call with different argument also resolves region automatically
+        mock_s3_region_resolver.return_value = ap_southeast_2_region
+        filesystem_ap_southeast_2 = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
+        assert filesystem_ap_southeast_2.region == ap_southeast_2_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().misses == 2  # type: ignore
+        assert pyarrow_file_io.fs_by_scheme.cache_info().currsize == 2  # type: ignore
+
+        # Call with same argument hits cache
+        filesystem_us_cached = pyarrow_file_io.fs_by_scheme("s3", "us-east-1-bucket")
+        assert filesystem_us_cached.region == us_east_1_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 1  # type: ignore
+
+        # Call with same argument hits cache
+        filesystem_ap_southeast_2_cached = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
+        assert filesystem_ap_southeast_2_cached.region == ap_southeast_2_region
+        assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 2  # type: ignore
+
+
+def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
+    # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument becomes available for `resolve_s3_region`
+    # Refer to: https://github.com/apache/arrow/issues/43713
+    user_provided_region = "ap-southeast-1"
+    bucket_regions = [
+        ("us-east-2-bucket", "us-east-2"),
+        ("ap-southeast-2-bucket", "ap-southeast-2"),
+    ]
+
+    def _s3_region_map(bucket: str) -> str:
+        for bucket_region in bucket_regions:
+            if bucket_region[0] == bucket:
+                return bucket_region[1]
+        raise OSError("Unknown bucket")
+
+    # For a pyarrow io instance with configured default s3 region
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region})
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.side_effect = _s3_region_map
+
+        # The region is set to provided region if bucket region cannot be resolved
+        with caplog.at_level(logging.WARNING):
+            assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
+        assert f"Unable to resolve region for bucket non-exist-bucket, using default region {user_provided_region}" in caplog.text
+
+        for bucket_region in bucket_regions:
+            # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region
+            with caplog.at_level(logging.WARNING):
+                assert pyarrow_file_io.new_input(f"s3://{bucket_region[0]}/path/to/file")._filesystem.region == bucket_region[1]
+            assert (
+                f"PyArrow FileIO overriding S3 bucket region for bucket {bucket_region[0]}: "
+                f"provided region {user_provided_region}, actual region {bucket_region[1]}" in caplog.text
+            )
+
+            # For oss scheme, user provided region is used instead
+            assert pyarrow_file_io.new_input(f"oss://{bucket_region[0]}/path/to/file")._filesystem.region == user_provided_region
+
+
+def test_pyarrow_io_multi_fs() -> None:
+    pyarrow_file_io = PyArrowFileIO({"s3.region": "ap-southeast-1"})
+
+    with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.return_value = None
+
+        # The PyArrowFileIO instance resolves s3 file input to S3FileSystem
+        assert isinstance(pyarrow_file_io.new_input("s3://bucket/path/to/file")._filesystem, S3FileSystem)
+
+        # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
+        assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)

@@ -59,7 +59,7 @@ def test_create_table_with_database_location(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -121,7 +121,7 @@ def test_create_table_with_default_warehouse(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -137,7 +137,7 @@ def test_create_table_with_given_location(
     table = test_catalog.create_table(
         identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
     )
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -152,7 +152,7 @@ def test_create_table_removes_trailing_slash_in_location(
     test_catalog.create_namespace(namespace=database_name)
     location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert table.location() == location
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
@@ -175,7 +175,7 @@ def test_create_table_with_pyarrow_schema(
         schema=pyarrow_schema_simple_without_ids,
         location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}",
     )
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -201,7 +201,7 @@ def test_create_table_with_strips(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db/"})
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -210,12 +210,11 @@ def test_create_table_with_strips(
 def test_create_table_with_strips_bucket_root(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
-    catalog_name = "glue"
     identifier = (database_name, table_name)
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
-    assert table_strip.identifier == (catalog_name,) + identifier
+    assert table_strip.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table_strip.metadata_location)
     assert test_catalog._parse_metadata_version(table_strip.metadata_location) == 0
 
@@ -242,7 +241,7 @@ def test_create_table_with_glue_catalog_id(
     )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -273,7 +272,7 @@ def test_load_table(
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
 
@@ -287,8 +286,8 @@ def test_load_table_from_self_identifier(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     intermediate = test_catalog.create_table(identifier, table_schema_nested)
-    table = test_catalog.load_table(intermediate.identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    table = test_catalog.load_table(intermediate.name())
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
 
 
@@ -311,7 +310,7 @@ def test_drop_table(
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     test_catalog.drop_table(identifier)
     with pytest.raises(NoSuchTableError):
@@ -328,13 +327,13 @@ def test_drop_table_from_self_identifier(
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    test_catalog.drop_table(table.identifier)
+    test_catalog.drop_table(table.name())
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
     with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(table.identifier)
+        test_catalog.load_table(table.name())
 
 
 @mock_aws
@@ -349,19 +348,18 @@ def test_drop_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, 
 def test_rename_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
-    catalog_name = "glue"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
     test_catalog.rename_table(identifier, new_identifier)
     new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (catalog_name,) + new_identifier
+    assert new_table.name() == new_identifier
     # the metadata_location should not change
     assert new_table.metadata_location == table.metadata_location
     # old table should be dropped
@@ -373,25 +371,24 @@ def test_rename_table(
 def test_rename_table_from_self_identifier(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
-    catalog_name = "glue"
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
     test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
-    test_catalog.rename_table(table.identifier, new_identifier)
+    test_catalog.rename_table(table.name(), new_identifier)
     new_table = test_catalog.load_table(new_identifier)
-    assert new_table.identifier == (catalog_name,) + new_identifier
+    assert new_table.name() == new_identifier
     # the metadata_location should not change
     assert new_table.metadata_location == table.metadata_location
     # old table should be dropped
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
     with pytest.raises(NoSuchTableError):
-        test_catalog.load_table(table.identifier)
+        test_catalog.load_table(table.name())
 
 
 @mock_aws
@@ -923,7 +920,7 @@ def test_register_table_with_given_location(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.register_table(identifier, location)
-    assert table.identifier == (catalog_name,) + identifier
+    assert table.name() == identifier
     assert test_catalog.table_exists(identifier) is True
 
 

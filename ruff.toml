@@ -58,7 +58,7 @@ select = [
     "I", # isort
     "UP", # pyupgrade
 ]
-ignore = ["E501","E203","B024","B028","UP037"]
+ignore = ["E501","E203","B024","B028","UP037", "UP035", "UP006"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

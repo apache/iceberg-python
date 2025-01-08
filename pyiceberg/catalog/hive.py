@@ -314,7 +314,7 @@ class HiveCatalog(MetastoreCatalog):
         )
 
     def _convert_iceberg_into_hive(self, table: Table) -> HiveTable:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
+        identifier_tuple = table.name()
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         current_time_millis = int(time.time() * 1000)
 
@@ -455,7 +455,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
@@ -531,8 +531,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         with self._client as open_client:
             hive_table = self._get_hive_table(open_client, database_name, table_name)
@@ -548,8 +547,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         try:
             with self._client as open_client:
                 open_client.drop_table(dbname=database_name, name=table_name, deleteData=False)
@@ -576,8 +574,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: When a table with the name does not exist.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
             with self._client as open_client:

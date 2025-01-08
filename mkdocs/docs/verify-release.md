@@ -111,7 +111,7 @@ To run the full test coverage, with both unit tests and integration tests:
 make test-coverage
 ```
 
-This will spin up Docker containers to faciliate running test coverage.
+This will spin up Docker containers to facilitate running test coverage.
 
 # Cast the vote
 

@@ -324,20 +324,24 @@ def test_python_writes_special_character_column_with_spark_reads(
             {"street": "789", "city": "Random", "zip": 10112, column_name_with_special_character: "c"},
         ],
     }
-    pa_schema = pa.schema([
-        pa.field(column_name_with_special_character, pa.string()),
-        pa.field("id", pa.int32()),
-        pa.field("name", pa.string()),
-        pa.field(
-            "address",
-            pa.struct([
-                pa.field("street", pa.string()),
-                pa.field("city", pa.string()),
-                pa.field("zip", pa.int32()),
-                pa.field(column_name_with_special_character, pa.string()),
-            ]),
-        ),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field(column_name_with_special_character, pa.string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.string()),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.string()),
+                        pa.field("city", pa.string()),
+                        pa.field("zip", pa.int32()),
+                        pa.field(column_name_with_special_character, pa.string()),
+                    ]
+                ),
+            ),
+        ]
+    )
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
@@ -357,10 +361,12 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
         "id": [1, 2, 3, 1, 1],
         "name": ["AB", "CD", "EF", "CD", "EF"],
     }
-    pa_schema = pa.schema([
-        pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
-        pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
+            pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
+        ]
+    )
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
 
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
@@ -387,20 +393,24 @@ def test_python_writes_with_small_and_large_types_spark_reads(
             {"street": "789", "city": "Random", "zip": 10112, "bar": "c"},
         ],
     }
-    pa_schema = pa.schema([
-        pa.field("foo", pa.large_string()),
-        pa.field("id", pa.int32()),
-        pa.field("name", pa.string()),
-        pa.field(
-            "address",
-            pa.struct([
-                pa.field("street", pa.string()),
-                pa.field("city", pa.string()),
-                pa.field("zip", pa.int32()),
-                pa.field("bar", pa.large_string()),
-            ]),
-        ),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field("foo", pa.large_string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.string()),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.string()),
+                        pa.field("city", pa.string()),
+                        pa.field("zip", pa.int32()),
+                        pa.field("bar", pa.large_string()),
+                    ]
+                ),
+            ),
+        ]
+    )
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
@@ -409,20 +419,24 @@ def test_python_writes_with_small_and_large_types_spark_reads(
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
     arrow_table_on_read = tbl.scan().to_arrow()
-    assert arrow_table_on_read.schema == pa.schema([
-        pa.field("foo", pa.large_string()),
-        pa.field("id", pa.int32()),
-        pa.field("name", pa.large_string()),
-        pa.field(
-            "address",
-            pa.struct([
-                pa.field("street", pa.large_string()),
-                pa.field("city", pa.large_string()),
-                pa.field("zip", pa.int32()),
-                pa.field("bar", pa.large_string()),
-            ]),
-        ),
-    ])
+    assert arrow_table_on_read.schema == pa.schema(
+        [
+            pa.field("foo", pa.large_string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.large_string()),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.large_string()),
+                        pa.field("city", pa.large_string()),
+                        pa.field("zip", pa.int32()),
+                        pa.field("bar", pa.large_string()),
+                    ]
+                ),
+            ),
+        ]
+    )
 
 
 @pytest.mark.integration
@@ -718,10 +732,12 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
             "foo": ["a", None, "z"],
             "bar": [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with tbl.transaction() as txn:
@@ -761,10 +777,12 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
             "foo": ["a", None, "z"],
             "bar": [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with catalog.create_table_transaction(
@@ -810,9 +828,9 @@ def test_create_table_with_non_default_values(catalog: Catalog, table_schema_wit
     except NoSuchTableError:
         pass
 
-    iceberg_spec = PartitionSpec(*[
-        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="integer_partition")
-    ])
+    iceberg_spec = PartitionSpec(
+        *[PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="integer_partition")]
+    )
 
     sort_order = SortOrder(*[SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC)])
 
@@ -1071,9 +1089,11 @@ def test_table_write_schema_with_valid_nullability_diff(
     table_schema = Schema(
         NestedField(field_id=1, name="long", field_type=LongType(), required=False),
     )
-    other_schema = pa.schema((
-        pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
+        )
+    )
     arrow_table = pa.Table.from_pydict(
         {
             "long": [1, 9],
@@ -1114,13 +1134,15 @@ def test_table_write_schema_with_valid_upcast(
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
     assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
-        pa.schema((
-            pa.field("long", pa.int64(), nullable=True),
-            pa.field("list", pa.large_list(pa.int64()), nullable=False),
-            pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
-            pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
-            pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
-        ))
+        pa.schema(
+            (
+                pa.field("long", pa.int64(), nullable=True),
+                pa.field("list", pa.large_list(pa.int64()), nullable=False),
+                pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+                pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
+                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+            )
+        )
     )
     lhs = spark.table(f"{identifier}").toPandas()
     rhs = written_arrow_table.to_pandas()
@@ -1368,10 +1390,9 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
     identifier = "default.lower.table_v1_with_null_nested_namespace"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-    # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
-    # that supports HEAD request on table endpoint
 
-    # assert session_catalog.table_exists(identifier)
+    assert session_catalog.load_table(identifier) is not None
+    assert session_catalog.table_exists(identifier)
 
     # We expect no error here
     session_catalog.drop_table(identifier)
@@ -1511,16 +1532,20 @@ def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) ->
 def test_writing_null_structs(session_catalog: Catalog) -> None:
     import pyarrow as pa
 
-    schema = pa.schema([
-        pa.field(
-            "struct_field_1",
-            pa.struct([
-                pa.field("string_nested_1", pa.string()),
-                pa.field("int_item_2", pa.int32()),
-                pa.field("float_item_2", pa.float32()),
-            ]),
-        ),
-    ])
+    schema = pa.schema(
+        [
+            pa.field(
+                "struct_field_1",
+                pa.struct(
+                    [
+                        pa.field("string_nested_1", pa.string()),
+                        pa.field("int_item_2", pa.int32()),
+                        pa.field("float_item_2", pa.float32()),
+                    ]
+                ),
+            ),
+        ]
+    )
 
     records = [
         {

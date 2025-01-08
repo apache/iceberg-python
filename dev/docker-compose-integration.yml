@@ -14,7 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-version: "3"
 
 services:
   spark-iceberg:
@@ -41,7 +40,7 @@ services:
       - hive:hive
       - minio:minio
   rest:
-    image: tabulario/iceberg-rest
+    image: apache/iceberg-rest-fixture
     container_name: pyiceberg-rest
     networks:
       iceberg_net:
