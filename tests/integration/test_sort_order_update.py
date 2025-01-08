@@ -73,6 +73,14 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: 
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("session_catalog_hive")]) 
+def test_map_column_name_to_id(catalog: Catalog, table_schema_simple: Schema) -> None:
+    simple_table = _simple_table(catalog, table_schema_simple)
+    for col_name, col_id in {"foo": 1, "bar": 2, "baz": 3}.items():
+        assert col_id == simple_table.replace_sort_order()._column_name_to_id(col_name)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")]) # pytest.lazy_fixture("session_catalog_hive"), 
 def test_sort_order_builder(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple)
