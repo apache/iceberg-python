@@ -23,6 +23,8 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
+from pyiceberg.table.update.sorting import SortOrderBuilder
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -73,6 +75,17 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: 
 
 
 @pytest.mark.integration
+def test_sort_order_builder() -> None:
+    builder = SortOrderBuilder(last_sort_order_id=0)
+    builder.add_sort_field(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_FIRST)
+    builder.add_sort_field(2, IdentityTransform(), SortDirection.DESC, NullOrder.NULLS_LAST)
+    assert builder.sort_order == SortOrder(
+        SortField(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_FIRST),
+        SortField(2, IdentityTransform(), SortDirection.DESC, NullOrder.NULLS_LAST),
+    )
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("session_catalog_hive")]) 
 def test_map_column_name_to_id(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple)
@@ -80,11 +93,11 @@ def test_map_column_name_to_id(catalog: Catalog, table_schema_simple: Schema) ->
         assert col_id == simple_table.replace_sort_order()._column_name_to_id(col_name)
 
 
-@pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")]) # pytest.lazy_fixture("session_catalog_hive"), 
-def test_sort_order_builder(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _simple_table(catalog, table_schema_simple)
-    r = simple_table.replace_sort_order()
+# @pytest.mark.integration
+# @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")]) # pytest.lazy_fixture("session_catalog_hive"), 
+# def test_sort_order_builder(catalog: Catalog, table_schema_simple: Schema) -> None:
+#     simple_table = _simple_table(catalog, table_schema_simple)
+#     r = simple_table.replace_sort_order()
     
 
 # @pytest.mark.integration
