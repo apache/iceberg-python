@@ -26,7 +26,7 @@ from pyspark.sql.utils import AnalysisException
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, make_compatible_name
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -793,5 +793,7 @@ def test_partition_key(
         spark_path_for_justification = (
             snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
         )
-        assert spark_partition_for_justification == expected_partition_record
+        # Special characters in partition value are sanitized when written to the data file's partition field
+        sanitized_record = Record(**{make_compatible_name(k): v for k, v in vars(expected_partition_record).items()})
+        assert spark_partition_for_justification == sanitized_record
         assert expected_hive_partition_path_slice in spark_path_for_justification
