@@ -105,9 +105,24 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
         )
         return self
 
+    def _apply(self) -> SortOrder:
+        return self._builder.sort_order
+
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
+        new_sort_order = self._apply()
         requirements: Tuple[TableRequirement, ...] = ()
         updates: Tuple[TableUpdate, ...] = ()
+
+        if self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id:
+            updates = (
+                AddSortOrderUpdate(sort_order=new_sort_order),
+                SetDefaultSortOrderUpdate(sort_order_id=-1)
+            )
+        else:
+            updates = (SetDefaultSortOrderUpdate(sort_order_id=new_sort_order.order_id),)
+        
+        required_last_assigned_sort_order_id = self._transaction.table_metadata.default_sort_order_id
+        requirements = (AssertDefaultSortOrderId(default_sort_order_id=required_last_assigned_sort_order_id),)
 
         return updates, requirements
