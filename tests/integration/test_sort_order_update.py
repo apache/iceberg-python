@@ -20,20 +20,12 @@ import pytest
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update.sorting import SortOrderBuilder
 from pyiceberg.transforms import (
-    BucketTransform,
-    DayTransform,
-    HourTransform,
     IdentityTransform,
-    MonthTransform,
-    TruncateTransform,
-    VoidTransform,
-    YearTransform,
 )
 from pyiceberg.types import (
     LongType,
