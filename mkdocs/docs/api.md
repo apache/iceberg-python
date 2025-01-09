@@ -953,8 +953,8 @@ with table.update_schema() as update:
     # In a struct
     update.add_column("details", StructType())
 
-    with table.update_schema() as update:
-        update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
+with table.update_schema() as update:
+    update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
 ```
 A complex type must exist before columns can be added to it. Fields in complex types are added in a tuple.
 
