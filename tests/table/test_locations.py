@@ -74,8 +74,12 @@ def test_object_storage_injects_entropy() -> None:
     assert len(parts) == 7
     assert parts[0] == "table_location"
     assert parts[1] == "data"
-    # Entropy directories in the middle
     assert parts[-1] == "test.parquet"
+
+    # Entropy directories in the middle
+    for dir_name in parts[2:-1]:
+        assert dir_name
+        assert all(c in "01" for c in dir_name)
 
 
 @pytest.mark.parametrize("object_storage", [True, False])
