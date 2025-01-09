@@ -104,7 +104,7 @@ def test_object_storage_exclude_partition_in_path() -> None:
 
     location = provider.new_data_location("test.parquet", PARTITION_KEY)
 
-    # No partition values included in the path and last part of entropy is seperated with "-"
+    # No partition values included in the path and last part of entropy is separated with "-"
     assert location == "table_location/data/0110/1010/0011/11101000-test.parquet"
 
 
