@@ -307,9 +307,9 @@ def test_object_storage_data_files(
         assert len(parts) == 11
 
         # Entropy binary directories should have been injected
-        for i in range(6, 10):
-            assert parts[i]
-            assert all(c in "01" for c in parts[i])
+        for dir_name in parts[6:10]:
+            assert dir_name
+            assert all(c in "01" for c in dir_name)
 
 
 @pytest.mark.integration
