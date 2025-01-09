@@ -18,7 +18,9 @@ import pytest
 
 from pyiceberg.catalog.s3tables import S3TablesCatalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError, TableBucketNotFound
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType
 
 
@@ -247,3 +249,37 @@ def test_commit_new_data_to_table(catalog: S3TablesCatalog, database_name: str, 
     assert updated_table_metadata.metadata_log[-1].metadata_file == original_table_metadata_location
     assert updated_table_metadata.metadata_log[-1].timestamp_ms == original_table_last_updated_ms
     assert table.scan().to_arrow().num_rows == 2 * row_count
+
+
+def test_create_table_transaction(
+    catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: str
+) -> None:
+    identifier = (database_name, table_name)
+    catalog.create_namespace(namespace=database_name)
+
+    with catalog.create_table_transaction(
+        identifier,
+        table_schema_nested,
+        partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo")),
+    ) as txn:
+        last_updated_metadata = txn.table_metadata.last_updated_ms
+        with txn.update_schema() as update_schema:
+            update_schema.add_column(path="b", field_type=IntegerType())
+
+        with txn.update_spec() as update_spec:
+            update_spec.add_identity("bar")
+
+        txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
+
+    table = catalog.load_table(identifier)
+
+    assert table.schema().find_field("b").field_type == IntegerType()
+    assert table.properties == {"test_a": "test_aa", "test_b": "test_b", "test_c": "test_c"}
+    assert table.spec().last_assigned_field_id == 1001
+    assert table.spec().fields_by_source_id(1)[0].name == "foo"
+    assert table.spec().fields_by_source_id(1)[0].field_id == 1000
+    assert table.spec().fields_by_source_id(1)[0].transform == IdentityTransform()
+    assert table.spec().fields_by_source_id(2)[0].name == "bar"
+    assert table.spec().fields_by_source_id(2)[0].field_id == 1001
+    assert table.spec().fields_by_source_id(2)[0].transform == IdentityTransform()
+    assert table.metadata.last_updated_ms > last_updated_metadata

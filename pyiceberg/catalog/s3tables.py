@@ -35,7 +35,7 @@ from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, A
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table import CommitTableResponse, CreateTableTransaction, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import TableRequirement, TableUpdate
@@ -92,36 +92,57 @@ class S3TablesCatalog(MetastoreCatalog):
         table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
-        current_table, version_token = self._load_table_and_version(identifier=table_identifier)
-
-        updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
-        if current_table and updated_staged_table.metadata == current_table.metadata:
-            # no changes, do nothing
-            return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
-
-        self._write_metadata(
-            metadata=updated_staged_table.metadata,
-            io=updated_staged_table.io,
-            metadata_path=updated_staged_table.metadata_location,
-            overwrite=True,
-        )
-
-        # try to update metadata location which will fail if the versionToken changed meanwhile
+        current_table: Optional[Table]
+        version_token: Optional[str]
         try:
-            self.s3tables.update_table_metadata_location(
-                tableBucketARN=self.table_bucket_arn,
-                namespace=database_name,
-                name=table_name,
-                versionToken=version_token,
-                metadataLocation=updated_staged_table.metadata_location,
+            current_table, version_token = self._load_table_and_version(identifier=table_identifier)
+        except NoSuchTableError:
+            current_table = None
+            version_token = None
+
+        if current_table:
+            updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
+            if updated_staged_table.metadata == current_table.metadata:
+                # no changes, do nothing
+                return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
+
+            self._write_metadata(
+                metadata=updated_staged_table.metadata,
+                io=updated_staged_table.io,
+                metadata_path=updated_staged_table.metadata_location,
+                overwrite=True,
             )
-        except self.s3tables.exceptions.ConflictException as e:
-            raise CommitFailedException(
-                f"Cannot commit {database_name}.{table_name} because of a concurrent update to the table version {version_token}."
-            ) from e
-        return CommitTableResponse(
-            metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
-        )
+
+            # try to update metadata location which will fail if the versionToken changed meanwhile
+            try:
+                self.s3tables.update_table_metadata_location(
+                    tableBucketARN=self.table_bucket_arn,
+                    namespace=database_name,
+                    name=table_name,
+                    versionToken=version_token,
+                    metadataLocation=updated_staged_table.metadata_location,
+                )
+            except self.s3tables.exceptions.ConflictException as e:
+                raise CommitFailedException(
+                    f"Cannot commit {database_name}.{table_name} because of a concurrent update to the table version {version_token}."
+                ) from e
+            return CommitTableResponse(
+                metadata=updated_staged_table.metadata, metadata_location=updated_staged_table.metadata_location
+            )
+        else:
+            # table does not exist, create it
+            raise NotImplementedError("Creating a table on commit is currently not supported.")
+
+    def create_table_transaction(
+        self,
+        identifier: Union[str, Identifier],
+        schema: Union[Schema, "pa.Schema"],
+        location: Optional[str] = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> CreateTableTransaction:
+        raise NotImplementedError("create_table_transaction currently not supported.")
 
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
         if properties:
