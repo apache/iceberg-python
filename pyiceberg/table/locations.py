@@ -52,7 +52,7 @@ class LocationProvider(ABC):
         """
 
 
-class DefaultLocationProvider(LocationProvider):
+class SimpleLocationProvider(LocationProvider):
     def __init__(self, table_location: str, table_properties: Properties):
         super().__init__(table_location, table_properties)
 
@@ -140,4 +140,4 @@ def load_location_provider(table_location: str, table_properties: Properties) ->
     if property_as_bool(table_properties, TableProperties.OBJECT_STORE_ENABLED, TableProperties.OBJECT_STORE_ENABLED_DEFAULT):
         return ObjectStoreLocationProvider(table_location, table_properties)
     else:
-        return DefaultLocationProvider(table_location, table_properties)
+        return SimpleLocationProvider(table_location, table_properties)

@@ -190,7 +190,7 @@ class TableProperties:
     WRITE_LOCATION_PROVIDER_IMPL = "write.location-provider.impl"
 
     OBJECT_STORE_ENABLED = "write.object-storage.enabled"
-    OBJECT_STORE_ENABLED_DEFAULT = False
+    OBJECT_STORE_ENABLED_DEFAULT = True  # Differs from Java + docs
 
     WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
