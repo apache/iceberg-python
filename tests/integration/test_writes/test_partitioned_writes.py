@@ -28,6 +28,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -296,7 +297,8 @@ def test_object_storage_location_provider_excludes_partition_path(
     tbl = _create_table(
         session_catalog=session_catalog,
         identifier=f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}",
-        properties={"format-version": str(format_version), "write.object-storage.enabled": True},
+        # Both write.object-storage.enabled and write.object-storage.partitioned-paths default to True
+        properties={"format-version": str(format_version)},
         data=[arrow_table_with_null],
         partition_spec=partition_spec,
     )
@@ -306,7 +308,7 @@ def test_object_storage_location_provider_excludes_partition_path(
 
     # Update props to exclude partitioned paths and append data
     with tbl.transaction() as tx:
-        tx.set_properties({"write.object-storage.partitioned-paths": False})
+        tx.set_properties({TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS: False})
     tbl.append(arrow_table_with_null)
 
     added_paths = set(tbl.inspect.data_files().to_pydict()["file_path"]) - set(original_paths)

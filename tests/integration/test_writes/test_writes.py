@@ -293,7 +293,7 @@ def test_object_storage_data_files(
     tbl = _create_table(
         session_catalog=session_catalog,
         identifier="default.object_stored",
-        properties={"format-version": format_version, "write.object-storage.enabled": True},
+        properties={"format-version": format_version, TableProperties.OBJECT_STORE_ENABLED: True},
         data=[arrow_table_with_null],
     )
     tbl.append(arrow_table_with_null)
