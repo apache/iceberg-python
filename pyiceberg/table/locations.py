@@ -116,7 +116,7 @@ def _import_location_provider(
         path_parts = location_provider_impl.split(".")
         if len(path_parts) < 2:
             raise ValueError(
-                f"{TableProperties.WRITE_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
+                f"{TableProperties.WRITE_LOCATION_PROVIDER_PY_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
             )
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
@@ -130,7 +130,7 @@ def _import_location_provider(
 def load_location_provider(table_location: str, table_properties: Properties) -> LocationProvider:
     table_location = table_location.rstrip("/")
 
-    if location_provider_impl := table_properties.get(TableProperties.WRITE_LOCATION_PROVIDER_IMPL):
+    if location_provider_impl := table_properties.get(TableProperties.WRITE_LOCATION_PROVIDER_PY_IMPL):
         if location_provider := _import_location_provider(location_provider_impl, table_location, table_properties):
             logger.info("Loaded LocationProvider: %s", location_provider_impl)
             return location_provider

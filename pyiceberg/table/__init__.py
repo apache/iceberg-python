@@ -187,7 +187,7 @@ class TableProperties:
     WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
 
-    WRITE_LOCATION_PROVIDER_IMPL = "write.location-provider.impl"
+    WRITE_LOCATION_PROVIDER_PY_IMPL = "write.location-provider.py-impl"
 
     OBJECT_STORE_ENABLED = "write.object-storage.enabled"
     OBJECT_STORE_ENABLED_DEFAULT = True  # Differs from Java + docs

@@ -47,21 +47,21 @@ def test_default_location_provider() -> None:
 def test_custom_location_provider() -> None:
     qualified_name = CustomLocationProvider.__module__ + "." + CustomLocationProvider.__name__
     provider = load_location_provider(
-        table_location="table_location", table_properties={"write.location-provider.impl": qualified_name}
+        table_location="table_location", table_properties={"write.location-provider.py-impl": qualified_name}
     )
 
     assert provider.new_data_location("my_file") == "custom_location_provider/my_file"
 
 
 def test_custom_location_provider_single_path() -> None:
-    with pytest.raises(ValueError, match=r"write\.location-provider\.impl should be full path"):
-        load_location_provider(table_location="table_location", table_properties={"write.location-provider.impl": "not_found"})
+    with pytest.raises(ValueError, match=r"write\.location-provider\.py-impl should be full path"):
+        load_location_provider(table_location="table_location", table_properties={"write.location-provider.py-impl": "not_found"})
 
 
 def test_custom_location_provider_not_found() -> None:
     with pytest.raises(ValueError, match=r"Could not initialize LocationProvider"):
         load_location_provider(
-            table_location="table_location", table_properties={"write.location-provider.impl": "module.not_found"}
+            table_location="table_location", table_properties={"write.location-provider.py-impl": "module.not_found"}
         )
 
 
