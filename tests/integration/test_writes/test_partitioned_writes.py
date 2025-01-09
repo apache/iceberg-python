@@ -285,7 +285,7 @@ def test_query_filter_v1_v2_append_null(
     "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_object_storage_excludes_partition(
+def test_object_storage_location_provider_excludes_partition_path(
     session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
 ) -> None:
     nested_field = TABLE_SCHEMA.find_field(part_col)
