@@ -251,6 +251,7 @@ def test_commit_new_data_to_table(catalog: S3TablesCatalog, database_name: str, 
     assert table.scan().to_arrow().num_rows == 2 * row_count
 
 
+@pytest.mark.xfail(raises=NotImplementedError, reason="create_table_transaction not implemented yet")
 def test_create_table_transaction(
     catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: str
 ) -> None:
