@@ -20,10 +20,7 @@ import pytest
 
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import (
-    LocationProvider,
-    load_location_provider,
-)
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT
 from pyiceberg.types import NestedField, StringType

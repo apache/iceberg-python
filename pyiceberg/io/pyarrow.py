@@ -136,10 +136,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import (
-    LocationProvider,
-    load_location_provider,
-)
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import TruncateTransform
