@@ -74,8 +74,6 @@ from sortedcontainers import SortedList
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import (
     ResolveError,
-    UnsupportedPyArrowIntegerTypeException,
-    UnsupportedPyArrowTimestampTypeException,
     UnsupportedPyArrowTypeException,
 )
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
@@ -957,13 +955,7 @@ def _(obj: pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 @visit_pyarrow.register(pa.StructType)
 def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    results = []
-
-    for field in obj:
-        visitor.before_field(field)
-        result = visit_pyarrow(field.type, visitor)
-        results.append(visitor.field(field, result))
-        visitor.after_field(field)
+    results = [visit_pyarrow(field, visitor) for field in obj]
 
     return visitor.struct(obj, results)
 
@@ -999,6 +991,20 @@ def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
     # as we only support parquet in PyIceberg for now.
     logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
     return visit_pyarrow(obj.value_type, visitor)
+
+
+@visit_pyarrow.register(pa.Field)
+def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
+    field_type = obj.type
+
+    visitor.before_field(obj)
+    try:
+        result = visit_pyarrow(field_type, visitor)
+    except TypeError as e:
+        raise UnsupportedPyArrowTypeException(obj, f"Column '{obj.name}' has an unsupported type: {field_type}") from e
+    visitor.after_field(obj)
+
+    return visitor.field(obj, result)
 
 
 @visit_pyarrow.register(pa.DataType)
@@ -1140,12 +1146,6 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
-        field_name = None
-        unsupported_prefix = "Unsupported"
-        if len(self._field_names) > 0:
-            field_name = self._field_names[-1]
-            unsupported_prefix = f"Column '{field_name}' has an unsupported"
-
         if pa.types.is_boolean(primitive):
             return BooleanType()
         elif pa.types.is_integer(primitive):
@@ -1156,7 +1156,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                 return LongType()
             else:
                 # Does not exist (yet)
-                raise UnsupportedPyArrowIntegerTypeException(self._field, f"{unsupported_prefix} integer type: {primitive}")
+                raise TypeError(f"Unsupported integer type: {primitive}")
         elif pa.types.is_float32(primitive):
             return FloatType()
         elif pa.types.is_float64(primitive):
@@ -1179,17 +1179,11 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                 if self._downcast_ns_timestamp_to_us:
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
                 else:
-                    column_name_message = ""
-                    if field_name:
-                        column_name_message = f", making the column '{field_name}' unsupported"
-                    raise UnsupportedPyArrowTimestampTypeException(
-                        self._field,
-                        f"Iceberg does not yet support 'ns' timestamp precision{column_name_message}. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
+                    raise TypeError(
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
                     )
             else:
-                raise UnsupportedPyArrowTimestampTypeException(
-                    self._field, f"{unsupported_prefix} precision for timestamp type: {primitive.unit}"
-                )
+                raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
 
             if primitive.tz in UTC_ALIASES:
                 return TimestamptzType()
@@ -1202,7 +1196,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
 
-        raise UnsupportedPyArrowTypeException(self._field, f"{unsupported_prefix} type: {primitive}")
+        raise TypeError(f"Unsupported type: {primitive}")
 
     def before_field(self, field: pa.Field) -> None:
         self._field_names.append(field.name)
