@@ -78,7 +78,7 @@ def test_sort_order_builder() -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("session_catalog_hive")]) 
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("session_catalog_hive")])
 def test_map_column_name_to_id(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple)
     for col_name, col_id in {"foo": 1, "bar": 2, "baz": 3}.items():
@@ -87,23 +87,13 @@ def test_map_column_name_to_id(catalog: Catalog, table_schema_simple: Schema) ->
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("session_catalog_hive")])
-def test_replace_sort_order(catalog: Catalog, table_schema_simple: Schema):
+def test_replace_sort_order(catalog: Catalog, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple)
-    simple_table.replace_sort_order().asc(
-        "foo", IdentityTransform(), NullOrder.NULLS_FIRST
-    ).desc("bar", IdentityTransform(), NullOrder.NULLS_LAST).commit()
+    simple_table.replace_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).desc(
+        "bar", IdentityTransform(), NullOrder.NULLS_LAST
+    ).commit()
     assert simple_table.sort_order() == SortOrder(
-        SortField(
-            source_id=1, 
-            transform=IdentityTransform(), 
-            direction=SortDirection.ASC, 
-            null_order=NullOrder.NULLS_FIRST
-        ), 
-        SortField(
-            source_id=2, 
-            transform=IdentityTransform(), 
-            direction=SortDirection.DESC, 
-            null_order=NullOrder.NULLS_LAST
-        ), 
-        order_id=1
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
     )

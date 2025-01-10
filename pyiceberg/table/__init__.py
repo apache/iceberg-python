@@ -407,11 +407,13 @@ class Transaction:
 
     def replace_sort_order(self, case_sensitive: bool = True) -> ReplaceSortOrder:
         """Create a new ReplaceSortOrder to replace the sort order of this table.
-        
+
+        Args:
+            case_sensitive: If field names are case-sensitive.
+
         Returns:
-            A new ReplaceSortOrder. 
+            A new ReplaceSortOrder.
         """
-        
         return ReplaceSortOrder(
             self,
             case_sensitive=case_sensitive,

@@ -18,14 +18,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, List, Tuple
 
-from pyiceberg.table import AddSortOrderUpdate, SetDefaultSortOrderUpdate
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import (
+    AddSortOrderUpdate,
+    AssertDefaultSortOrderId,
+    SetDefaultSortOrderUpdate,
     TableRequirement,
     TableUpdate,
     UpdatesAndRequirements,
     UpdateTableMetadata,
-    AssertDefaultSortOrderId
 )
 from pyiceberg.transforms import Transform
 
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 
 
 class SortOrderBuilder:
-    def __init__(self,  last_sort_order_id: int, case_sensitive: bool = True) -> None:
+    def __init__(self, last_sort_order_id: int, case_sensitive: bool = True) -> None:
         self._fields: List[SortField] = []
         self._case_sensitive = case_sensitive
         self._last_sort_order_id = last_sort_order_id
@@ -115,13 +116,10 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
         updates: Tuple[TableUpdate, ...] = ()
 
         if self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id:
-            updates = (
-                AddSortOrderUpdate(sort_order=new_sort_order),
-                SetDefaultSortOrderUpdate(sort_order_id=-1)
-            )
+            updates = (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1))
         else:
             updates = (SetDefaultSortOrderUpdate(sort_order_id=new_sort_order.order_id),)
-        
+
         required_last_assigned_sort_order_id = self._transaction.table_metadata.default_sort_order_id
         requirements = (AssertDefaultSortOrderId(default_sort_order_id=required_last_assigned_sort_order_id),)
 
