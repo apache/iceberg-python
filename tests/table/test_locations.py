@@ -39,7 +39,7 @@ class CustomLocationProvider(LocationProvider):
 
 
 def test_default_location_provider() -> None:
-    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "false"})
+    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
 
     assert provider.new_data_location("my_file") == "table_location/data/my_file"
 
@@ -66,7 +66,7 @@ def test_custom_location_provider_not_found() -> None:
 
 
 def test_object_storage_injects_entropy() -> None:
-    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
 
     location = provider.new_data_location("test.parquet")
     parts = location.split("/")
@@ -101,6 +101,7 @@ def test_object_storage_exclude_partition_in_path() -> None:
     provider = load_location_provider(
         table_location="table_location",
         table_properties={
+            "write.object-storage.enabled": "true",
             "write.object-storage.partitioned-paths": "false",
         },
     )
@@ -121,6 +122,6 @@ def test_object_storage_exclude_partition_in_path() -> None:
     ],
 )
 def test_hash_injection(data_file_name: str, expected_hash: str) -> None:
-    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
 
     assert provider.new_data_location(data_file_name) == f"table_location/data/{expected_hash}/{data_file_name}"
