@@ -97,7 +97,10 @@ def test_partition_value_in_path(object_storage: bool) -> None:
     assert partition_segment == "string_field=example_string"
 
 
-def test_object_storage_exclude_partition_in_path() -> None:
+# NB: We test here with None partition key too because disabling partitioned paths still replaces final / with - even in
+# paths of un-partitioned files. This matches the behaviour of the Java implementation.
+@pytest.mark.parametrize("partition_key", [PARTITION_KEY, None])
+def test_object_storage_partitioned_paths_disabled(partition_key: Optional[PartitionKey]) -> None:
     provider = load_location_provider(
         table_location="table_location",
         table_properties={
@@ -106,7 +109,7 @@ def test_object_storage_exclude_partition_in_path() -> None:
         },
     )
 
-    location = provider.new_data_location("test.parquet", PARTITION_KEY)
+    location = provider.new_data_location("test.parquet", partition_key)
 
     # No partition values included in the path and last part of entropy is separated with "-"
     assert location == "table_location/data/0110/1010/0011/11101000-test.parquet"
