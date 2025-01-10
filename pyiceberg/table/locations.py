@@ -61,12 +61,11 @@ class SimpleLocationProvider(LocationProvider):
         return f"{prefix}/{partition_key.to_path()}/{data_file_name}" if partition_key else f"{prefix}/{data_file_name}"
 
 
-HASH_BINARY_STRING_BITS = 20
-ENTROPY_DIR_LENGTH = 4
-ENTROPY_DIR_DEPTH = 3
-
-
 class ObjectStoreLocationProvider(LocationProvider):
+    HASH_BINARY_STRING_BITS = 20
+    ENTROPY_DIR_LENGTH = 4
+    ENTROPY_DIR_DEPTH = 3
+
     _include_partition_paths: bool
 
     def __init__(self, table_location: str, table_properties: Properties):
@@ -93,18 +92,21 @@ class ObjectStoreLocationProvider(LocationProvider):
     @staticmethod
     def _compute_hash(data_file_name: str) -> str:
         # Bitwise AND to combat sign-extension; bitwise OR to preserve leading zeroes that `bin` would otherwise strip.
-        hash_code = mmh3.hash(data_file_name) & ((1 << HASH_BINARY_STRING_BITS) - 1) | (1 << HASH_BINARY_STRING_BITS)
-        return ObjectStoreLocationProvider._dirs_from_hash(bin(hash_code)[-HASH_BINARY_STRING_BITS:])
+        top_mask = 1 << ObjectStoreLocationProvider.HASH_BINARY_STRING_BITS
+        hash_code = mmh3.hash(data_file_name) & (top_mask - 1) | top_mask
+        return ObjectStoreLocationProvider._dirs_from_hash(bin(hash_code)[-ObjectStoreLocationProvider.HASH_BINARY_STRING_BITS :])
 
     @staticmethod
     def _dirs_from_hash(file_hash: str) -> str:
         """Divides hash into directories for optimized orphan removal operation using ENTROPY_DIR_DEPTH and ENTROPY_DIR_LENGTH."""
-        hash_with_dirs = []
-        for i in range(0, ENTROPY_DIR_DEPTH * ENTROPY_DIR_LENGTH, ENTROPY_DIR_LENGTH):
-            hash_with_dirs.append(file_hash[i : i + ENTROPY_DIR_LENGTH])
+        total_entropy_length = ObjectStoreLocationProvider.ENTROPY_DIR_DEPTH * ObjectStoreLocationProvider.ENTROPY_DIR_LENGTH
 
-        if len(file_hash) > ENTROPY_DIR_DEPTH * ENTROPY_DIR_LENGTH:
-            hash_with_dirs.append(file_hash[ENTROPY_DIR_DEPTH * ENTROPY_DIR_LENGTH :])
+        hash_with_dirs = []
+        for i in range(0, total_entropy_length, ObjectStoreLocationProvider.ENTROPY_DIR_LENGTH):
+            hash_with_dirs.append(file_hash[i : i + ObjectStoreLocationProvider.ENTROPY_DIR_LENGTH])
+
+        if len(file_hash) > total_entropy_length:
+            hash_with_dirs.append(file_hash[total_entropy_length:])
 
         return "/".join(hash_with_dirs)
 
