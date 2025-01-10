@@ -136,6 +136,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import TruncateTransform
@@ -2305,6 +2306,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
         default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
     )
+    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
 
     def write_parquet(task: WriteTask) -> DataFile:
         table_schema = table_metadata.schema()
@@ -2327,7 +2329,10 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
-        file_path = f"{table_metadata.location}/data/{task.generate_data_file_path('parquet')}"
+        file_path = location_provider.new_data_location(
+            data_file_name=task.generate_data_file_filename("parquet"),
+            partition_key=task.partition_key,
+        )
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:

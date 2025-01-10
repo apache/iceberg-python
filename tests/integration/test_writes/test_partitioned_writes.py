@@ -28,6 +28,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -278,6 +279,44 @@ def test_query_filter_v1_v2_append_null(
         df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 non-null rows for {col}"
         assert df.where(f"{col} is null").count() == 2, f"Expected 2 null rows for {col}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_object_storage_location_provider_excludes_partition_path(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+) -> None:
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}",
+        # write.object-storage.partitioned-paths defaults to True
+        properties={"format-version": str(format_version), TableProperties.OBJECT_STORE_ENABLED: True},
+        data=[arrow_table_with_null],
+        partition_spec=partition_spec,
+    )
+
+    original_paths = tbl.inspect.data_files().to_pydict()["file_path"]
+    assert len(original_paths) == 3
+
+    # Update props to exclude partitioned paths and append data
+    with tbl.transaction() as tx:
+        tx.set_properties({TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS: False})
+    tbl.append(arrow_table_with_null)
+
+    added_paths = set(tbl.inspect.data_files().to_pydict()["file_path"]) - set(original_paths)
+    assert len(added_paths) == 3
+
+    # All paths before the props update should contain the partition, while all paths after should not
+    assert all(f"{part_col}=" in path for path in original_paths)
+    assert all(f"{part_col}=" not in path for path in added_paths)
 
 
 @pytest.mark.integration
