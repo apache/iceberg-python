@@ -136,7 +136,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table.locations import LocationProvider, load_location_provider
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import TruncateTransform
@@ -2297,9 +2297,7 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
-def write_file(
-    io: FileIO, location_provider: LocationProvider, table_metadata: TableMetadata, tasks: Iterator[WriteTask]
-) -> Iterator[DataFile]:
+def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
@@ -2308,6 +2306,7 @@ def write_file(
         property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
         default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
     )
+    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
 
     def write_parquet(task: WriteTask) -> DataFile:
         table_schema = table_metadata.schema()
@@ -2509,7 +2508,6 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
-    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
     name_mapping = table_metadata.schema().name_mapping
     downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     task_schema = pyarrow_to_schema(df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
@@ -2517,7 +2515,6 @@ def _dataframe_to_data_files(
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
             io=io,
-            location_provider=location_provider,
             table_metadata=table_metadata,
             tasks=iter(
                 [
@@ -2530,7 +2527,6 @@ def _dataframe_to_data_files(
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
-            location_provider=location_provider,
             table_metadata=table_metadata,
             tasks=iter(
                 [
