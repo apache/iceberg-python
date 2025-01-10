@@ -36,12 +36,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install poetry
+        run: make install-poetry
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
       - name: Install
-        working-directory: ./mkdocs
-        run: pip install -r requirements.txt
-      - name: Build
-        working-directory: ./mkdocs
-        run: mkdocs build --strict
+        run: make docs-install
+      - name: Build docs
+        run: make docs-build

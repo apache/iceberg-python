@@ -434,7 +434,7 @@ def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
     # For a long string, the lower bound and upper bound  is truncated
     # e.g. aaaaaaaaaaaaaaaaaaaaaa has lower bound of aaaaaaaaaaaaaaaa and upper bound of aaaaaaaaaaaaaaab
     # this makes strict metric evaluator determine the file evaluate as ROWS_MIGHT_NOT_MATCH
-    # this further causes the partitioned data file to be overwriten rather than deleted
+    # this further causes the partitioned data file to be overwritten rather than deleted
     if part_col == "string_long":
         expected_operations = ["append", "append", "overwrite", "append"]
     assert tbl.inspect.snapshots().to_pydict()["operation"] == expected_operations
@@ -578,7 +578,7 @@ def test_data_files_with_table_partitioned_with_null(
     #                    the first snapshot generates M3 with 6 delete data entries collected from M1 and M2.
     #                    ML3 = [M3]
     #
-    #                    The second snapshot generates M4 with 3 appended data entries and since M3 (previous manifests) only has delte entries it does not lint to it.
+    #                    The second snapshot generates M4 with 3 appended data entries and since M3 (previous manifests) only has delete entries it does not lint to it.
     #                    ML4 = [M4]
 
     # Append           : Append generates M5 with new data entries and links to all previous manifests which is M4 .
@@ -591,7 +591,7 @@ def test_data_files_with_table_partitioned_with_null(
     #                    ML6 = [M6, M7, M8]
     #
     #                    The second snapshot generates M9 with 3 appended data entries and it also looks at manifests in ML6 (previous manifests)
-    #                    it ignores M6 since it only has delte entries but it links to M7 and M8.
+    #                    it ignores M6 since it only has delete entries but it links to M7 and M8.
     #                    ML7 = [M9, M7, M8]
 
     # tldr:

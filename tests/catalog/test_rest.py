@@ -121,6 +121,9 @@ def test_no_uri_supplied() -> None:
         RestCatalog("production")
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_200(rest_mock: Mocker) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -141,6 +144,9 @@ def test_token_200(rest_mock: Mocker) -> None:
     )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -157,6 +163,9 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
     )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -179,6 +188,9 @@ def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
     assert TEST_RESOURCE in mock_request.last_request.text
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -199,6 +211,9 @@ def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
     assert TEST_RESOURCE not in mock_request.last_request.text
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_with_default_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -217,6 +232,9 @@ def test_token_with_default_scope(rest_mock: Mocker) -> None:
     assert "catalog" in mock_request.last_request.text
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_with_custom_scope(rest_mock: Mocker) -> None:
     mock_request = rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -236,6 +254,9 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
     assert TEST_SCOPE in mock_request.last_request.text
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     rest_mock.post(
         TEST_AUTH_URL,
@@ -258,6 +279,9 @@ def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     # pylint: enable=W0212
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_config_200(requests_mock: Mocker) -> None:
     requests_mock.get(
         f"{TEST_URI}v1/config",
@@ -299,19 +323,19 @@ def test_properties_sets_headers(requests_mock: Mocker) -> None:
         **{"header.Content-Type": "application/vnd.api+json", "header.Customized-Header": "some/value"},
     )
 
-    assert catalog._session.headers.get("Content-type") == "application/json", (
-        "Expected 'Content-Type' default header not to be overwritten"
-    )
-    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
-        "Config request did not include expected 'Content-Type' header"
-    )
+    assert (
+        catalog._session.headers.get("Content-type") == "application/json"
+    ), "Expected 'Content-Type' default header not to be overwritten"
+    assert (
+        requests_mock.last_request.headers["Content-type"] == "application/json"
+    ), "Config request did not include expected 'Content-Type' header"
 
-    assert catalog._session.headers.get("Customized-Header") == "some/value", (
-        "Expected 'Customized-Header' header to be 'some/value'"
-    )
-    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
-        "Config request did not include expected 'Customized-Header' header"
-    )
+    assert (
+        catalog._session.headers.get("Customized-Header") == "some/value"
+    ), "Expected 'Customized-Header' header to be 'some/value'"
+    assert (
+        requests_mock.last_request.headers["Customized-Header"] == "some/value"
+    ), "Config request did not include expected 'Customized-Header' header"
 
 
 def test_config_sets_headers(requests_mock: Mocker) -> None:
@@ -328,21 +352,24 @@ def test_config_sets_headers(requests_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
     catalog.create_namespace(namespace)
 
-    assert catalog._session.headers.get("Content-type") == "application/json", (
-        "Expected 'Content-Type' default header not to be overwritten"
-    )
-    assert requests_mock.last_request.headers["Content-type"] == "application/json", (
-        "Create namespace request did not include expected 'Content-Type' header"
-    )
+    assert (
+        catalog._session.headers.get("Content-type") == "application/json"
+    ), "Expected 'Content-Type' default header not to be overwritten"
+    assert (
+        requests_mock.last_request.headers["Content-type"] == "application/json"
+    ), "Create namespace request did not include expected 'Content-Type' header"
 
-    assert catalog._session.headers.get("Customized-Header") == "some/value", (
-        "Expected 'Customized-Header' header to be 'some/value'"
-    )
-    assert requests_mock.last_request.headers["Customized-Header"] == "some/value", (
-        "Create namespace request did not include expected 'Customized-Header' header"
-    )
+    assert (
+        catalog._session.headers.get("Customized-Header") == "some/value"
+    ), "Expected 'Customized-Header' header to be 'some/value'"
+    assert (
+        requests_mock.last_request.headers["Customized-Header"] == "some/value"
+    ), "Create namespace request did not include expected 'Customized-Header' header"
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_400(rest_mock: Mocker) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/oauth/tokens",
@@ -356,6 +383,9 @@ def test_token_400(rest_mock: Mocker) -> None:
     assert str(e.value) == "invalid_client: Credentials for key invalid_key do not match"
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_token_401(rest_mock: Mocker) -> None:
     message = "invalid_client"
     rest_mock.post(
@@ -489,6 +519,9 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
 def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
     new_token = "new_jwt_token"
     new_header = dict(TEST_HEADERS)

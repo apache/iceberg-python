@@ -527,7 +527,7 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         new_schema = table.transaction().update_schema().update_column("y", doc=COMMENT2)._apply()
         assert new_schema.find_field("y").doc == COMMENT2, "failed to update existing field doc"
 
-        # update existing doc to an emtpy string
+        # update existing doc to an empty string
         assert new_schema.find_field("y").doc == COMMENT2
         new_schema2 = table.transaction().update_schema().update_column("y", doc="")._apply()
         assert new_schema2.find_field("y").doc == "", "failed to remove existing field doc"
@@ -538,15 +538,15 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         assert new_schema3.find_field("z").required is False, "failed to update existing field required"
 
         # assert the above two updates also works with union_by_name
-        assert table.update_schema().union_by_name(new_schema)._apply() == new_schema, (
-            "failed to update existing field doc with union_by_name"
-        )
-        assert table.update_schema().union_by_name(new_schema2)._apply() == new_schema2, (
-            "failed to remove existing field doc with union_by_name"
-        )
-        assert table.update_schema().union_by_name(new_schema3)._apply() == new_schema3, (
-            "failed to update existing field required with union_by_name"
-        )
+        assert (
+            table.update_schema().union_by_name(new_schema)._apply() == new_schema
+        ), "failed to update existing field doc with union_by_name"
+        assert (
+            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
+        ), "failed to remove existing field doc with union_by_name"
+        assert (
+            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
+        ), "failed to update existing field required with union_by_name"
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
@@ -1077,52 +1077,56 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
 
 
 def test_correct_schema() -> None:
-    table_metadata = TableMetadataV2(**{
-        "format-version": 2,
-        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
-        "location": "s3://bucket/test/location",
-        "last-sequence-number": 34,
-        "last-updated-ms": 1602638573590,
-        "last-column-id": 3,
-        "current-schema-id": 1,
-        "schemas": [
-            {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
-            {
-                "type": "struct",
-                "schema-id": 1,
-                "identifier-field-ids": [1, 2],
-                "fields": [
-                    {"id": 1, "name": "x", "required": True, "type": "long"},
-                    {"id": 2, "name": "y", "required": True, "type": "long"},
-                    {"id": 3, "name": "z", "required": True, "type": "long"},
-                ],
-            },
-        ],
-        "default-spec-id": 0,
-        "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
-        "last-partition-id": 1000,
-        "default-sort-order-id": 0,
-        "sort-orders": [],
-        "current-snapshot-id": 123,
-        "snapshots": [
-            {
-                "snapshot-id": 234,
-                "timestamp-ms": 1515100955770,
-                "sequence-number": 0,
-                "summary": {"operation": "append"},
-                "manifest-list": "s3://a/b/1.avro",
-                "schema-id": 10,
-            },
-            {
-                "snapshot-id": 123,
-                "timestamp-ms": 1515100955770,
-                "sequence-number": 0,
-                "summary": {"operation": "append"},
-                "manifest-list": "s3://a/b/1.avro",
-                "schema-id": 0,
-            },
-        ],
-    })
+    table_metadata = TableMetadataV2(
+        **{
+            "format-version": 2,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": "s3://bucket/test/location",
+            "last-sequence-number": 34,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 3,
+            "current-schema-id": 1,
+            "schemas": [
+                {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+                {
+                    "type": "struct",
+                    "schema-id": 1,
+                    "identifier-field-ids": [1, 2],
+                    "fields": [
+                        {"id": 1, "name": "x", "required": True, "type": "long"},
+                        {"id": 2, "name": "y", "required": True, "type": "long"},
+                        {"id": 3, "name": "z", "required": True, "type": "long"},
+                    ],
+                },
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [
+                {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}
+            ],
+            "last-partition-id": 1000,
+            "default-sort-order-id": 0,
+            "sort-orders": [],
+            "current-snapshot-id": 123,
+            "snapshots": [
+                {
+                    "snapshot-id": 234,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 10,
+                },
+                {
+                    "snapshot-id": 123,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 0,
+                },
+            ],
+        }
+    )
 
     t = Table(
         identifier=("default", "t1"),

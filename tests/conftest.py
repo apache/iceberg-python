@@ -353,49 +353,57 @@ def table_schema_with_all_types() -> Schema:
 def pyarrow_schema_simple_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
-    return pa.schema([
-        pa.field("foo", pa.string(), nullable=True),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ])
+    return pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
 def pyarrow_schema_nested_without_ids() -> "pa.Schema":
     import pyarrow as pa
 
-    return pa.schema([
-        pa.field("foo", pa.string(), nullable=False),
-        pa.field("bar", pa.int32(), nullable=False),
-        pa.field("baz", pa.bool_(), nullable=True),
-        pa.field("qux", pa.list_(pa.string()), nullable=False),
-        pa.field(
-            "quux",
-            pa.map_(
-                pa.string(),
-                pa.map_(pa.string(), pa.int32()),
+    return pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("qux", pa.list_(pa.string()), nullable=False),
+            pa.field(
+                "quux",
+                pa.map_(
+                    pa.string(),
+                    pa.map_(pa.string(), pa.int32()),
+                ),
+                nullable=False,
             ),
-            nullable=False,
-        ),
-        pa.field(
-            "location",
-            pa.list_(
-                pa.struct([
-                    pa.field("latitude", pa.float32(), nullable=False),
-                    pa.field("longitude", pa.float32(), nullable=False),
-                ]),
+            pa.field(
+                "location",
+                pa.list_(
+                    pa.struct(
+                        [
+                            pa.field("latitude", pa.float32(), nullable=False),
+                            pa.field("longitude", pa.float32(), nullable=False),
+                        ]
+                    ),
+                ),
+                nullable=False,
             ),
-            nullable=False,
-        ),
-        pa.field(
-            "person",
-            pa.struct([
-                pa.field("name", pa.string(), nullable=True),
-                pa.field("age", pa.int32(), nullable=False),
-            ]),
-            nullable=True,
-        ),
-    ])
+            pa.field(
+                "person",
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), nullable=True),
+                        pa.field("age", pa.int32(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2240,9 +2248,10 @@ def spark() -> "SparkSession":
 
     from pyspark.sql import SparkSession
 
+    # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
-    iceberg_version = "1.4.3"
+    iceberg_version = "1.6.0"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
@@ -2313,26 +2322,28 @@ TEST_DATA_WITH_NULL = {
 def pa_schema() -> "pa.Schema":
     import pyarrow as pa
 
-    return pa.schema([
-        ("bool", pa.bool_()),
-        ("string", pa.large_string()),
-        ("string_long", pa.large_string()),
-        ("int", pa.int32()),
-        ("long", pa.int64()),
-        ("float", pa.float32()),
-        ("double", pa.float64()),
-        # Not supported by Spark
-        # ("time", pa.time64('us')),
-        ("timestamp", pa.timestamp(unit="us")),
-        ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ("date", pa.date32()),
-        # Not supported by Spark
-        # ("time", pa.time64("us")),
-        # Not natively supported by Arrow
-        # ("uuid", pa.fixed(16)),
-        ("binary", pa.large_binary()),
-        ("fixed", pa.binary(16)),
-    ])
+    return pa.schema(
+        [
+            ("bool", pa.bool_()),
+            ("string", pa.large_string()),
+            ("string_long", pa.large_string()),
+            ("int", pa.int32()),
+            ("long", pa.int64()),
+            ("float", pa.float32()),
+            ("double", pa.float64()),
+            # Not supported by Spark
+            # ("time", pa.time64('us')),
+            ("timestamp", pa.timestamp(unit="us")),
+            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+            ("date", pa.date32()),
+            # Not supported by Spark
+            # ("time", pa.time64("us")),
+            # Not natively supported by Arrow
+            # ("uuid", pa.fixed(16)),
+            ("binary", pa.large_binary()),
+            ("fixed", pa.binary(16)),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2414,11 +2425,13 @@ def arrow_table_date_timestamps() -> "pa.Table":
                 None,
             ],
         },
-        schema=pa.schema([
-            ("date", pa.date32()),
-            ("timestamp", pa.timestamp(unit="us")),
-            ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
-        ]),
+        schema=pa.schema(
+            [
+                ("date", pa.date32()),
+                ("timestamp", pa.timestamp(unit="us")),
+                ("timestamptz", pa.timestamp(unit="us", tz="UTC")),
+            ]
+        ),
     )
 
 
@@ -2437,19 +2450,21 @@ def arrow_table_schema_with_all_timestamp_precisions() -> "pa.Schema":
     """Pyarrow Schema with all supported timestamp types."""
     import pyarrow as pa
 
-    return pa.schema([
-        ("timestamp_s", pa.timestamp(unit="s")),
-        ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
-        ("timestamp_ms", pa.timestamp(unit="ms")),
-        ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
-        ("timestamp_us", pa.timestamp(unit="us")),
-        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ns", pa.timestamp(unit="ns")),
-        ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
-        ("timestamptz_ns_z", pa.timestamp(unit="ns", tz="Z")),
-        ("timestamptz_s_0000", pa.timestamp(unit="s", tz="+00:00")),
-    ])
+    return pa.schema(
+        [
+            ("timestamp_s", pa.timestamp(unit="s")),
+            ("timestamptz_s", pa.timestamp(unit="s", tz="UTC")),
+            ("timestamp_ms", pa.timestamp(unit="ms")),
+            ("timestamptz_ms", pa.timestamp(unit="ms", tz="UTC")),
+            ("timestamp_us", pa.timestamp(unit="us")),
+            ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ns", pa.timestamp(unit="ns")),
+            ("timestamptz_ns", pa.timestamp(unit="ns", tz="UTC")),
+            ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="Etc/UTC")),
+            ("timestamptz_ns_z", pa.timestamp(unit="ns", tz="Z")),
+            ("timestamptz_s_0000", pa.timestamp(unit="s", tz="+00:00")),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2458,51 +2473,53 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
     import pandas as pd
     import pyarrow as pa
 
-    test_data = pd.DataFrame({
-        "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_s": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_ms": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
-        "timestamptz_us": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamp_ns": [
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
-            None,
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
-        ],
-        "timestamptz_ns": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_us_etc_utc": [
-            datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
-        ],
-        "timestamptz_ns_z": [
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
-            None,
-            pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
-        ],
-        "timestamptz_s_0000": [
-            datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
-            None,
-            datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
-        ],
-    })
+    test_data = pd.DataFrame(
+        {
+            "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz_s": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz_ms": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
+            "timestamptz_us": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamp_ns": [
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
+                None,
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
+            ],
+            "timestamptz_ns": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamptz_us_etc_utc": [
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+            ],
+            "timestamptz_ns_z": [
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
+                None,
+                pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
+            ],
+            "timestamptz_s_0000": [
+                datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
+                None,
+                datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
+            ],
+        }
+    )
     return pa.Table.from_pandas(test_data, schema=arrow_table_schema_with_all_timestamp_precisions)
 
 
@@ -2511,19 +2528,21 @@ def arrow_table_schema_with_all_microseconds_timestamp_precisions() -> "pa.Schem
     """Pyarrow Schema with all microseconds timestamp."""
     import pyarrow as pa
 
-    return pa.schema([
-        ("timestamp_s", pa.timestamp(unit="us")),
-        ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ms", pa.timestamp(unit="us")),
-        ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_us", pa.timestamp(unit="us")),
-        ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamp_ns", pa.timestamp(unit="us")),
-        ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_ns_z", pa.timestamp(unit="us", tz="UTC")),
-        ("timestamptz_s_0000", pa.timestamp(unit="us", tz="UTC")),
-    ])
+    return pa.schema(
+        [
+            ("timestamp_s", pa.timestamp(unit="us")),
+            ("timestamptz_s", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ms", pa.timestamp(unit="us")),
+            ("timestamptz_ms", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_us", pa.timestamp(unit="us")),
+            ("timestamptz_us", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamp_ns", pa.timestamp(unit="us")),
+            ("timestamptz_ns", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_us_etc_utc", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_ns_z", pa.timestamp(unit="us", tz="UTC")),
+            ("timestamptz_s_0000", pa.timestamp(unit="us", tz="UTC")),
+        ]
+    )
 
 
 @pytest.fixture(scope="session")
@@ -2577,13 +2596,15 @@ def pyarrow_schema_with_promoted_types() -> "pa.Schema":
     """Pyarrow Schema with longs, doubles and uuid in simple and nested types."""
     import pyarrow as pa
 
-    return pa.schema((
-        pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
-        pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
-        pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
-        pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
-        pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
-    ))
+    return pa.schema(
+        (
+            pa.field("long", pa.int32(), nullable=True),  # can support upcasting integer to long
+            pa.field("list", pa.list_(pa.int32()), nullable=False),  # can support upcasting integer to long
+            pa.field("map", pa.map_(pa.string(), pa.int32()), nullable=False),  # can support upcasting integer to long
+            pa.field("double", pa.float32(), nullable=True),  # can support upcasting float to double
+            pa.field("uuid", pa.binary(length=16), nullable=True),  # can support upcasting float to double
+        )
+    )
 
 
 @pytest.fixture(scope="session")

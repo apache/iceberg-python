@@ -237,9 +237,7 @@ def test_delete_partitioned_table_positional_deletes(spark: SparkSession, sessio
     # Will rewrite a data file without the positional delete
     tbl.delete(EqualTo("number", 40))
 
-    # One positional delete has been added, but an OVERWRITE status is set
-    # https://github.com/apache/iceberg/issues/10122
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "overwrite", "overwrite"]
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "overwrite"]
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10], "number": [20]}
 
 
@@ -410,8 +408,6 @@ def test_overwrite_partitioned_table(spark: SparkSession, session_catalog: RestC
     # Will rewrite a data file without the positional delete
     tbl.overwrite(arrow_tbl, "number_partitioned == 10")
 
-    # One positional delete has been added, but an OVERWRITE status is set
-    # https://github.com/apache/iceberg/issues/10122
     assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()] == ["append", "delete", "append"]
     assert tbl.scan().to_arrow().to_pydict() == {"number_partitioned": [10, 10, 20], "number": [4, 5, 3]}
 
@@ -461,13 +457,11 @@ def test_partitioned_table_positional_deletes_sequence_number(spark: SparkSessio
     # Will rewrite a data file without a positional delete
     tbl.delete(EqualTo("number", 201))
 
-    # One positional delete has been added, but an OVERWRITE status is set
-    # https://github.com/apache/iceberg/issues/10122
     snapshots = tbl.snapshots()
     assert len(snapshots) == 3
 
     # Snapshots produced by Spark
-    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "overwrite"]
+    assert [snapshot.summary.operation.value for snapshot in tbl.snapshots()[0:2]] == ["append", "delete"]
 
     # Will rewrite one parquet file
     assert snapshots[2].summary == Summary(
@@ -752,13 +746,15 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
     arrow_table = pa.Table.from_arrays(
         [
             pa.array([2, 3, 4, 5, 6]),
-            pa.array([
-                datetime(2021, 5, 19),
-                datetime(2022, 7, 25),
-                datetime(2023, 3, 22),
-                datetime(2024, 7, 17),
-                datetime(2025, 2, 22),
-            ]),
+            pa.array(
+                [
+                    datetime(2021, 5, 19),
+                    datetime(2022, 7, 25),
+                    datetime(2023, 3, 22),
+                    datetime(2024, 7, 17),
+                    datetime(2025, 2, 22),
+                ]
+            ),
         ],
         names=["idx", "ts"],
     )

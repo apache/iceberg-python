@@ -947,95 +947,95 @@ def manifest() -> ManifestFile:
 
 
 def test_all_nulls(schema: Schema, manifest: ManifestFile) -> None:
-    assert not _ManifestEvalVisitor(schema, NotNull(Reference("all_nulls_missing_nan")), case_sensitive=True).eval(manifest), (
-        "Should skip: all nulls column with non-floating type contains all null"
-    )
+    assert not _ManifestEvalVisitor(schema, NotNull(Reference("all_nulls_missing_nan")), case_sensitive=True).eval(
+        manifest
+    ), "Should skip: all nulls column with non-floating type contains all null"
 
-    assert _ManifestEvalVisitor(schema, NotNull(Reference("all_nulls_missing_nan_float")), case_sensitive=True).eval(manifest), (
-        "Should read: no NaN information may indicate presence of NaN value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNull(Reference("all_nulls_missing_nan_float")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no NaN information may indicate presence of NaN value"
 
-    assert _ManifestEvalVisitor(schema, NotNull(Reference("some_nulls")), case_sensitive=True).eval(manifest), (
-        "Should read: column with some nulls contains a non-null value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNull(Reference("some_nulls")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: column with some nulls contains a non-null value"
 
-    assert _ManifestEvalVisitor(schema, NotNull(Reference("no_nulls")), case_sensitive=True).eval(manifest), (
-        "Should read: non-null column contains a non-null value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNull(Reference("no_nulls")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: non-null column contains a non-null value"
 
 
 def test_no_nulls(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, IsNull(Reference("all_nulls_missing_nan")), case_sensitive=True).eval(manifest), (
-        "Should read: at least one null value in all null column"
-    )
+    assert _ManifestEvalVisitor(schema, IsNull(Reference("all_nulls_missing_nan")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: at least one null value in all null column"
 
-    assert _ManifestEvalVisitor(schema, IsNull(Reference("some_nulls")), case_sensitive=True).eval(manifest), (
-        "Should read: column with some nulls contains a null value"
-    )
+    assert _ManifestEvalVisitor(schema, IsNull(Reference("some_nulls")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: column with some nulls contains a null value"
 
-    assert not _ManifestEvalVisitor(schema, IsNull(Reference("no_nulls")), case_sensitive=True).eval(manifest), (
-        "Should skip: non-null column contains no null values"
-    )
+    assert not _ManifestEvalVisitor(schema, IsNull(Reference("no_nulls")), case_sensitive=True).eval(
+        manifest
+    ), "Should skip: non-null column contains no null values"
 
-    assert _ManifestEvalVisitor(schema, IsNull(Reference("both_nan_and_null")), case_sensitive=True).eval(manifest), (
-        "Should read: both_nan_and_null column contains no null values"
-    )
+    assert _ManifestEvalVisitor(schema, IsNull(Reference("both_nan_and_null")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: both_nan_and_null column contains no null values"
 
 
 def test_is_nan(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, IsNaN(Reference("float")), case_sensitive=True).eval(manifest), (
-        "Should read: no information on if there are nan value in float column"
-    )
+    assert _ManifestEvalVisitor(schema, IsNaN(Reference("float")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no information on if there are nan value in float column"
 
-    assert _ManifestEvalVisitor(schema, IsNaN(Reference("all_nulls_double")), case_sensitive=True).eval(manifest), (
-        "Should read: no NaN information may indicate presence of NaN value"
-    )
+    assert _ManifestEvalVisitor(schema, IsNaN(Reference("all_nulls_double")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no NaN information may indicate presence of NaN value"
 
-    assert _ManifestEvalVisitor(schema, IsNaN(Reference("all_nulls_missing_nan_float")), case_sensitive=True).eval(manifest), (
-        "Should read: no NaN information may indicate presence of NaN value"
-    )
+    assert _ManifestEvalVisitor(schema, IsNaN(Reference("all_nulls_missing_nan_float")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no NaN information may indicate presence of NaN value"
 
-    assert not _ManifestEvalVisitor(schema, IsNaN(Reference("all_nulls_no_nans")), case_sensitive=True).eval(manifest), (
-        "Should skip: no nan column doesn't contain nan value"
-    )
+    assert not _ManifestEvalVisitor(schema, IsNaN(Reference("all_nulls_no_nans")), case_sensitive=True).eval(
+        manifest
+    ), "Should skip: no nan column doesn't contain nan value"
 
-    assert _ManifestEvalVisitor(schema, IsNaN(Reference("all_nans")), case_sensitive=True).eval(manifest), (
-        "Should read: all_nans column contains nan value"
-    )
+    assert _ManifestEvalVisitor(schema, IsNaN(Reference("all_nans")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: all_nans column contains nan value"
 
-    assert _ManifestEvalVisitor(schema, IsNaN(Reference("both_nan_and_null")), case_sensitive=True).eval(manifest), (
-        "Should read: both_nan_and_null column contains nan value"
-    )
+    assert _ManifestEvalVisitor(schema, IsNaN(Reference("both_nan_and_null")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: both_nan_and_null column contains nan value"
 
-    assert not _ManifestEvalVisitor(schema, IsNaN(Reference("no_nan_or_null")), case_sensitive=True).eval(manifest), (
-        "Should skip: no_nan_or_null column doesn't contain nan value"
-    )
+    assert not _ManifestEvalVisitor(schema, IsNaN(Reference("no_nan_or_null")), case_sensitive=True).eval(
+        manifest
+    ), "Should skip: no_nan_or_null column doesn't contain nan value"
 
 
 def test_not_nan(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, NotNaN(Reference("float")), case_sensitive=True).eval(manifest), (
-        "Should read: no information on if there are nan value in float column"
-    )
+    assert _ManifestEvalVisitor(schema, NotNaN(Reference("float")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no information on if there are nan value in float column"
 
-    assert _ManifestEvalVisitor(schema, NotNaN(Reference("all_nulls_double")), case_sensitive=True).eval(manifest), (
-        "Should read: all null column contains non nan value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNaN(Reference("all_nulls_double")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: all null column contains non nan value"
 
-    assert _ManifestEvalVisitor(schema, NotNaN(Reference("all_nulls_no_nans")), case_sensitive=True).eval(manifest), (
-        "Should read: no_nans column contains non nan value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNaN(Reference("all_nulls_no_nans")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no_nans column contains non nan value"
 
-    assert not _ManifestEvalVisitor(schema, NotNaN(Reference("all_nans")), case_sensitive=True).eval(manifest), (
-        "Should skip: all nans column doesn't contain non nan value"
-    )
+    assert not _ManifestEvalVisitor(schema, NotNaN(Reference("all_nans")), case_sensitive=True).eval(
+        manifest
+    ), "Should skip: all nans column doesn't contain non nan value"
 
-    assert _ManifestEvalVisitor(schema, NotNaN(Reference("both_nan_and_null")), case_sensitive=True).eval(manifest), (
-        "Should read: both_nan_and_null nans column contains non nan value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNaN(Reference("both_nan_and_null")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: both_nan_and_null nans column contains non nan value"
 
-    assert _ManifestEvalVisitor(schema, NotNaN(Reference("no_nan_or_null")), case_sensitive=True).eval(manifest), (
-        "Should read: no_nan_or_null column contains non nan value"
-    )
+    assert _ManifestEvalVisitor(schema, NotNaN(Reference("no_nan_or_null")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: no_nan_or_null column contains non nan value"
 
 
 def test_missing_stats(schema: Schema, manifest_no_stats: ManifestFile) -> None:
@@ -1053,15 +1053,15 @@ def test_missing_stats(schema: Schema, manifest_no_stats: ManifestFile) -> None:
     ]
 
     for expr in expressions:
-        assert _ManifestEvalVisitor(schema, expr, case_sensitive=True).eval(manifest_no_stats), (
-            f"Should read when missing stats for expr: {expr}"
-        )
+        assert _ManifestEvalVisitor(schema, expr, case_sensitive=True).eval(
+            manifest_no_stats
+        ), f"Should read when missing stats for expr: {expr}"
 
 
 def test_not(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, Not(LessThan(Reference("id"), INT_MIN_VALUE - 25)), case_sensitive=True).eval(manifest), (
-        "Should read: not(false)"
-    )
+    assert _ManifestEvalVisitor(schema, Not(LessThan(Reference("id"), INT_MIN_VALUE - 25)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: not(false)"
 
     assert not _ManifestEvalVisitor(schema, Not(GreaterThan(Reference("id"), INT_MIN_VALUE - 25)), case_sensitive=True).eval(
         manifest
@@ -1118,21 +1118,21 @@ def test_or(schema: Schema, manifest: ManifestFile) -> None:
 
 
 def test_integer_lt(schema: Schema, manifest: ManifestFile) -> None:
-    assert not _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MIN_VALUE - 25), case_sensitive=True).eval(manifest), (
-        "Should not read: id range below lower bound (5 < 30)"
-    )
+    assert not _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MIN_VALUE - 25), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id range below lower bound (5 < 30)"
 
-    assert not _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(manifest), (
-        "Should not read: id range below lower bound (30 is not < 30)"
-    )
+    assert not _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id range below lower bound (30 is not < 30)"
 
-    assert _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MIN_VALUE + 1), case_sensitive=True).eval(manifest), (
-        "Should read: one possible id"
-    )
+    assert _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MIN_VALUE + 1), case_sensitive=True).eval(
+        manifest
+    ), "Should read: one possible id"
 
-    assert _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: may possible ids"
-    )
+    assert _ManifestEvalVisitor(schema, LessThan(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: may possible ids"
 
 
 def test_integer_lt_eq(schema: Schema, manifest: ManifestFile) -> None:
@@ -1144,13 +1144,13 @@ def test_integer_lt_eq(schema: Schema, manifest: ManifestFile) -> None:
         manifest
     ), "Should not read: id range below lower bound (29 < 30)"
 
-    assert _ManifestEvalVisitor(schema, LessThanOrEqual(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: one possible id"
-    )
+    assert _ManifestEvalVisitor(schema, LessThanOrEqual(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: one possible id"
 
-    assert _ManifestEvalVisitor(schema, LessThanOrEqual(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: many possible ids"
-    )
+    assert _ManifestEvalVisitor(schema, LessThanOrEqual(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: many possible ids"
 
 
 def test_integer_gt(schema: Schema, manifest: ManifestFile) -> None:
@@ -1158,17 +1158,17 @@ def test_integer_gt(schema: Schema, manifest: ManifestFile) -> None:
         manifest
     ), "Should not read: id range above upper bound (85 < 79)"
 
-    assert not _ManifestEvalVisitor(schema, GreaterThan(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should not read: id range above upper bound (79 is not > 79)"
-    )
+    assert not _ManifestEvalVisitor(schema, GreaterThan(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id range above upper bound (79 is not > 79)"
 
-    assert _ManifestEvalVisitor(schema, GreaterThan(Reference("id"), INT_MAX_VALUE - 1), case_sensitive=True).eval(manifest), (
-        "Should read: one possible id"
-    )
+    assert _ManifestEvalVisitor(schema, GreaterThan(Reference("id"), INT_MAX_VALUE - 1), case_sensitive=True).eval(
+        manifest
+    ), "Should read: one possible id"
 
-    assert _ManifestEvalVisitor(schema, GreaterThan(Reference("id"), INT_MAX_VALUE - 4), case_sensitive=True).eval(manifest), (
-        "Should read: may possible ids"
-    )
+    assert _ManifestEvalVisitor(schema, GreaterThan(Reference("id"), INT_MAX_VALUE - 4), case_sensitive=True).eval(
+        manifest
+    ), "Should read: may possible ids"
 
 
 def test_integer_gt_eq(schema: Schema, manifest: ManifestFile) -> None:
@@ -1180,133 +1180,133 @@ def test_integer_gt_eq(schema: Schema, manifest: ManifestFile) -> None:
         manifest
     ), "Should not read: id range above upper bound (80 > 79)"
 
-    assert _ManifestEvalVisitor(schema, GreaterThanOrEqual(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: one possible id"
-    )
+    assert _ManifestEvalVisitor(schema, GreaterThanOrEqual(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: one possible id"
 
-    assert _ManifestEvalVisitor(schema, GreaterThanOrEqual(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: may possible ids"
-    )
+    assert _ManifestEvalVisitor(schema, GreaterThanOrEqual(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: may possible ids"
 
 
 def test_integer_eq(schema: Schema, manifest: ManifestFile) -> None:
-    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE - 25), case_sensitive=True).eval(manifest), (
-        "Should not read: id below lower bound"
-    )
+    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE - 25), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id below lower bound"
 
-    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE - 1), case_sensitive=True).eval(manifest), (
-        "Should not read: id below lower bound"
-    )
+    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE - 1), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: id equal to lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id equal to lower bound"
 
-    assert _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE - 4), case_sensitive=True).eval(manifest), (
-        "Should read: id between lower and upper bounds"
-    )
+    assert _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE - 4), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id between lower and upper bounds"
 
-    assert _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: id equal to upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id equal to upper bound"
 
-    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE + 1), case_sensitive=True).eval(manifest), (
-        "Should not read: id above upper bound"
-    )
+    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE + 1), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id above upper bound"
 
-    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE + 6), case_sensitive=True).eval(manifest), (
-        "Should not read: id above upper bound"
-    )
+    assert not _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MAX_VALUE + 6), case_sensitive=True).eval(
+        manifest
+    ), "Should not read: id above upper bound"
 
 
 def test_integer_not_eq(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MIN_VALUE - 25), case_sensitive=True).eval(manifest), (
-        "Should read: id below lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MIN_VALUE - 25), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MIN_VALUE - 1), case_sensitive=True).eval(manifest), (
-        "Should read: id below lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MIN_VALUE - 1), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: id equal to lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id equal to lower bound"
 
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE - 4), case_sensitive=True).eval(manifest), (
-        "Should read: id between lower and upper bounds"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE - 4), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id between lower and upper bounds"
 
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(manifest), (
-        "Should read: id equal to upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id equal to upper bound"
 
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE + 1), case_sensitive=True).eval(manifest), (
-        "Should read: id above upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE + 1), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id above upper bound"
 
-    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE + 6), case_sensitive=True).eval(manifest), (
-        "Should read: id above upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, NotEqualTo(Reference("id"), INT_MAX_VALUE + 6), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id above upper bound"
 
 
 def test_integer_not_eq_rewritten(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MIN_VALUE - 25)), case_sensitive=True).eval(manifest), (
-        "Should read: id below lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MIN_VALUE - 25)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MIN_VALUE - 1)), case_sensitive=True).eval(manifest), (
-        "Should read: id below lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MIN_VALUE - 1)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MIN_VALUE)), case_sensitive=True).eval(manifest), (
-        "Should read: id equal to lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MIN_VALUE)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id equal to lower bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE - 4)), case_sensitive=True).eval(manifest), (
-        "Should read: id between lower and upper bounds"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE - 4)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id between lower and upper bounds"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE)), case_sensitive=True).eval(manifest), (
-        "Should read: id equal to upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id equal to upper bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE + 1)), case_sensitive=True).eval(manifest), (
-        "Should read: id above upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE + 1)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id above upper bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE + 6)), case_sensitive=True).eval(manifest), (
-        "Should read: id above upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("id"), INT_MAX_VALUE + 6)), case_sensitive=True).eval(
+        manifest
+    ), "Should read: id above upper bound"
 
 
 def test_integer_not_eq_rewritten_case_insensitive(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MIN_VALUE - 25)), case_sensitive=False).eval(manifest), (
-        "Should read: id below lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MIN_VALUE - 25)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MIN_VALUE - 1)), case_sensitive=False).eval(manifest), (
-        "Should read: id below lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MIN_VALUE - 1)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id below lower bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MIN_VALUE)), case_sensitive=False).eval(manifest), (
-        "Should read: id equal to lower bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MIN_VALUE)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id equal to lower bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE - 4)), case_sensitive=False).eval(manifest), (
-        "Should read: id between lower and upper bounds"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE - 4)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id between lower and upper bounds"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE)), case_sensitive=False).eval(manifest), (
-        "Should read: id equal to upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id equal to upper bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE + 1)), case_sensitive=False).eval(manifest), (
-        "Should read: id above upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE + 1)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id above upper bound"
 
-    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE + 6)), case_sensitive=False).eval(manifest), (
-        "Should read: id above upper bound"
-    )
+    assert _ManifestEvalVisitor(schema, Not(EqualTo(Reference("ID"), INT_MAX_VALUE + 6)), case_sensitive=False).eval(
+        manifest
+    ), "Should read: id above upper bound"
 
 
 def test_integer_in(schema: Schema, manifest: ManifestFile) -> None:
@@ -1342,13 +1342,13 @@ def test_integer_in(schema: Schema, manifest: ManifestFile) -> None:
         manifest
     ), "Should skip: in on all nulls column"
 
-    assert _ManifestEvalVisitor(schema, In(Reference("some_nulls"), ("abc", "def")), case_sensitive=True).eval(manifest), (
-        "Should read: in on some nulls column"
-    )
+    assert _ManifestEvalVisitor(schema, In(Reference("some_nulls"), ("abc", "def")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: in on some nulls column"
 
-    assert _ManifestEvalVisitor(schema, In(Reference("no_nulls"), ("abc", "def")), case_sensitive=True).eval(manifest), (
-        "Should read: in on no nulls column"
-    )
+    assert _ManifestEvalVisitor(schema, In(Reference("no_nulls"), ("abc", "def")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: in on no nulls column"
 
 
 def test_integer_not_in(schema: Schema, manifest: ManifestFile) -> None:
@@ -1384,73 +1384,73 @@ def test_integer_not_in(schema: Schema, manifest: ManifestFile) -> None:
         manifest
     ), "Should read: notIn on no nulls column"
 
-    assert _ManifestEvalVisitor(schema, NotIn(Reference("some_nulls"), ("abc", "def")), case_sensitive=True).eval(manifest), (
-        "Should read: in on some nulls column"
-    )
+    assert _ManifestEvalVisitor(schema, NotIn(Reference("some_nulls"), ("abc", "def")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: in on some nulls column"
 
-    assert _ManifestEvalVisitor(schema, NotIn(Reference("no_nulls"), ("abc", "def")), case_sensitive=True).eval(manifest), (
-        "Should read: in on no nulls column"
-    )
+    assert _ManifestEvalVisitor(schema, NotIn(Reference("no_nulls"), ("abc", "def")), case_sensitive=True).eval(
+        manifest
+    ), "Should read: in on no nulls column"
 
 
 def test_string_starts_with(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "a"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "a"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "aa"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "aa"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "dddd"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "dddd"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "z"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "z"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, StartsWith(Reference("no_nulls"), "a"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, StartsWith(Reference("no_nulls"), "a"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert not _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "zzzz"), case_sensitive=False).eval(manifest), (
-        "Should skip: range doesn't match"
-    )
+    assert not _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "zzzz"), case_sensitive=False).eval(
+        manifest
+    ), "Should skip: range doesn't match"
 
-    assert not _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "1"), case_sensitive=False).eval(manifest), (
-        "Should skip: range doesn't match"
-    )
+    assert not _ManifestEvalVisitor(schema, StartsWith(Reference("some_nulls"), "1"), case_sensitive=False).eval(
+        manifest
+    ), "Should skip: range doesn't match"
 
 
 def test_string_not_starts_with(schema: Schema, manifest: ManifestFile) -> None:
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "a"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "a"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "aa"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "aa"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "dddd"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "dddd"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "z"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "z"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("no_nulls"), "a"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("no_nulls"), "a"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "zzzz"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "zzzz"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
-    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "1"), case_sensitive=False).eval(manifest), (
-        "Should read: range matches"
-    )
+    assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("some_nulls"), "1"), case_sensitive=False).eval(
+        manifest
+    ), "Should read: range matches"
 
     assert _ManifestEvalVisitor(schema, NotStartsWith(Reference("all_same_value_or_null"), "a"), case_sensitive=False).eval(
         manifest

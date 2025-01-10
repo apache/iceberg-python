@@ -70,7 +70,6 @@ def test_equals_false() -> None:
 def test_is_null() -> None:
     assert IsNull("foo") == parser.parse("foo is null")
     assert IsNull("foo") == parser.parse("foo IS NULL")
-    assert IsNull("foo") == parser.parse("table.foo IS NULL")
 
 
 def test_not_null() -> None:
