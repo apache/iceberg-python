@@ -405,7 +405,17 @@ class Transaction:
             name_mapping=self.table_metadata.name_mapping(),
         )
 
-    def replace_sort_order(self) -> None: ...
+    def replace_sort_order(self, case_sensitive: bool = True) -> ReplaceSortOrder:
+        """Create a new ReplaceSortOrder to replace the sort order of this table.
+        
+        Returns:
+            A new ReplaceSortOrder. 
+        """
+        
+        return ReplaceSortOrder(
+            self,
+            case_sensitive=case_sensitive,
+        )
 
     def update_snapshot(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> UpdateSnapshot:
         """Create a new UpdateSnapshot to produce a new snapshot for the table.
