@@ -746,13 +746,15 @@ def test_delete_after_partition_evolution_from_partitioned(session_catalog: Rest
     arrow_table = pa.Table.from_arrays(
         [
             pa.array([2, 3, 4, 5, 6]),
-            pa.array([
-                datetime(2021, 5, 19),
-                datetime(2022, 7, 25),
-                datetime(2023, 3, 22),
-                datetime(2024, 7, 17),
-                datetime(2025, 2, 22),
-            ]),
+            pa.array(
+                [
+                    datetime(2021, 5, 19),
+                    datetime(2022, 7, 25),
+                    datetime(2023, 3, 22),
+                    datetime(2024, 7, 17),
+                    datetime(2025, 2, 22),
+                ]
+            ),
         ],
         names=["idx", "ts"],
     )

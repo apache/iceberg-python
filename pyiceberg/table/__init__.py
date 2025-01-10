@@ -644,18 +644,20 @@ class Transaction:
                 if len(filtered_df) == 0:
                     replaced_files.append((original_file.file, []))
                 elif len(df) != len(filtered_df):
-                    replaced_files.append((
-                        original_file.file,
-                        list(
-                            _dataframe_to_data_files(
-                                io=self._table.io,
-                                df=filtered_df,
-                                table_metadata=self.table_metadata,
-                                write_uuid=commit_uuid,
-                                counter=counter,
-                            )
-                        ),
-                    ))
+                    replaced_files.append(
+                        (
+                            original_file.file,
+                            list(
+                                _dataframe_to_data_files(
+                                    io=self._table.io,
+                                    df=filtered_df,
+                                    table_metadata=self.table_metadata,
+                                    write_uuid=commit_uuid,
+                                    counter=counter,
+                                )
+                            ),
+                        )
+                    )
 
             if len(replaced_files) > 0:
                 with self.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as overwrite_snapshot:
@@ -695,9 +697,9 @@ class Transaction:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
         if self.table_metadata.name_mapping() is None:
-            self.set_properties(**{
-                TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()
-            })
+            self.set_properties(
+                **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
+            )
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io

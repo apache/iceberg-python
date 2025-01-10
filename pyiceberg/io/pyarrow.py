@@ -351,76 +351,140 @@ class PyArrowFileIO(FileIO):
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
-        if scheme in {"s3", "s3a", "s3n", "oss"}:
-            from pyarrow.fs import S3FileSystem
+        """Initialize FileSystem for different scheme."""
+        if scheme in {"oss"}:
+            return self._initialize_oss_fs()
 
-            client_kwargs: Dict[str, Any] = {
-                "endpoint_override": self.properties.get(S3_ENDPOINT),
-                "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-                "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-                "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-                "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
-            }
+        elif scheme in {"s3", "s3a", "s3n"}:
+            return self._initialize_s3_fs(netloc)
 
-            if proxy_uri := self.properties.get(S3_PROXY_URI):
-                client_kwargs["proxy_options"] = proxy_uri
+        elif scheme in {"hdfs", "viewfs"}:
+            return self._initialize_hdfs_fs(scheme, netloc)
 
-            if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-                client_kwargs["connect_timeout"] = float(connect_timeout)
-
-            if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-                client_kwargs["role_arn"] = role_arn
-
-            if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-                client_kwargs["session_name"] = session_name
-
-            if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-                client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
-
-            return S3FileSystem(**client_kwargs)
-        elif scheme in ("hdfs", "viewfs"):
-            from pyarrow.fs import HadoopFileSystem
-
-            hdfs_kwargs: Dict[str, Any] = {}
-            if netloc:
-                return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
-            if host := self.properties.get(HDFS_HOST):
-                hdfs_kwargs["host"] = host
-            if port := self.properties.get(HDFS_PORT):
-                # port should be an integer type
-                hdfs_kwargs["port"] = int(port)
-            if user := self.properties.get(HDFS_USER):
-                hdfs_kwargs["user"] = user
-            if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
-                hdfs_kwargs["kerb_ticket"] = kerb_ticket
-
-            return HadoopFileSystem(**hdfs_kwargs)
         elif scheme in {"gs", "gcs"}:
-            from pyarrow.fs import GcsFileSystem
+            return self._initialize_gcs_fs()
 
-            gcs_kwargs: Dict[str, Any] = {}
-            if access_token := self.properties.get(GCS_TOKEN):
-                gcs_kwargs["access_token"] = access_token
-            if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
-                gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-            if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
-                gcs_kwargs["default_bucket_location"] = bucket_location
-            if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
-                if self.properties.get(GCS_ENDPOINT):
-                    deprecation_message(
-                        deprecated_in="0.8.0",
-                        removed_in="0.9.0",
-                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
-                    )
-                url_parts = urlparse(endpoint)
-                gcs_kwargs["scheme"] = url_parts.scheme
-                gcs_kwargs["endpoint_override"] = url_parts.netloc
+        elif scheme in {"file"}:
+            return self._initialize_local_fs()
 
-            return GcsFileSystem(**gcs_kwargs)
-        elif scheme == "file":
-            return PyArrowLocalFileSystem()
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
+
+    def _initialize_oss_fs(self) -> FileSystem:
+        from pyarrow.fs import S3FileSystem
+
+        client_kwargs: Dict[str, Any] = {
+            "endpoint_override": self.properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+        }
+
+        if proxy_uri := self.properties.get(S3_PROXY_URI):
+            client_kwargs["proxy_options"] = proxy_uri
+
+        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+            client_kwargs["role_arn"] = role_arn
+
+        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+            client_kwargs["session_name"] = session_name
+
+        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+
+        return S3FileSystem(**client_kwargs)
+
+    def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import S3FileSystem, resolve_s3_region
+
+        # Resolve region from netloc(bucket), fallback to user-provided region
+        provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+
+        try:
+            bucket_region = resolve_s3_region(bucket=netloc)
+        except (OSError, TypeError):
+            bucket_region = None
+            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
+
+        bucket_region = bucket_region or provided_region
+        if bucket_region != provided_region:
+            logger.warning(
+                f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
+                f"provided region {provided_region}, actual region {bucket_region}"
+            )
+
+        client_kwargs: Dict[str, Any] = {
+            "endpoint_override": self.properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": bucket_region,
+        }
+
+        if proxy_uri := self.properties.get(S3_PROXY_URI):
+            client_kwargs["proxy_options"] = proxy_uri
+
+        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+            client_kwargs["role_arn"] = role_arn
+
+        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+            client_kwargs["session_name"] = session_name
+
+        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+
+        return S3FileSystem(**client_kwargs)
+
+    def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import HadoopFileSystem
+
+        hdfs_kwargs: Dict[str, Any] = {}
+        if netloc:
+            return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
+        if host := self.properties.get(HDFS_HOST):
+            hdfs_kwargs["host"] = host
+        if port := self.properties.get(HDFS_PORT):
+            # port should be an integer type
+            hdfs_kwargs["port"] = int(port)
+        if user := self.properties.get(HDFS_USER):
+            hdfs_kwargs["user"] = user
+        if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
+            hdfs_kwargs["kerb_ticket"] = kerb_ticket
+
+        return HadoopFileSystem(**hdfs_kwargs)
+
+    def _initialize_gcs_fs(self) -> FileSystem:
+        from pyarrow.fs import GcsFileSystem
+
+        gcs_kwargs: Dict[str, Any] = {}
+        if access_token := self.properties.get(GCS_TOKEN):
+            gcs_kwargs["access_token"] = access_token
+        if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
+            gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
+        if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
+            gcs_kwargs["default_bucket_location"] = bucket_location
+        if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
+            if self.properties.get(GCS_ENDPOINT):
+                deprecation_message(
+                    deprecated_in="0.8.0",
+                    removed_in="0.9.0",
+                    help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
+                )
+            url_parts = urlparse(endpoint)
+            gcs_kwargs["scheme"] = url_parts.scheme
+            gcs_kwargs["endpoint_override"] = url_parts.netloc
+
+        return GcsFileSystem(**gcs_kwargs)
+
+    def _initialize_local_fs(self) -> FileSystem:
+        return PyArrowLocalFileSystem()
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
@@ -1326,13 +1390,14 @@ def _task_to_table(
         return None
 
 
-def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
+def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
     deletes_per_file: Dict[str, List[ChunkedArray]] = {}
     unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args), [(fs, delete) for delete in unique_deletes]
+            lambda args: _read_deletes(*args),
+            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in unique_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1344,7 +1409,7 @@ def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dic
     return deletes_per_file
 
 
-def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
+def _fs_from_file_path(io: FileIO, file_path: str) -> FileSystem:
     scheme, netloc, _ = _parse_location(file_path)
     if isinstance(io, PyArrowFileIO):
         return io.fs_by_scheme(scheme, netloc)
@@ -1366,7 +1431,6 @@ def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
-    _fs: FileSystem
     _projected_schema: Schema
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
@@ -1376,7 +1440,6 @@ class ArrowScan:
     Attributes:
         _table_metadata: Current table metadata of the Iceberg table
         _io: PyIceberg FileIO implementation from which to fetch the io properties
-        _fs: PyArrow FileSystem to use to read the files
         _projected_schema: Iceberg Schema to project onto the data files
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
@@ -1394,7 +1457,6 @@ class ArrowScan:
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
-        self._fs = _fs_from_file_path(table_metadata.location, io)  # TODO: use different FileSystem per file
         self._projected_schema = projected_schema
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
@@ -1434,7 +1496,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
         executor = ExecutorFactory.get_or_create()
 
         def _table_from_scan_task(task: FileScanTask) -> pa.Table:
@@ -1497,7 +1559,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
         return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
     def _record_batches_from_scan_tasks_and_deletes(
@@ -1508,7 +1570,7 @@ class ArrowScan:
             if self._limit is not None and total_row_count >= self._limit:
                 break
             batches = _task_to_record_batches(
-                self._fs,
+                _fs_from_file_path(self._io, task.file.file_path),
                 task,
                 self._bound_row_filter,
                 self._projected_schema,
@@ -2449,27 +2511,31 @@ def _dataframe_to_data_files(
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                for batches in bin_pack_arrow_table(df, target_file_size)
-            ]),
+            tasks=iter(
+                [
+                    WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                    for batches in bin_pack_arrow_table(df, target_file_size)
+                ]
+            ),
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(
-                    write_uuid=write_uuid,
-                    task_id=next(counter),
-                    record_batches=batches,
-                    partition_key=partition.partition_key,
-                    schema=task_schema,
-                )
-                for partition in partitions
-                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
-            ]),
+            tasks=iter(
+                [
+                    WriteTask(
+                        write_uuid=write_uuid,
+                        task_id=next(counter),
+                        record_batches=batches,
+                        partition_key=partition.partition_key,
+                        schema=task_schema,
+                    )
+                    for partition in partitions
+                    for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+                ]
+            ),
         )
 
 
@@ -2534,10 +2600,12 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     partition_columns: List[Tuple[PartitionField, NestedField]] = [
         (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
     ]
-    partition_values_table = pa.table({
-        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
-        for partition, field in partition_columns
-    })
+    partition_values_table = pa.table(
+        {
+            str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
+            for partition, field in partition_columns
+        }
+    )
 
     # Sort by partitions
     sort_indices = pa.compute.sort_indices(
