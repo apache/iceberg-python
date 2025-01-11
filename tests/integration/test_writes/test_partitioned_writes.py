@@ -297,8 +297,8 @@ def test_object_storage_location_provider_excludes_partition_path(
     tbl = _create_table(
         session_catalog=session_catalog,
         identifier=f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}",
-        # write.object-storage.partitioned-paths defaults to True
-        properties={"format-version": str(format_version), TableProperties.OBJECT_STORE_ENABLED: True},
+        # Both write.object-storage.enabled and write.object-storage.partitioned-paths default to True
+        properties={"format-version": str(format_version)},
         data=[arrow_table_with_null],
         partition_spec=partition_spec,
     )
