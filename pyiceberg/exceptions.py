@@ -133,11 +133,3 @@ class UnsupportedPyArrowTypeException(Exception):
     def __init__(self, field: pa.Field, *args: Any):
         self.field = field
         super().__init__(*args)
-
-
-class UnsupportedPyArrowIntegerTypeException(UnsupportedPyArrowTypeException):
-    """Cannot convert PyArrow integer type to corresponding Iceberg type."""
-
-
-class UnsupportedPyArrowTimestampTypeException(UnsupportedPyArrowTypeException):
-    """Cannot convert PyArrow timestamp type to corresponding Iceberg type."""

@@ -1102,10 +1102,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
     """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
 
     _field_names: List[str]
-    _field: Optional[pa.Field]
 
     def __init__(self, downcast_ns_timestamp_to_us: bool = False) -> None:
-        self._field = None
         self._field_names = []
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
 
@@ -1200,11 +1198,9 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
 
     def before_field(self, field: pa.Field) -> None:
         self._field_names.append(field.name)
-        self._field = field
 
     def after_field(self, field: pa.Field) -> None:
         self._field_names.pop()
-        self._field = None
 
     def before_list_element(self, element: pa.Field) -> None:
         self._field_names.append(LIST_ELEMENT_NAME)
