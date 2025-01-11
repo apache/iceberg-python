@@ -294,10 +294,12 @@ def test_object_storage_location_provider_excludes_partition_path(
         PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
     )
 
+    # write.object-storage.enabled and write.object-storage.partitioned-paths don't need to be specified as they're on by default
+    assert TableProperties.OBJECT_STORE_ENABLED_DEFAULT
+    assert TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT
     tbl = _create_table(
         session_catalog=session_catalog,
         identifier=f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}",
-        # Both write.object-storage.enabled and write.object-storage.partitioned-paths default to True
         properties={"format-version": str(format_version)},
         data=[arrow_table_with_null],
         partition_spec=partition_spec,
