@@ -38,10 +38,16 @@ class CustomLocationProvider(LocationProvider):
         return f"custom_location_provider/{data_file_name}"
 
 
-def test_default_location_provider() -> None:
+def test_simple_location_provider_no_partition() -> None:
     provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
 
     assert provider.new_data_location("my_file") == "table_location/data/my_file"
+
+
+def test_simple_location_provider_with_partition() -> None:
+    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+
+    assert provider.new_data_location("my_file", PARTITION_KEY) == "table_location/data/string_field=example_string/my_file"
 
 
 def test_custom_location_provider() -> None:
@@ -82,19 +88,18 @@ def test_object_storage_injects_entropy() -> None:
         assert all(c in "01" for c in dir_name)
 
 
-@pytest.mark.parametrize("object_storage", [True, False])
-def test_partition_value_in_path(object_storage: bool) -> None:
+def test_object_storage_with_partition() -> None:
     provider = load_location_provider(
         table_location="table_location",
-        table_properties={
-            "write.object-storage.enabled": str(object_storage),
-        },
+        table_properties={"write.object-storage.enabled": "true"},
     )
 
     location = provider.new_data_location("test.parquet", PARTITION_KEY)
-    partition_segment = location.split("/")[-2]
 
-    assert partition_segment == "string_field=example_string"
+    # Partition values AND entropy included in the path. Entropy differs to that in the test below because the partition
+    # key AND the data file name are used as the hash input. This matches Java behaviour; the hash below is what the
+    # Java implementation produces for this input too.
+    assert location == "table_location/data/0001/0010/1001/00000011/string_field=example_string/test.parquet"
 
 
 # NB: We test here with None partition key too because disabling partitioned paths still replaces final / with - even in
