@@ -71,7 +71,7 @@ def test_custom_location_provider_not_found() -> None:
         )
 
 
-def test_object_storage_injects_entropy() -> None:
+def test_object_storage_no_partition() -> None:
     provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
 
     location = provider.new_data_location("test.parquet")
