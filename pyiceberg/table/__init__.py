@@ -190,7 +190,7 @@ class TableProperties:
     WRITE_PY_LOCATION_PROVIDER_IMPL = "write.py-location-provider.impl"
 
     OBJECT_STORE_ENABLED = "write.object-storage.enabled"
-    OBJECT_STORE_ENABLED_DEFAULT = False
+    OBJECT_STORE_ENABLED_DEFAULT = True
 
     WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
