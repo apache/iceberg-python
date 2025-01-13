@@ -39,13 +39,13 @@ class CustomLocationProvider(LocationProvider):
 
 
 def test_simple_location_provider_no_partition() -> None:
-    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "false"})
 
     assert provider.new_data_location("my_file") == "table_location/data/my_file"
 
 
 def test_simple_location_provider_with_partition() -> None:
-    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "false"})
 
     assert provider.new_data_location("my_file", PARTITION_KEY) == "table_location/data/string_field=example_string/my_file"
 
@@ -72,7 +72,7 @@ def test_custom_location_provider_not_found() -> None:
 
 
 def test_object_storage_no_partition() -> None:
-    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
+    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
 
     location = provider.new_data_location("test.parquet")
     parts = location.split("/")
@@ -109,7 +109,6 @@ def test_object_storage_partitioned_paths_disabled(partition_key: Optional[Parti
     provider = load_location_provider(
         table_location="table_location",
         table_properties={
-            "write.object-storage.enabled": "true",
             "write.object-storage.partitioned-paths": "false",
         },
     )
@@ -130,6 +129,6 @@ def test_object_storage_partitioned_paths_disabled(partition_key: Optional[Parti
     ],
 )
 def test_hash_injection(data_file_name: str, expected_hash: str) -> None:
-    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
+    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
 
     assert provider.new_data_location(data_file_name) == f"table_location/data/{expected_hash}/{data_file_name}"
