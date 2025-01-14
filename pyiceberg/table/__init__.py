@@ -136,6 +136,8 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
+from pyiceberg.table import merge_rows_util
+
 if TYPE_CHECKING:
     import daft
     import pandas as pd
@@ -1063,6 +1065,129 @@ class Table:
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
+
+    def merge_rows(self, df: pa.Table, join_cols: list
+                    ,merge_options: dict = {'when_matched_update_all': True, 'when_not_matched_insert_all': True}
+                ) -> Dict:
+        """
+        Shorthand API for performing an upsert/merge to an iceberg table.
+        
+        Args:
+            df: The input dataframe to merge with the table's data.
+            join_cols: The columns to join on.
+            merge_options: A dictionary of merge actions to perform. Currently supports these predicates:
+                when_matched_update_all: default is True
+                when_not_matched_insert_all: default is True
+
+        Returns:
+            A dictionary containing the number of rows updated and inserted.
+        """
+
+        #merge_rows_util is a file 
+        try:
+            from datafusion import SessionContext
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For merge_rows, DataFusion needs to be installed") from e
+        
+        try:
+            from pyarrow import dataset as ds
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For merge_rows, PyArrow needs to be installed") from e
+
+        source_table_name = "source"
+        target_table_name = "target"
+
+        
+        if merge_options is None or merge_options == {}:
+            merge_options = {'when_matched_update_all': True, 'when_not_matched_insert_all': True}
+
+        when_matched_update_all = merge_options.get('when_matched_update_all', False)
+        when_not_matched_insert_all = merge_options.get('when_not_matched_insert_all', False)
+
+        ctx = SessionContext()
+
+        
+
+        #register both source and target tables so we can find the deltas to update/append
+        ctx.register_dataset(source_table_name, ds.dataset(df))
+        ctx.register_dataset(target_table_name, ds.dataset(self.scan().to_arrow()))
+
+        source_col_list = merge_rows_util.get_table_column_list(ctx, source_table_name)
+        target_col_list = merge_rows_util.get_table_column_list(ctx, target_table_name)
+        
+        source_col_names = set([col[0] for col in source_col_list])
+        target_col_names = set([col[0] for col in target_col_list])
+
+        source_col_types = {col[0]: col[1] for col in source_col_list}
+        #target_col_types = {col[0]: col[1] for col in target_col_list}
+
+        missing_columns = merge_rows_util.do_join_columns_exist(source_col_names, target_col_names, self.join_cols)
+        
+        if missing_columns['source'] or missing_columns['target']:
+            raise Exception(f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}")
+
+        #check for dups on source
+        if merge_rows_util.dups_check_in_source(source_table_name, join_cols):
+            raise Exception(f"Duplicate rows found in source table based on the key columns [{', '.join(join_cols)}]")
+
+
+
+        # Get the rows to update
+        update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
+            #print(update_recs_sql)
+        update_recs = ctx.sql(update_recs_sql).to_arrow_table()
+
+        update_row_cnt = len(update_recs)
+
+        insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(self.source_table_name, self.target_table_name, self.join_cols, source_col_names, target_col_names)
+            #print(insert_recs_sql)
+        insert_recs = self.cn.sql(insert_recs_sql).to_arrow_table()
+
+        insert_row_cnt = len(insert_recs)
+
+        txn = self.transaction()
+
+        try:
+            
+            if when_matched_update_all:
+
+                if len(self.join_cols) == 1:
+                    join_col = self.join_cols[0]
+                    col_type = source_col_types[join_col]  
+                    values = [row[join_col] for row in update_recs.to_pylist()]
+                    # if strings are in the filter, we encapsulate with tick marks
+                    formatted_values = [f"'{value}'" if col_type == 'string' else str(value) for value in values]
+                    overwrite_filter = f"{join_col} IN ({', '.join(formatted_values)})"
+                else:
+                    overwrite_filter = " OR ".join(
+                        f"({' AND '.join([f'{col} = {repr(row[col])}' if source_col_types[col] != 'string' else f'{col} = {repr(row[col])}' for col in self.join_cols])})" 
+                        for row in update_recs.to_pylist()
+                    )
+                
+                    #print(f"overwrite_filter: {overwrite_filter}")
+
+                txn.overwrite(update_recs, overwrite_filter)    
+
+            # Insert the new records
+
+            if when_not_matched_insert_all:
+
+                txn.append(insert_recs)
+
+            if when_matched_update_all or when_not_matched_insert_all:
+                txn.commit_transaction()
+            #print("commited changes")
+
+            return {
+                "rows_updated": update_row_cnt,
+                "rows_inserted": insert_row_cnt
+            }
+
+        except Exception as e:
+            print(f"Error: {e}")
+            raise e
+
+        return {}
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
