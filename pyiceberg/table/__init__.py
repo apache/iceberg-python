@@ -1075,7 +1075,7 @@ class Table:
         Args:
             df: The input dataframe to merge with the table's data.
             join_cols: The columns to join on.
-            merge_options: A dictionary of merge actions to perform. Currently supports these predicates:
+            merge_options: A dictionary of merge actions to perform. Currently supports these predicates >
                 when_matched_update_all: default is True
                 when_not_matched_insert_all: default is True
 

@@ -6,6 +6,8 @@
     check with how the other unit tests are flagged and add accordlingly
     fix the warehouse path; its not creating it in this test module
     wonder if the pyiceberg team already has a warehouse folder to stash all these tests in?
+    add a show_table function to visually see the new table
+    add a function to nuke the warehouse folder to cleanup
 """
 
 from datafusion import SessionContext
