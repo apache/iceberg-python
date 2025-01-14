@@ -1,5 +1,13 @@
 ## unit test for merging rows
 
+## todo
+"""
+    simplify this unit testing to reusable functions
+    check with how the other unit tests are flagged and add accordlingly
+    fix the warehouse path; its not creating it in this test module
+    wonder if the pyiceberg team already has a warehouse folder to stash all these tests in?
+"""
+
 from datafusion import SessionContext
 from pyiceberg.catalog.sql import SqlCatalog
 
