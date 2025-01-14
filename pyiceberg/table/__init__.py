@@ -1104,6 +1104,9 @@ class Table:
         when_matched_update_all = merge_options.get('when_matched_update_all', False)
         when_not_matched_insert_all = merge_options.get('when_not_matched_insert_all', False)
 
+        if when_matched_update_all == False and when_not_matched_insert_all == False:
+            return {'rows_updated': 0, 'rows_inserted': 0, 'msg': 'no merge options selected...exiting'}
+
         ctx = SessionContext()
 
         
@@ -1121,38 +1124,33 @@ class Table:
         source_col_types = {col[0]: col[1] for col in source_col_list}
         #target_col_types = {col[0]: col[1] for col in target_col_list}
 
-        missing_columns = merge_rows_util.do_join_columns_exist(source_col_names, target_col_names, self.join_cols)
+        missing_columns = merge_rows_util.do_join_columns_exist(source_col_names, target_col_names, join_cols)
         
         if missing_columns['source'] or missing_columns['target']:
             raise Exception(f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}")
 
         #check for dups on source
-        if merge_rows_util.dups_check_in_source(source_table_name, join_cols):
+        if merge_rows_util.dups_check_in_source(source_table_name, join_cols, ctx):
             raise Exception(f"Duplicate rows found in source table based on the key columns [{', '.join(join_cols)}]")
 
-
-
-        # Get the rows to update
-        update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
-            #print(update_recs_sql)
-        update_recs = ctx.sql(update_recs_sql).to_arrow_table()
-
-        update_row_cnt = len(update_recs)
-
-        insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(self.source_table_name, self.target_table_name, self.join_cols, source_col_names, target_col_names)
-            #print(insert_recs_sql)
-        insert_recs = self.cn.sql(insert_recs_sql).to_arrow_table()
-
-        insert_row_cnt = len(insert_recs)
+        update_row_cnt = 0
+        insert_row_cnt = 0
 
         txn = self.transaction()
 
         try:
             
             if when_matched_update_all:
+                
+                # Get the rows to update
+                update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
+                    #print(update_recs_sql)
+                update_recs = ctx.sql(update_recs_sql).to_arrow_table()
 
-                if len(self.join_cols) == 1:
-                    join_col = self.join_cols[0]
+                update_row_cnt = len(update_recs)
+
+                if len(join_cols) == 1:
+                    join_col = join_cols[0]
                     col_type = source_col_types[join_col]  
                     values = [row[join_col] for row in update_recs.to_pylist()]
                     # if strings are in the filter, we encapsulate with tick marks
@@ -1171,6 +1169,11 @@ class Table:
             # Insert the new records
 
             if when_not_matched_insert_all:
+                insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
+
+                insert_recs = ctx.sql(insert_recs_sql).to_arrow_table()
+
+                insert_row_cnt = len(insert_recs)
 
                 txn.append(insert_recs)
 
