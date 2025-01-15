@@ -1277,8 +1277,8 @@ You can also use context managers to make more changes:
 
 ```python
 with table.update_statistics() as update:
-  update.set_statistics(snaphsot_id1, statistics_file)
-  update.remove_statistics(snapshot_id2)
+    update.set_statistics(snaphsot_id1, statistics_file)
+    update.remove_statistics(snapshot_id2)
 ```
 
 ## Query the data
