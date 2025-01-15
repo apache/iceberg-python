@@ -97,7 +97,7 @@ class FileFormat(str, Enum):
     PARQUET = "PARQUET", "parquet"
     ORC = "ORC", "orc"
 
-    def __new__(cls, value, *value_aliases):
+    def __new__(cls, value: str, *value_aliases: List[str]) -> "FileFormat":
         obj = str.__new__(cls)
         obj._value_ = value
         for alias in value_aliases:
