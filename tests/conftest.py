@@ -2250,7 +2250,7 @@ def spark() -> "SparkSession":
 
     # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
-    scala_version = "2.12"
+    scala_version = "2.13"
     iceberg_version = "1.6.0"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
