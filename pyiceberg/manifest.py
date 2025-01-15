@@ -292,28 +292,32 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 
 
 def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
-    data_file_partition_type = StructType(*[
-        NestedField(
-            field_id=field.field_id,
-            name=field.name,
-            field_type=field.field_type,
-            required=field.required,
-        )
-        for field in partition_type.fields
-    ])
+    data_file_partition_type = StructType(
+        *[
+            NestedField(
+                field_id=field.field_id,
+                name=field.name,
+                field_type=field.field_type,
+                required=field.required,
+            )
+            for field in partition_type.fields
+        ]
+    )
 
-    return StructType(*[
-        NestedField(
-            field_id=102,
-            name="partition",
-            field_type=data_file_partition_type,
-            required=True,
-            doc="Partition data tuple, schema based on the partition spec",
-        )
-        if field.field_id == 102
-        else field
-        for field in DATA_FILE_TYPE[format_version].fields
-    ])
+    return StructType(
+        *[
+            NestedField(
+                field_id=102,
+                name="partition",
+                field_type=data_file_partition_type,
+                required=True,
+                doc="Partition data tuple, schema based on the partition spec",
+            )
+            if field.field_id == 102
+            else field
+            for field in DATA_FILE_TYPE[format_version].fields
+        ]
+    )
 
 
 class DataFile(Record):
@@ -398,10 +402,12 @@ MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_v
 
 
 def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file: StructType) -> Schema:
-    return Schema(*[
-        NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-        for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
-    ])
+    return Schema(
+        *[
+            NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
+            for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
+        ]
+    )
 
 
 class ManifestEntry(Record):

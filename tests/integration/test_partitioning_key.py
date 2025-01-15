@@ -26,7 +26,7 @@ from pyspark.sql.utils import AnalysisException
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, make_compatible_name
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -70,6 +70,7 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=12, name="fixed_field", field_type=FixedType(16), required=False),
     NestedField(field_id=13, name="decimal_field", field_type=DecimalType(5, 2), required=False),
     NestedField(field_id=14, name="uuid_field", field_type=UUIDType(), required=False),
+    NestedField(field_id=15, name="special#string+field", field_type=StringType(), required=False),
 )
 
 
@@ -722,6 +723,25 @@ identifier = "default.test_table"
             (CAST('2023-01-01 11:55:59.999999' AS TIMESTAMP), CAST('2023-01-01' AS DATE), 'some data');
             """,
         ),
+        # Test that special characters are URL-encoded
+        (
+            [PartitionField(source_id=15, field_id=1001, transform=IdentityTransform(), name="special#string+field")],
+            ["special string"],
+            Record(**{"special#string+field": "special string"}),  # type: ignore
+            "special%23string%2Bfield=special+string",
+            f"""CREATE TABLE {identifier} (
+                `special#string+field` string
+            )
+            USING iceberg
+            PARTITIONED BY (
+                identity(`special#string+field`)
+            )
+            """,
+            f"""INSERT INTO {identifier}
+            VALUES
+            ('special string')
+            """,
+        ),
     ],
 )
 @pytest.mark.integration
@@ -768,5 +788,7 @@ def test_partition_key(
         spark_path_for_justification = (
             snapshot.manifests(iceberg_table.io)[0].fetch_manifest_entry(iceberg_table.io)[0].data_file.file_path
         )
-        assert spark_partition_for_justification == expected_partition_record
+        # Special characters in partition value are sanitized when written to the data file's partition field
+        sanitized_record = Record(**{make_compatible_name(k): v for k, v in vars(expected_partition_record).items()})
+        assert spark_partition_for_justification == sanitized_record
         assert expected_hive_partition_path_slice in spark_path_for_justification

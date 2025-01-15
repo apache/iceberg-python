@@ -28,6 +28,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.transforms import (
     BucketTransform,
     DayTransform,
@@ -282,6 +283,46 @@ def test_query_filter_v1_v2_append_null(
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
+    "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
+)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_object_storage_location_provider_excludes_partition_path(
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+) -> None:
+    nested_field = TABLE_SCHEMA.find_field(part_col)
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=nested_field.field_id, field_id=1001, transform=IdentityTransform(), name=part_col)
+    )
+
+    # write.object-storage.enabled and write.object-storage.partitioned-paths don't need to be specified as they're on by default
+    assert TableProperties.OBJECT_STORE_ENABLED_DEFAULT
+    assert TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier=f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}",
+        properties={"format-version": str(format_version)},
+        data=[arrow_table_with_null],
+        partition_spec=partition_spec,
+    )
+
+    original_paths = tbl.inspect.data_files().to_pydict()["file_path"]
+    assert len(original_paths) == 3
+
+    # Update props to exclude partitioned paths and append data
+    with tbl.transaction() as tx:
+        tx.set_properties({TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS: False})
+    tbl.append(arrow_table_with_null)
+
+    added_paths = set(tbl.inspect.data_files().to_pydict()["file_path"]) - set(original_paths)
+    assert len(added_paths) == 3
+
+    # All paths before the props update should contain the partition, while all paths after should not
+    assert all(f"{part_col}=" in path for path in original_paths)
+    assert all(f"{part_col}=" not in path for path in added_paths)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
     "spec",
     [
         (PartitionSpec(PartitionField(source_id=4, field_id=1001, transform=BucketTransform(2), name="int_bucket"))),
@@ -395,7 +436,7 @@ def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
     # For a long string, the lower bound and upper bound  is truncated
     # e.g. aaaaaaaaaaaaaaaaaaaaaa has lower bound of aaaaaaaaaaaaaaaa and upper bound of aaaaaaaaaaaaaaab
     # this makes strict metric evaluator determine the file evaluate as ROWS_MIGHT_NOT_MATCH
-    # this further causes the partitioned data file to be overwriten rather than deleted
+    # this further causes the partitioned data file to be overwritten rather than deleted
     if part_col == "string_long":
         expected_operations = ["append", "append", "overwrite", "append"]
     assert tbl.inspect.snapshots().to_pydict()["operation"] == expected_operations
@@ -539,7 +580,7 @@ def test_data_files_with_table_partitioned_with_null(
     #                    the first snapshot generates M3 with 6 delete data entries collected from M1 and M2.
     #                    ML3 = [M3]
     #
-    #                    The second snapshot generates M4 with 3 appended data entries and since M3 (previous manifests) only has delte entries it does not lint to it.
+    #                    The second snapshot generates M4 with 3 appended data entries and since M3 (previous manifests) only has delete entries it does not lint to it.
     #                    ML4 = [M4]
 
     # Append           : Append generates M5 with new data entries and links to all previous manifests which is M4 .
@@ -552,7 +593,7 @@ def test_data_files_with_table_partitioned_with_null(
     #                    ML6 = [M6, M7, M8]
     #
     #                    The second snapshot generates M9 with 3 appended data entries and it also looks at manifests in ML6 (previous manifests)
-    #                    it ignores M6 since it only has delte entries but it links to M7 and M8.
+    #                    it ignores M6 since it only has delete entries but it links to M7 and M8.
     #                    ML7 = [M9, M7, M8]
 
     # tldr:
