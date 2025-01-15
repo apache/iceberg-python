@@ -14,11 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import (
-    Dict,
-    List,
-    Optional,
-)
+from typing import Dict, List, Literal, Optional
 
 from pydantic import Field
 
@@ -26,7 +22,7 @@ from pyiceberg.typedef import IcebergBaseModel
 
 
 class BlobMetadata(IcebergBaseModel):
-    type: Literal['apache-datasketches-theta-v1', 'deletion-vector-v1']
+    type: Literal["apache-datasketches-theta-v1", "deletion-vector-v1"]
     snapshot_id: int = Field(alias="snapshot-id")
     sequence_number: int = Field(alias="sequence-number")
     fields: List[int]
