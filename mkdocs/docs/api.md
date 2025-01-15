@@ -1264,7 +1264,7 @@ Manage table statistics with operations through the `Table` API:
 
 ```python
 # To run a specific operation
-table.update_statistics().set_statistics(snapshot_id, statistics_file).commit()
+table.update_statistics().set_statistics(snapshot_id=1, statistics_file=statistics_file).commit()
 # To run multiple operations
 table.update_statistics()
   .set_statistics(snapshot_id1, statistics_file1)
