@@ -1257,7 +1257,7 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
     snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
 
     blob_metadata = BlobMetadata(
-        type="boring-type",
+        type="apache-datasketches-theta-v1",
         snapshot_id=snapshot_id,
         sequence_number=2,
         fields=[1],
@@ -1290,7 +1290,7 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
       "file-footer-size-in-bytes": 27,
       "blob-metadata": [
         {
-          "type": "boring-type",
+          "type": "apache-datasketches-theta-v1",
           "snapshot-id": 3055729675574597004,
           "sequence-number": 2,
           "fields": [

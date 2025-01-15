@@ -1010,7 +1010,7 @@ TABLE_METADATA_V2_WITH_STATISTICS = {
             "file-footer-size-in-bytes": 42,
             "blob-metadata": [
                 {
-                    "type": "ndv",
+                    "type": "apache-datasketches-theta-v1",
                     "snapshot-id": 3051729675574597004,
                     "sequence-number": 1,
                     "fields": [1],
@@ -1024,7 +1024,7 @@ TABLE_METADATA_V2_WITH_STATISTICS = {
             "file-footer-size-in-bytes": 42,
             "blob-metadata": [
                 {
-                    "type": "ndv",
+                    "type": "deletion-vector-v1",
                     "snapshot-id": 3055729675574597004,
                     "sequence-number": 1,
                     "fields": [1],

@@ -401,27 +401,3 @@ for catalog_name, catalog in catalogs.items():
     )
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
-
-    spark.sql(
-        f"""
-        CREATE OR REPLACE TABLE {catalog_name}.default.test_table_statistics_operations (
-            number integer
-        )
-        USING iceberg
-        TBLPROPERTIES (
-            'format-version'='2'
-        );
-        """
-    )
-    spark.sql(
-        f"""
-        INSERT INTO {catalog_name}.default.test_table_statistics_operations
-        VALUES (1)
-        """
-    )
-    spark.sql(
-        f"""
-        INSERT INTO {catalog_name}.default.test_table_statistics_operations
-        VALUES (2)
-        """
-    )
