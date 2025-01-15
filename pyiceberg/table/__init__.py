@@ -1127,11 +1127,17 @@ class Table:
         missing_columns = merge_rows_util.do_join_columns_exist(source_col_names, target_col_names, join_cols)
         
         if missing_columns['source'] or missing_columns['target']:
-            raise Exception(f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}")
+
+            return {'error_msgs': f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}"}
+
+            #raise Exception(f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}")
 
         #check for dups on source
         if merge_rows_util.dups_check_in_source(source_table_name, join_cols, ctx):
-            raise Exception(f"Duplicate rows found in source table based on the key columns [{', '.join(join_cols)}]")
+
+            return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No Merge executed'}
+
+            #raise Exception(f"Duplicate rows found in source table based on the key columns [{', '.join(join_cols)}]")
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -1158,7 +1164,7 @@ class Table:
                     overwrite_filter = f"{join_col} IN ({', '.join(formatted_values)})"
                 else:
                     overwrite_filter = " OR ".join(
-                        f"({' AND '.join([f'{col} = {repr(row[col])}' if source_col_types[col] != 'string' else f'{col} = {repr(row[col])}' for col in self.join_cols])})" 
+                        f"({' AND '.join([f'{col} = {repr(row[col])}' if source_col_types[col] != 'string' else f'{col} = {repr(row[col])}' for col in join_cols])})" 
                         for row in update_recs.to_pylist()
                     )
                 
