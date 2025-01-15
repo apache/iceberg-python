@@ -26,7 +26,7 @@ from pyiceberg.typedef import IcebergBaseModel
 
 
 class BlobMetadata(IcebergBaseModel):
-    type: str
+    type: Literal['apache-datasketches-theta-v1', 'deletion-vector-v1']
     snapshot_id: int = Field(alias="snapshot-id")
     sequence_number: int = Field(alias="sequence-number")
     fields: List[int]
