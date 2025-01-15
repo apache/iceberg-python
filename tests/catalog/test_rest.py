@@ -584,6 +584,71 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
     assert tokens.call_count == 1
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
+)
+def test_list_namespaces_token_expired_401(rest_mock: Mocker) -> None:
+    new_token = "new_jwt_token"
+    new_header = dict(TEST_HEADERS)
+    new_header["Authorization"] = f"Bearer {new_token}"
+
+    namespaces = rest_mock.register_uri(
+        "GET",
+        f"{TEST_URI}v1/namespaces",
+        [
+            {
+                "status_code": 401,
+                "json": {
+                    "error": {
+                        "message": "Request was not authenticated",
+                        "type": "UnauthorizedError",
+                        "code": 401,
+                    }
+                },
+                "headers": TEST_HEADERS,
+            },
+            {
+                "status_code": 200,
+                "json": {"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+                "headers": new_header,
+            },
+            {
+                "status_code": 200,
+                "json": {"namespaces": [["default"], ["examples"], ["fokko"], ["system"]]},
+                "headers": new_header,
+            },
+        ],
+    )
+    tokens = rest_mock.post(
+        f"{TEST_URI}v1/oauth/tokens",
+        json={
+            "access_token": new_token,
+            "token_type": "Bearer",
+            "expires_in": 86400,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        },
+        status_code=200,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
+    assert catalog.list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+    assert namespaces.call_count == 2
+    assert tokens.call_count == 1
+
+    assert catalog.list_namespaces() == [
+        ("default",),
+        ("examples",),
+        ("fokko",),
+        ("system",),
+    ]
+    assert namespaces.call_count == 3
+    assert tokens.call_count == 1
+
+
 def test_create_namespace_200(rest_mock: Mocker) -> None:
     namespace = "leden"
     rest_mock.post(
