@@ -94,16 +94,9 @@ class ManifestEntryStatus(int, Enum):
 
 
 class FileFormat(str, Enum):
-    AVRO = "AVRO", "avro"
-    PARQUET = "PARQUET", "parquet"
-    ORC = "ORC", "orc"
-
-    def __new__(cls, value: str, *value_aliases: List[str]) -> "FileFormat":
-        obj = str.__new__(cls)
-        obj._value_ = value
-        for alias in value_aliases:
-            cls._value2member_map_[alias] = obj
-        return obj
+    AVRO = "AVRO"
+    PARQUET = "PARQUET"
+    ORC = "ORC"
 
     @classmethod
     def _missing_(cls, value: object) -> Union[None, str]:
