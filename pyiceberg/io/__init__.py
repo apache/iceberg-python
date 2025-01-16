@@ -48,14 +48,6 @@ from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
 
-ADLFS_CONNECTION_STRING = "adlfs.connection-string"
-ADLFS_ACCOUNT_NAME = "adlfs.account-name"
-ADLFS_ACCOUNT_KEY = "adlfs.account-key"
-ADLFS_SAS_TOKEN = "adlfs.sas-token"
-ADLFS_TENANT_ID = "adlfs.tenant-id"
-ADLFS_CLIENT_ID = "adlfs.client-id"
-ADLFS_ClIENT_SECRET = "adlfs.client-secret"
-ADLFS_PREFIX = "adlfs"
 AWS_REGION = "client.region"
 AWS_ACCESS_KEY_ID = "client.access-key-id"
 AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
@@ -94,7 +86,6 @@ GCS_CONSISTENCY = "gcs.consistency"
 GCS_CACHE_TIMEOUT = "gcs.cache-timeout"
 GCS_REQUESTER_PAYS = "gcs.requester-pays"
 GCS_SESSION_KWARGS = "gcs.session-kwargs"
-GCS_ENDPOINT = "gcs.endpoint"
 GCS_SERVICE_HOST = "gcs.service.host"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
