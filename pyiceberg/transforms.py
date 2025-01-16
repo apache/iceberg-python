@@ -198,7 +198,10 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     def _pyiceberg_transform_wrapper(
         self, transform_func: Callable[["ArrayLike", Any], "ArrayLike"], *args: Any
     ) -> Callable[["ArrayLike"], "ArrayLike"]:
-        import pyarrow as pa
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For bucket/truncate transforms, PyArrow needs to be installed") from e
 
         def _transform(array: "ArrayLike") -> "ArrayLike":
             if isinstance(array, pa.Array):
