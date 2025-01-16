@@ -3718,6 +3718,21 @@ files = [
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
+name = "pyiceberg-core"
+version = "0.4.0"
+description = ""
+optional = true
+python-versions = "*"
+files = [
+    {file = "pyiceberg_core-0.4.0-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:5aec569271c96e18428d542f9b7007117a7232c06017f95cb239d42e952ad3b4"},
+    {file = "pyiceberg_core-0.4.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5e74773e58efa4df83aba6f6265cdd41e446fa66fa4e343ca86395fed9f209ae"},
+    {file = "pyiceberg_core-0.4.0-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:7675d21a54bf3753c740d8df78ad7efe33f438096844e479d4f3493f84830925"},
+    {file = "pyiceberg_core-0.4.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7058ad935a40b1838e4cdc5febd768878c1a51f83dca005d5a52a7fa280a2489"},
+    {file = "pyiceberg_core-0.4.0-cp39-abi3-win_amd64.whl", hash = "sha256:a83eb4c2307ae3dd321a9360828fb043a4add2cc9797bef0bafa20894488fb07"},
+    {file = "pyiceberg_core-0.4.0.tar.gz", hash = "sha256:d2e6138707868477b806ed354aee9c476e437913a331cb9ad9ad46b4054cd11f"},
+]
+
+[[package]]
 name = "pyjwt"
 version = "2.10.1"
 description = "JSON Web Token implementation in Python"
@@ -5346,6 +5361,7 @@ glue = ["boto3", "mypy-boto3-glue"]
 hive = ["thrift"]
 pandas = ["pandas", "pyarrow"]
 pyarrow = ["pyarrow"]
+pyiceberg-core = ["pyiceberg-core"]
 ray = ["pandas", "pyarrow", "ray", "ray"]
 rest-sigv4 = ["boto3"]
 s3fs = ["s3fs"]
@@ -5357,4 +5373,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9, !=3.9.7"
-content-hash = "306213628bcc69346e14742843c8e6bccf19c2615886943c2e1482a954a388ec"
+content-hash = "cc789ef423714710f51e5452de7071642f4512511b1d205f77b952bb1df63a64"
