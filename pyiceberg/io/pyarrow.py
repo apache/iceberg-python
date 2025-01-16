@@ -72,10 +72,7 @@ from pyarrow.fs import (
 from sortedcontainers import SortedList
 
 from pyiceberg.conversions import to_bytes
-from pyiceberg.exceptions import (
-    ResolveError,
-    UnsupportedPyArrowTypeException,
-)
+from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
@@ -190,6 +187,14 @@ DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
+
+
+class UnsupportedPyArrowTypeException(Exception):
+    """Cannot convert PyArrow type to corresponding Iceberg type."""
+
+    def __init__(self, field: pa.Field, *args: Any):
+        self.field = field
+        super().__init__(*args)
 
 
 class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):

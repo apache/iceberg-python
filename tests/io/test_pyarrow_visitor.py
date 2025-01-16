@@ -21,7 +21,6 @@ from typing import Any
 import pyarrow as pa
 import pytest
 
-from pyiceberg.exceptions import UnsupportedPyArrowTypeException
 from pyiceberg.expressions import (
     And,
     BoundEqualTo,
@@ -34,6 +33,7 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import literal
 from pyiceberg.io.pyarrow import (
+    UnsupportedPyArrowTypeException,
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
