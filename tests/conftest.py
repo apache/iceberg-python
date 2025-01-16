@@ -955,6 +955,87 @@ TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
+TABLE_METADATA_V2_WITH_STATISTICS = {
+    "format-version": 2,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://bucket/test/location",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 3,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "x",
+                    "required": True,
+                    "type": "long",
+                }
+            ],
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": []}],
+    "last-partition-id": 1000,
+    "default-sort-order-id": 0,
+    "sort-orders": [{"order-id": 0, "fields": []}],
+    "properties": {},
+    "current-snapshot-id": 3055729675574597004,
+    "snapshots": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1515100955770,
+            "sequence-number": 0,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/1.avro",
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "parent-snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1555100955770,
+            "sequence-number": 1,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/2.avro",
+            "schema-id": 1,
+        },
+    ],
+    "statistics": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "statistics-path": "s3://a/b/stats.puffin",
+            "file-size-in-bytes": 413,
+            "file-footer-size-in-bytes": 42,
+            "blob-metadata": [
+                {
+                    "type": "apache-datasketches-theta-v1",
+                    "snapshot-id": 3051729675574597004,
+                    "sequence-number": 1,
+                    "fields": [1],
+                }
+            ],
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "statistics-path": "s3://a/b/stats.puffin",
+            "file-size-in-bytes": 413,
+            "file-footer-size-in-bytes": 42,
+            "blob-metadata": [
+                {
+                    "type": "deletion-vector-v1",
+                    "snapshot-id": 3055729675574597004,
+                    "sequence-number": 1,
+                    "fields": [1],
+                }
+            ],
+        },
+    ],
+    "snapshot-log": [],
+    "metadata-log": [],
+}
+
 
 @pytest.fixture
 def example_table_metadata_v2() -> Dict[str, Any]:
@@ -964,6 +1045,11 @@ def example_table_metadata_v2() -> Dict[str, Any]:
 @pytest.fixture
 def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
     return TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES
+
+
+@pytest.fixture
+def table_metadata_v2_with_statistics() -> Dict[str, Any]:
+    return TABLE_METADATA_V2_WITH_STATISTICS
 
 
 @pytest.fixture(scope="session")
@@ -2190,6 +2276,18 @@ def table_v2_with_fixed_and_decimal_types(
 @pytest.fixture
 def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_snapshots: Dict[str, Any]) -> Table:
     table_metadata = TableMetadataV2(**example_table_metadata_v2_with_extensive_snapshots)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.fixture
+def table_v2_with_statistics(table_metadata_v2_with_statistics: Dict[str, Any]) -> Table:
+    table_metadata = TableMetadataV2(**table_metadata_v2_with_statistics)
     return Table(
         identifier=("database", "table"),
         metadata=table_metadata,
