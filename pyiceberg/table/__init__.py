@@ -1196,8 +1196,6 @@ class Table:
             print(f"Error: {e}")
             raise e
 
-        return {}
-
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for appending a PyArrow table to the table.

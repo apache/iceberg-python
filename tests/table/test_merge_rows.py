@@ -1,6 +1,5 @@
 ## unit tests for merging rows
 
-
 from datafusion import SessionContext
 from pyiceberg.catalog.sql import SqlCatalog
 import os
