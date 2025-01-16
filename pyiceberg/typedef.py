@@ -74,8 +74,23 @@ class KeyDefaultDict(Dict[K, V]):
 
 
 Identifier = Tuple[str, ...]
+"""A tuple of strings representing a table identifier.
+
+Each string in the tuple represents a part of the table's unique path. For example,
+a table in a namespace might be identified as:
+
+    ("namespace", "table_name")
+
+Examples:
+    >>> identifier: Identifier = ("namespace", "table_name")
+"""
+
 Properties = Dict[str, Any]
+"""A dictionary type for properties in PyIceberg."""
+
+
 RecursiveDict = Dict[str, Union[str, "RecursiveDict"]]
+"""A recursive dictionary type for nested structures in PyIceberg."""
 
 # Represents the literal value
 L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, covariant=True)
