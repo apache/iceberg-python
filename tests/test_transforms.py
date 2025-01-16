@@ -1589,7 +1589,7 @@ def test_bucket_pyarrow_transforms(
 @pytest.mark.parametrize(
     "source_type, input_arr, expected, width",
     [
-        (StringType(), pa.array(["hello", "iceberg"]), pa.array(["hel", "ice"]), 3),
+        (StringType(), pa.array(["developer", "iceberg"]), pa.array(["dev", "ice"]), 3),
         (IntegerType(), pa.array([1, -1]), pa.array([0, -10]), 10),
     ],
 )
