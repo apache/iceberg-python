@@ -1109,8 +1109,6 @@ class Table:
 
         ctx = SessionContext()
 
-        
-
         #register both source and target tables so we can find the deltas to update/append
         ctx.register_dataset(source_table_name, ds.dataset(df))
         ctx.register_dataset(target_table_name, ds.dataset(self.scan().to_arrow()))
