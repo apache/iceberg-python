@@ -8,12 +8,13 @@
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -34,9 +35,23 @@ if TYPE_CHECKING:
 
 
 class InspectTable:
-    tbl: Table
+    """
+    Provides utility methods for inspecting and analyzing table metadata in Iceberg tables.
+
+    Attributes:
+        tbl (Table): The Iceberg table instance to inspect.
+    """
 
     def __init__(self, tbl: Table) -> None:
+        """
+        Initialize the InspectTable instance with a given Iceberg table.
+
+        Args:
+            tbl (Table): The Iceberg table instance to inspect.
+
+        Raises:
+            ModuleNotFoundError: If PyArrow is not installed.
+        """
         self.tbl = tbl
 
         try:
@@ -45,6 +60,18 @@ class InspectTable:
             raise ModuleNotFoundError("For metadata operations PyArrow needs to be installed") from e
 
     def _get_snapshot(self, snapshot_id: Optional[int] = None) -> Snapshot:
+        """
+        Retrieve a snapshot by ID or the current snapshot of the table.
+
+        Args:
+            snapshot_id (Optional[int]): The ID of the snapshot to retrieve. If None, retrieves the current snapshot.
+
+        Returns:
+            Snapshot: The requested snapshot.
+
+        Raises:
+            ValueError: If the snapshot ID is not found or the table has no snapshots.
+        """
         if snapshot_id is not None:
             if snapshot := self.tbl.metadata.snapshot_by_id(snapshot_id):
                 return snapshot
@@ -57,6 +84,12 @@ class InspectTable:
             raise ValueError("Cannot get a snapshot as the table does not have any.")
 
     def snapshots(self) -> "pa.Table":
+        """
+        Generate a table of all snapshots in the Iceberg table.
+
+        Returns:
+            pa.Table: A PyArrow table containing metadata for all snapshots.
+        """
         import pyarrow as pa
 
         snapshots_schema = pa.schema(
@@ -95,6 +128,15 @@ class InspectTable:
         )
 
     def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """
+        Generate a table of manifest entries for a specific snapshot.
+
+        Args:
+            snapshot_id (Optional[int]): The ID of the snapshot to retrieve entries for. If None, retrieves entries for the current snapshot.
+
+        Returns:
+            pa.Table: A PyArrow table containing manifest entries and associated metadata.
+        """
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -225,7 +267,14 @@ class InspectTable:
             schema=entries_schema,
         )
 
-    def refs(self) -> "pa.Table":
+      def refs(self) -> "pa.Table":
+        """shot ID,
+            and optional configuration parameters.
+        Retrieve references from the Iceberg table metadata as a PyArrow Table.
+
+        Returns:
+            pa.Table: A table containing reference information, including name, type, snap
+        """
         import pyarrow as pa
 
         ref_schema = pa.schema(
@@ -256,8 +305,16 @@ class InspectTable:
         return pa.Table.from_pylist(ref_results, schema=ref_schema)
 
     def partitions(self, snapshot_id: Optional[int] = None) -> "pa.Table":
-        import pyarrow as pa
+        """
+        Retrieve partition information from the Iceberg table as a PyArrow Table.
 
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to filter partitions. If not provided, all partitions are included.
+
+        Returns:
+            pa.Table: A table containing partition-level statistics and metadata.
+        """
+        import pyarrow as pa
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         table_schema = pa.schema(
@@ -294,6 +351,15 @@ class InspectTable:
             partition_record_dict: Dict[str, Any],
             snapshot: Optional[Snapshot],
         ) -> None:
+            """
+            Update the partitions map with file-level information.
+
+            Args:
+                partitions_map (dict): Mapping of partition keys to aggregated metrics.
+                file (DataFile): The data file contributing metrics.
+                partition_record_dict (dict): Partition details in dictionary format.
+                snapshot (Optional[Snapshot]): Associated snapshot for timestamp tracking.
+            """
             partition_record_key = _convert_to_hashable_type(partition_record_dict)
             if partition_record_key not in partitions_map:
                 partitions_map[partition_record_key] = {
@@ -347,9 +413,27 @@ class InspectTable:
             schema=table_schema,
         )
 
-    def _get_manifests_schema(self) -> "pa.Schema":
-        import pyarrow as pa
 
+   import pyarrow as pa
+from typing import Optional, List, Dict, Any, Set
+from datetime import datetime, timezone
+from pyiceberg.table.snapshots import MetadataLogEntry
+from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.table import Snapshot, ManifestContent, DataFileContent, PartitionSpec
+from pyiceberg.utils import from_bytes
+from executor_factory import ExecutorFactory
+
+class IcebergTableUtils:
+
+    def _get_manifests_schema(self) -> "pa.Schema":
+        """
+        Defines the schema for manifest data. This schema specifies the structure 
+        of the manifest table, including fields such as content type, file path, 
+        and partition summaries.
+
+        Returns:
+            pa.Schema: The schema of the manifest table.
+        """
         partition_summary_schema = pa.struct(
             [
                 pa.field("contains_null", pa.bool_(), nullable=False),
@@ -378,18 +462,40 @@ class InspectTable:
         return manifest_schema
 
     def _get_all_manifests_schema(self) -> "pa.Schema":
-        import pyarrow as pa
+        """
+        Extends the manifest schema by adding the reference_snapshot_id field.
 
+        Returns:
+            pa.Schema: The extended schema for all manifest tables.
+        """
         all_manifests_schema = self._get_manifests_schema()
         all_manifests_schema = all_manifests_schema.append(pa.field("reference_snapshot_id", pa.int64(), nullable=False))
         return all_manifests_schema
 
     def _generate_manifests_table(self, snapshot: Optional[Snapshot], is_all_manifests_table: bool = False) -> "pa.Table":
-        import pyarrow as pa
+        """
+        Generates a table of manifests, each with data on content, path, partition summaries, and other relevant metrics.
 
+        Args:
+            snapshot (Optional[Snapshot]): The snapshot from which the manifests are generated.
+            is_all_manifests_table (bool): Flag to indicate if all manifests, including the reference snapshot, should be included.
+
+        Returns:
+            pa.Table: The resulting manifest table.
+        """
         def _partition_summaries_to_rows(
             spec: PartitionSpec, partition_summaries: List[PartitionFieldSummary]
         ) -> List[Dict[str, Any]]:
+            """
+            Converts partition summaries into rows that match the expected schema.
+
+            Args:
+                spec (PartitionSpec): The partition specification for the table.
+                partition_summaries (List[PartitionFieldSummary]): The list of partition summaries.
+
+            Returns:
+                List[Dict[str, Any]]: List of rows containing partition summary data.
+            """
             rows = []
             for i, field_summary in enumerate(partition_summaries):
                 field = spec.fields[i]
@@ -454,13 +560,21 @@ class InspectTable:
         )
 
     def manifests(self) -> "pa.Table":
+        """
+        Retrieves the table of manifests for the current snapshot.
+
+        Returns:
+            pa.Table: The manifests table for the current snapshot.
+        """
         return self._generate_manifests_table(self.tbl.current_snapshot())
 
     def metadata_log_entries(self) -> "pa.Table":
-        import pyarrow as pa
+        """
+        Retrieves the table of metadata log entries, including timestamps, snapshot IDs, and schema IDs.
 
-        from pyiceberg.table.snapshots import MetadataLogEntry
-
+        Returns:
+            pa.Table: The metadata log entries table.
+        """
         table_schema = pa.schema(
             [
                 pa.field("timestamp", pa.timestamp(unit="ms"), nullable=False),
@@ -472,6 +586,15 @@ class InspectTable:
         )
 
         def metadata_log_entry_to_row(metadata_entry: MetadataLogEntry) -> Dict[str, Any]:
+            """
+            Converts a metadata log entry into a row format.
+
+            Args:
+                metadata_entry (MetadataLogEntry): The metadata log entry.
+
+            Returns:
+                Dict[str, Any]: A dictionary representing the metadata log entry in row format.
+            """
             latest_snapshot = self.tbl.snapshot_as_of_timestamp(metadata_entry.timestamp_ms)
             return {
                 "timestamp": metadata_entry.timestamp_ms,
@@ -481,8 +604,6 @@ class InspectTable:
                 "latest_sequence_number": latest_snapshot.sequence_number if latest_snapshot else None,
             }
 
-        # similar to MetadataLogEntriesTable in Java
-        # https://github.com/apache/iceberg/blob/8a70fe0ff5f241aec8856f8091c77fdce35ad256/core/src/main/java/org/apache/iceberg/MetadataLogEntriesTable.java#L62-L66
         metadata_log_entries = self.tbl.metadata.metadata_log + [
             MetadataLogEntry(metadata_file=self.tbl.metadata_location, timestamp_ms=self.tbl.metadata.last_updated_ms)
         ]
@@ -493,8 +614,13 @@ class InspectTable:
         )
 
     def history(self) -> "pa.Table":
-        import pyarrow as pa
+        """
+        Retrieves the history table, including made_current_at timestamp, snapshot IDs, 
+        parent snapshot IDs, and ancestor information.
 
+        Returns:
+            pa.Table: The history table.
+        """
         history_schema = pa.schema(
             [
                 pa.field("made_current_at", pa.timestamp(unit="ms"), nullable=False),
@@ -524,14 +650,29 @@ class InspectTable:
         return pa.Table.from_pylist(history, schema=history_schema)
 
     def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
-        import pyarrow as pa
+        """
+        Retrieves a table of files from a specific snapshot, optionally filtered by content type (data or delete files).
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to filter the files.
+            data_file_filter (Optional[Set[DataFileContent]]): A set of file content types to filter the files.
 
+        Returns:
+            pa.Table: The table of files from the specified snapshot.
+        """
         schema = self.tbl.metadata.schema()
         readable_metrics_struct = []
 
         def _readable_metrics_struct(bound_type: PrimitiveType) -> pa.StructType:
+            """
+            Creates a struct type for readable metrics for a specific bound type.
+
+            Args:
+                bound_type (PrimitiveType): The bound type to create readable metrics for.
+
+            Returns:
+                pa.StructType: The struct type representing the readable metrics.
+            """
             pa_bound_type = schema_to_pyarrow(bound_type)
             return pa.struct(
                 [
@@ -637,17 +778,48 @@ class InspectTable:
         )
 
     def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """
+        Retrieves a table of files from the current snapshot or the specified snapshot ID.
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to retrieve files for.
+
+        Returns:
+            pa.Table: The table of files.
+        """
         return self._files(snapshot_id)
 
     def data_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """
+        Retrieves a table of data files from the current snapshot or specified snapshot ID.
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to filter the data files.
+
+        Returns:
+            pa.Table: The table of data files.
+        """
         return self._files(snapshot_id, {DataFileContent.DATA})
 
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+        """
+        Retrieves a table of delete files from the current snapshot or specified snapshot ID.
+
+        Args:
+            snapshot_id (Optional[int]): The snapshot ID to filter the delete files.
+
+        Returns:
+            pa.Table: The table of delete files.
+        """
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
     def all_manifests(self) -> "pa.Table":
-        import pyarrow as pa
+        """
+        Retrieves a table of all manifests from all snapshots in the table.
 
+        Returns:
+            pa.Table: The table of all manifests from all snapshots.
+        """
         snapshots = self.tbl.snapshots()
         if not snapshots:
             return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
