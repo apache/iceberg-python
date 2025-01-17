@@ -81,7 +81,7 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import IdentityTransform, VoidTransform
 from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
     BinaryType,
@@ -1127,15 +1127,21 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_projection_partition_inference(tmp_path: str, catalog: InMemoryCatalog) -> None:
+def test_projection_single_partition_value(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value projection from manifest metadata.
+    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
+    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
+
     schema = Schema(
         NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
     )
 
-    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_id"))
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, IdentityTransform(), "partition_id"),
+    )
 
     table = catalog.create_table(
-        "default.test_projection_partition_inference",
+        "default.test_projection_partition",
         schema=schema,
         partition_spec=partition_spec,
         properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
@@ -1156,6 +1162,64 @@ def test_projection_partition_inference(tmp_path: str, catalog: InMemoryCatalog)
         file_path=file_loc,
         file_format=FileFormat.PARQUET,
         partition=Record(partition_id=1),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
+
+    assert (
+        str(table.scan().to_arrow())
+        == """pyarrow.Table
+other_field: large_string
+partition_id: int64
+----
+other_field: [["foo"]]
+partition_id: [[1]]"""
+    )
+
+
+def test_projection_multiple_partition_values(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value projection from manifest metadata.
+    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
+    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, VoidTransform(), "void_partition_id"),
+        PartitionField(2, 1001, IdentityTransform(), "partition_id"),
+    )
+
+    table = catalog.create_table(
+        "default.test_projection_partitions",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_data = pa.array(["foo"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        partition=Record(void_partition_id=None, partition_id=1),
         file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
         spec_id=table.metadata.default_spec_id,

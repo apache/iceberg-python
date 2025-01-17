@@ -129,6 +129,7 @@ from pyiceberg.schema import (
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
     _check_schema_compatible,
+    build_position_accessors,
     pre_order_visit,
     promote,
     prune_columns,
@@ -1219,18 +1220,25 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 def _get_column_projection_values(
     file: DataFile,
     projected_schema: Schema,
-    projected_field_ids: Set[int],
-    file_project_schema: Schema,
-    partition_spec: Optional[PartitionSpec] = None,
+    project_schema_diff: Set[int],
+    partition_spec: PartitionSpec,
 ) -> Dict[str, object]:
     """Apply Column Projection rules to File Schema."""
-    projected_missing_fields = {}
+    projected_missing_fields: Dict[str, Any] = {}
 
-    for field_id in projected_field_ids.difference(file_project_schema.field_ids):
-        if partition_spec is not None:
-            for partition_field in partition_spec.fields_by_source_id(field_id):
-                if isinstance(partition_field.transform, IdentityTransform) and partition_field.name in file.partition.__dict__:
-                    projected_missing_fields[partition_field.name] = file.partition.__dict__[partition_field.name]
+    partition_schema = partition_spec.partition_type(projected_schema)
+    accessors = build_position_accessors(partition_schema)
+
+    for field_id in project_schema_diff:
+        for partition_field in partition_spec.fields_by_source_id(field_id):
+            if isinstance(partition_field.transform, IdentityTransform):
+                accesor = accessors.get(partition_field.field_id)
+
+                if accesor is None:
+                    continue
+
+                if partition_value := accesor.get(file.partition):
+                    projected_missing_fields[partition_field.name] = partition_value
 
     return projected_missing_fields
 
@@ -1268,9 +1276,15 @@ def _task_to_record_batches(
         # https://iceberg.apache.org/spec/#column-projection
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
-        projected_missing_fields = _get_column_projection_values(
-            task.file, projected_schema, projected_field_ids, file_project_schema, partition_spec
-        )
+        project_schema_diff = projected_field_ids.difference(file_project_schema.field_ids)
+        should_project_columns = len(project_schema_diff) > 0
+
+        projected_missing_fields = {}
+
+        if should_project_columns and partition_spec is not None:
+            projected_missing_fields = _get_column_projection_values(
+                task.file, projected_schema, project_schema_diff, partition_spec
+            )
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -1319,8 +1333,9 @@ def _task_to_record_batches(
                 )
 
                 # Inject projected column values if available
-                for name, value in projected_missing_fields.items():
-                    result_batch = result_batch.set_column(result_batch.schema.get_field_index(name), name, [value])
+                if should_project_columns:
+                    for name, value in projected_missing_fields.items():
+                        result_batch = result_batch.set_column(result_batch.schema.get_field_index(name), name, [value])
 
                 yield result_batch
 
