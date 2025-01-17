@@ -42,6 +42,7 @@ from typing import (
     Generator,
     List,
     Optional,
+    Tuple,
 )
 
 import boto3
@@ -53,10 +54,13 @@ from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
+    ADLS_ACCOUNT_NAME,
+    ADLS_CONNECTION_STRING,
     GCS_PROJECT_ID,
     GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
+    FileIO,
     fsspec,
     load_file_io,
 )
@@ -90,6 +94,7 @@ from pyiceberg.utils.datetime import datetime_to_millis
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from azure.storage.blob import BlobServiceClient
     from moto.server import ThreadedMotoServer  # type: ignore
     from pyspark.sql import SparkSession
 
@@ -2077,24 +2082,54 @@ def fixture_dynamodb(_aws_credentials: None) -> Generator[boto3.client, None, No
         yield boto3.client("dynamodb", region_name="us-east-1")
 
 
-@pytest.fixture
-def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FsspecFileIO, None, None]:
-    from azure.storage.blob import BlobServiceClient
-
+def _get_account_name_and_connection_string(request: pytest.FixtureRequest) -> Tuple[str, str]:
     azurite_url = request.config.getoption("--adls.endpoint")
     azurite_account_name = request.config.getoption("--adls.account-name")
     azurite_account_key = request.config.getoption("--adls.account-key")
     azurite_connection_string = f"DefaultEndpointsProtocol=http;AccountName={azurite_account_name};AccountKey={azurite_account_key};BlobEndpoint={azurite_url}/{azurite_account_name};"
-    properties = {
-        "adls.connection-string": azurite_connection_string,
-        "adls.account-name": azurite_account_name,
-    }
+
+    return azurite_account_name, azurite_connection_string
+
+
+def _setup_blob(azurite_connection_string: str) -> "BlobServiceClient":
+    from azure.storage.blob import BlobServiceClient
 
     bbs = BlobServiceClient.from_connection_string(conn_str=azurite_connection_string)
+
+    # Recreate container if needed
+    if list(bbs.list_containers(name_starts_with="tests")):
+        bbs.delete_container("tests")
     bbs.create_container("tests")
-    yield fsspec.FsspecFileIO(properties=properties)
-    bbs.delete_container("tests")
-    bbs.close()
+
+    return bbs
+
+
+@pytest.fixture
+def adls_fsspec_fileio(request: pytest.FixtureRequest) -> Generator[FileIO, None, None]:
+    azurite_account_name, azurite_connection_string = _get_account_name_and_connection_string(request)
+
+    with _setup_blob(azurite_connection_string):
+        yield FsspecFileIO(
+            properties={
+                ADLS_CONNECTION_STRING: azurite_connection_string,
+                ADLS_ACCOUNT_NAME: azurite_account_name,
+            }
+        )
+
+
+@pytest.fixture
+def adls_pyarrow_fileio(request: pytest.FixtureRequest) -> Generator[FileIO, None, None]:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    azurite_account_name, azurite_connection_string = _get_account_name_and_connection_string(request)
+
+    with _setup_blob(azurite_connection_string):
+        yield PyArrowFileIO(
+            properties={
+                ADLS_CONNECTION_STRING: azurite_connection_string,
+                ADLS_ACCOUNT_NAME: azurite_account_name,
+            }
+        )
 
 
 @pytest.fixture(scope="session")

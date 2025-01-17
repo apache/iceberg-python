@@ -83,6 +83,8 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
+    ADLS_ACCOUNT_KEY,
+    ADLS_ACCOUNT_NAME,
     AWS_ACCESS_KEY_ID,
     AWS_REGION,
     AWS_ROLE_ARN,
@@ -366,6 +368,9 @@ class PyArrowFileIO(FileIO):
         elif scheme in {"file"}:
             return self._initialize_local_fs()
 
+        elif scheme in {"abfs", "abfss"}:
+            return self._initialize_adls_fs()
+
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
@@ -475,6 +480,14 @@ class PyArrowFileIO(FileIO):
             gcs_kwargs["endpoint_override"] = url_parts.netloc
 
         return GcsFileSystem(**gcs_kwargs)
+
+    def _initialize_adls_fs(self) -> FileSystem:
+        from pyarrow.fs import AzureFileSystem
+
+        return AzureFileSystem(
+            account_name=self.properties.get(ADLS_ACCOUNT_NAME),
+            account_key=self.properties.get(ADLS_ACCOUNT_KEY),
+        )
 
     def _initialize_local_fs(self) -> FileSystem:
         return PyArrowLocalFileSystem()
