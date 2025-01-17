@@ -829,3 +829,4 @@ class IcebergTableUtils:
             lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
         )
         return pa.concat_tables(manifests_by_snapshots)
+
