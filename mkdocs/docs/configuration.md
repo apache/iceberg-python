@@ -54,17 +54,18 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-***TODO:*** Add LocationProvider-related properties here.
-
-| Key                                    | Options                           | Default | Description                                                                                 |
-| -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
-| `write.parquet.compression-level`      | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                  |
-| `write.parquet.row-group-limit`        | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                          |
-| `write.parquet.page-size-bytes`        | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk |
-| `write.parquet.page-row-limit`         | Number of rows                    | 20000   | Set a target threshold for the maximum number of rows within a column chunk                 |
-| `write.parquet.dict-size-bytes`        | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                            |
-| `write.metadata.previous-versions-max` | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.     |
+| Key                                      | Options                           | Default | Description                                                                                                                         |
+|------------------------------------------|-----------------------------------|---------|-------------------------------------------------------------------------------------------------------------------------------------|
+| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                                                                |
+| `write.parquet.compression-level`        | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                          |
+| `write.parquet.row-group-limit`          | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                                                                  |
+| `write.parquet.page-size-bytes`          | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk                                         |
+| `write.parquet.page-row-limit`           | Number of rows                    | 20000   | Set a target threshold for the maximum number of rows within a column chunk                                                         |
+| `write.parquet.dict-size-bytes`          | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                                                                    |
+| `write.metadata.previous-versions-max`   | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.                                             |
+| `write.object-storage.enabled`           | Boolean                           | True    | Enables the [ObjectStoreLocationProvider](configuration.md#objectstorelocationprovider) that adds a hash component to file paths    |
+| `write.object-storage.partitioned-paths` | Boolean                           | True    | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled |
+| `write.py-location-provider.impl`        | String of form `module.ClassName` | null    | Optional, [custom LocationProvider](configuration.md#loading-a-custom-locationprovider) implementation                              |
 
 ### Table behavior options
 
@@ -210,7 +211,7 @@ The SimpleLocationProvider places file names underneath a `data` directory in th
 a non-partitioned table might have a data file with location:
 
 ```txt
-s3://my-bucket/my_table/data/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+s3://bucket/ns/table/data/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
 When data is partitioned, the files under a given partition are grouped into a subdirectory, with that partition key
@@ -218,7 +219,7 @@ and value as the directory name. For example, a table partitioned over a string 
 with location:
 
 ```txt
-s3://my-bucket/my_table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+s3://bucket/ns/table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
 The SimpleLocationProvider is enabled for a table by explicitly setting its `write.object-storage.enabled` table property to `false`.
@@ -231,28 +232,50 @@ resulting in slowdowns.
 The ObjectStoreLocationProvider counteracts this by injecting deterministic hashes, in the form of binary directories,
 into file paths, to distribute files across a larger number of object store prefixes.
 
-Partitions are included in file paths just before the file name, in a similar manner to the [SimpleLocationProvider](configuration.md#simplelocationprovider).
-A table partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
+Paths contain partitions just before the file name, and a `data` directory beneath the table's location, in a similar
+manner to the [SimpleLocationProvider](configuration.md#simplelocationprovider). For example, a table partitioned over a string
+column `category` might have a data file with location: (note the additional binary directories)
 
 ```txt
-s3://my-bucket/my_table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+s3://bucket/ns/table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
 The `write.object-storage.enabled` table property determines whether the ObjectStoreLocationProvider is enabled for a
 table. It is used by default.
 
+#### Partition Exclusion
+
 When the ObjectStoreLocationProvider is used, the table property `write.object-storage.partitioned-paths`, which
-defaults to `true`, can be set to `false` as an additional optimisation. This omits partition keys and values from data
+defaults to `true`, can be set to `false` as an additional optimisation for object stores. This omits partition keys and values from data
 file paths *entirely* to further reduce key size. With it disabled, the same data file above would instead be written
 to: (note the absence of `category=orders`)
 
 ```txt
-s3://my-bucket/my_table/data/1101/0100/1011/00111010-00000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+s3://bucket/ns/table/data/1101/0100/1011/00111010-00000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
 ### Loading a Custom LocationProvider
 
-***TODO***. Maybe link to code reference for LocationProvider?
+Similar to FileIO, a custom LocationProvider may be provided for a table by concretely subclassing the abstract base
+class [LocationProvider](../reference/pyiceberg/table/locations/#pyiceberg.table.locations.LocationProvider). The
+table property `write.py-location-provider.impl` should be set to the fully-qualified name of the custom
+LocationProvider (i.e. `module.CustomLocationProvider`). Recall that a LocationProvider is configured per-table,
+permitting different location provision for different tables.
+
+An example, custom `LocationProvider` implementation is shown below.
+
+```py
+import uuid
+
+class UUIDLocationProvider(LocationProvider):
+    def __init__(self, table_location: str, table_properties: Properties):
+        super().__init__(table_location, table_properties)
+
+    def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
+        # Can use any custom method to generate a file path given the partitioning information and file name
+        prefix = f"{self.table_location}/{uuid.uuid4()}"
+        return f"{prefix}/{partition_key.to_path()}/{data_file_name}" if partition_key else f"{prefix}/{data_file_name}"
+```
 
 ## Catalogs
 
