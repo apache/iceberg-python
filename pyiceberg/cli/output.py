@@ -112,8 +112,7 @@ class ConsoleOutput(Output):
 
         snapshot_tree = Tree("Snapshots")
         for snapshot in metadata.snapshots:
-            manifest_list_str = f": {snapshot.manifest_list}" if snapshot.manifest_list else ""
-            snapshot_tree.add(f"Snapshot {snapshot.snapshot_id}, schema {snapshot.schema_id}{manifest_list_str}")
+            snapshot_tree.add(f"Snapshot {snapshot.snapshot_id}, schema {snapshot.schema_id}: {snapshot.manifest_list}")
 
         output_table = self._table
         output_table.add_row("Table format version", str(metadata.format_version))
@@ -141,8 +140,9 @@ class ConsoleOutput(Output):
         io = table.io
 
         for snapshot in snapshots:
-            manifest_list_str = f": {snapshot.manifest_list}" if snapshot.manifest_list else ""
-            list_tree = snapshot_tree.add(f"Snapshot {snapshot.snapshot_id}, schema {snapshot.schema_id}{manifest_list_str}")
+            list_tree = snapshot_tree.add(
+                f"Snapshot {snapshot.snapshot_id}, schema {snapshot.schema_id}: {snapshot.manifest_list}"
+            )
 
             manifest_list = snapshot.manifests(io)
             for manifest in manifest_list:
@@ -242,8 +242,10 @@ class JsonOutput(Output):
         self._out({"version": version})
 
     def describe_refs(self, refs: List[Tuple[str, SnapshotRefType, Dict[str, str]]]) -> None:
-        self._out([
-            {"name": name, "type": type, detail_key: detail_val}
-            for name, type, detail in refs
-            for detail_key, detail_val in detail.items()
-        ])
+        self._out(
+            [
+                {"name": name, "type": type, detail_key: detail_val}
+                for name, type, detail in refs
+                for detail_key, detail_val in detail.items()
+            ]
+        )

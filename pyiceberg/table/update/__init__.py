@@ -36,6 +36,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import SortOrder
+from pyiceberg.table.statistics import StatisticsFile, filter_statistics_by_snapshot_id
 from pyiceberg.typedef import (
     IcebergBaseModel,
     Properties,
@@ -98,14 +99,6 @@ class AddSchemaUpdate(IcebergBaseModel):
         ),
     )
 
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
-
 
 class SetCurrentSchemaUpdate(IcebergBaseModel):
     action: Literal["set-current-schema"] = Field(default="set-current-schema")
@@ -118,14 +111,6 @@ class AddPartitionSpecUpdate(IcebergBaseModel):
     action: Literal["add-spec"] = Field(default="add-spec")
     spec: PartitionSpec
 
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
-
 
 class SetDefaultSpecUpdate(IcebergBaseModel):
     action: Literal["set-default-spec"] = Field(default="set-default-spec")
@@ -137,14 +122,6 @@ class SetDefaultSpecUpdate(IcebergBaseModel):
 class AddSortOrderUpdate(IcebergBaseModel):
     action: Literal["add-sort-order"] = Field(default="add-sort-order")
     sort_order: SortOrder = Field(alias="sort-order")
-
-    initial_change: bool = Field(
-        default=False,
-        exclude=True,
-        deprecated=deprecation_notice(
-            deprecated_in="0.8.0", removed_in="0.9.0", help_message="CreateTableTransaction can work without this field"
-        ),
-    )
 
 
 class SetDefaultSortOrderUpdate(IcebergBaseModel):
@@ -198,6 +175,17 @@ class RemovePropertiesUpdate(IcebergBaseModel):
     removals: List[str]
 
 
+class SetStatisticsUpdate(IcebergBaseModel):
+    action: Literal["set-statistics"] = Field(default="set-statistics")
+    snapshot_id: int = Field(alias="snapshot-id")
+    statistics: StatisticsFile
+
+
+class RemoveStatisticsUpdate(IcebergBaseModel):
+    action: Literal["remove-statistics"] = Field(default="remove-statistics")
+    snapshot_id: int = Field(alias="snapshot-id")
+
+
 TableUpdate = Annotated[
     Union[
         AssignUUIDUpdate,
@@ -215,6 +203,8 @@ TableUpdate = Annotated[
         SetLocationUpdate,
         SetPropertiesUpdate,
         RemovePropertiesUpdate,
+        SetStatisticsUpdate,
+        RemoveStatisticsUpdate,
     ],
     Field(discriminator="action"),
 ]
@@ -497,6 +487,28 @@ def _(
 
     context.add_update(update)
     return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
+
+
+@_apply_table_update.register(SetStatisticsUpdate)
+def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.snapshot_id != update.statistics.snapshot_id:
+        raise ValueError("Snapshot id in statistics does not match the snapshot id in the update")
+
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})
+
+
+@_apply_table_update.register(RemoveStatisticsUpdate)
+def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if not any(stat.snapshot_id == update.snapshot_id for stat in base_metadata.statistics):
+        raise ValueError(f"Statistics with snapshot id {update.snapshot_id} does not exist")
+
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"statistics": statistics})
 
 
 def update_table_metadata(

@@ -31,15 +31,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install poetry
+        run: make install-poetry
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install
-        working-directory: ./mkdocs
-        run: pip install -r requirements.txt
-      - name: Build
-        working-directory: ./mkdocs
-        run: mkdocs build --strict
+      - name: Install docs
+        run: make docs-install
+      - name: Build docs
+        run: make docs-build
       - name: Copy
         working-directory: ./mkdocs
         run: mv ./site /tmp/site

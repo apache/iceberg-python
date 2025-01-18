@@ -70,7 +70,8 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
+from pyiceberg.utils.deprecated import deprecated as deprecated
+from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -641,44 +642,6 @@ class Catalog(ABC):
             NoSuchViewError: If a view with the given name does not exist.
         """
 
-    @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
-    )
-    def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
-        """Convert an identifier to a tuple and drop this catalog's name from the first element.
-
-        Args:
-            identifier (str | Identifier): Table identifier.
-
-        Returns:
-            Identifier: a tuple of strings with this catalog's name removed
-        """
-        identifier_tuple = Catalog.identifier_to_tuple(identifier)
-        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
-            identifier_tuple = identifier_tuple[1:]
-        return identifier_tuple
-
-    def _identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
-        """Convert an identifier to a tuple and drop this catalog's name from the first element.
-
-        Args:
-            identifier (str | Identifier): Table identifier.
-
-        Returns:
-            Identifier: a tuple of strings with this catalog's name removed
-        """
-        identifier_tuple = Catalog.identifier_to_tuple(identifier)
-        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
-            )
-            identifier_tuple = identifier_tuple[1:]
-        return identifier_tuple
-
     @staticmethod
     def identifier_to_tuple(identifier: Union[str, Identifier]) -> Identifier:
         """Parse an identifier to a tuple.
@@ -820,17 +783,15 @@ class MetastoreCatalog(Catalog, ABC):
             return False
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        table = self.load_table(identifier_tuple)
-        self.drop_table(identifier_tuple)
+        table = self.load_table(identifier)
+        self.drop_table(identifier)
         io = load_file_io(self.properties, table.metadata_location)
         metadata = table.metadata
         manifest_lists_to_delete = set()
         manifests_to_delete: List[ManifestFile] = []
         for snapshot in metadata.snapshots:
             manifests_to_delete += snapshot.manifests(io)
-            if snapshot.manifest_list is not None:
-                manifest_lists_to_delete.add(snapshot.manifest_list)
+            manifest_lists_to_delete.add(snapshot.manifest_list)
 
         manifest_paths_to_delete = {manifest.manifest_path for manifest in manifests_to_delete}
         prev_metadata_files = {log.metadata_file for log in metadata.metadata_log}

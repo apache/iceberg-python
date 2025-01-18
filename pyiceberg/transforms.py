@@ -85,6 +85,8 @@ from pyiceberg.utils.singleton import Singleton
 if TYPE_CHECKING:
     import pyarrow as pa
 
+    ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)
+
 S = TypeVar("S")
 T = TypeVar("T")
 
@@ -192,6 +194,27 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
 
     @abstractmethod
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
+
+    def _pyiceberg_transform_wrapper(
+        self, transform_func: Callable[["ArrayLike", Any], "ArrayLike"], *args: Any
+    ) -> Callable[["ArrayLike"], "ArrayLike"]:
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For bucket/truncate transforms, PyArrow needs to be installed") from e
+
+        def _transform(array: "ArrayLike") -> "ArrayLike":
+            if isinstance(array, pa.Array):
+                return transform_func(array, *args)
+            elif isinstance(array, pa.ChunkedArray):
+                result_chunks = []
+                for arr in array.iterchunks():
+                    result_chunks.append(transform_func(arr, *args))
+                return pa.chunked_array(result_chunks)
+            else:
+                raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
+
+        return _transform
 
 
 class BucketTransform(Transform[S, int]):
@@ -309,7 +332,13 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 class TimeResolution(IntEnum):
@@ -827,7 +856,13 @@ class TruncateTransform(Transform[S, S]):
         return f"TruncateTransform(width={self._width})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 @singledispatch
@@ -985,7 +1020,7 @@ def _truncate_number_strict(
     elif isinstance(pred, BoundGreaterThanOrEqual):
         return GreaterThan(Reference(name), _transform_literal(transform, boundary.decrement()))  # type: ignore
     elif isinstance(pred, BoundNotEqualTo):
-        return EqualTo(Reference(name), _transform_literal(transform, boundary))
+        return NotEqualTo(Reference(name), _transform_literal(transform, boundary))
     elif isinstance(pred, BoundEqualTo):
         # there is no predicate that guarantees equality because adjacent longs transform to the
         # same value

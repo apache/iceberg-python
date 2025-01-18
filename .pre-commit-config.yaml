@@ -23,31 +23,23 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
-      - id: check-docstring-first
       - id: debug-statements
       - id: check-yaml
       - id: check-ast
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version (Used for linting)
-    rev: v0.7.4
+    rev: v0.8.6
     hooks:
       - id: ruff
-        args: [ --fix, --exit-non-zero-on-fix, --preview ]
+        args: [ --fix, --exit-non-zero-on-fix ]
       - id: ruff-format
-        args: [ --preview ]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v1.14.1
     hooks:
       - id: mypy
         args:
           [--install-types, --non-interactive, --config=pyproject.toml]
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v2.4.0
-    hooks:
-      - id: pycln
-        args: [--config=pyproject.toml]
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.42.0
+    rev: v0.43.0
     hooks:
       - id: markdownlint
         args: ["--fix"]
@@ -69,6 +61,10 @@ repos:
           # --line-length is set to a high value to deal with very long lines
           - --line-length
           - '99999'
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
 ci:
     autofix_commit_msg: |
         [pre-commit.ci] auto fixes from pre-commit.com hooks

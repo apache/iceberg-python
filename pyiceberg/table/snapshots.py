@@ -239,9 +239,7 @@ class Snapshot(IcebergBaseModel):
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
     sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
-    manifest_list: Optional[str] = Field(
-        alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
-    )
+    manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
 
@@ -255,9 +253,7 @@ class Snapshot(IcebergBaseModel):
 
     def manifests(self, io: FileIO) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
-        if self.manifest_list:
-            return list(_manifests(io, self.manifest_list))
-        return []
+        return list(_manifests(io, self.manifest_list))
 
 
 class MetadataLogEntry(IcebergBaseModel):
