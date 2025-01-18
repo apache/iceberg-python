@@ -1072,8 +1072,13 @@ Using `add_column` you can add a column, without having to worry about the field
 with table.update_schema() as update:
     update.add_column("retries", IntegerType(), "Number of retries to place the bid")
     # In a struct
-    update.add_column("details.confirmed_by", StringType(), "Name of the exchange")
+    update.add_column("details", StructType())
+
+with table.update_schema() as update:
+    update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
 ```
+
+A complex type must exist before columns can be added to it. Fields in complex types are added in a tuple.
 
 ### Rename column
 
@@ -1082,20 +1087,21 @@ Renaming a field in an Iceberg table is simple:
 ```python
 with table.update_schema() as update:
     update.rename_column("retries", "num_retries")
-    # This will rename `confirmed_by` to `exchange`
-    update.rename_column("properties.confirmed_by", "exchange")
+    # This will rename `confirmed_by` to `processed_by` in the `details` struct
+    update.rename_column(("details", "confirmed_by"), "processed_by")
 ```
 
 ### Move column
 
-Move a field inside of struct:
+Move order of fields:
 
 ```python
 with table.update_schema() as update:
     update.move_first("symbol")
+    # This will move `bid` after `ask`
     update.move_after("bid", "ask")
-    # This will move `confirmed_by` before `exchange`
-    update.move_before("details.created_by", "details.exchange")
+    # This will move `confirmed_by` before `exchange` in the `details` struct
+    update.move_before(("details", "confirmed_by"), ("details", "exchange"))
 ```
 
 ### Update column
@@ -1127,6 +1133,8 @@ Delete a field, careful this is a incompatible change (readers/writers might exp
 ```python
 with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
+    # In a struct
+    update.delete_column(("details", "confirmed_by"))
 ```
 
 ## Partition evolution
@@ -1248,6 +1256,29 @@ You can also use context managers to make more changes:
 ```python
 with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
+```
+
+## Table Statistics Management
+
+Manage table statistics with operations through the `Table` API:
+
+```python
+# To run a specific operation
+table.update_statistics().set_statistics(snapshot_id=1, statistics_file=statistics_file).commit()
+# To run multiple operations
+table.update_statistics()
+  .set_statistics(snapshot_id1, statistics_file1)
+  .remove_statistics(snapshot_id2)
+  .commit()
+# Operations are applied on commit.
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.update_statistics() as update:
+    update.set_statistics(snaphsot_id1, statistics_file)
+    update.remove_statistics(snapshot_id2)
 ```
 
 ## Query the data

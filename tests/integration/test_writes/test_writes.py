@@ -286,6 +286,33 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_object_storage_data_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier="default.object_stored",
+        properties={"format-version": format_version, TableProperties.OBJECT_STORE_ENABLED: True},
+        data=[arrow_table_with_null],
+    )
+    tbl.append(arrow_table_with_null)
+
+    paths = tbl.inspect.data_files().to_pydict()["file_path"]
+    assert len(paths) == 2
+
+    for location in paths:
+        assert location.startswith("s3://warehouse/default/object_stored/data/")
+        parts = location.split("/")
+        assert len(parts) == 11
+
+        # Entropy binary directories should have been injected
+        for dir_name in parts[6:10]:
+            assert dir_name
+            assert all(c in "01" for c in dir_name)
+
+
+@pytest.mark.integration
 def test_python_writes_with_spark_snapshot_reads(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
 ) -> None:
