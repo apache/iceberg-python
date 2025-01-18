@@ -54,6 +54,8 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
+***TODO:*** Add LocationProvider-related properties here.
+
 | Key                                    | Options                           | Default | Description                                                                                 |
 | -------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
 | `write.parquet.compression-codec`      | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                        |
@@ -194,6 +196,63 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | pyarrow.use-large-types-on-read | True    | Use large PyArrow types i.e. [large_string](https://arrow.apache.org/docs/python/generated/pyarrow.large_string.html), [large_binary](https://arrow.apache.org/docs/python/generated/pyarrow.large_binary.html) and [large_list](https://arrow.apache.org/docs/python/generated/pyarrow.large_list.html) field types on table scans. The default value is True. |
 
 <!-- markdown-link-check-enable-->
+
+## Location Providers
+
+Iceberg works with the concept of a LocationProvider that determines the file paths for a table's data. PyIceberg
+introduces a pluggable LocationProvider module; the LocationProvider used may be specified on a per-table basis via
+table properties. PyIceberg defaults to the [ObjectStoreLocationProvider](configuration.md#objectstorelocationprovider),
+which generates file paths that are optimised for object storage.
+
+### SimpleLocationProvider
+
+The SimpleLocationProvider places file names underneath a `data` directory in the table's storage location. For example,
+a non-partitioned table might have a data file with location:
+
+```txt
+s3://my-bucket/my_table/data/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+When data is partitioned, the files under a given partition are grouped into a subdirectory, with that partition key
+and value as the directory name. For example, a table partitioned over a string column `category` might have a data file
+with location:
+
+```txt
+s3://my-bucket/my_table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+The SimpleLocationProvider is enabled for a table by explicitly setting its `write.object-storage.enabled` table property to `false`.
+
+### ObjectStoreLocationProvider
+
+When several files are stored under the same prefix, cloud object stores such as S3 often [throttling requests on prefixes](https://repost.aws/knowledge-center/http-5xx-errors-s3),
+resulting in slowdowns.
+
+The ObjectStoreLocationProvider counteracts this by injecting deterministic hashes, in the form of binary directories,
+into file paths, to distribute files across a larger number of object store prefixes.
+
+Partitions are included in file paths just before the file name, in a similar manner to the [SimpleLocationProvider](configuration.md#simplelocationprovider).
+A table partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
+
+```txt
+s3://my-bucket/my_table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+The `write.object-storage.enabled` table property determines whether the ObjectStoreLocationProvider is enabled for a
+table. It is used by default.
+
+When the ObjectStoreLocationProvider is used, the table property `write.object-storage.partitioned-paths`, which
+defaults to `true`, can be set to `false` as an additional optimisation. This omits partition keys and values from data
+file paths *entirely* to further reduce key size. With it disabled, the same data file above would instead be written
+to: (note the absence of `category=orders`)
+
+```txt
+s3://my-bucket/my_table/data/1101/0100/1011/00111010-00000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
+```
+
+### Loading a Custom LocationProvider
+
+***TODO***. Maybe link to code reference for LocationProvider?
 
 ## Catalogs
 
