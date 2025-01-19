@@ -200,10 +200,10 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 ## Location Providers
 
-Iceberg works with the concept of a LocationProvider that determines the file paths for a table's data. PyIceberg
+Iceberg works with the concept of a LocationProvider that determines file paths for a table's data. PyIceberg
 introduces a pluggable LocationProvider module; the LocationProvider used may be specified on a per-table basis via
 table properties. PyIceberg defaults to the [ObjectStoreLocationProvider](configuration.md#objectstorelocationprovider),
-which generates file paths that are optimised for object storage.
+which generates file paths that are optimized for object storage.
 
 ### SimpleLocationProvider
 
@@ -214,7 +214,7 @@ a non-partitioned table might have a data file with location:
 s3://bucket/ns/table/data/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
-When data is partitioned, the files under a given partition are grouped into a subdirectory, with that partition key
+When data is partitioned, files under a given partition are grouped into a subdirectory, with that partition key
 and value as the directory name. For example, a table partitioned over a string column `category` might have a data file
 with location:
 
@@ -222,17 +222,18 @@ with location:
 s3://bucket/ns/table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
-The SimpleLocationProvider is enabled for a table by explicitly setting its `write.object-storage.enabled` table property to `false`.
+The SimpleLocationProvider is enabled for a table by explicitly setting its `write.object-storage.enabled` table
+property to `False`.
 
 ### ObjectStoreLocationProvider
 
-When several files are stored under the same prefix, cloud object stores such as S3 often [throttling requests on prefixes](https://repost.aws/knowledge-center/http-5xx-errors-s3),
+When several files are stored under the same prefix, cloud object stores such as S3 often [throttle requests on prefixes](https://repost.aws/knowledge-center/http-5xx-errors-s3),
 resulting in slowdowns.
 
 The ObjectStoreLocationProvider counteracts this by injecting deterministic hashes, in the form of binary directories,
 into file paths, to distribute files across a larger number of object store prefixes.
 
-Paths contain partitions just before the file name, and a `data` directory beneath the table's location, in a similar
+Paths contain partitions just before the file name and a `data` directory beneath the table's location, in a similar
 manner to the [SimpleLocationProvider](configuration.md#simplelocationprovider). For example, a table partitioned over a string
 column `category` might have a data file with location: (note the additional binary directories)
 
@@ -246,9 +247,9 @@ table. It is used by default.
 #### Partition Exclusion
 
 When the ObjectStoreLocationProvider is used, the table property `write.object-storage.partitioned-paths`, which
-defaults to `true`, can be set to `false` as an additional optimisation for object stores. This omits partition keys and values from data
-file paths *entirely* to further reduce key size. With it disabled, the same data file above would instead be written
-to: (note the absence of `category=orders`)
+defaults to `True`, can be set to `False` as an additional optimization for object stores. This omits partition keys and
+values from data file paths *entirely* to further reduce key size. With it disabled, the same data file above would
+instead be written to: (note the absence of `category=orders`)
 
 ```txt
 s3://bucket/ns/table/data/1101/0100/1011/00111010-00000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
