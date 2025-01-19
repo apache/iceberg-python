@@ -917,15 +917,14 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the view exists, False otherwise.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
         response = self._session.head(
             self.url(
-                Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier_tuple, IdentifierKind.VIEW)
+                Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
             ),
         )
         if response.status_code == 404:
             return False
-        elif response.status_code == 204:
+        elif response.status_code in [200, 204]:
             return True
 
         try:
