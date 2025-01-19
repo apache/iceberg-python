@@ -143,8 +143,11 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
 
+        if not isinstance(new_schema, Schema):
+            new_schema: Schema = Catalog._convert_to_iceberg_schema(new_schema)  # type: ignore
+
         visit_with_partner(
-            Catalog._convert_schema_if_needed(new_schema),
+            new_schema,
             -1,
             _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
             # type: ignore

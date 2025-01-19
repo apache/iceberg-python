@@ -340,6 +340,7 @@ class Catalog(ABC):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> Table:
         """Create a table.
 
@@ -350,6 +351,7 @@ class Catalog(ABC):
             partition_spec (PartitionSpec): PartitionSpec for the table.
             sort_order (SortOrder): SortOrder for the table.
             properties (Properties): Table properties that can be a string based dictionary.
+            assign_fresh_ids (bool): flag to assign new field IDs, defaults to True.
 
         Returns:
             Table: the created table instance.
@@ -367,6 +369,7 @@ class Catalog(ABC):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> CreateTableTransaction:
         """Create a CreateTableTransaction.
 
@@ -377,6 +380,7 @@ class Catalog(ABC):
             partition_spec (PartitionSpec): PartitionSpec for the table.
             sort_order (SortOrder): SortOrder for the table.
             properties (Properties): Table properties that can be a string based dictionary.
+            assign_fresh_ids (bool): flag to assign new field IDs, defaults to True.
 
         Returns:
             CreateTableTransaction: createTableTransaction instance.
@@ -390,6 +394,7 @@ class Catalog(ABC):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> Table:
         """Create a table if it does not exist.
 
@@ -400,13 +405,14 @@ class Catalog(ABC):
             partition_spec (PartitionSpec): PartitionSpec for the table.
             sort_order (SortOrder): SortOrder for the table.
             properties (Properties): Table properties that can be a string based dictionary.
+            assign_fresh_ids (bool): flag to assign new field IDs, defaults to True.
 
         Returns:
             Table: the created table instance if the table does not exist, else the existing
             table instance.
         """
         try:
-            return self.create_table(identifier, schema, location, partition_spec, sort_order, properties)
+            return self.create_table(identifier, schema, location, partition_spec, sort_order, properties, assign_fresh_ids)
         except TableAlreadyExistsError:
             return self.load_table(identifier)
 
@@ -717,9 +723,7 @@ class Catalog(ABC):
         return load_file_io({**self.properties, **properties}, location)
 
     @staticmethod
-    def _convert_schema_if_needed(schema: Union[Schema, "pa.Schema"]) -> Schema:
-        if isinstance(schema, Schema):
-            return schema
+    def _convert_to_iceberg_schema(schema: "pa.Schema") -> Schema:
         try:
             import pyarrow as pa
 
@@ -759,9 +763,10 @@ class MetastoreCatalog(Catalog, ABC):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> CreateTableTransaction:
         return CreateTableTransaction(
-            self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
+            self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties, assign_fresh_ids)
         )
 
     def table_exists(self, identifier: Union[str, Identifier]) -> bool:
@@ -799,6 +804,7 @@ class MetastoreCatalog(Catalog, ABC):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> StagedTable:
         """Create a table and return the table instance without committing the changes.
 
@@ -809,18 +815,26 @@ class MetastoreCatalog(Catalog, ABC):
             partition_spec (PartitionSpec): PartitionSpec for the table.
             sort_order (SortOrder): SortOrder for the table.
             properties (Properties): Table properties that can be a string based dictionary.
+            assign_fresh_ids (bool): flag to assign new field IDs, defaults to True.
 
         Returns:
             StagedTable: the created staged table instance.
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        if not isinstance(schema, Schema):
+            schema: Schema = self._convert_to_iceberg_schema(schema)  # type: ignore
+            assign_fresh_ids = True
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
         metadata_location = self._get_metadata_location(location=location)
         metadata = new_table_metadata(
-            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
+            location=location,
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+            assign_fresh_ids=assign_fresh_ids,
         )
         io = self._load_file_io(properties=properties, location=metadata_location)
         return StagedTable(

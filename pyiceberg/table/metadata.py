@@ -526,12 +526,15 @@ def new_table_metadata(
     location: str,
     properties: Properties = EMPTY_DICT,
     table_uuid: Optional[uuid.UUID] = None,
+    assign_fresh_ids: bool = True,
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 
-    fresh_schema = assign_fresh_schema_ids(schema)
-    fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
-    fresh_sort_order = assign_fresh_sort_order_ids(sort_order, schema, fresh_schema)
+    if assign_fresh_ids:
+        fresh_schema = assign_fresh_schema_ids(schema)
+        partition_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
+        sort_order = assign_fresh_sort_order_ids(sort_order, schema, fresh_schema)
+        schema = fresh_schema
 
     if table_uuid is None:
         table_uuid = uuid.uuid4()
@@ -541,30 +544,30 @@ def new_table_metadata(
     if format_version == 1:
         return TableMetadataV1(
             location=location,
-            last_column_id=fresh_schema.highest_field_id,
-            current_schema_id=fresh_schema.schema_id,
-            schema=fresh_schema,
-            partition_spec=[field.model_dump() for field in fresh_partition_spec.fields],
-            partition_specs=[fresh_partition_spec],
-            default_spec_id=fresh_partition_spec.spec_id,
-            sort_orders=[fresh_sort_order],
-            default_sort_order_id=fresh_sort_order.order_id,
+            last_column_id=schema.highest_field_id,
+            current_schema_id=schema.schema_id,
+            schema=schema,
+            partition_spec=[field.model_dump() for field in partition_spec.fields],
+            partition_specs=[partition_spec],
+            default_spec_id=partition_spec.spec_id,
+            sort_orders=[sort_order],
+            default_sort_order_id=sort_order.order_id,
             properties=properties,
-            last_partition_id=fresh_partition_spec.last_assigned_field_id,
+            last_partition_id=partition_spec.last_assigned_field_id,
             table_uuid=table_uuid,
         )
 
     return TableMetadataV2(
         location=location,
-        schemas=[fresh_schema],
-        last_column_id=fresh_schema.highest_field_id,
-        current_schema_id=fresh_schema.schema_id,
-        partition_specs=[fresh_partition_spec],
-        default_spec_id=fresh_partition_spec.spec_id,
-        sort_orders=[fresh_sort_order],
-        default_sort_order_id=fresh_sort_order.order_id,
+        schemas=[schema],
+        last_column_id=schema.highest_field_id,
+        current_schema_id=schema.schema_id,
+        partition_specs=[partition_spec],
+        default_spec_id=partition_spec.spec_id,
+        sort_orders=[sort_order],
+        default_sort_order_id=sort_order.order_id,
         properties=properties,
-        last_partition_id=fresh_partition_spec.last_assigned_field_id,
+        last_partition_id=partition_spec.last_assigned_field_id,
         table_uuid=table_uuid,
     )
 

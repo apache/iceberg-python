@@ -20,13 +20,12 @@ import pytest
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError, ValidationError
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema, prune_columns
 from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.name_mapping import MappedField, NameMapping, create_mapping_from_schema
-from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.sorting import SortOrder
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -2532,29 +2531,56 @@ def test_two_add_schemas_in_a_single_transaction(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-def test_create_table_integrity_after_fresh_assignment(catalog: Catalog) -> None:
-    schema = Schema(
-        NestedField(field_id=5, name="col_uuid", field_type=UUIDType(), required=False),
-        NestedField(field_id=4, name="col_fixed", field_type=FixedType(25), required=False),
-    )
-    partition_spec = PartitionSpec(
-        PartitionField(source_id=5, field_id=1000, transform=IdentityTransform(), name="col_uuid"), spec_id=0
-    )
-    sort_order = SortOrder(SortField(source_id=4, transform=IdentityTransform()))
+def test_create_table_integrity_after_fresh_assignment(
+    catalog: Catalog,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+    iceberg_schema_with_fresh_ids: Schema,
+    partition_spec_with_fresh_ids: PartitionSpec,
+    sort_order_with_fresh_ids: SortOrder,
+) -> None:
     tbl_name = "default.test_create_integrity"
     try:
         catalog.drop_table(tbl_name)
     except NoSuchTableError:
         pass
-    tbl = catalog.create_table(identifier=tbl_name, schema=schema, partition_spec=partition_spec, sort_order=sort_order)
-    expected_schema = Schema(
-        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
-        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+    tbl = catalog.create_table(
+        identifier=tbl_name,
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
     )
-    expected_spec = PartitionSpec(
-        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="col_uuid"), spec_id=0
+    assert tbl.schema() == iceberg_schema_with_fresh_ids
+    assert tbl.spec() == partition_spec_with_fresh_ids
+    assert tbl.sort_order() == sort_order_with_fresh_ids
+
+
+@pytest.mark.integration
+def test_create_table_integrity_without_fresh_assignment(
+    catalog: Catalog,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+    iceberg_schema_with_fresh_ids: Schema,
+    partition_spec_with_fresh_ids: PartitionSpec,
+    sort_order_with_fresh_ids: SortOrder,
+) -> None:
+    tbl_name = "default.test_create_integrity"
+    try:
+        catalog.drop_table(tbl_name)
+    except NoSuchTableError:
+        pass
+
+    tbl = catalog.create_table(
+        identifier=tbl_name,
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=False,
     )
-    expected_sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
-    assert tbl.schema() == expected_schema
-    assert tbl.spec() == expected_spec
-    assert tbl.sort_order() == expected_sort_order
+    # Here, unfortunately the REST Catalog assigns fresh IDs - although it is still a good test to cover a different code
+    # path than 'test_create_table_integrity_after_fresh_assignment'
+    assert tbl.schema() == iceberg_schema_with_fresh_ids
+    assert tbl.spec() == partition_spec_with_fresh_ids
+    assert tbl.sort_order() == sort_order_with_fresh_ids

@@ -41,7 +41,9 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table.sorting import SortOrder
 from pyiceberg.typedef import Properties
 from tests.conftest import (
     BUCKET_NAME,
@@ -172,6 +174,63 @@ def test_create_table_with_strips_bucket_root(
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
     assert table_strip.name() == identifier
     assert TABLE_METADATA_LOCATION_REGEX.match(table_strip.metadata_location)
+
+
+@mock_aws
+def test_create_table_with_fresh_ids_assignment(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    database_name: str,
+    table_name: str,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+    iceberg_schema_with_fresh_ids: Schema,
+    partition_spec_with_fresh_ids: PartitionSpec,
+    sort_order_with_fresh_ids: SortOrder,
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier,
+        location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}",
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=True,
+    )
+    assert table.schema() == iceberg_schema_with_fresh_ids
+    assert table.spec() == partition_spec_with_fresh_ids
+    assert table.sort_order() == sort_order_with_fresh_ids
+
+
+@mock_aws
+def test_create_table_without_fresh_ids_assignment(
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    database_name: str,
+    table_name: str,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+) -> None:
+    catalog_name = "test_ddb_catalog"
+    identifier = (database_name, table_name)
+    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier,
+        location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}",
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=False,
+    )
+    assert table.schema() == iceberg_schema_without_fresh_ids
+    assert table.spec() == partition_spec_without_fresh_ids
+    assert table.sort_order() == sort_order_without_fresh_ids
 
 
 @mock_aws

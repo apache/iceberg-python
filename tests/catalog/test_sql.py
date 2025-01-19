@@ -48,7 +48,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
@@ -337,6 +337,83 @@ def test_create_table_default_sort_order(catalog: SqlCatalog, table_schema_neste
     [
         lazy_fixture("random_table_identifier"),
         lazy_fixture("random_hierarchical_identifier"),
+    ],
+)
+def test_create_table_with_fresh_ids_assignment(
+    catalog: SqlCatalog,
+    table_identifier: Identifier,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+    iceberg_schema_with_fresh_ids: Schema,
+    partition_spec_with_fresh_ids: PartitionSpec,
+    sort_order_with_fresh_ids: SortOrder,
+) -> None:
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=table_identifier_nocatalog,
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=True,
+    )
+    assert table.schema() == iceberg_schema_with_fresh_ids
+    assert table.spec() == partition_spec_with_fresh_ids
+    assert table.sort_order() == sort_order_with_fresh_ids
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
+    ],
+)
+def test_create_table_without_fresh_ids_assignment(
+    catalog: SqlCatalog,
+    table_identifier: Identifier,
+    iceberg_schema_without_fresh_ids: Schema,
+    partition_spec_without_fresh_ids: PartitionSpec,
+    sort_order_without_fresh_ids: SortOrder,
+) -> None:
+    table_identifier_nocatalog = catalog._identifier_to_tuple_without_catalog(table_identifier)
+    namespace = Catalog.namespace_from(table_identifier_nocatalog)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=table_identifier_nocatalog,
+        schema=iceberg_schema_without_fresh_ids,
+        partition_spec=partition_spec_without_fresh_ids,
+        sort_order=sort_order_without_fresh_ids,
+        assign_fresh_ids=False,
+    )
+    assert table.schema() == iceberg_schema_without_fresh_ids
+    assert table.spec() == partition_spec_without_fresh_ids
+    assert table.sort_order() == sort_order_without_fresh_ids
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+@pytest.mark.parametrize(
+    "table_identifier",
+    [
+        lazy_fixture("random_table_identifier"),
+        lazy_fixture("random_hierarchical_identifier"),
+        lazy_fixture("random_table_identifier_with_catalog"),
     ],
 )
 def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:

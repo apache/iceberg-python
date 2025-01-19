@@ -404,6 +404,7 @@ class GlueCatalog(MetastoreCatalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> Table:
         """
         Create an Iceberg table.
@@ -415,6 +416,7 @@ class GlueCatalog(MetastoreCatalog):
             partition_spec: PartitionSpec for the table.
             sort_order: SortOrder for the table.
             properties: Table properties that can be a string based dictionary.
+            assign_fresh_ids (bool): flag to assign new field IDs, defaults to True.
 
         Returns:
             Table: the created table instance.
@@ -431,6 +433,7 @@ class GlueCatalog(MetastoreCatalog):
             partition_spec=partition_spec,
             sort_order=sort_order,
             properties=properties,
+            assign_fresh_ids=assign_fresh_ids,
         )
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 

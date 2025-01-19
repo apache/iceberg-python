@@ -62,10 +62,13 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2
+from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -531,6 +534,42 @@ def iceberg_schema_nested_no_ids() -> Schema:
             required=False,
         ),
     )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_without_fresh_ids() -> Schema:
+    return Schema(
+        NestedField(field_id=5, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=4, name="col_fixed", field_type=FixedType(25), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def iceberg_schema_with_fresh_ids() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="col_fixed", field_type=FixedType(25), required=False),
+    )
+
+
+@pytest.fixture(scope="session")
+def partition_spec_without_fresh_ids() -> PartitionSpec:
+    return PartitionSpec(PartitionField(source_id=5, field_id=1000, transform=IdentityTransform(), name="col_uuid"), spec_id=0)
+
+
+@pytest.fixture(scope="session")
+def partition_spec_with_fresh_ids() -> PartitionSpec:
+    return PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="col_uuid"), spec_id=0)
+
+
+@pytest.fixture(scope="session")
+def sort_order_without_fresh_ids() -> SortOrder:
+    return SortOrder(SortField(source_id=4, transform=IdentityTransform()))
+
+
+@pytest.fixture(scope="session")
+def sort_order_with_fresh_ids() -> SortOrder:
+    return SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
 @pytest.fixture(scope="session")

@@ -572,11 +572,17 @@ class RestCatalog(Catalog):
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
         stage_create: bool = False,
+        assign_fresh_ids: bool = True,
     ) -> TableResponse:
-        iceberg_schema = self._convert_schema_if_needed(schema)
-        fresh_schema = assign_fresh_schema_ids(iceberg_schema)
-        fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
-        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
+        if not isinstance(schema, Schema):
+            schema: Schema = self._convert_to_iceberg_schema(schema)  # type: ignore
+            assign_fresh_ids = True
+
+        if assign_fresh_ids:
+            fresh_schema = assign_fresh_schema_ids(schema)
+            partition_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
+            sort_order = assign_fresh_sort_order_ids(sort_order, schema, fresh_schema)
+            schema = fresh_schema
 
         namespace_and_table = self._split_identifier_for_path(identifier)
         if location:
@@ -584,9 +590,9 @@ class RestCatalog(Catalog):
         request = CreateTableRequest(
             name=namespace_and_table["table"],
             location=location,
-            table_schema=fresh_schema,
-            partition_spec=fresh_partition_spec,
-            write_order=fresh_sort_order,
+            table_schema=schema,
+            partition_spec=partition_spec,
+            write_order=sort_order,
             stage_create=stage_create,
             properties=properties,
         )
@@ -610,6 +616,7 @@ class RestCatalog(Catalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> Table:
         table_response = self._create_table(
             identifier=identifier,
@@ -619,6 +626,7 @@ class RestCatalog(Catalog):
             sort_order=sort_order,
             properties=properties,
             stage_create=False,
+            assign_fresh_ids=assign_fresh_ids,
         )
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 

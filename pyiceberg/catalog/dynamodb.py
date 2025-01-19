@@ -148,6 +148,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
         sort_order: SortOrder = UNSORTED_SORT_ORDER,
         properties: Properties = EMPTY_DICT,
+        assign_fresh_ids: bool = True,
     ) -> Table:
         """
         Create an Iceberg table.
@@ -159,6 +160,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             partition_spec: PartitionSpec for the table.
             sort_order: SortOrder for the table.
             properties: Table properties that can be a string based dictionary.
+            assign_fresh_ids (bool): flag to assign new field IDs, defaults to True.
 
         Returns:
             Table: the created table instance.
@@ -168,14 +170,21 @@ class DynamoDbCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        if not isinstance(schema, Schema):
+            schema: Schema = self._convert_to_iceberg_schema(schema)  # type: ignore
+            assign_fresh_ids = True
 
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
         metadata_location = self._get_metadata_location(location=location)
         metadata = new_table_metadata(
-            location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
+            location=location,
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            properties=properties,
+            assign_fresh_ids=assign_fresh_ids,
         )
         io = load_file_io(properties=self.properties, location=metadata_location)
         self._write_metadata(metadata, io, metadata_location)
