@@ -19,6 +19,7 @@
 import math
 import time
 import uuid
+from datetime import datetime
 from pathlib import PosixPath
 from urllib.parse import urlparse
 
@@ -950,3 +951,11 @@ def test_read_from_s3_and_local_fs(catalog: Catalog, tmp_path: PosixPath) -> Non
 
     result_table = tbl.scan().to_arrow()
     assert result_table["colA"].to_pylist() == ["one", "one"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_scan_with_datetime(catalog: Catalog) -> None:
+    table = create_table(catalog)
+    # test that this doesn't raise an exception...
+    table.scan(row_filter=GreaterThanOrEqual("datetime", datetime.now())).to_pandas()
