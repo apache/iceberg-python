@@ -2545,7 +2545,7 @@ class _TablePartition:
 
 
 def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
-    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+    """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
     Example:
     Input:
@@ -2554,17 +2554,9 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
      'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
      'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
     The algorithm:
-    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement of "at_end".
-    This gives the same table as raw input.
-    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement : "at_start".
-    This gives:
-    [8, 7, 4, 5, 6, 3, 1, 2, 0]
-    Based on this we get partition groups of indices:
-    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
-    We then retrieve the partition keys by offsets.
-    And slice the arrow table by offsets and lengths of each partition.
+    - We determine the set of unique partition keys
+    - Then we produce a set of partitions by filtering on each of the combinations
+    - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
     # Assign unique names to columns where the partition transform has been applied
     # to avoid conflicts
