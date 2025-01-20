@@ -29,6 +29,7 @@ from typing import (
     Optional,
     Tuple,
     TypeVar,
+    Union,
 )
 from urllib.parse import quote_plus
 
@@ -425,8 +426,13 @@ def _to_partition_representation(type: IcebergType, value: Any) -> Any:
 
 @_to_partition_representation.register(TimestampType)
 @_to_partition_representation.register(TimestamptzType)
-def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
-    return datetime_to_micros(value) if value is not None else None
+def _(type: IcebergType, value: Optional[Union[datetime, int]]) -> Optional[int]:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    else:
+        return datetime_to_micros(value)
 
 
 @_to_partition_representation.register(DateType)
