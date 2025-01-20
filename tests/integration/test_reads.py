@@ -950,3 +950,12 @@ def test_read_from_s3_and_local_fs(catalog: Catalog, tmp_path: PosixPath) -> Non
 
     result_table = tbl.scan().to_arrow()
     assert result_table["colA"].to_pylist() == ["one", "one"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_read_table_with_deletion_vector(catalog: Catalog) -> None:
+    tbl = catalog.load_table("default.test_deletion_vectors")
+
+    result_table = tbl.scan().to_arrow()
+    result_table
