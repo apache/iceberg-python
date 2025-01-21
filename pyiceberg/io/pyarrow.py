@@ -189,6 +189,14 @@ UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 T = TypeVar("T")
 
 
+class UnsupportedPyArrowTypeException(Exception):
+    """Cannot convert PyArrow type to corresponding Iceberg type."""
+
+    def __init__(self, field: pa.Field, *args: Any):
+        self.field = field
+        super().__init__(*args)
+
+
 class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
     def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
         # In LocalFileSystem, parent directories must be first created before opening an output stream
@@ -952,13 +960,7 @@ def _(obj: pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 @visit_pyarrow.register(pa.StructType)
 def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    results = []
-
-    for field in obj:
-        visitor.before_field(field)
-        result = visit_pyarrow(field.type, visitor)
-        results.append(visitor.field(field, result))
-        visitor.after_field(field)
+    results = [visit_pyarrow(field, visitor) for field in obj]
 
     return visitor.struct(obj, results)
 
@@ -994,6 +996,20 @@ def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
     # as we only support parquet in PyIceberg for now.
     logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
     return visit_pyarrow(obj.value_type, visitor)
+
+
+@visit_pyarrow.register(pa.Field)
+def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
+    field_type = obj.type
+
+    visitor.before_field(obj)
+    try:
+        result = visit_pyarrow(field_type, visitor)
+    except TypeError as e:
+        raise UnsupportedPyArrowTypeException(obj, f"Column '{obj.name}' has an unsupported type: {field_type}") from e
+    visitor.after_field(obj)
+
+    return visitor.field(obj, result)
 
 
 @visit_pyarrow.register(pa.DataType)
@@ -1167,7 +1183,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
                 else:
                     raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
                     )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")

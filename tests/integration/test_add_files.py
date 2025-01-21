@@ -30,7 +30,7 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io import FileIO
-from pyiceberg.io.pyarrow import _pyarrow_schema_ensure_large_types
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _pyarrow_schema_ensure_large_types
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -616,12 +616,17 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
 
     # add the parquet files as data files
     with pytest.raises(
-        TypeError,
-        match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
-        ),
-    ):
+        UnsupportedPyArrowTypeException,
+        match=re.escape("Column 'quux' has an unsupported type: timestamp[ns, tz=UTC]"),
+    ) as exc_info:
         tbl.add_files(file_paths=[file_path])
+
+    exception_cause = exc_info.value.__cause__
+    assert isinstance(exception_cause, TypeError)
+    assert (
+        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        in exception_cause.args[0]
+    )
 
 
 @pytest.mark.integration
