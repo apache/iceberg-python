@@ -70,8 +70,6 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated as deprecated
-from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -106,8 +104,6 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     """,
     re.X,
 )
-
-DEPRECATED_BOTOCORE_SESSION = "botocore_session"
 
 
 class CatalogType(Enum):
@@ -743,13 +739,6 @@ class Catalog(ABC):
 class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-
-        if self.properties.get(DEPRECATED_BOTOCORE_SESSION):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {DEPRECATED_BOTOCORE_SESSION} is deprecated and will be removed.",
-            )
 
     def create_table_transaction(
         self,
