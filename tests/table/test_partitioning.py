@@ -151,3 +151,17 @@ def test_partition_type(table_schema_simple: Schema) -> None:
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
         NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
     )
+
+
+def test_deserialize_partition_field_v2() -> None:
+    json_partition_spec = """{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+
+    field = PartitionField.model_validate_json(json_partition_spec)
+    assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+def test_deserialize_partition_field_v3() -> None:
+    json_partition_spec = """{"source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+
+    field = PartitionField.model_validate_json(json_partition_spec)
+    assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")

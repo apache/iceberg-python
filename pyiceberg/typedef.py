@@ -206,4 +206,4 @@ class Record(StructProtocol):
         return hash(str(self))
 
 
-TableVersion: TypeAlias = Literal[1, 2]
+TableVersion: TypeAlias = Literal[1, 2, 3]
