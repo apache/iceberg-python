@@ -1137,12 +1137,10 @@ def test_pyarrow_overflow(session_catalog: Catalog) -> None:
     except NoSuchTableError:
         pass
 
-    x = pa.array([1925 for _ in range(30_000)])
-    ta = pa.chunked_array([x] * 10_000)
-    y = ["fixed_string"] * 30_000
-    tb = pa.chunked_array([y] * 10_000)
+    arr = ["fixed_string"] * 30_000
+    strings = pa.chunked_array([arr] * 10_000)
     # Create pa.table
-    arrow_table = pa.table({"a": ta, "b": tb})
+    arrow_table = pa.table({"a": strings})
 
     table = session_catalog.create_table(identifier, arrow_table.schema)
     with table.update_spec() as update_spec:
