@@ -17,7 +17,6 @@
 # pylint:disable=redefined-outer-name
 
 
-import random
 from datetime import date
 from typing import Any, Set
 
@@ -1138,7 +1137,7 @@ def test_pyarrow_overflow(session_catalog: Catalog) -> None:
     except NoSuchTableError:
         pass
 
-    x = pa.array([random.randint(0, 999) for _ in range(30_000)])
+    x = pa.array([1925 for _ in range(30_000)])
     ta = pa.chunked_array([x] * 10_000)
     y = ["fixed_string"] * 30_000
     tb = pa.chunked_array([y] * 10_000)
