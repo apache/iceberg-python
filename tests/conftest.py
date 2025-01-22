@@ -902,6 +902,72 @@ EXAMPLE_TABLE_METADATA_V2 = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
+EXAMPLE_TABLE_METADATA_V3 = {
+    "format-version": 3,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://bucket/test/location",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 3,
+    "current-schema-id": 1,
+    "schemas": [
+        {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+        {
+            "type": "struct",
+            "schema-id": 1,
+            "identifier-field-ids": [1, 2],
+            "fields": [
+                {"id": 1, "name": "x", "required": True, "type": "long"},
+                {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+                {"id": 3, "name": "z", "required": True, "type": "long"},
+                # TODO: Add unknown, timestamp(tz)_ns
+                # {"id": 4, "name": "u", "required": True, "type": "unknown"},
+                # {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
+                # {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
+            ],
+        },
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-ids": [1], "field-id": 1000}]}],
+    "last-partition-id": 1000,
+    "default-sort-order-id": 3,
+    "sort-orders": [
+        {
+            "order-id": 3,
+            "fields": [
+                {"transform": "identity", "source-ids": [2], "direction": "asc", "null-order": "nulls-first"},
+                {"transform": "bucket[4]", "source-ids": [3], "direction": "desc", "null-order": "nulls-last"},
+            ],
+        }
+    ],
+    "properties": {"read.split.target.size": "134217728"},
+    "current-snapshot-id": 3055729675574597004,
+    "snapshots": [
+        {
+            "snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1515100955770,
+            "sequence-number": 0,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/1.avro",
+        },
+        {
+            "snapshot-id": 3055729675574597004,
+            "parent-snapshot-id": 3051729675574597004,
+            "timestamp-ms": 1555100955770,
+            "sequence-number": 1,
+            "summary": {"operation": "append"},
+            "manifest-list": "s3://a/b/2.avro",
+            "schema-id": 1,
+        },
+    ],
+    "snapshot-log": [
+        {"snapshot-id": 3051729675574597004, "timestamp-ms": 1515100955770},
+        {"snapshot-id": 3055729675574597004, "timestamp-ms": 1555100955770},
+    ],
+    "metadata-log": [{"metadata-file": "s3://bucket/.../v1.json", "timestamp-ms": 1515100}],
+    "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
+}
+
 TABLE_METADATA_V2_WITH_FIXED_AND_DECIMAL_TYPES = {
     "format-version": 2,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
@@ -1050,6 +1116,11 @@ def table_metadata_v2_with_fixed_and_decimal_types() -> Dict[str, Any]:
 @pytest.fixture
 def table_metadata_v2_with_statistics() -> Dict[str, Any]:
     return TABLE_METADATA_V2_WITH_STATISTICS
+
+
+@pytest.fixture
+def example_table_metadata_v3() -> Dict[str, Any]:
+    return EXAMPLE_TABLE_METADATA_V3
 
 
 @pytest.fixture(scope="session")

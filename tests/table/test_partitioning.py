@@ -191,3 +191,15 @@ def test_bucketing_function(source_type: PrimitiveType, value: Any) -> None:
     import pyarrow as pa
 
     assert bucket.transform(source_type)(value) == bucket.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+def test_deserialize_partition_field_v2() -> None:
+    json_partition_spec = """{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+
+    field = PartitionField.model_validate_json(json_partition_spec)
+    assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+def test_deserialize_partition_field_v3() -> None:
+    json_partition_spec = """{"source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+
+    field = PartitionField.model_validate_json(json_partition_spec)
+    assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
