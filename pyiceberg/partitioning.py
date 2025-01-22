@@ -394,14 +394,14 @@ class PartitionFieldValue:
 
 @dataclass(frozen=True)
 class PartitionKey:
-    raw_partition_field_values: List[PartitionFieldValue]
+    field_values: List[PartitionFieldValue]
     partition_spec: PartitionSpec
     schema: Schema
 
     @cached_property
     def partition(self) -> Record:  # partition key transformed with iceberg internal representation as input
         iceberg_typed_key_values = {}
-        for raw_partition_field_value in self.raw_partition_field_values:
+        for raw_partition_field_value in self.field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
             if len(partition_fields) != 1:
                 raise ValueError(f"Cannot have redundant partitions: {partition_fields}")
@@ -428,13 +428,19 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     the final partition record value.
     """
     iceberg_type = schema.find_field(name_or_id=partition_field.source_id).field_type
-    value = _to_partition_representation(iceberg_type, value)
-    transformed_value = partition_field.transform.transform(iceberg_type)(value)
-    return transformed_value
+    return _to_partition_representation(iceberg_type, value)
 
 
 @singledispatch
 def _to_partition_representation(type: IcebergType, value: Any) -> Any:
+    """Strip the logical type into the physical type.
+
+    It can be that the value is already transformed into its physical type,
+    in this case it will return the original value. Keep in mind that the
+    bucket transform always will return an int, but an identity transform
+    can return date that still needs to be transformed into an int (days
+    since epoch).
+    """
     return TypeError(f"Unsupported partition field type: {type}")
 
 
@@ -452,8 +458,15 @@ def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]
 
 
 @_to_partition_representation.register(DateType)
-def _(type: IcebergType, value: Optional[date]) -> Optional[int]:
-    return date_to_days(value) if value is not None else None
+def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, date):
+        return date_to_days(value)
+    else:
+        raise ValueError(f"Unknown type: {value}")
 
 
 @_to_partition_representation.register(TimeType)

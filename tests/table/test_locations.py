@@ -27,7 +27,7 @@ from pyiceberg.types import NestedField, StringType
 
 PARTITION_FIELD = PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="string_field")
 PARTITION_KEY = PartitionKey(
-    raw_partition_field_values=[PartitionFieldValue(PARTITION_FIELD, "example_string")],
+    field_values=[PartitionFieldValue(PARTITION_FIELD, "example_string")],
     partition_spec=PartitionSpec(PARTITION_FIELD),
     schema=Schema(NestedField(field_id=1, name="string_field", field_type=StringType(), required=False)),
 )

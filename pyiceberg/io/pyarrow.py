@@ -2176,7 +2176,10 @@ class DataFileStatistics:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
-        return lower_value
+
+        source_field = schema.find_field(partition_field.source_id)
+        transform = partition_field.transform.transform(source_field.field_type)
+        return transform(lower_value)
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
         return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
@@ -2590,7 +2593,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     # TODO: As a next step, we could also play around with yielding instead of materializing the full list
     for unique_partition in unique_partition_fields.to_pylist():
         partition_key = PartitionKey(
-            raw_partition_field_values=[
+            field_values=[
                 PartitionFieldValue(field=field, value=unique_partition[name])
                 for field, name in zip(spec.fields, partition_fields)
             ],

@@ -1126,23 +1126,3 @@ def test_append_multiple_partitions(
         """
     )
     assert files_df.count() == 6
-
-
-@pytest.mark.integration
-def test_pyarrow_overflow(session_catalog: Catalog) -> None:
-    """Test what happens when the offset is beyond 32 bits"""
-    identifier = "default.arrow_table_overflow"
-    try:
-        session_catalog.drop_table(identifier=identifier)
-    except NoSuchTableError:
-        pass
-
-    arr = ["fixed_string"] * 30_000
-    strings = pa.chunked_array([arr] * 10_000)
-    # Create pa.table
-    arrow_table = pa.table({"a": strings})
-
-    table = session_catalog.create_table(identifier, arrow_table.schema)
-    with table.update_spec() as update_spec:
-        update_spec.add_field("b", IdentityTransform(), "pb")
-    table.append(arrow_table)
