@@ -455,6 +455,16 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(RemoveSnapshotsUpdate)
+def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if not any(s.snapshot_id == update.snapshot_id for s in base_metadata.snapshots):
+        raise ValueError(f"Snapshot with snapshot id {update.snapshot_id} does not exist")
+
+    snapshots = [s for s in base_metadata.snapshots if s.snapshot_id != update.snapshot_id]
+    context.add_update(update)
+    return base_metadata.model_copy(update={"snapshots": snapshots})
+
+
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
