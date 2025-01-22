@@ -801,6 +801,7 @@ def test_update_remove_snapshots(table_v2: Table) -> None:
     new_metadata = update_table_metadata(table_v2.metadata, (update,))
     assert len(new_metadata.snapshots) == 1
     assert new_metadata.snapshots[0].snapshot_id == 3055729675574597004
+    assert new_metadata.snapshots[0].parent_snapshot_id == None
     assert new_metadata.current_snapshot_id == 3055729675574597004
     assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
 
