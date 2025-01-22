@@ -16,6 +16,7 @@
 # under the License.
 
 import base64
+import datetime as py_datetime
 import struct
 from abc import ABC, abstractmethod
 from enum import IntEnum
@@ -298,7 +299,31 @@ class BucketTransform(Transform[S, int]):
         )
 
     def transform(self, source: IcebergType, bucket: bool = True) -> Callable[[Optional[Any]], Optional[int]]:
-        if isinstance(source, (IntegerType, LongType, DateType, TimeType, TimestampType, TimestamptzType)):
+        if isinstance(source, TimeType):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.time):
+                    v = datetime.time_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, DateType):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (TimestampType, TimestamptzType)):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (IntegerType, LongType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(struct.pack("<q", v))
