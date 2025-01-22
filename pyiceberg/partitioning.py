@@ -29,6 +29,7 @@ from typing import (
     Optional,
     Tuple,
     TypeVar,
+    Union,
 )
 from urllib.parse import quote_plus
 
@@ -413,9 +414,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     the final partition record value.
     """
     iceberg_type = schema.find_field(name_or_id=partition_field.source_id).field_type
-    if not isinstance(value, int):
-        # When adding files, it can be that we still need to convert from logical types to physical types
-        value = _to_partition_representation(iceberg_type, value)
+    value = _to_partition_representation(iceberg_type, value)
     transformed_value = partition_field.transform.transform(iceberg_type)(value)
     return transformed_value
 
@@ -427,8 +426,15 @@ def _to_partition_representation(type: IcebergType, value: Any) -> Any:
 
 @_to_partition_representation.register(TimestampType)
 @_to_partition_representation.register(TimestamptzType)
-def _(type: IcebergType, value: Optional[datetime]) -> Optional[int]:
-    return datetime_to_micros(value) if value is not None else None
+def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, datetime):
+        return datetime_to_micros(value)
+    else:
+        raise ValueError(f"Unknown type: {value}")
 
 
 @_to_partition_representation.register(DateType)
