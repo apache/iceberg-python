@@ -136,8 +136,6 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
-from pyiceberg.table import merge_rows_util
-
 if TYPE_CHECKING:
     import daft
     import pandas as pd
@@ -1083,7 +1081,8 @@ class Table:
             A dictionary containing the number of rows updated and inserted.
         """
 
-        #merge_rows_util is a file 
+        from pyiceberg.table import merge_rows_util
+
         try:
             from datafusion import SessionContext
         except ModuleNotFoundError as e:
@@ -1097,7 +1096,6 @@ class Table:
         source_table_name = "source"
         target_table_name = "target"
 
-        
         if merge_options is None or merge_options == {}:
             merge_options = {'when_matched_update_all': True, 'when_not_matched_insert_all': True}
 
@@ -1120,7 +1118,6 @@ class Table:
         target_col_names = set([col[0] for col in target_col_list])
 
         source_col_types = {col[0]: col[1] for col in source_col_list}
-        #target_col_types = {col[0]: col[1] for col in target_col_list}
 
         missing_columns = merge_rows_util.do_join_columns_exist(source_col_names, target_col_names, join_cols)
         
@@ -1128,14 +1125,10 @@ class Table:
 
             return {'error_msgs': f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}"}
 
-            #raise Exception(f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}")
-
         #check for dups on source
         if merge_rows_util.dups_check_in_source(source_table_name, join_cols, ctx):
 
             return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No Merge executed'}
-
-            #raise Exception(f"Duplicate rows found in source table based on the key columns [{', '.join(join_cols)}]")
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -1146,9 +1139,8 @@ class Table:
             
             if when_matched_update_all:
                 
-                # Get the rows to update
                 update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
-                    #print(update_recs_sql)
+            
                 update_recs = ctx.sql(update_recs_sql).to_arrow_table()
 
                 update_row_cnt = len(update_recs)
@@ -1165,8 +1157,6 @@ class Table:
                         f"({' AND '.join([f'{col} = {repr(row[col])}' if source_col_types[col] != 'string' else f'{col} = {repr(row[col])}' for col in join_cols])})" 
                         for row in update_recs.to_pylist()
                     )
-                
-                    #print(f"overwrite_filter: {overwrite_filter}")
 
                 txn.overwrite(update_recs, overwrite_filter)    
 
@@ -1183,7 +1173,6 @@ class Table:
 
             if when_matched_update_all or when_not_matched_insert_all:
                 txn.commit_transaction()
-            #print("commited changes")
 
             return {
                 "rows_updated": update_row_cnt,
