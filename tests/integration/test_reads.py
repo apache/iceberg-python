@@ -19,6 +19,7 @@
 import math
 import time
 import uuid
+from datetime import datetime, timedelta
 from pathlib import PosixPath
 from urllib.parse import urlparse
 
@@ -950,3 +951,30 @@ def test_read_from_s3_and_local_fs(catalog: Catalog, tmp_path: PosixPath) -> Non
 
     result_table = tbl.scan().to_arrow()
     assert result_table["colA"].to_pylist() == ["one", "one"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_scan_with_datetime(catalog: Catalog) -> None:
+    table = create_table(catalog)
+
+    yesterday = datetime.now() - timedelta(days=1)
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {
+                    "str": "foo",
+                    "int": 1,
+                    "bool": True,
+                    "datetime": yesterday,
+                }
+            ],
+            schema=table.schema().as_arrow(),
+        ),
+    )
+
+    df = table.scan(row_filter=GreaterThanOrEqual("datetime", yesterday)).to_pandas()
+    assert len(df) == 1
+
+    df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
+    assert len(df) == 0

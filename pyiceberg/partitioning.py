@@ -38,6 +38,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     WithJsonSchema,
+    model_validator,
 )
 from typing_extensions import Annotated
 
@@ -111,6 +112,19 @@ class PartitionField(IcebergBaseModel):
             data["name"] = name
 
         super().__init__(**data)
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_source_ids_onto_source_id(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "source-id" not in data and (source_ids := data["source-ids"]):
+                if isinstance(source_ids, list):
+                    if len(source_ids) == 0:
+                        raise ValueError("Empty source-ids is not allowed")
+                    if len(source_ids) > 1:
+                        raise ValueError("Multi argument transforms are not yet supported")
+                    data["source-id"] = source_ids[0]
+        return data
 
     def __str__(self) -> str:
         """Return the string representation of the PartitionField class."""
