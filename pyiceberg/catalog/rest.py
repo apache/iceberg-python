@@ -918,9 +918,7 @@ class RestCatalog(Catalog):
             bool: True if the view exists, False otherwise.
         """
         response = self._session.head(
-            self.url(
-                Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
-            ),
+            self.url(Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )
         if response.status_code == 404:
             return False
