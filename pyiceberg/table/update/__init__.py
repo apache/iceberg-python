@@ -463,7 +463,11 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         if not any(s.snapshot_id == remove_snapshot_id for s in base_metadata.snapshots):
             raise ValueError(f"Snapshot with snapshot id {remove_snapshot_id} does not exist: {base_metadata.snapshots}")
 
-    snapshots = [s for s in base_metadata.snapshots if s.snapshot_id not in update.snapshot_ids]
+    snapshots = [
+        (s.model_copy(update={"parent_snapshot_id": None}) if s.parent_snapshot_id in update.snapshot_ids else s)
+        for s in base_metadata.snapshots
+        if s.snapshot_id not in update.snapshot_ids
+    ]
     context.add_update(update)
     return base_metadata.model_copy(update={"snapshots": snapshots})
 
