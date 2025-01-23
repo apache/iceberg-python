@@ -1220,6 +1220,7 @@ markers = [
   "adls: marks a test as requiring access to adls compliant storage (use with --adls.account-name, --adls.account-key, and --adls.endpoint args)",
   "integration: marks integration tests against Apache Spark",
   "gcs: marks a test as requiring access to gcs compliant storage (use with --gs.token, --gs.project, and --gs.endpoint)",
+  "benchmark: collection of tests to validate read/write performance before and after a change"
 ]
 
 # Turns a warning into an error
