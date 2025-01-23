@@ -444,11 +444,17 @@ class YearTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def year_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return datetime.days_to_years(v)
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def year_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_years(v)
 
         else:
@@ -501,11 +507,17 @@ class MonthTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def month_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return datetime.days_to_months(v)
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def month_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_months(v)
 
         else:
@@ -564,11 +576,17 @@ class DayTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def day_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return v
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def day_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_days(v)
 
         else:
@@ -629,6 +647,9 @@ class HourTransform(TimeTransform[S]):
         if isinstance(source, (TimestampType, TimestamptzType)):
 
             def hour_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_hours(v)
 
         else:
