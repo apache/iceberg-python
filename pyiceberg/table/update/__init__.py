@@ -177,7 +177,6 @@ class RemovePropertiesUpdate(IcebergBaseModel):
 
 class SetStatisticsUpdate(IcebergBaseModel):
     action: Literal["set-statistics"] = Field(default="set-statistics")
-    snapshot_id: int = Field(alias="snapshot-id")
     statistics: StatisticsFile
 
 
@@ -491,10 +490,7 @@ def _(
 
 @_apply_table_update.register(SetStatisticsUpdate)
 def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.snapshot_id != update.statistics.snapshot_id:
-        raise ValueError("Snapshot id in statistics does not match the snapshot id in the update")
-
-    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})

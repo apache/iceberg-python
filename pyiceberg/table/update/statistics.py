@@ -52,10 +52,9 @@ class UpdateStatistics(UpdateTableMetadata["UpdateStatistics"]):
     def __init__(self, transaction: "Transaction") -> None:
         super().__init__(transaction)
 
-    def set_statistics(self, snapshot_id: int, statistics_file: StatisticsFile) -> "UpdateStatistics":
+    def set_statistics(self, statistics_file: StatisticsFile) -> "UpdateStatistics":
         self._updates += (
             SetStatisticsUpdate(
-                snapshot_id=snapshot_id,
                 statistics=statistics_file,
             ),
         )

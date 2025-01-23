@@ -73,8 +73,8 @@ def test_manage_statistics(catalog: "Catalog", arrow_table_with_null: "pa.Table"
     statistics_file_snap_2 = create_statistics_file(add_snapshot_id_2, "deletion-vector-v1")
 
     with tbl.update_statistics() as update:
-        update.set_statistics(add_snapshot_id_1, statistics_file_snap_1)
-        update.set_statistics(add_snapshot_id_2, statistics_file_snap_2)
+        update.set_statistics(statistics_file_snap_1)
+        update.set_statistics(statistics_file_snap_2)
 
     assert len(tbl.metadata.statistics) == 2
 
