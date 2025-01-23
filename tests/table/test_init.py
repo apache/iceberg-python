@@ -795,15 +795,18 @@ def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
 
 
 def test_update_remove_snapshots(table_v2: Table) -> None:
-    update = RemoveSnapshotsUpdate(
-        snapshot_ids=[3051729675574597004],
-    )
+    # assert fixture data to easily understand the test assumptions
+    assert len(table_v2.metadata.snapshots) == 2
+    assert len(table_v2.metadata.refs) == 2
+    update = RemoveSnapshotsUpdate(snapshot_ids=[3051729675574597004])
     new_metadata = update_table_metadata(table_v2.metadata, (update,))
     assert len(new_metadata.snapshots) == 1
     assert new_metadata.snapshots[0].snapshot_id == 3055729675574597004
     assert new_metadata.snapshots[0].parent_snapshot_id == None
     assert new_metadata.current_snapshot_id == 3055729675574597004
     assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
+    assert len(new_metadata.refs) == 1
+    assert new_metadata.refs["main"].snapshot_id == 3055729675574597004
 
 
 def test_update_remove_snapshots_doesnt_exist(table_v2: Table) -> None:
