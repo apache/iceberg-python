@@ -104,6 +104,7 @@ from pyiceberg.io import (
     S3_FORCE_VIRTUAL_ADDRESSING,
     S3_PROXY_URI,
     S3_REGION,
+    S3_REQUEST_TIMEOUT,
     S3_ROLE_ARN,
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
@@ -394,6 +395,9 @@ class PyArrowFileIO(FileIO):
         if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
             client_kwargs["connect_timeout"] = float(connect_timeout)
 
+        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
+            client_kwargs["request_timeout"] = float(request_timeout)
+
         if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
@@ -437,6 +441,9 @@ class PyArrowFileIO(FileIO):
 
         if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
             client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
+            client_kwargs["request_timeout"] = float(request_timeout)
 
         if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
