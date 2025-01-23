@@ -20,9 +20,9 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from typing_extensions import Annotated
 
 from pyiceberg.exceptions import CommitFailedException
@@ -178,6 +178,19 @@ class RemovePropertiesUpdate(IcebergBaseModel):
 class SetStatisticsUpdate(IcebergBaseModel):
     action: Literal["set-statistics"] = Field(default="set-statistics")
     statistics: StatisticsFile
+    snapshot_id: Optional[int] = Field(
+        None,
+        alias="snapshot-id",
+        description="This optional field is **DEPRECATED for REMOVAL** since it contains redundant information. Clients should use the `statistics.snapshot-id` field instead.",
+    )
+
+    @model_validator(mode="before")
+    def validate_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        stats = cast(StatisticsFile, data["statistics"])
+
+        data["snapshot_id"] = stats.snapshot_id
+
+        return data
 
 
 class RemoveStatisticsUpdate(IcebergBaseModel):
