@@ -33,6 +33,7 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import literal
 from pyiceberg.io.pyarrow import (
+    UnsupportedPyArrowTypeException,
     _ConvertToArrowSchema,
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
@@ -623,6 +624,91 @@ def test_pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids: pa
         ]
     )
     assert _pyarrow_schema_ensure_large_types(pyarrow_schema_nested_without_ids) == expected_schema
+
+
+def test_pyarrow_schema_unsupported_type() -> None:
+    unsupported_field = pa.field("latitude", pa.decimal256(20, 26), nullable=False, metadata={"PARQUET:field_id": "2"})
+    schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+            pa.field(
+                "location",
+                pa.large_list(
+                    pa.field(
+                        "item",
+                        pa.struct(
+                            [
+                                unsupported_field,
+                                pa.field("longitude", pa.float32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
+                            ]
+                        ),
+                        metadata={"PARQUET:field_id": "4"},
+                    )
+                ),
+                nullable=False,
+                metadata={"PARQUET:field_id": "5"},
+            ),
+        ],
+        metadata={"PARQUET:field_id": "6"},
+    )
+    with pytest.raises(
+        UnsupportedPyArrowTypeException, match=re.escape("Column 'latitude' has an unsupported type: decimal256(20, 26)")
+    ) as exc_info:
+        pyarrow_to_schema(schema)
+    assert exc_info.value.field == unsupported_field
+    exception_cause = exc_info.value.__cause__
+    assert isinstance(exception_cause, TypeError)
+    assert "Unsupported type: decimal256(20, 26)" in exception_cause.args[0]
+
+    unsupported_field = pa.field(
+        "quux",
+        pa.map_(
+            pa.field("key", pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+            pa.field(
+                "value",
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata={"PARQUET:field_id": "5"}),
+                    pa.field("value", pa.decimal256(2, 3), metadata={"PARQUET:field_id": "6"}),
+                ),
+                nullable=False,
+                metadata={"PARQUET:field_id": "4"},
+            ),
+        ),
+        nullable=False,
+        metadata={"PARQUET:field_id": "3"},
+    )
+    schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+            unsupported_field,
+        ]
+    )
+    with pytest.raises(
+        UnsupportedPyArrowTypeException,
+        match=re.escape("Column 'quux' has an unsupported type: map<string, map<string, decimal256(2, 3)>>"),
+    ) as exc_info:
+        pyarrow_to_schema(schema)
+    assert exc_info.value.field == unsupported_field
+    exception_cause = exc_info.value.__cause__
+    assert isinstance(exception_cause, TypeError)
+    assert "Unsupported type: decimal256(2, 3)" in exception_cause.args[0]
+
+    unsupported_field = pa.field("foo", pa.timestamp(unit="ns"), nullable=False, metadata={"PARQUET:field_id": "1"})
+    schema = pa.schema(
+        [
+            unsupported_field,
+            pa.field("bar", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+        ]
+    )
+    with pytest.raises(
+        UnsupportedPyArrowTypeException,
+        match=re.escape("Column 'foo' has an unsupported type: timestamp[ns]"),
+    ) as exc_info:
+        pyarrow_to_schema(schema)
+    assert exc_info.value.field == unsupported_field
+    exception_cause = exc_info.value.__cause__
+    assert isinstance(exception_cause, TypeError)
+    assert "Iceberg does not yet support 'ns' timestamp precision" in exception_cause.args[0]
 
 
 def test_pyarrow_schema_round_trip_ensure_large_types_and_then_small_types(pyarrow_schema_nested_without_ids: pa.Schema) -> None:

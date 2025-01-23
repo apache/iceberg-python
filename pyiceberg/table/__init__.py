@@ -118,6 +118,7 @@ from pyiceberg.table.update.snapshot import (
     _FastAppendFiles,
 )
 from pyiceberg.table.update.spec import UpdateSpec
+from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -452,8 +453,10 @@ class Transaction:
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                data_files = list(
+                    _dataframe_to_data_files(
+                        table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    )
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -1042,6 +1045,23 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
+
+    def update_statistics(self) -> UpdateStatistics:
+        """
+        Shorthand to run statistics management operations like add statistics and remove statistics.
+
+        Use table.update_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_statistics() as update:
+            update.set_statistics(snapshot_id=1, statistics_file=statistics_file)
+            update.remove_statistics(snapshot_id=2)
+        """
+        return UpdateStatistics(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.

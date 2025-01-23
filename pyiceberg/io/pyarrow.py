@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import concurrent.futures
 import fnmatch
+import functools
 import itertools
 import logging
+import operator
 import os
 import re
 import uuid
@@ -90,7 +92,6 @@ from pyiceberg.io import (
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
     GCS_DEFAULT_LOCATION,
-    GCS_ENDPOINT,
     GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
@@ -166,7 +167,6 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
-from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -189,6 +189,14 @@ DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
+
+
+class UnsupportedPyArrowTypeException(Exception):
+    """Cannot convert PyArrow type to corresponding Iceberg type."""
+
+    def __init__(self, field: pa.Field, *args: Any):
+        self.field = field
+        super().__init__(*args)
 
 
 class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
@@ -471,13 +479,7 @@ class PyArrowFileIO(FileIO):
             gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
         if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
             gcs_kwargs["default_bucket_location"] = bucket_location
-        if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
-            if self.properties.get(GCS_ENDPOINT):
-                deprecation_message(
-                    deprecated_in="0.8.0",
-                    removed_in="0.9.0",
-                    help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
-                )
+        if endpoint := self.properties.get(GCS_SERVICE_HOST):
             url_parts = urlparse(endpoint)
             gcs_kwargs["scheme"] = url_parts.scheme
             gcs_kwargs["endpoint_override"] = url_parts.netloc
@@ -960,13 +962,7 @@ def _(obj: pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 @visit_pyarrow.register(pa.StructType)
 def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    results = []
-
-    for field in obj:
-        visitor.before_field(field)
-        result = visit_pyarrow(field.type, visitor)
-        results.append(visitor.field(field, result))
-        visitor.after_field(field)
+    results = [visit_pyarrow(field, visitor) for field in obj]
 
     return visitor.struct(obj, results)
 
@@ -1002,6 +998,20 @@ def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
     # as we only support parquet in PyIceberg for now.
     logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
     return visit_pyarrow(obj.value_type, visitor)
+
+
+@visit_pyarrow.register(pa.Field)
+def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
+    field_type = obj.type
+
+    visitor.before_field(obj)
+    try:
+        result = visit_pyarrow(field_type, visitor)
+    except TypeError as e:
+        raise UnsupportedPyArrowTypeException(obj, f"Column '{obj.name}' has an unsupported type: {field_type}") from e
+    visitor.after_field(obj)
+
+    return visitor.field(obj, result)
 
 
 @visit_pyarrow.register(pa.DataType)
@@ -1175,7 +1185,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
                 else:
                     raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
                     )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
@@ -2166,7 +2176,10 @@ class DataFileStatistics:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
-        return lower_value
+
+        source_field = schema.find_field(partition_field.source_id)
+        transform = partition_field.transform.transform(source_field.field_type)
+        return transform(lower_value)
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
         return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
@@ -2550,38 +2563,8 @@ class _TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _get_table_partitions(
-    arrow_table: pa.Table,
-    partition_spec: PartitionSpec,
-    schema: Schema,
-    slice_instructions: list[dict[str, Any]],
-) -> list[_TablePartition]:
-    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
-
-    partition_fields = partition_spec.fields
-
-    offsets = [inst["offset"] for inst in sorted_slice_instructions]
-    projected_and_filtered = {
-        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
-        .take(offsets)
-        .to_pylist()
-        for partition_field in partition_fields
-    }
-
-    table_partitions = []
-    for idx, inst in enumerate(sorted_slice_instructions):
-        partition_slice = arrow_table.slice(**inst)
-        fieldvalues = [
-            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
-            for partition_field in partition_fields
-        ]
-        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
-        table_partitions.append(_TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
-    return table_partitions
-
-
 def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
-    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+    """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
     Example:
     Input:
@@ -2590,54 +2573,50 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
      'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
      'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
     The algorithm:
-    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement of "at_end".
-    This gives the same table as raw input.
-    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement : "at_start".
-    This gives:
-    [8, 7, 4, 5, 6, 3, 1, 2, 0]
-    Based on this we get partition groups of indices:
-    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
-    We then retrieve the partition keys by offsets.
-    And slice the arrow table by offsets and lengths of each partition.
+    - We determine the set of unique partition keys
+    - Then we produce a set of partitions by filtering on each of the combinations
+    - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
-    partition_columns: List[Tuple[PartitionField, NestedField]] = [
-        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
-    ]
-    partition_values_table = pa.table(
-        {
-            str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
-            for partition, field in partition_columns
-        }
-    )
+    # Assign unique names to columns where the partition transform has been applied
+    # to avoid conflicts
+    partition_fields = [f"_partition_{field.name}" for field in spec.fields]
 
-    # Sort by partitions
-    sort_indices = pa.compute.sort_indices(
-        partition_values_table,
-        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
-        null_placement="at_end",
-    ).to_pylist()
-    arrow_table = arrow_table.take(sort_indices)
+    for partition, name in zip(spec.fields, partition_fields):
+        source_field = schema.find_field(partition.source_id)
+        arrow_table = arrow_table.append_column(
+            name, partition.transform.pyarrow_transform(source_field.field_type)(arrow_table[source_field.name])
+        )
 
-    # Get slice_instructions to group by partitions
-    partition_values_table = partition_values_table.take(sort_indices)
-    reversed_indices = pa.compute.sort_indices(
-        partition_values_table,
-        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
-        null_placement="at_start",
-    ).to_pylist()
-    slice_instructions: List[Dict[str, Any]] = []
-    last = len(reversed_indices)
-    reversed_indices_size = len(reversed_indices)
-    ptr = 0
-    while ptr < reversed_indices_size:
-        group_size = last - reversed_indices[ptr]
-        offset = reversed_indices[ptr]
-        slice_instructions.append({"offset": offset, "length": group_size})
-        last = reversed_indices[ptr]
-        ptr = ptr + group_size
+    unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
-    table_partitions: List[_TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+    table_partitions = []
+    # TODO: As a next step, we could also play around with yielding instead of materializing the full list
+    for unique_partition in unique_partition_fields.to_pylist():
+        partition_key = PartitionKey(
+            field_values=[
+                PartitionFieldValue(field=field, value=unique_partition[name])
+                for field, name in zip(spec.fields, partition_fields)
+            ],
+            partition_spec=spec,
+            schema=schema,
+        )
+        filtered_table = arrow_table.filter(
+            functools.reduce(
+                operator.and_,
+                [
+                    pc.field(partition_field_name) == unique_partition[partition_field_name]
+                    if unique_partition[partition_field_name] is not None
+                    else pc.field(partition_field_name).is_null()
+                    for field, partition_field_name in zip(spec.fields, partition_fields)
+                ],
+            )
+        )
+        filtered_table = filtered_table.drop_columns(partition_fields)
+
+        # The combine_chunks seems to be counter-intuitive to do, but it actually returns
+        # fresh buffers that don't interfere with each other when it is written out to file
+        table_partitions.append(
+            _TablePartition(partition_key=partition_key, arrow_table_partition=filtered_table.combine_chunks())
+        )
 
     return table_partitions
