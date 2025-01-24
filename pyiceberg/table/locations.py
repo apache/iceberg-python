@@ -30,7 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 class LocationProvider(ABC):
-    """A base class for location providers, that provide data file locations for write tasks."""
+    """A base class for location providers, that provide data file locations for a table's write tasks.
+
+    Args:
+        table_location (str): The table's base storage location.
+        table_properties (Properties): The table's properties.
+    """
 
     table_location: str
     table_properties: Properties
