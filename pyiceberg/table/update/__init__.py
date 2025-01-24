@@ -20,9 +20,9 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from typing_extensions import Annotated
 
 from pyiceberg.exceptions import CommitFailedException
@@ -177,8 +177,20 @@ class RemovePropertiesUpdate(IcebergBaseModel):
 
 class SetStatisticsUpdate(IcebergBaseModel):
     action: Literal["set-statistics"] = Field(default="set-statistics")
-    snapshot_id: int = Field(alias="snapshot-id")
     statistics: StatisticsFile
+    snapshot_id: Optional[int] = Field(
+        None,
+        alias="snapshot-id",
+        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
+    )
+
+    @model_validator(mode="before")
+    def validate_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        stats = cast(StatisticsFile, data["statistics"])
+
+        data["snapshot_id"] = stats.snapshot_id
+
+        return data
 
 
 class RemoveStatisticsUpdate(IcebergBaseModel):
@@ -491,10 +503,7 @@ def _(
 
 @_apply_table_update.register(SetStatisticsUpdate)
 def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.snapshot_id != update.statistics.snapshot_id:
-        raise ValueError("Snapshot id in statistics does not match the snapshot id in the update")
-
-    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})
