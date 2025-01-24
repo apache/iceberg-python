@@ -64,7 +64,7 @@ class SortOrderBuilder:
         return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
 
 
-class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
+class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     _transaction: Transaction
     _builder: SortOrderBuilder
     _last_assigned_order_id: int
@@ -88,7 +88,7 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
             .field_id
         )
 
-    def asc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> ReplaceSortOrder:
+    def asc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
         self._builder.add_sort_field(
             source_id=self._column_name_to_id(source_column_name),
             transform=transform,
@@ -97,7 +97,7 @@ class ReplaceSortOrder(UpdateTableMetadata["ReplaceSortOrder"]):
         )
         return self
 
-    def desc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> ReplaceSortOrder:
+    def desc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
         self._builder.add_sort_field(
             source_id=self._column_name_to_id(source_column_name),
             transform=transform,

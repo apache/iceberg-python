@@ -117,7 +117,7 @@ from pyiceberg.table.update.snapshot import (
     UpdateSnapshot,
     _FastAppendFiles,
 )
-from pyiceberg.table.update.sorting import ReplaceSortOrder
+from pyiceberg.table.update.sorting import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -414,16 +414,16 @@ class Transaction:
             name_mapping=self.table_metadata.name_mapping(),
         )
 
-    def replace_sort_order(self, case_sensitive: bool = True) -> ReplaceSortOrder:
-        """Create a new ReplaceSortOrder to replace the sort order of this table.
+    def update_sort_order(self, case_sensitive: bool = True) -> UpdateSortOrder:
+        """Create a new UpdateSortOrder to update the sort order of this table.
 
         Args:
             case_sensitive: If field names are case-sensitive.
 
         Returns:
-            A new ReplaceSortOrder.
+            A new UpdateSortOrder.
         """
-        return ReplaceSortOrder(
+        return UpdateSortOrder(
             self,
             case_sensitive=case_sensitive,
         )
@@ -1095,13 +1095,13 @@ class Table:
             name_mapping=self.name_mapping(),
         )
 
-    def replace_sort_order(self) -> ReplaceSortOrder:
+    def update_sort_order(self) -> UpdateSortOrder:
         """Create a new ReplaceSortOrder to replace the sort order of this table.
 
         Returns:
             A new ReplaceSortOrder.
         """
-        return ReplaceSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=True)
+        return UpdateSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=True)
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
