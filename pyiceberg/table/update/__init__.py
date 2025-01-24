@@ -181,7 +181,7 @@ class SetStatisticsUpdate(IcebergBaseModel):
     snapshot_id: Optional[int] = Field(
         None,
         alias="snapshot-id",
-        description="This optional field is **DEPRECATED for REMOVAL** since it contains redundant information. Clients should use the `statistics.snapshot-id` field instead.",
+        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
     )
 
     @model_validator(mode="before")
