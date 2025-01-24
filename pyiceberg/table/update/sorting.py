@@ -34,19 +34,37 @@ if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 
-class SortOrderBuilder:
-    def __init__(self, last_sort_order_id: int, case_sensitive: bool = True) -> None:
-        self._fields: List[SortField] = []
-        self._case_sensitive = case_sensitive
-        self._last_sort_order_id = last_sort_order_id
+class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
+    _transaction: Transaction
+    _last_assigned_order_id: int
+    _case_sensitive: bool
+    _fields: List[SortField]
+    _last_sort_order_id: int
 
-    def add_sort_field(
+    def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
+        super().__init__(transaction)
+        self._fields: List[SortField] = []
+        self._case_sensitive: bool = case_sensitive
+        self._last_sort_order_id: int = transaction.table_metadata.default_sort_order_id
+
+    def _column_name_to_id(self, column_name: str) -> int:
+        """Maps the column name to the column field id."""
+        return (
+            self._transaction.table_metadata.schema()
+            .find_field(
+                name_or_id=column_name,
+                case_sensitive=self._case_sensitive,
+            )
+            .field_id
+        )
+        
+    def _add_sort_field(
         self,
         source_id: int,
         transform: Transform[Any, Any],
         direction: SortDirection,
         null_order: NullOrder,
-    ) -> SortOrderBuilder:
+    ) -> UpdateSortOrder:
         """Add a sort field to the sort order list."""
         self._fields.append(
             SortField(
@@ -58,56 +76,27 @@ class SortOrderBuilder:
         )
         return self
 
-    @property
-    def sort_order(self) -> SortOrder:
-        """Return the sort order."""
-        return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
-
-
-class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
-    _transaction: Transaction
-    _builder: SortOrderBuilder
-    _last_assigned_order_id: int
-    _case_sensitive: bool
-
-    def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
-        super().__init__(transaction)
-        self._builder = SortOrderBuilder(
-            case_sensitive=case_sensitive,
-            last_sort_order_id=transaction.table_metadata.default_sort_order_id,
-        )
-        self._case_sensitive = case_sensitive
-
-    def _column_name_to_id(self, column_name: str) -> int:
-        return (
-            self._transaction.table_metadata.schema()
-            .find_field(
-                name_or_id=column_name,
-                case_sensitive=self._case_sensitive,
-            )
-            .field_id
-        )
-
     def asc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
-        self._builder.add_sort_field(
+        """Adds a sort field with ascending order."""
+        return self._add_sort_field(
             source_id=self._column_name_to_id(source_column_name),
             transform=transform,
             direction=SortDirection.ASC,
             null_order=null_order,
         )
-        return self
 
     def desc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
-        self._builder.add_sort_field(
+        """Adds a sort field with descending order."""
+        return self._add_sort_field(
             source_id=self._column_name_to_id(source_column_name),
             transform=transform,
             direction=SortDirection.DESC,
             null_order=null_order,
         )
-        return self
 
     def _apply(self) -> SortOrder:
-        return self._builder.sort_order
+        """Returns the sort order"""
+        return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
