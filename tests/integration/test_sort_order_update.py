@@ -97,3 +97,23 @@ def test_replace_sort_order(catalog: Catalog, table_schema_simple: Schema) -> No
         SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_LAST),
         order_id=1,
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("session_catalog_hive")])
+def test_replace_existing_sort_order(catalog: Catalog, table_schema_simple: Schema) -> None:
+    simple_table = _simple_table(catalog, table_schema_simple)
+    simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()
+    assert simple_table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        order_id=1,
+    )
+    simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_LAST).desc(
+        "bar", IdentityTransform(), NullOrder.NULLS_FIRST
+    ).commit()
+    assert len(simple_table.sort_orders()) == 3 # 0: empty sort order from creating tables, 1: first sort order, 2: second sort order
+    assert simple_table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_FIRST),
+        order_id=2,
+    )
