@@ -48,7 +48,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         self._last_sort_order_id: int = transaction.table_metadata.default_sort_order_id
 
     def _column_name_to_id(self, column_name: str) -> int:
-        """Maps the column name to the column field id."""
+        """Map the column name to the column field id."""
         return (
             self._transaction.table_metadata.schema()
             .find_field(
@@ -57,7 +57,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
             )
             .field_id
         )
-        
+
     def _add_sort_field(
         self,
         source_id: int,
@@ -77,7 +77,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         return self
 
     def asc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
-        """Adds a sort field with ascending order."""
+        """Add a sort field with ascending order."""
         return self._add_sort_field(
             source_id=self._column_name_to_id(source_column_name),
             transform=transform,
@@ -86,7 +86,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         )
 
     def desc(self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder) -> UpdateSortOrder:
-        """Adds a sort field with descending order."""
+        """Add a sort field with descending order."""
         return self._add_sort_field(
             source_id=self._column_name_to_id(source_column_name),
             transform=transform,
@@ -95,7 +95,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         )
 
     def _apply(self) -> SortOrder:
-        """Returns the sort order"""
+        """Return the sort order."""
         return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
 
     def _commit(self) -> UpdatesAndRequirements:
