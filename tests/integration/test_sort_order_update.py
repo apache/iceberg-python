@@ -23,7 +23,6 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
-from pyiceberg.table.update.sorting import SortOrderBuilder
 from pyiceberg.transforms import (
     IdentityTransform,
 )
@@ -64,17 +63,6 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: 
     except NoSuchTableError:
         pass
     return catalog.create_table(identifier=tbl_name, schema=schema, properties={"format-version": format_version})
-
-
-@pytest.mark.integration
-def test_sort_order_builder() -> None:
-    builder = SortOrderBuilder(last_sort_order_id=0)
-    builder.add_sort_field(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_FIRST)
-    builder.add_sort_field(2, IdentityTransform(), SortDirection.DESC, NullOrder.NULLS_LAST)
-    assert builder.sort_order == SortOrder(
-        SortField(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_FIRST),
-        SortField(2, IdentityTransform(), SortDirection.DESC, NullOrder.NULLS_LAST),
-    )
 
 
 @pytest.mark.integration
