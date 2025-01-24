@@ -119,6 +119,7 @@ from pyiceberg.table.update.snapshot import (
 )
 from pyiceberg.table.update.sorting import ReplaceSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
+from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
@@ -187,6 +188,14 @@ class TableProperties:
 
     WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
+
+    WRITE_PY_LOCATION_PROVIDER_IMPL = "write.py-location-provider.impl"
+
+    OBJECT_STORE_ENABLED = "write.object-storage.enabled"
+    OBJECT_STORE_ENABLED_DEFAULT = True
+
+    WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
+    WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
@@ -459,8 +468,10 @@ class Transaction:
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                data_files = list(
+                    _dataframe_to_data_files(
+                        table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    )
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -1050,6 +1061,23 @@ class Table:
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
 
+    def update_statistics(self) -> UpdateStatistics:
+        """
+        Shorthand to run statistics management operations like add statistics and remove statistics.
+
+        Use table.update_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_statistics() as update:
+            update.set_statistics(snapshot_id=1, statistics_file=statistics_file)
+            update.remove_statistics(snapshot_id=2)
+        """
+        return UpdateStatistics(transaction=Transaction(self, autocommit=True))
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -1635,13 +1663,6 @@ class WriteTask:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
         return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
-
-    def generate_data_file_path(self, extension: str) -> str:
-        if self.partition_key:
-            file_path = f"{self.partition_key.to_path()}/{self.generate_data_file_filename(extension)}"
-            return file_path
-        else:
-            return self.generate_data_file_filename(extension)
 
 
 @dataclass(frozen=True)

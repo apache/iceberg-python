@@ -16,6 +16,7 @@
 # under the License.
 
 import base64
+import datetime as py_datetime
 import struct
 from abc import ABC, abstractmethod
 from enum import IntEnum
@@ -84,6 +85,8 @@ from pyiceberg.utils.singleton import Singleton
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+    ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)
 
 S = TypeVar("S")
 T = TypeVar("T")
@@ -193,6 +196,27 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     @abstractmethod
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
 
+    def _pyiceberg_transform_wrapper(
+        self, transform_func: Callable[["ArrayLike", Any], "ArrayLike"], *args: Any
+    ) -> Callable[["ArrayLike"], "ArrayLike"]:
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For bucket/truncate transforms, PyArrow needs to be installed") from e
+
+        def _transform(array: "ArrayLike") -> "ArrayLike":
+            if isinstance(array, pa.Array):
+                return transform_func(array, *args)
+            elif isinstance(array, pa.ChunkedArray):
+                result_chunks = []
+                for arr in array.iterchunks():
+                    result_chunks.append(transform_func(arr, *args))
+                return pa.chunked_array(result_chunks)
+            else:
+                raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
+
+        return _transform
+
 
 class BucketTransform(Transform[S, int]):
     """Base Transform class to transform a value into a bucket partition value.
@@ -275,7 +299,31 @@ class BucketTransform(Transform[S, int]):
         )
 
     def transform(self, source: IcebergType, bucket: bool = True) -> Callable[[Optional[Any]], Optional[int]]:
-        if isinstance(source, (IntegerType, LongType, DateType, TimeType, TimestampType, TimestamptzType)):
+        if isinstance(source, TimeType):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.time):
+                    v = datetime.time_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, DateType):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (TimestampType, TimestamptzType)):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (IntegerType, LongType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(struct.pack("<q", v))
@@ -309,7 +357,13 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 class TimeResolution(IntEnum):
@@ -390,11 +444,17 @@ class YearTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def year_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return datetime.days_to_years(v)
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def year_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_years(v)
 
         else:
@@ -447,11 +507,17 @@ class MonthTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def month_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return datetime.days_to_months(v)
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def month_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_months(v)
 
         else:
@@ -510,11 +576,17 @@ class DayTransform(TimeTransform[S]):
         if isinstance(source, DateType):
 
             def day_func(v: Any) -> int:
+                if isinstance(v, py_datetime.date):
+                    v = datetime.date_to_days(v)
+
                 return v
 
         elif isinstance(source, (TimestampType, TimestamptzType)):
 
             def day_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_days(v)
 
         else:
@@ -575,6 +647,9 @@ class HourTransform(TimeTransform[S]):
         if isinstance(source, (TimestampType, TimestamptzType)):
 
             def hour_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+
                 return datetime.micros_to_hours(v)
 
         else:
@@ -827,7 +902,13 @@ class TruncateTransform(Transform[S, S]):
         return f"TruncateTransform(width={self._width})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        raise NotImplementedError()
+        from pyiceberg_core import transform as pyiceberg_core_transform
+
+        return self._pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
+
+    @property
+    def supports_pyarrow_transform(self) -> bool:
+        return True
 
 
 @singledispatch
