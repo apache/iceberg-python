@@ -43,7 +43,7 @@ class UpdateStatistics(UpdateTableMetadata["UpdateStatistics"]):
     We can also use context managers to make more changes. For example:
 
     with table.update_statistics() as update:
-        update.set_statistics(snapshot_id=1, statistics_file=statistics_file)
+        update.set_statistics(statistics_file=statistics_file)
         update.remove_statistics(snapshot_id=2)
     """
 
