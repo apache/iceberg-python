@@ -1096,10 +1096,10 @@ class Table:
         )
 
     def update_sort_order(self) -> UpdateSortOrder:
-        """Create a new ReplaceSortOrder to replace the sort order of this table.
+        """Create a new UpdateSortOrder to update the sort order of this table.
 
         Returns:
-            A new ReplaceSortOrder.
+            A new UpdateSortOrder.
         """
         return UpdateSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=True)
 
