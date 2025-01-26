@@ -614,6 +614,17 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         with pq.ParquetWriter(fos, schema=nanoseconds_schema) as writer:
             writer.write_table(arrow_table)
 
+    tbl.add_files(file_paths=[file_path])
+    expected_value = 1615967687.249846
+    assert tbl.scan(selected_fields=("quux",)).to_pandas()["quux"].get(0).timestamp() == expected_value
+
+    # Method tbl.add_files() triggers pyiceberg.io.pyarrow._ConvertToIceberg.primitive
+    # which prints to stdout / stderr warning:
+    # "Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'."
+    #
+    # The old test had assertion for this. I have no idea why and code does not
+    # have sensible comment to explain this.
+
     # add the parquet files as data files
     with pytest.raises(
         UnsupportedPyArrowTypeException,
