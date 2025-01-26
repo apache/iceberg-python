@@ -298,8 +298,8 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Opt
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(name, **properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize Catalog: %s", catalog_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=exc)
         return None
 
 
