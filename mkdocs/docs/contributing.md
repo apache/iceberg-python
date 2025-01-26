@@ -30,11 +30,9 @@ If you would like to discuss your proposed change before contributing, we encour
 
 For first-time contributors, feel free to check out our [good first issues](https://github.com/apache/iceberg-python/issues/?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) for an easy way to get started.
 
-
 ## Contributing to the Iceberg Python library
 
 The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-python>.
-
 
 For the development, Poetry is used for packing and dependency management. You can install this using:
 
