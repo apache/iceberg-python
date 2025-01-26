@@ -316,7 +316,7 @@ def _import_file_io(io_impl: str, properties: Properties) -> Optional[FileIO]:
         class_ = getattr(module, class_name)
         return class_(properties)
     except ModuleNotFoundError:
-        logger.warning("Could not initialize FileIO: %s", io_impl)
+        logger.warning("Could not initialize FileIO: %s", io_impl, exc_info=True)
         return None
 
 
