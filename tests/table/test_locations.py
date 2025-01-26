@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 
@@ -64,11 +64,12 @@ def test_custom_location_provider_single_path() -> None:
         load_location_provider(table_location="table_location", table_properties={"write.py-location-provider.impl": "not_found"})
 
 
-def test_custom_location_provider_not_found() -> None:
+def test_custom_location_provider_not_found(caplog: Any) -> None:
     with pytest.raises(ValueError, match=r"Could not initialize LocationProvider"):
         load_location_provider(
             table_location="table_location", table_properties={"write.py-location-provider.impl": "module.not_found"}
         )
+    assert "ModuleNotFoundError: No module named 'module'" in caplog.text
 
 
 def test_object_storage_no_partition() -> None:

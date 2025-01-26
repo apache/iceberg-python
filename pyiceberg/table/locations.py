@@ -129,8 +129,8 @@ def _import_location_provider(
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(table_location, table_properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize LocationProvider: %s", location_provider_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize LocationProvider: {location_provider_impl}", exc_info=exc)
         return None
 
 
