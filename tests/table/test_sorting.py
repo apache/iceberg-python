@@ -102,3 +102,15 @@ def test_unsorting_to_repr() -> None:
 def test_sorting_repr(sort_order: SortOrder) -> None:
     """To make sure that the repr converts back to the original object"""
     assert sort_order == eval(repr(sort_order))
+
+
+def test_serialize_sort_field_v2() -> None:
+    expected = SortField(source_id=19, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST)
+    payload = '{"source-id":19,"transform":"identity","direction":"asc","null-order":"nulls-first"}'
+    assert SortField.model_validate_json(payload) == expected
+
+
+def test_serialize_sort_field_v3() -> None:
+    expected = SortField(source_id=19, transform=IdentityTransform(), null_order=NullOrder.NULLS_FIRST)
+    payload = '{"source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
+    assert SortField.model_validate_json(payload) == expected

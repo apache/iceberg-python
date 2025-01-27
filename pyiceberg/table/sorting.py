@@ -102,6 +102,19 @@ class SortField(IcebergBaseModel):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
         return values
 
+    @model_validator(mode="before")
+    @classmethod
+    def map_source_ids_onto_source_id(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "source-id" not in data and (source_ids := data["source-ids"]):
+                if isinstance(source_ids, list):
+                    if len(source_ids) == 0:
+                        raise ValueError("Empty source-ids is not allowed")
+                    if len(source_ids) > 1:
+                        raise ValueError("Multi argument transforms are not yet supported")
+                    data["source-id"] = source_ids[0]
+        return data
+
     source_id: int = Field(alias="source-id")
     transform: Annotated[  # type: ignore
         Transform,

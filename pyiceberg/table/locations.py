@@ -30,7 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 class LocationProvider(ABC):
-    """A base class for location providers, that provide data file locations for write tasks."""
+    """A base class for location providers, that provide data file locations for a table's write tasks.
+
+    Args:
+        table_location (str): The table's base storage location.
+        table_properties (Properties): The table's properties.
+    """
 
     table_location: str
     table_properties: Properties
@@ -124,8 +129,8 @@ def _import_location_provider(
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(table_location, table_properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize LocationProvider: %s", location_provider_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize LocationProvider: {location_provider_impl}", exc_info=exc)
         return None
 
 

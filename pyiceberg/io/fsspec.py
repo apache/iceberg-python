@@ -179,6 +179,16 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
+    for key, sas_token in {
+        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value
+        for key, value in properties.items()
+        if key.startswith(ADLS_SAS_TOKEN) and key.endswith(".windows.net")
+    }.items():
+        if ADLS_ACCOUNT_NAME not in properties:
+            properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
+        if ADLS_SAS_TOKEN not in properties:
+            properties[ADLS_SAS_TOKEN] = sas_token
+
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
         account_name=properties.get(ADLS_ACCOUNT_NAME),

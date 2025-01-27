@@ -453,8 +453,10 @@ class Transaction:
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
             if df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                data_files = list(
+                    _dataframe_to_data_files(
+                        table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    )
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -1056,7 +1058,7 @@ class Table:
         We can also use context managers to make more changes. For example:
 
         with table.update_statistics() as update:
-            update.set_statistics(snapshot_id=1, statistics_file=statistics_file)
+            update.set_statistics(statistics_file=statistics_file)
             update.remove_statistics(snapshot_id=2)
         """
         return UpdateStatistics(transaction=Transaction(self, autocommit=True))
