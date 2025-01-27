@@ -602,7 +602,7 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         ],
         schema=nanoseconds_schema,
     )
-    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "False"})
 
     identifier = f"default.timestamptz_ns_added{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version, schema=nanoseconds_schema_iceberg)
@@ -627,6 +627,45 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
         in exception_cause.args[0]
     )
+
+
+@pytest.mark.integration
+def test_add_files_with_automatic_downcast_of_timestamp_to_us(
+        session_catalog: Catalog, format_version: int, mocker: MockerFixture
+) -> None:
+    nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
+
+    nanoseconds_schema = pa.schema(
+        [
+            ("quux", pa.timestamp("ns", tz="UTC")),
+        ]
+    )
+
+    arrow_table = pa.Table.from_pylist(
+        [
+            {
+                "quux": 1615967687249846175,  # 2021-03-17 07:54:47.249846175
+            }
+        ],
+        schema=nanoseconds_schema,
+    )
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+
+    identifier = f"default.timestamptz_ns_added{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version, schema=nanoseconds_schema_iceberg)
+
+    file_path = f"s3://warehouse/default/test_timestamp_tz/v{format_version}/test.parquet"
+    # write parquet files
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=nanoseconds_schema) as writer:
+            writer.write_table(arrow_table)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=[file_path])
+    data_scan = tbl.scan(selected_fields=('quux',)).to_arrow()
+    assert data_scan['quux'].type == pa.timestamp(unit='us', tz='UTC')  # timestamp unit check
+    assert data_scan['quux'][0].value == 1615967687249846   # down-casted value of the timestamp must be 'us' long
 
 
 @pytest.mark.integration
