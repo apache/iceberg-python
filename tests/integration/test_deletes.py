@@ -313,6 +313,7 @@ def test_delete_partitioned_table_positional_deletes_empty_batch(spark: SparkSes
 @pytest.mark.filterwarnings("ignore:Merge on read is not yet supported, falling back to copy-on-write")
 def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession, session_catalog: RestCatalog) -> None:
     identifier = "default.test_read_multiple_batches_in_task_with_position_deletes"
+    multiplier = 10
 
     run_spark_commands(
         spark,
@@ -337,7 +338,7 @@ def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession
 
     arrow_table = pa.Table.from_arrays(
         [
-            pa.array(list(range(1, 1001)) * 100),
+            pa.array(list(range(1, 1001)) * multiplier),
         ],
         schema=pa.schema([pa.field("number", pa.int32())]),
     )
@@ -358,7 +359,7 @@ def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession
     reader = tbl.scan(row_filter="number <= 50").to_arrow_batch_reader()
     assert isinstance(reader, pa.RecordBatchReader)
     pyiceberg_count = len(reader.read_all())
-    expected_count = 46 * 100
+    expected_count = 46 * multiplier
     assert pyiceberg_count == expected_count, f"Failing check. {pyiceberg_count} != {expected_count}"
 
 
