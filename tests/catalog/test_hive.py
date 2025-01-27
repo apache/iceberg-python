@@ -206,6 +206,87 @@ def test_check_number_of_namespaces(table_schema_simple: Schema) -> None:
 
 @pytest.mark.parametrize("hive2_compatible", [True, False])
 @patch("time.time", MagicMock(return_value=12345))
+def test_register_table(
+    table_schema_with_all_types: Schema,
+    hive_database: HiveDatabase,
+    hive_table: HiveTable,
+    hive2_compatible: bool,
+    metadata_with_owner_location: str,
+) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+    if hive2_compatible:
+        catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL, **{"hive.hive2-compatible": "true"})
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().create_table.return_value = None
+    catalog._client.__enter__().register_table.return_value = None
+    catalog._client.__enter__().get_table.return_value = hive_table
+    catalog._client.__enter__().get_database.return_value = hive_database
+
+    catalog.register_table(("default", "table"), metadata_location=metadata_with_owner_location)
+
+    catalog._client.__enter__().create_table.assert_called_with(
+        HiveTable(
+            tableName="table",
+            dbName="default",
+            owner="test",
+            createTime=12345,
+            lastAccessTime=12345,
+            retention=None,
+            sd=StorageDescriptor(
+                cols=[
+                    FieldSchema(name="x", type="bigint", comment=None),  # Corrected columns
+                    FieldSchema(name="y", type="bigint", comment="comment"),
+                    FieldSchema(name="z", type="bigint", comment=None),
+                ],
+                location="s3://bucket/test/location",  # Corrected location
+                inputFormat="org.apache.hadoop.mapred.FileInputFormat",
+                outputFormat="org.apache.hadoop.mapred.FileOutputFormat",
+                compressed=None,
+                numBuckets=None,
+                serdeInfo=SerDeInfo(
+                    name=None,
+                    serializationLib="org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+                    parameters=None,
+                    description=None,
+                    serializerClass=None,
+                    deserializerClass=None,
+                    serdeType=None,
+                ),
+                bucketCols=None,
+                sortCols=None,
+                parameters=None,
+                skewedInfo=None,
+                storedAsSubDirectories=None,
+            ),
+            partitionKeys=None,
+            parameters={"EXTERNAL": "TRUE", "table_type": "ICEBERG", "metadata_location": metadata_with_owner_location},
+            viewOriginalText=None,
+            viewExpandedText=None,
+            tableType="EXTERNAL_TABLE",
+            privileges=None,
+            temporary=False,
+            rewriteEnabled=None,
+            creationMetadata=None,
+            catName=None,
+            ownerType=1,
+            writeId=-1,
+            isStatsCompliant=None,
+            colStats=None,
+            accessType=None,
+            requiredReadCapabilities=None,
+            requiredWriteCapabilities=None,
+            id=None,
+            fileMetadata=None,
+            dictionary=None,
+            txnId=None,
+        )
+    )
+    assert catalog.table_exists(identifier="default.table")
+
+
+@pytest.mark.parametrize("hive2_compatible", [True, False])
+@patch("time.time", MagicMock(return_value=12345))
 def test_create_table(
     table_schema_with_all_types: Schema, hive_database: HiveDatabase, hive_table: HiveTable, hive2_compatible: bool
 ) -> None:
