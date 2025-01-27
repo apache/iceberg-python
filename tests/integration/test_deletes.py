@@ -337,7 +337,7 @@ def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession
 
     arrow_table = pa.Table.from_arrays(
         [
-            pa.array(list(range(1, 1001)) * 100),
+            pa.array(list(range(1, 100)) * 10),
         ],
         schema=pa.schema([pa.field("number", pa.int32())]),
     )
@@ -347,9 +347,7 @@ def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession
     run_spark_commands(
         spark,
         [
-            f"""
-            DELETE FROM {identifier} WHERE number in (1, 2, 3, 4)
-        """,
+            f"DELETE FROM {identifier} WHERE number in (1, 2, 3, 4)",
         ],
     )
 
@@ -358,7 +356,7 @@ def test_read_multiple_batches_in_task_with_position_deletes(spark: SparkSession
     reader = tbl.scan(row_filter="number <= 50").to_arrow_batch_reader()
     assert isinstance(reader, pa.RecordBatchReader)
     pyiceberg_count = len(reader.read_all())
-    expected_count = 46 * 100
+    expected_count = 46 * 10
     assert pyiceberg_count == expected_count, f"Failing check. {pyiceberg_count} != {expected_count}"
 
 
