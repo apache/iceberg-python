@@ -2423,6 +2423,7 @@ def _check_pyarrow_schema_compatible(
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE
+
     for file_path in file_paths:
         input_file = io.new_input(file_path)
         with input_file.open() as input_stream:
@@ -2434,11 +2435,7 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
             )
         schema = table_metadata.schema()
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            schema,
-            parquet_metadata.schema.to_arrow_schema(),
-            downcast_ns_timestamp_to_us
-        )
+        _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema(), downcast_ns_timestamp_to_us)
 
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=parquet_metadata,
