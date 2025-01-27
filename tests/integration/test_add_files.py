@@ -597,7 +597,7 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
     arrow_table = pa.Table.from_pylist(
         [
             {
-                "quux": 1615967687249846175,  # 2021-03-17 07:54:47.249846159
+                "quux": 1615967687249846175,  # 2021-03-17 07:54:47.249846175
             }
         ],
         schema=nanoseconds_schema,
