@@ -752,6 +752,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
         """Remove a snapshot ref.
+
         Args:
             ref_name: branch / tag name to remove
         Stages the updates and requirements for the remove-snapshot-ref.
@@ -796,6 +797,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     def remove_tag(self, tag_name: str) -> ManageSnapshots:
         """
         Remove a tag.
+
         Args:
             tag_name (str): name of tag to remove
         Returns:
@@ -838,6 +840,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     def remove_branch(self, branch_name: str) -> ManageSnapshots:
         """
         Remove a branch.
+
         Args:
             branch_name (str): name of branch to remove
         Returns:
