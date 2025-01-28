@@ -682,4 +682,4 @@ class TableMetadataUtil:
             raise ValidationError(f"Unknown format version: {table_metadata.format_version}")
 
 
-TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2], Field(discriminator="format_version")]  # type: ignore
+TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2, TableMetadataV3], Field(discriminator="format_version")]  # type: ignore
