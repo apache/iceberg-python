@@ -674,8 +674,10 @@ def test_add_files_with_automatic_downcast_of_timestamp_to_us(
         ValueError,
         match=re.escape("year 53177 is out of range"),
     ) as exc_info:
-        df = spark.sql(f"""SELECT quux FROM {identifier}""").first()
-    assert isinstance(exc_info.value, ValueError), "Spark cannot downcast 'ns' to 'us' on read. This occurred due to a mismatch between the table schema ('us') and file schema ('ns' - add_files does not rewrite the data files to 'us')"
+        spark.sql(f"""SELECT quux FROM {identifier}""").first()
+    assert isinstance(
+        exc_info.value, ValueError
+    ), "Spark cannot downcast 'ns' to 'us' on read. This occurred due to a mismatch between the table schema ('us') and file schema ('ns' - add_files does not rewrite the data files to 'us')"
 
 
 @pytest.mark.integration
