@@ -631,7 +631,7 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
 
 @pytest.mark.integration
 def test_add_files_with_automatic_downcast_of_timestamp_to_us(
-    session_catalog: Catalog, format_version: int, mocker: MockerFixture
+    spark: SparkSession, session_catalog: Catalog, format_version: int, mocker: MockerFixture
 ) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 
@@ -663,9 +663,19 @@ def test_add_files_with_automatic_downcast_of_timestamp_to_us(
 
     # add the parquet files as data files
     tbl.add_files(file_paths=[file_path])
+
+    # checks through pyarrow
     data_scan = tbl.scan(selected_fields=("quux",)).to_arrow()
     assert data_scan["quux"].type == pa.timestamp(unit="us", tz="UTC")  # timestamp unit check
     assert data_scan["quux"][0].value == 1615967687249846  # down-casted value of the timestamp must be 'us' long
+
+    # checks through spark
+    with pytest.raises(
+        ValueError,
+        match=re.escape("year 53177 is out of range"),
+    ) as exc_info:
+        df = spark.sql(f"""SELECT quux FROM {identifier}""").first()
+    assert isinstance(exc_info.value, ValueError), "Spark cannot downcast 'ns' to 'us' on read. This occurred due to a mismatch between the table schema ('us') and file schema ('ns' - add_files does not rewrite the data files to 'us')"
 
 
 @pytest.mark.integration
