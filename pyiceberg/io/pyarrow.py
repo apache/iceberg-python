@@ -886,7 +886,9 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
     if data_file.file_format == FileFormat.PARQUET:
         delete_fragment = _construct_fragment(
-            fs, data_file, file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE}
+            fs,
+            data_file,
+            file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
         )
         table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()

@@ -22,18 +22,19 @@ from pydantic import Field
 from pyiceberg.typedef import IcebergBaseModel
 
 # Short for: Puffin Fratercula arctica, version 1
-MAGIC_BYTES = b'PFA1'
+MAGIC_BYTES = b"PFA1"
 
 
 class PuffinBlobMetadata(IcebergBaseModel):
     type: Literal["deletion-vector-v1"] = Field()
     fields: List[int] = Field()
-    snapshot_id: int = Field(alias='snapshot-id')
-    sequence_number: int = Field(alias='sequence-number')
+    snapshot_id: int = Field(alias="snapshot-id")
+    sequence_number: int = Field(alias="sequence-number")
     offset: int = Field()
     length: int = Field()
-    compression_codec: Optional[str] = Field(alias='compression-codec', default=None)
+    compression_codec: Optional[str] = Field(alias="compression-codec", default=None)
     properties: Dict[str, str] = Field(default_factory=dict)
+
 
 class Footer(IcebergBaseModel):
     blobs: List[PuffinBlobMetadata] = Field()
@@ -57,15 +58,13 @@ class PuffinFile:
             raise ValueError("The Puffin-file has a compressed footer, which is not yet supported")
 
         # 4 byte integer is always signed, in a two's complement representation, stored little-endian.
-        footer_payload_size_int = int.from_bytes( puffin[-12:-8], byteorder='little')
+        footer_payload_size_int = int.from_bytes(puffin[-12:-8], byteorder="little")
 
-        self.footer = Footer.model_validate_json(puffin[-(footer_payload_size_int + 12): -12])
-
-        from pyroaring import BitMap64
+        self.footer = Footer.model_validate_json(puffin[-(footer_payload_size_int + 12) : -12])
 
         blob = self.footer.blobs[0]
 
-        pl = puffin[blob.offset:blob.offset + blob.length]
+        pl = puffin[blob.offset : blob.offset + blob.length]
         bm = pyroaring.BitMap64.deserialize(pl)
 
         return
