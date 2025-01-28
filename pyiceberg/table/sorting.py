@@ -16,14 +16,7 @@
 # under the License.
 # pylint: disable=keyword-arg-before-vararg
 from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
-)
+from typing import Annotated, Any, Callable, Dict, List, Optional, Union
 
 from pydantic import (
     BeforeValidator,
@@ -32,7 +25,6 @@ from pydantic import (
     WithJsonSchema,
     model_validator,
 )
-from typing_extensions import Annotated
 
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform, Transform, parse_transform
