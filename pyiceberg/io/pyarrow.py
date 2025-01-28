@@ -140,6 +140,7 @@ from pyiceberg.schema import (
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
+from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -883,15 +884,24 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
-    delete_fragment = _construct_fragment(
-        fs, data_file, file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE}
-    )
-    table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-    table = table.unify_dictionaries()
-    return {
-        file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-        for file in table.column("file_path").chunks[0].dictionary
-    }
+    if data_file.file_format == FileFormat.PARQUET:
+        delete_fragment = _construct_fragment(
+            fs, data_file, file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE}
+        )
+        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+        table = table.unify_dictionaries()
+        return {
+            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
+            for file in table.column("file_path").chunks[0].dictionary
+        }
+    elif data_file.file_format == FileFormat.PUFFIN:
+        _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
+        with fs.open_input_file(path) as fi:
+            payload = fi.read()
+
+        return PuffinFile(payload)
+    else:
+        raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
 
 def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
