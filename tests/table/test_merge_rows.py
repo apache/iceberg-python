@@ -130,10 +130,6 @@ def test_merge_scenario_1_simple():
     assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
-    #print(res)
-
-    #show_iceberg_table(table)
-
     purge_warehouse()
 
 def test_merge_scenario_2_10k_rows():
@@ -191,8 +187,7 @@ def test_merge_update_only():
     table = gen_target_iceberg_table(1, 1000, False, ctx)
     source_df = gen_source_dataset(501, 1500, False, False, ctx)
     
-    merge_options = {'when_matched_update_all': True, 'when_not_matched_insert_all': False}
-    res = table.merge_rows(df=source_df, join_cols=["order_id"], merge_options=merge_options)
+    res = table.merge_rows(df=source_df, join_cols=["order_id"], when_matched_update_all=True, when_not_matched_insert_all=False)
 
     rows_updated_should_be = 500
     rows_inserted_should_be = 0
@@ -212,8 +207,7 @@ def test_merge_insert_only():
     table = gen_target_iceberg_table(1, 1000, False, ctx)
     source_df = gen_source_dataset(501, 1500, False, False, ctx)
     
-    merge_options = {'when_matched_update_all': False, 'when_not_matched_insert_all': True}
-    res = table.merge_rows(df=source_df, join_cols=["order_id"], merge_options=merge_options)
+    res = table.merge_rows(df=source_df, join_cols=["order_id"], when_matched_update_all=False, when_not_matched_insert_all=True)
 
     rows_updated_should_be = 0
     rows_inserted_should_be = 500

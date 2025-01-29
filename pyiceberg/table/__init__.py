@@ -1065,7 +1065,8 @@ class Table:
         return self.metadata.name_mapping()
 
     def merge_rows(self, df: pa.Table, join_cols: list
-                    ,merge_options: dict = {'when_matched_update_all': True, 'when_not_matched_insert_all': True}
+                   , when_matched_update_all: bool = True
+                   , when_not_matched_insert_all: bool = True
                 ) -> Dict:
         """
         Shorthand API for performing an upsert/merge to an iceberg table.
@@ -1073,9 +1074,8 @@ class Table:
         Args:
             df: The input dataframe to merge with the table's data.
             join_cols: The columns to join on.
-            merge_options: A dictionary of merge actions to perform. Currently supports these predicates >
-                when_matched_update_all: default is True
-                when_not_matched_insert_all: default is True
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
 
         Returns:
             A dictionary containing the number of rows updated and inserted.
@@ -1095,12 +1095,6 @@ class Table:
 
         source_table_name = "source"
         target_table_name = "target"
-
-        if merge_options is None or merge_options == {}:
-            merge_options = {'when_matched_update_all': True, 'when_not_matched_insert_all': True}
-
-        when_matched_update_all = merge_options.get('when_matched_update_all', False)
-        when_not_matched_insert_all = merge_options.get('when_not_matched_insert_all', False)
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
             return {'rows_updated': 0, 'rows_inserted': 0, 'msg': 'no merge options selected...exiting'}
