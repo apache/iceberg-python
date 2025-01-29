@@ -1134,17 +1134,6 @@ def metadata_location(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture(scope="session")
-def metadata_with_owner_location(tmp_path_factory: pytest.TempPathFactory) -> str:
-    from pyiceberg.io.pyarrow import PyArrowFileIO
-
-    metadata_location = str(tmp_path_factory.mktemp("metadata") / f"{uuid.uuid4()}.metadata.json")
-    metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
-    metadata.properties["owner"] = "test"
-    ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
-    return metadata_location
-
-
-@pytest.fixture(scope="session")
 def metadata_location_gz(tmp_path_factory: pytest.TempPathFactory) -> str:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
