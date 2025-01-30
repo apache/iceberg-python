@@ -680,6 +680,3 @@ class TableMetadataUtil:
             return TableMetadataV3.model_construct(**dict(table_metadata))
         else:
             raise ValidationError(f"Unknown format version: {table_metadata.format_version}")
-
-
-TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2, TableMetadataV3], Field(discriminator="format_version")]  # type: ignore
