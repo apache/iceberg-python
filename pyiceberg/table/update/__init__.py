@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import itertools
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -474,9 +475,15 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         for ref_name, ref in base_metadata.refs.items()
         if ref.snapshot_id in update.snapshot_ids
     )
+    remove_statistics_updates = (
+        RemoveStatisticsUpdate(statistics_file.snapshot_id)
+        for statistics_file in base_metadata.statistics
+        if statistics_file.snapshot_id in update.snapshot_ids
+    )
+    updates = itertools.chain(remove_ref_updates, remove_statistics_updates)
     new_metadata = base_metadata
-    for remove_ref in remove_ref_updates:
-        new_metadata = _apply_table_update(remove_ref, new_metadata, context)
+    for update in updates:
+        new_metadata = _apply_table_update(update, new_metadata, context)
 
     context.add_update(update)
     return new_metadata.model_copy(update={"snapshots": snapshots})
