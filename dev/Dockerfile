@@ -47,10 +47,10 @@ RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_V
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
 # Download iceberg spark runtime
-RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.8.0-SNAPSHOT/iceberg-spark-runtime-3.5_2.12-1.8.0-20250120.001750-73.jar -Lo /opt/spark/jars/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar
+RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.8.0-SNAPSHOT/iceberg-spark-runtime-3.5_2.12-1.8.0-20250129.001714-82.jar -Lo /opt/spark/jars/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar
 
 # Download AWS bundle
-RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-aws-bundle/1.8.0-SNAPSHOT/iceberg-aws-bundle-1.8.0-20250120.002709-147.jar -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
+RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-aws-bundle/1.8.0-SNAPSHOT/iceberg-aws-bundle-1.8.0-20250129.002612-165.jar -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
 
 COPY spark-defaults.conf /opt/spark/conf
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"

@@ -901,7 +901,7 @@ def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedAr
         with fs.open_input_file(path) as fi:
             payload = fi.read()
 
-        return PuffinFile(payload)
+        return PuffinFile(payload).to_vector()
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 

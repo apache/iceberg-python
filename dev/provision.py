@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import math
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import current_date, date_add, expr
@@ -113,89 +114,99 @@ for catalog_name, catalog in catalogs.items():
     """
     )
 
-    spark.sql(
-        f"""
-    CREATE OR REPLACE TABLE {catalog_name}.default.test_positional_mor_deletes (
-        dt     date,
-        number integer,
-        letter string
-    )
-    USING iceberg
-    TBLPROPERTIES (
-        'write.delete.mode'='merge-on-read',
-        'write.update.mode'='merge-on-read',
-        'write.merge.mode'='merge-on-read',
-        'format-version'='2'
-    );
-    """
-    )
+    # Merge on read has been implemented in version ≥2:
+    #   v2: Using positional deletes
+    #   v3: Using deletion vectors
 
-    spark.sql(
-        f"""
-    INSERT INTO {catalog_name}.default.test_positional_mor_deletes
-    VALUES
-        (CAST('2023-03-01' AS date), 1, 'a'),
-        (CAST('2023-03-02' AS date), 2, 'b'),
-        (CAST('2023-03-03' AS date), 3, 'c'),
-        (CAST('2023-03-04' AS date), 4, 'd'),
-        (CAST('2023-03-05' AS date), 5, 'e'),
-        (CAST('2023-03-06' AS date), 6, 'f'),
-        (CAST('2023-03-07' AS date), 7, 'g'),
-        (CAST('2023-03-08' AS date), 8, 'h'),
-        (CAST('2023-03-09' AS date), 9, 'i'),
-        (CAST('2023-03-10' AS date), 10, 'j'),
-        (CAST('2023-03-11' AS date), 11, 'k'),
-        (CAST('2023-03-12' AS date), 12, 'l');
-    """
-    )
+    for format_version in [2, 3]:
+        identifier = f'{catalog_name}.default.test_positional_mor_deletes_v{format_version}'
+        spark.sql(
+            f"""
+        CREATE OR REPLACE TABLE {identifier} (
+            dt     date,
+            number integer,
+            letter string
+        )
+        USING iceberg
+        TBLPROPERTIES (
+            'write.delete.mode'='merge-on-read',
+            'write.update.mode'='merge-on-read',
+            'write.merge.mode'='merge-on-read',
+            'format-version'='{format_version}'
+        );
+        """
+        )
 
-    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes CREATE TAG tag_12")
+        spark.sql(
+            f"""
+        INSERT INTO {identifier}
+        VALUES
+            (CAST('2023-03-01' AS date), 1, 'a'),
+            (CAST('2023-03-02' AS date), 2, 'b'),
+            (CAST('2023-03-03' AS date), 3, 'c'),
+            (CAST('2023-03-04' AS date), 4, 'd'),
+            (CAST('2023-03-05' AS date), 5, 'e'),
+            (CAST('2023-03-06' AS date), 6, 'f'),
+            (CAST('2023-03-07' AS date), 7, 'g'),
+            (CAST('2023-03-08' AS date), 8, 'h'),
+            (CAST('2023-03-09' AS date), 9, 'i'),
+            (CAST('2023-03-10' AS date), 10, 'j'),
+            (CAST('2023-03-11' AS date), 11, 'k'),
+            (CAST('2023-03-12' AS date), 12, 'l');
+        """
+        )
 
-    spark.sql(f"ALTER TABLE {catalog_name}.default.test_positional_mor_deletes CREATE BRANCH without_5")
+        spark.sql(f"ALTER TABLE {identifier} CREATE TAG tag_12")
 
-    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_deletes.branch_without_5 WHERE number = 5")
+        spark.sql(f"ALTER TABLE {identifier} CREATE BRANCH without_5")
 
-    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_deletes WHERE number = 9")
+        spark.sql(f"DELETE FROM {identifier}.branch_without_5 WHERE number = 5")
 
-    spark.sql(
-        f"""
-      CREATE OR REPLACE TABLE {catalog_name}.default.test_positional_mor_double_deletes (
-        dt     date,
-        number integer,
-        letter string
-      )
-      USING iceberg
-      TBLPROPERTIES (
-        'write.delete.mode'='merge-on-read',
-        'write.update.mode'='merge-on-read',
-        'write.merge.mode'='merge-on-read',
-        'format-version'='2'
-      );
-    """
-    )
+        spark.sql(f"DELETE FROM {identifier} WHERE number = 9")
 
-    spark.sql(
-        f"""
-    INSERT INTO {catalog_name}.default.test_positional_mor_double_deletes
-    VALUES
-        (CAST('2023-03-01' AS date), 1, 'a'),
-        (CAST('2023-03-02' AS date), 2, 'b'),
-        (CAST('2023-03-03' AS date), 3, 'c'),
-        (CAST('2023-03-04' AS date), 4, 'd'),
-        (CAST('2023-03-05' AS date), 5, 'e'),
-        (CAST('2023-03-06' AS date), 6, 'f'),
-        (CAST('2023-03-07' AS date), 7, 'g'),
-        (CAST('2023-03-08' AS date), 8, 'h'),
-        (CAST('2023-03-09' AS date), 9, 'i'),
-        (CAST('2023-03-10' AS date), 10, 'j'),
-        (CAST('2023-03-11' AS date), 11, 'k'),
-        (CAST('2023-03-12' AS date), 12, 'l');
-    """
-    )
+        identifier = f'{catalog_name}.default.test_positional_mor_double_deletes_v{format_version}'
 
-    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_double_deletes WHERE number = 9")
+        spark.sql(
+            f"""
+          CREATE OR REPLACE TABLE {identifier} (
+            dt     date,
+            number integer,
+            letter string
+          )
+          USING iceberg
+          TBLPROPERTIES (
+            'write.delete.mode'='merge-on-read',
+            'write.update.mode'='merge-on-read',
+            'write.merge.mode'='merge-on-read',
+            'format-version'='2'
+          );
+        """
+        )
 
-    spark.sql(f"DELETE FROM {catalog_name}.default.test_positional_mor_double_deletes WHERE letter == 'f'")
+        spark.sql(
+            f"""
+        INSERT INTO {identifier}
+        VALUES
+            (CAST('2023-03-01' AS date), 1, 'a'),
+            (CAST('2023-03-02' AS date), 2, 'b'),
+            (CAST('2023-03-03' AS date), 3, 'c'),
+            (CAST('2023-03-04' AS date), 4, 'd'),
+            (CAST('2023-03-05' AS date), 5, 'e'),
+            (CAST('2023-03-06' AS date), 6, 'f'),
+            (CAST('2023-03-07' AS date), 7, 'g'),
+            (CAST('2023-03-08' AS date), 8, 'h'),
+            (CAST('2023-03-09' AS date), 9, 'i'),
+            (CAST('2023-03-10' AS date), 10, 'j'),
+            (CAST('2023-03-11' AS date), 11, 'k'),
+            (CAST('2023-03-12' AS date), 12, 'l');
+        """
+        )
+
+        # Perform two deletes, should produce:
+        #   v2: two positional delete files in v2
+        #   v3: one deletion vector since they are merged
+        spark.sql(f"DELETE FROM {identifier} WHERE number = 9")
+        spark.sql(f"DELETE FROM {identifier} WHERE letter == 'f'")
 
     all_types_dataframe = (
         spark.range(0, 5, 1, 5)
@@ -401,43 +412,3 @@ for catalog_name, catalog in catalogs.items():
     )
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
-
-
-    spark.sql(
-        f"""
-      CREATE OR REPLACE TABLE {catalog_name}.default.test_deletion_vectors (
-        dt     date,
-        number integer,
-        letter string
-      )
-      USING iceberg
-      TBLPROPERTIES (
-        'write.delete.mode'='merge-on-read',
-        'write.update.mode'='merge-on-read',
-        'write.merge.mode'='merge-on-read',
-        'format-version'='3'
-      );
-    """
-    )
-
-
-    spark.sql(
-        f"""
-    INSERT INTO {catalog_name}.default.test_deletion_vectors
-    VALUES
-        (CAST('2023-03-01' AS date), 1, 'a'),
-        (CAST('2023-03-02' AS date), 2, 'b'),
-        (CAST('2023-03-03' AS date), 3, 'c'),
-        (CAST('2023-03-04' AS date), 4, 'd'),
-        (CAST('2023-03-05' AS date), 5, 'e'),
-        (CAST('2023-03-06' AS date), 6, 'f'),
-        (CAST('2023-03-07' AS date), 7, 'g'),
-        (CAST('2023-03-08' AS date), 8, 'h'),
-        (CAST('2023-03-09' AS date), 9, 'i'),
-        (CAST('2023-03-10' AS date), 10, 'j'),
-        (CAST('2023-03-11' AS date), 11, 'k'),
-        (CAST('2023-03-12' AS date), 12, 'l');
-    """
-    )
-
-    spark.sql(f"DELETE FROM {catalog_name}.default.test_deletion_vectors WHERE number = 9")
