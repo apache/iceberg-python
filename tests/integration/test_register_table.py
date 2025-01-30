@@ -17,9 +17,6 @@
 import pytest
 
 from pyiceberg.catalog import Catalog
-from pyiceberg.catalog.hive import (
-    HiveCatalog,
-)
 from pyiceberg.exceptions import NoSuchTableError, TableAlreadyExistsError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
@@ -63,54 +60,29 @@ def _create_table(
 
 
 @pytest.mark.integration
-def test_hive_register_table(
-    session_catalog: HiveCatalog,
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_register_table(
+    catalog: Catalog,
 ) -> None:
-    identifier = "default.hive_register_table"
-    location = "s3a://warehouse/default/hive_register_table"
-    tbl = _create_table(session_catalog, identifier, 2, location)
-    assert session_catalog.table_exists(identifier=identifier)
-    session_catalog.drop_table(identifier=identifier)
-    assert not session_catalog.table_exists(identifier=identifier)
-    session_catalog.register_table(("default", "hive_register_table"), metadata_location=tbl.metadata_location)
-    assert session_catalog.table_exists(identifier=identifier)
+    identifier = "default.register_table"
+    location = "s3a://warehouse/default/register_table"
+    tbl = _create_table(catalog, identifier, 2, location)
+    assert catalog.table_exists(identifier=identifier)
+    catalog.drop_table(identifier=identifier)
+    assert not catalog.table_exists(identifier=identifier)
+    catalog.register_table(("default", "register_table"), metadata_location=tbl.metadata_location)
+    assert catalog.table_exists(identifier=identifier)
 
 
 @pytest.mark.integration
-def test_hive_register_table_existing(
-    session_catalog: HiveCatalog,
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_register_table_existing(
+    catalog: Catalog,
 ) -> None:
-    identifier = "default.hive_register_table_existing"
-    location = "s3a://warehouse/default/hive_register_table_existing"
-    tbl = _create_table(session_catalog, identifier, 2, location)
-    assert session_catalog.table_exists(identifier=identifier)
+    identifier = "default.register_table_existing"
+    location = "s3a://warehouse/default/register_table_existing"
+    tbl = _create_table(catalog, identifier, 2, location)
+    assert catalog.table_exists(identifier=identifier)
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
-        session_catalog.register_table(("default", "hive_register_table_existing"), metadata_location=tbl.metadata_location)
-
-
-@pytest.mark.integration
-def test_rest_register_table(
-    session_catalog: Catalog,
-) -> None:
-    identifier = "default.rest_register_table"
-    location = "s3a://warehouse/default/rest_register_table"
-    tbl = _create_table(session_catalog, identifier, 2, location)
-    assert session_catalog.table_exists(identifier=identifier)
-    session_catalog.drop_table(identifier=identifier)
-    assert not session_catalog.table_exists(identifier=identifier)
-    session_catalog.register_table(identifier=identifier, metadata_location=tbl.metadata_location)
-    assert session_catalog.table_exists(identifier=identifier)
-
-
-@pytest.mark.integration
-def test_rest_register_table_existing(
-    session_catalog: Catalog,
-) -> None:
-    identifier = "default.rest_register_table_existing"
-    location = "s3a://warehouse/default/rest_register_table_existing"
-    tbl = _create_table(session_catalog, identifier, 2, location)
-    assert session_catalog.table_exists(identifier=identifier)
-    # Assert that registering the table again raises TableAlreadyExistsError
-    with pytest.raises(TableAlreadyExistsError):
-        session_catalog.register_table(identifier=identifier, metadata_location=tbl.metadata_location)
+        catalog.register_table(("default", "register_table_existing"), metadata_location=tbl.metadata_location)
