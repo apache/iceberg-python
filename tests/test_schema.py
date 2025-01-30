@@ -54,6 +54,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 
 TEST_PRIMITIVE_TYPES = [
@@ -73,6 +74,7 @@ TEST_PRIMITIVE_TYPES = [
     FixedType(16),
     FixedType(20),
     UUIDType(),
+    ProtectedType(),
 ]
 
 

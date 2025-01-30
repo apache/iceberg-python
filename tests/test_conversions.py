@@ -103,6 +103,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 
 
@@ -160,6 +161,7 @@ def test_unscaled_to_decimal(unscaled: int, scale: int, expected_result: Decimal
         (UUIDType(), "f79c3e09-677c-4bbd-a479-3f349cb785e7", uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")),
         (FixedType(3), "foo", b"foo"),
         (BinaryType(), "foo", b"foo"),
+        (ProtectedType(), "foo", b"foo"),
     ],
 )
 def test_partition_to_py(primitive_type: PrimitiveType, value_str: str, expected_result: Any) -> None:
@@ -184,6 +186,7 @@ def test_partition_to_py(primitive_type: PrimitiveType, value_str: str, expected
         (TimestamptzType()),
         (TimeType()),
         (UUIDType()),
+        (ProtectedType()),
     ],
 )
 def test_none_partition_values(primitive_type: PrimitiveType) -> None:
@@ -208,6 +211,7 @@ def test_none_partition_values(primitive_type: PrimitiveType) -> None:
         (TimestamptzType()),
         (TimeType()),
         (UUIDType()),
+        (ProtectedType()),
     ],
 )
 def test_hive_default_partition_values(primitive_type: PrimitiveType) -> None:
@@ -279,6 +283,7 @@ def test_partition_to_py_raise_on_incorrect_precision_or_scale(
         (DecimalType(5, 2), b"\x30\x39", Decimal("123.45")),
         (DecimalType(7, 4), b"\x12\xd6\x87", Decimal("123.4567")),
         (DecimalType(7, 4), b"\xff\xed\x29\x79", Decimal("-123.4567")),
+        (ProtectedType(), b"foo", b"foo"),
     ],
 )
 def test_from_bytes(primitive_type: PrimitiveType, b: bytes, result: Any) -> None:
@@ -331,6 +336,7 @@ def test_from_bytes(primitive_type: PrimitiveType, b: bytes, result: Any) -> Non
         (DecimalType(4, 2), b"\x04\xd2", Decimal("12.34")),
         (FloatType(), b"\x00\x00\x90\xc0", struct.unpack("<f", struct.pack("<f", -4.5))[0]),
         (FloatType(), b"\x19\x04\x9e?", struct.unpack("<f", struct.pack("<f", 1.2345))[0]),
+        (ProtectedType(), b"foo", b"foo"),
     ],
 )
 def test_round_trip_conversion(primitive_type: PrimitiveType, b: bytes, result: Any) -> None:

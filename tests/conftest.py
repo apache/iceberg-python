@@ -85,6 +85,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -315,6 +316,7 @@ def table_schema_with_all_types() -> Schema:
                 NestedField(field_id=22, name="inner_int", field_type=IntegerType(), required=True),
             ),
         ),
+        NestedField(field_id=21, name="protected", field_type=ProtectedType(), required=True),
         schema_id=1,
         identifier_field_ids=[2],
     )

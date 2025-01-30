@@ -43,6 +43,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
     strtobool,
     transform_dict_value_to_str,
 )
@@ -60,6 +61,7 @@ non_parameterized_types = [
     (10, StringType),
     (11, UUIDType),
     (12, BinaryType),
+    (13, ProtectedType),
 ]
 
 
@@ -99,6 +101,7 @@ def test_repr_primitive_types(input_index: int, input_type: Type[PrimitiveType])
             False,
         ),
         (NestedField(1, "required_field", StringType(), required=False), False),
+        (ProtectedType(), True),
     ],
 )
 def test_is_primitive(input_type: IcebergType, result: bool) -> None:
@@ -628,6 +631,22 @@ def test_repr_map(simple_map: MapType) -> None:
         repr(simple_map)
         == "MapType(type='map', key_id=19, key_type=StringType(), value_id=25, value_type=DoubleType(), value_required=False)"
     )
+
+
+def test_serialization_protected() -> None:
+    assert ProtectedType().model_dump_json() == '"protected"'
+
+
+def test_deserialization_protected() -> None:
+    assert ProtectedType.model_validate_json('"protected"') == ProtectedType()
+
+
+def test_str_protected() -> None:
+    assert str(ProtectedType()) == "protected"
+
+
+def test_repr_protected() -> None:
+    assert repr(ProtectedType()) == "ProtectedType()"
 
 
 def test_types_singleton() -> None:
