@@ -482,8 +482,8 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
     )
     updates = itertools.chain(remove_ref_updates, remove_statistics_updates)
     new_metadata = base_metadata
-    for update in updates:
-        new_metadata = _apply_table_update(update, new_metadata, context)
+    for upd in updates:
+        new_metadata = _apply_table_update(upd, new_metadata, context)
 
     context.add_update(update)
     return new_metadata.model_copy(update={"snapshots": snapshots})
