@@ -469,6 +469,11 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         for s in base_metadata.snapshots
         if s.snapshot_id not in update.snapshot_ids
     ]
+    snapshot_log = [
+        snapshot_log_entry
+        for snapshot_log_entry in base_metadata.snapshot_log
+        if snapshot_log_entry.snapshot_id not in update.snapshot_ids
+    ]
 
     remove_ref_updates = (
         RemoveSnapshotRefUpdate(ref_name=ref_name)
@@ -486,7 +491,7 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         new_metadata = _apply_table_update(upd, new_metadata, context)
 
     context.add_update(update)
-    return new_metadata.model_copy(update={"snapshots": snapshots})
+    return new_metadata.model_copy(update={"snapshots": snapshots, "snapshot_log": snapshot_log})
 
 
 @_apply_table_update.register(RemoveSnapshotRefUpdate)
