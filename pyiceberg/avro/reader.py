@@ -489,3 +489,16 @@ class MapReader(Reader):
     def __hash__(self) -> int:
         """Return a hashed representation of the MapReader class."""
         return self._hash
+
+class ProtectedReader(Reader):
+    """Read a protected value.
+
+    First reads an integer, to get the length of the binary value,
+    then reads the binary field itself.
+    """
+
+    def read(self, decoder: BinaryDecoder) -> bytes:
+        return decoder.read_bytes()
+
+    def skip(self, decoder: BinaryDecoder) -> None:
+        decoder.skip_bytes()

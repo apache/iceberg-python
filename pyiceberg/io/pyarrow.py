@@ -160,6 +160,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
@@ -536,6 +537,9 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         key_field = self.field(map_type.key_field, key_result)
         value_field = self.field(map_type.value_field, value_result)
         return pa.map_(key_type=key_field, item_type=value_field)
+    
+    def visit_protected(self, _: ProtectedType) -> pa.DataType:
+        return pa.large_binary()
 
     def visit_fixed(self, fixed_type: FixedType) -> pa.DataType:
         return pa.binary(len(fixed_type))
@@ -991,7 +995,6 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
     def primitive(self, primitive: pa.DataType) -> T:
         """Visit a primitive type."""
 
-
 def _get_field_id(field: pa.Field) -> Optional[int]:
     return (
         int(field_id_str.decode())
@@ -1123,7 +1126,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             return FixedType(primitive.byte_width)
 
         raise TypeError(f"Unsupported type: {primitive}")
-
+    
     def before_field(self, field: pa.Field) -> None:
         self._field_names.append(field.name)
 
@@ -1172,7 +1175,6 @@ class _ConvertToLargeTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
             return pa.large_binary()
         return primitive
 
-
 class _ConvertToSmallTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
     def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
         return pa.schema(struct_result)
@@ -1195,7 +1197,7 @@ class _ConvertToSmallTypes(PyArrowSchemaVisitor[Union[pa.DataType, pa.Schema]]):
         elif primitive == pa.large_binary():
             return pa.binary()
         return primitive
-
+    
 
 class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
@@ -1859,7 +1861,6 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     def primitive(self, _: PrimitiveType, array: Optional[pa.Array]) -> Optional[pa.Array]:
         return array
 
-
 class ArrowAccessor(PartnerAccessor[pa.Array]):
     file_schema: Schema
 
@@ -1959,6 +1960,9 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
 
     def visit_binary(self, binary_type: BinaryType) -> str:
         return "BYTE_ARRAY"
+    
+    def visit_protected(self, protected_type: ProtectedType) -> str:
+        return "BYTE_ARRAY"
 
 
 _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()
@@ -2028,6 +2032,11 @@ class StatsAggregator:
                 raise ValueError("Expected the current_max to be bytes")
             b_result = truncate_upper_bound_binary_string(self.current_max, self.trunc_length)
             return self.serialize(b_result) if b_result is not None else None
+        elif self.primitive_type == ProtectedType():
+            if not isinstance(self.current_max, bytes):
+                raise ValueError("Expected the current_max to be bytes")
+            b_result = truncate_upper_bound_binary_string(self.current_max, self.trunc_length)
+            return self.serialize(b_result) if b_result is not None else None        
         else:
             if self.trunc_length is not None:
                 raise ValueError(f"{self.primitive_type} cannot be truncated")
@@ -2137,7 +2146,7 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
             metrics_mode = match_metrics_mode(col_mode)
 
         if (
-            not (isinstance(primitive, StringType) or isinstance(primitive, BinaryType))
+            not (isinstance(primitive, StringType) or isinstance(primitive, BinaryType) or isinstance(primitive, ProtectedType))
             and metrics_mode.type == MetricModeTypes.TRUNCATE
         ):
             metrics_mode = MetricsMode(MetricModeTypes.FULL)
@@ -2148,7 +2157,6 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[List[StatisticsCollector]
             metrics_mode = MetricsMode(MetricModeTypes.COUNTS)
 
         return [StatisticsCollector(field_id=self._field_id, iceberg_type=primitive, mode=metrics_mode, column_name=column_name)]
-
 
 def compute_statistics_plan(
     schema: Schema,
@@ -2226,7 +2234,6 @@ class ID2ParquetPathVisitor(PreOrderSchemaVisitor[List[ID2ParquetPath]]):
 
     def primitive(self, primitive: PrimitiveType) -> List[ID2ParquetPath]:
         return [ID2ParquetPath(field_id=self._field_id, parquet_path=".".join(self._path))]
-
 
 def parquet_path_to_id_mapping(
     schema: Schema,

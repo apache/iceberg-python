@@ -153,6 +153,8 @@ class IcebergType(IcebergBaseModel):
             if v.startswith("decimal"):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
+            if v == "protected":
+                return ProtectedType()
             else:
                 raise ValueError(f"Unknown type: {v}")
         if isinstance(v, dict) and cls == IcebergType:
@@ -747,3 +749,16 @@ class BinaryType(PrimitiveType):
     """
 
     root: Literal["binary"] = Field(default="binary")
+
+class ProtectedType(PrimitiveType):
+    """A protected data type in Iceberg.
+
+    Example:
+        >>> column_foo = ProtectedType()
+        >>> isinstance(column_foo, ProtectedType)
+        True
+        >>> column_foo
+        ProtectedType()
+    """
+
+    root: Literal["protected"] = Field(default="protected")

@@ -58,6 +58,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
     strtobool,
+    ProtectedType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 from pyiceberg.utils.decimal import decimal_to_bytes, unscaled_to_decimal
@@ -143,6 +144,7 @@ def _(_: UUIDType, value_str: str) -> uuid.UUID:
 
 @partition_to_py.register(FixedType)
 @partition_to_py.register(BinaryType)
+@partition_to_py.register(ProtectedType)
 @handle_none
 def _(_: PrimitiveType, value_str: str) -> bytes:
     return bytes(value_str, UTF8)
@@ -237,6 +239,7 @@ def _(_: UUIDType, value: Union[uuid.UUID, bytes]) -> bytes:
 
 @to_bytes.register(BinaryType)
 @to_bytes.register(FixedType)
+@to_bytes.register(ProtectedType)
 def _(_: PrimitiveType, value: bytes) -> bytes:
     return value
 
@@ -316,6 +319,7 @@ def _(_: StringType, b: bytes) -> str:
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
 @from_bytes.register(UUIDType)
+@from_bytes.register(ProtectedType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
 

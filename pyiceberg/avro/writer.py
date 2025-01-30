@@ -219,3 +219,10 @@ class DefaultWriter(Writer):
 
     def write(self, encoder: BinaryEncoder, _: Any) -> None:
         self.writer.write(encoder, self.value)
+
+@dataclass(frozen=True)
+class ProtectedWriter(Writer):
+    """Variable byte length writer."""
+
+    def write(self, encoder: BinaryEncoder, val: Any) -> None:
+        encoder.write_bytes(val)

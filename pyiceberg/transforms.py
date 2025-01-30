@@ -76,6 +76,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 from pyiceberg.utils import datetime
 from pyiceberg.utils.decimal import decimal_to_bytes, truncate_decimal
@@ -271,6 +272,7 @@ class BucketTransform(Transform[S, int]):
                 FixedType,
                 BinaryType,
                 UUIDType,
+                ProtectedType,
             ),
         )
 
@@ -285,7 +287,7 @@ class BucketTransform(Transform[S, int]):
             def hash_func(v: Any) -> int:
                 return mmh3.hash(decimal_to_bytes(v))
 
-        elif isinstance(source, (StringType, FixedType, BinaryType)):
+        elif isinstance(source, (StringType, FixedType, BinaryType, ProtectedType)):
 
             def hash_func(v: Any) -> int:
                 return mmh3.hash(v)
@@ -787,7 +789,7 @@ class TruncateTransform(Transform[S, S]):
             def truncate_func(v: Any) -> Any:
                 return v - v % self._width
 
-        elif isinstance(source, (StringType, BinaryType)):
+        elif isinstance(source, (StringType, BinaryType, ProtectedType)):
 
             def truncate_func(v: Any) -> Any:
                 return v[0 : min(self._width, len(v))]

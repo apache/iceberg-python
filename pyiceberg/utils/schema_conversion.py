@@ -48,6 +48,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 from pyiceberg.utils.decimal import decimal_required_bytes
 
@@ -69,6 +70,7 @@ LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
     ("time-micros", "long"): TimeType(),
     ("timestamp-micros", "long"): TimestampType(),
     ("uuid", "fixed"): UUIDType(),
+    ("protected", "bytes"): ProtectedType(),
 }
 
 AvroType = Union[str, Any]
@@ -618,3 +620,6 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"
+
+    def visit_protected(self, protected_type: ProtectedType) -> AvroType:
+        return {"type": "bytes", "logicalType": "protected"}

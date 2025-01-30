@@ -47,6 +47,7 @@ from pyiceberg.avro.reader import (
     TimestampReader,
     TimestamptzReader,
     UUIDReader,
+    ProtectedReader,
 )
 from pyiceberg.avro.writer import (
     BinaryWriter,
@@ -67,6 +68,7 @@ from pyiceberg.avro.writer import (
     TimestampWriter,
     TimeWriter,
     UUIDWriter,
+    ProtectedWriter,
     Writer,
 )
 from pyiceberg.exceptions import ResolveError
@@ -101,6 +103,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType
 )
 
 STRUCT_ROOT = -1
@@ -192,6 +195,9 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
 
     def visit_binary(self, binary_type: BinaryType) -> Writer:
         return BinaryWriter()
+    
+    def visit_protected(self, protected_type: ProtectedType) -> Writer:
+        return ProtectedWriter()
 
 
 CONSTRUCT_WRITER_VISITOR = ConstructWriter()
@@ -341,6 +347,8 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
     def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Writer:
         return BinaryWriter()
 
+    def visit_Protected(self, protected_type: ProtectedType, partner: Optional[IcebergType]) -> Writer:
+        return ProtectedWriter()
 
 class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     __slots__ = ("read_types", "read_enums", "context")
@@ -470,6 +478,9 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
     def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Reader:
         return BinaryReader()
+    
+    def visit_protected(self, protected_type: ProtectedType, partner: Optional[IcebergType]) -> Reader:
+        return ProtectedReader()
 
 
 class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):

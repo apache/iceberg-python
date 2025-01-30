@@ -61,6 +61,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
+    ProtectedType,
 )
 
 if TYPE_CHECKING:
@@ -531,6 +532,9 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
             return self.visit_fixed(primitive, primitive_partner)
         elif isinstance(primitive, BinaryType):
             return self.visit_binary(primitive, primitive_partner)
+        elif isinstance(primitive, ProtectedType):
+            return self.visit_protected(primitive, primitive_partner)
+
         else:
             raise ValueError(f"Unknown type: {primitive}")
 
@@ -590,6 +594,9 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
     def visit_binary(self, binary_type: BinaryType, partner: Optional[P]) -> T:
         """Visit a BinaryType."""
 
+    @abstractmethod
+    def visit_protected(self, protected_type: ProtectedType, partner: Optional[P]) -> T:
+        """Visit a ProtectedType."""
 
 class PartnerAccessor(Generic[P], ABC):
     @abstractmethod
@@ -707,6 +714,8 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
             return self.visit_uuid(primitive)
         elif isinstance(primitive, BinaryType):
             return self.visit_binary(primitive)
+        elif isinstance(primitive, ProtectedType):
+            return self.visit_protected(primitive)
         else:
             raise ValueError(f"Unknown type: {primitive}")
 
@@ -766,6 +775,9 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
     def visit_binary(self, binary_type: BinaryType) -> T:
         """Visit a BinaryType."""
 
+    @abstractmethod
+    def visit_protected(self, protected_type: ProtectedType) -> T:
+        """Visit a ProtectedType."""
 
 @dataclass(init=True, eq=True, frozen=True)
 class Accessor:
@@ -1594,6 +1606,8 @@ def _(file_type: StringType, read_type: IcebergType) -> IcebergType:
 def _(file_type: BinaryType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, StringType):
         return read_type
+    elif isinstance(read_type, ProtectedType):
+        return read_type
     else:
         raise ResolveError(f"Cannot promote an binary to {read_type}")
 
@@ -1616,6 +1630,13 @@ def _(file_type: FixedType, read_type: IcebergType) -> IcebergType:
         return read_type
     else:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")
+
+@promote.register(ProtectedType)
+def _(file_type: ProtectedType, read_type: IcebergType) -> IcebergType:
+    if isinstance(read_type, StringType):
+        return read_type
+    else:
+        raise ResolveError(f"Cannot promote a protected value to {read_type}")
 
 
 def _check_schema_compatible(requested_schema: Schema, provided_schema: Schema) -> None:
