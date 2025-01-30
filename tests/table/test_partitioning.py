@@ -208,13 +208,7 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
     ]
     for t in all_transforms:
         if t.can_transform(source_type):
-            try:
-                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
-            except ValueError as e:
-                # Skipping unsupported feature
-                if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
-                    continue
-                raise
+            assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
 
 
 def test_deserialize_partition_field_v2() -> None:
