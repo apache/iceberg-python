@@ -32,7 +32,6 @@
     - [Release Notes](https://github.com/apache/iceberg-python/releases)
 - [Code Reference](reference/pyiceberg/index.md)
 
-
 <!-- markdown-link-check-enable-->
 
 <!-- prettier-ignore-end -->
