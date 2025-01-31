@@ -65,6 +65,7 @@ from pyiceberg.io import (
     S3_ENDPOINT,
     S3_PROXY_URI,
     S3_REGION,
+    S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     S3_SIGNER_ENDPOINT,
@@ -149,6 +150,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
         config_kwargs["connect_timeout"] = float(connect_timeout)
+
+    if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
+        config_kwargs["read_timeout"] = float(request_timeout)
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
