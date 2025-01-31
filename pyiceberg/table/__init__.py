@@ -1144,8 +1144,6 @@ class Table:
 
                 overwrite_filter = merge_rows_util.get_filter_list(update_recs, join_cols)
 
-                ## need to fix this; its overwriting everything based on a key match...not based on what has actually changed
-                ## maybe add that thing in as a function?
                 txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
 
             # Insert the new records
