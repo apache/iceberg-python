@@ -54,6 +54,7 @@ from pyiceberg.expressions import (
     Reference,
 )
 from pyiceberg.expressions.visitors import (
+    ResidualEvaluator,
     _InclusiveMetricsEvaluator,
     bind,
     expression_evaluator,
@@ -61,6 +62,7 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
+from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -1382,13 +1384,13 @@ class FileScanTask(ScanTask):
         delete_files: Optional[Set[DataFile]] = None,
         start: Optional[int] = None,
         length: Optional[int] = None,
-        residual: Optional[BooleanExpression] = None,
+        residual: BooleanExpression = ALWAYS_TRUE,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
         self.start = start or 0
         self.length = length or data_file.file_size_in_bytes
-        self.residual = residual  # type: ignore
+        self.residual = residual
 
 
 def _open_manifest(
@@ -1397,14 +1399,14 @@ def _open_manifest(
     partition_filter: Callable[[DataFile], bool],
     residual_evaluator: Callable[[Record], BooleanExpression],
     metrics_evaluator: Callable[[DataFile], bool],
-) -> List[tuple[ManifestEntry, BooleanExpression]]:
+) -> List[ManifestEntry]:
     """Open a manifest file and return matching manifest entries.
 
     Returns:
         A list of ManifestEntry that matches the provided filters.
     """
     return [
-        (manifest_entry, residual_evaluator(manifest_entry.data_file.partition))
+        manifest_entry
         for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
         if partition_filter(manifest_entry.data_file) and metrics_evaluator(manifest_entry.data_file)
     ]
@@ -1471,8 +1473,6 @@ class DataScan(TableScan):
         # shared instance across multiple threads.
         return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
-    from pyiceberg.expressions.visitors import ResidualEvaluator
-
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
 
@@ -1488,7 +1488,7 @@ class DataScan(TableScan):
                 spec=spec,
                 expr=self.row_filter,
                 case_sensitive=self.case_sensitive,
-                schema=self.table_metadata.schema(),
+                schema=self.projection(),
             )
         )
 
@@ -1522,7 +1522,6 @@ class DataScan(TableScan):
         # the filter depends on the partition spec used to write the manifest file, so create a cache of filters for each spec id
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        from pyiceberg.expressions.visitors import ResidualEvaluator
 
         residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
 
@@ -1546,11 +1545,11 @@ class DataScan(TableScan):
 
         min_sequence_number = _min_sequence_number(manifests)
 
-        data_entries: List[tuple[ManifestEntry, BooleanExpression]] = []
+        data_entries: List[ManifestEntry] = []
         positional_delete_entries = SortedList(key=lambda entry: entry.sequence_number or INITIAL_SEQUENCE_NUMBER)
 
         executor = ExecutorFactory.get_or_create()
-        for manifest_entry, residual in chain(
+        for manifest_entry in chain(
             *executor.map(
                 lambda args: _open_manifest(*args),
                 [
@@ -1568,7 +1567,7 @@ class DataScan(TableScan):
         ):
             data_file = manifest_entry.data_file
             if data_file.content == DataFileContent.DATA:
-                data_entries.append((manifest_entry, residual))
+                data_entries.append(manifest_entry)
             elif data_file.content == DataFileContent.POSITION_DELETES:
                 positional_delete_entries.add(manifest_entry)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
@@ -1583,9 +1582,11 @@ class DataScan(TableScan):
                     data_entry,
                     positional_delete_entries,
                 ),
-                residual=residual,
+                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                    data_entry.data_file.partition
+                ),
             )
-            for data_entry, residual in data_entries
+            for data_entry in data_entries
         ]
 
     def to_arrow(self) -> pa.Table:
@@ -1668,19 +1669,16 @@ class DataScan(TableScan):
             # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
             # partition value and task.delete_files represents that positional delete haven't been merged yet
             # hence those files have to read as a pyarrow table applying the filter and deletes
-            if task.residual == AlwaysTrue() and not len(task.delete_files):
+            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
                 # Every File has a metadata stat that stores the file record count
                 res += task.file.record_count
             else:
-                from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
-
                 arrow_scan = ArrowScan(
                     table_metadata=self.table_metadata,
                     io=self.io,
                     projected_schema=self.projection(),
                     row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
-                    limit=self.limit,
                 )
                 if task.file.file_size_in_bytes > 512 * 1024 * 1024:
                     target_schema = schema_to_pyarrow(self.projection())

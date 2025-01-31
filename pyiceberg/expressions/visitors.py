@@ -60,7 +60,7 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.manifest import DataFile, ManifestFile, PartitionFieldSummary
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import EMPTY_DICT, L, Record, StructProtocol
 from pyiceberg.types import (
@@ -1734,11 +1734,30 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
 
 class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
+    """Finds the residuals for an Expression the partitions in the given PartitionSpec.
+
+    A residual expression is made by partially evaluating an expression using partition values.
+    For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
+    utc_timestamp &gt;= a and utc_timestamp &lt;= b, then there are 4 possible residuals expressions
+    for the partition data, d:
+
+
+    1. If d &gt; day(a) and d &lt; day(b), the residual is always true
+    2. If d == day(a) and d != day(b), the residual is utc_timestamp &gt;= a
+    3. if d == day(b) and d != day(a), the residual is utc_timestamp &lt;= b
+    4. If d == day(a) == day(b), the residual is utc_timestamp &gt;= a and utc_timestamp &lt;= b
+
+    Partition data is passed using StructLike. Residuals are returned by residualFor(StructLike).
+
+    This class is thread-safe.
+    """
+
     schema: Schema
     spec: PartitionSpec
     case_sensitive: bool
+    expr: BooleanExpression
 
-    def __init__(self, schema: Schema, spec: PartitionSpec, case_sensitive: bool, expr: BooleanExpression):
+    def __init__(self, schema: Schema, spec: PartitionSpec, case_sensitive: bool, expr: BooleanExpression) -> None:
         self.schema = schema
         self.spec = spec
         self.case_sensitive = case_sensitive
@@ -1776,18 +1795,18 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             return AlwaysFalse()
 
     def visit_is_nan(self, term: BoundTerm[L]) -> BooleanExpression:
-        val = term.eval(self.struct)
-        if val is None:
-            return self.visit_true()
+        # if isnan(term.eval(self.struct)):
+        if term.eval(self.struct) is not None:
+            return AlwaysTrue()
         else:
-            return self.visit_false()
+            return AlwaysFalse()
 
     def visit_not_nan(self, term: BoundTerm[L]) -> BooleanExpression:
-        val = term.eval(self.struct)
-        if val is not None:
-            return self.visit_true()
+        # if not isnan(term.eval(self.struct)):
+        if not term.eval(self.struct) is not None:
+            return AlwaysTrue()
         else:
-            return self.visit_false()
+            return AlwaysFalse()
 
     def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
@@ -1866,10 +1885,8 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         if parts == []:
             return predicate
 
-        from pyiceberg.types import StructType
-
         def struct_to_schema(struct: StructType) -> Schema:
-            return Schema(*list(struct.fields))
+            return Schema(*struct.fields)
 
         for part in parts:
             strict_projection = part.transform.strict_project(part.name, predicate)
@@ -1880,6 +1897,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
                 if isinstance(bound, BoundPredicate):
                     strict_result = super().visit_bound_predicate(bound)
                 else:
+                    # if the result is not a predicate, then it must be a constant like alwaysTrue or alwaysFalse
                     strict_result = bound
 
             if strict_result is not None and isinstance(strict_result, AlwaysTrue):
@@ -1926,8 +1944,6 @@ class ResidualEvaluator(ResidualVisitor):
 class UnpartitionedResidualEvaluator(ResidualEvaluator):
     # Finds the residuals for an Expression the partitions in the given PartitionSpec
     def __init__(self, schema: Schema, expr: BooleanExpression):
-        from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
-
         super().__init__(schema=schema, spec=UNPARTITIONED_PARTITION_SPEC, expr=expr, case_sensitive=False)
         self.expr = expr
 
