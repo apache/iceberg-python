@@ -120,7 +120,6 @@ def test_merge_scenario_1_simple():
 
     table = gen_target_iceberg_table(1, 2, False, ctx)
     source_df = gen_source_dataset(2, 3, False, False, ctx)
-    
 
     res = table.merge_rows(df=source_df, join_cols=["order_id"])
 
@@ -131,6 +130,7 @@ def test_merge_scenario_1_simple():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
+    print('merge rows: test scenario 1 pass')
 
 def test_merge_scenario_2_10k_rows():
 
@@ -153,6 +153,7 @@ def test_merge_scenario_2_10k_rows():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
+    print('merge rows: test scenario 2 pass')
 
 def test_merge_scenario_3_composite_key():
 
@@ -175,6 +176,7 @@ def test_merge_scenario_3_composite_key():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
+    print('merge rows: composite keys test pass')
 
 def test_merge_update_only():
     
@@ -196,6 +198,7 @@ def test_merge_update_only():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
+    print('merge rows: update only pass')
 
 def test_merge_insert_only():
     """
@@ -216,6 +219,7 @@ def test_merge_insert_only():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
+    print('merge rows: insert only pass')
 
 def test_merge_source_dups():
 
@@ -235,6 +239,7 @@ def test_merge_source_dups():
     assert 'Duplicate rows found in source dataset' in error_msgs, f"error message should contain 'Duplicate rows found in source dataset', but got {error_msgs}"
 
     purge_warehouse()
+    print('merge rows: source dups test pass')
 
 def test_key_cols_misaligned():
 
@@ -260,6 +265,8 @@ def test_key_cols_misaligned():
     assert 'Join columns missing in tables' in error_msgs, f"error message should contain 'Join columns missing in tables', but got {error_msgs}"
 
     purge_warehouse()
+
+    print('merge rows: key cols misaligned test pass')
 
 if __name__ == "__main__":
 

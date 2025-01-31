@@ -52,6 +52,7 @@ from pyiceberg.expressions import (
     IsNull,
     Or,
     Reference,
+    In,
 )
 from pyiceberg.expressions.visitors import (
     _InclusiveMetricsEvaluator,
@@ -1099,25 +1100,40 @@ class Table:
         if when_matched_update_all == False and when_not_matched_insert_all == False:
             return {'rows_updated': 0, 'rows_inserted': 0, 'msg': 'no merge options selected...exiting'}
 
+        missing_columns = merge_rows_util.do_join_columns_exist(df, self, join_cols)
+        
+        if missing_columns['source'] or missing_columns['target']:
+
+            return {'error_msgs': f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}"}
+
         ctx = SessionContext()
 
         #register both source and target tables so we can find the deltas to update/append
         ctx.register_dataset(source_table_name, ds.dataset(df))
-        ctx.register_dataset(target_table_name, ds.dataset(self.scan().to_arrow()))
+
+        #instead of loading in the entire target table, let's just load in what we know exists
+        unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
+
+        pred = None
+
+        if len(join_cols) == 1:
+            pred = In(join_cols[0], unique_keys[0].to_pylist())
+        else:
+            pred = Or(*[
+                And(*[
+                    EqualTo(col, row[col])
+                    for col in join_cols
+                ])
+                for row in unique_keys.to_pylist()
+            ])
+        #print(pred)
+        ctx.register_dataset(target_table_name, ds.dataset(self.scan(row_filter=pred).to_arrow()))
 
         source_col_list = merge_rows_util.get_table_column_list(ctx, source_table_name)
         target_col_list = merge_rows_util.get_table_column_list(ctx, target_table_name)
         
         source_col_names = set([col[0] for col in source_col_list])
         target_col_names = set([col[0] for col in target_col_list])
-
-        source_col_types = {col[0]: col[1] for col in source_col_list}
-
-        missing_columns = merge_rows_util.do_join_columns_exist(source_col_names, target_col_names, join_cols)
-        
-        if missing_columns['source'] or missing_columns['target']:
-
-            return {'error_msgs': f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}"}
 
         #check for dups on source
         if merge_rows_util.dups_check_in_source(source_table_name, join_cols, ctx):
@@ -1139,20 +1155,7 @@ class Table:
 
                 update_row_cnt = len(update_recs)
 
-                if len(join_cols) == 1:
-                    join_col = join_cols[0]
-                    col_type = source_col_types[join_col]  
-                    values = [row[join_col] for row in update_recs.to_pylist()]
-                    # if strings are in the filter, we encapsulate with tick marks
-                    formatted_values = [f"'{value}'" if col_type == 'string' else str(value) for value in values]
-                    overwrite_filter = f"{join_col} IN ({', '.join(formatted_values)})"
-                else:
-                    overwrite_filter = " OR ".join(
-                        f"({' AND '.join([f'{col} = {repr(row[col])}' if source_col_types[col] != 'string' else f'{col} = {repr(row[col])}' for col in join_cols])})" 
-                        for row in update_recs.to_pylist()
-                    )
-
-                txn.overwrite(update_recs, overwrite_filter)    
+                txn.overwrite(update_recs, overwrite_filter=pred)    
 
             # Insert the new records
 

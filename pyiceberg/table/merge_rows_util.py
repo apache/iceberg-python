@@ -18,6 +18,8 @@
 
 
 from datafusion import SessionContext
+from pyarrow import Table as pyarrow_table
+from pyiceberg import table as pyiceberg_table
 
 def get_table_column_list(connection: SessionContext, table_name: str) -> list:
     """
@@ -61,7 +63,8 @@ def dups_check_in_source(source_table: str, join_cols: list, connection: Session
 
     return source_dup_count > 0 
 
-def do_join_columns_exist(source_col_list: set, target_col_list: set, join_cols: list) -> bool:
+
+def do_join_columns_exist(source_df: pyarrow_table, target_iceberg_table: pyiceberg_table, join_cols: list) -> bool:
  
     """
     This function checks if the join columns exist in both the source and target tables.
@@ -73,14 +76,12 @@ def do_join_columns_exist(source_col_list: set, target_col_list: set, join_cols:
     }
 
     for col in join_cols:
-        if col not in source_col_list:
+        if col not in source_df.column_names:
             missing_columns['source'].append(col)
-        if col not in target_col_list:
+        if col not in target_iceberg_table.schema().column_names:
             missing_columns['target'].append(col)
 
     return missing_columns
-
-
 
 def get_rows_to_update_sql(source_table_name: str, target_table_name: str
                            , join_cols: list
