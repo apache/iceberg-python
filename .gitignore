@@ -3,6 +3,7 @@
 .cache
 tmp/
 site
+.vscode/settings.json
 
 # intellij files
 .idea
