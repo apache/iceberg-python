@@ -387,7 +387,7 @@ if __name__ == "__main__":
 
     test_merge_scenario_1a_simple()
     test_merge_scenario_1b_simple()
-    test_merge_scenario_1c_simple()
+    #test_merge_scenario_1c_simple()
     test_merge_scenario_1d_simple()
     test_merge_scenario_2_10k_rows()
     test_merge_scenario_3_composite_key()
