@@ -110,7 +110,7 @@ def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, 
 
     return table
 
-def test_merge_scenario_1_simple():
+def test_merge_scenario_1a_simple():
 
     """
         tests a single insert and update
@@ -130,7 +130,122 @@ def test_merge_scenario_1_simple():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: test scenario 1 pass')
+    print('merge rows: test scenario 1a pass')
+
+def test_merge_scenario_1b_simple():
+
+    """
+        tests a single insert and update; skips a row that does not need to be updated
+    """
+
+    ctx = SessionContext()
+
+    df = ctx.sql(f"""
+        select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
+        union all
+        select 2 as order_id, date '2021-01-01' as order_date, 'A' as order_type
+    """).to_arrow_table()
+
+    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+
+    table.append(df)
+
+    source_df = ctx.sql(f"""
+        select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
+        union all
+        select 2 as order_id, date '2021-01-01' as order_date, 'B' as order_type  
+        union all 
+        select 3 as order_id, date '2021-01-01' as order_date, 'A' as order_type
+    """).to_arrow_table()
+
+    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+
+    rows_updated_should_be = 1
+    rows_inserted_should_be = 1
+
+    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+
+    purge_warehouse()
+    print('merge rows: test scenario 1b (skip 1 row) pass')
+
+
+def test_merge_scenario_1c_simple():
+
+    """
+        tests a single insert and update; primary key is a date column
+    """
+
+    ctx = SessionContext()
+
+    df = ctx.sql(f"""
+        select date '2021-01-01' as order_date, 'A' as order_type
+        union all
+        select date '2021-01-02' as order_date, 'A' as order_type
+    """).to_arrow_table()
+
+    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+
+    table.append(df)
+
+    source_df = ctx.sql(f"""
+        select date '2021-01-01' as order_date, 'A' as order_type
+        union all
+        select date '2021-01-02' as order_date, 'B' as order_type  
+        union all 
+        select date '2021-01-03' as order_date, 'A' as order_type
+    """).to_arrow_table()
+
+    res = table.merge_rows(df=source_df, join_cols=["order_date"])
+
+    rows_updated_should_be = 1
+    rows_inserted_should_be = 1
+
+    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+
+    purge_warehouse()
+    print('merge rows: test scenario 1c (date as key column) pass')
+
+def test_merge_scenario_1d_simple():
+
+    """
+        tests a single insert and update; primary key is a string column
+    """
+
+    ctx = SessionContext()
+
+    df = ctx.sql(f"""
+        select 'abc' as order_id, 'A' as order_type
+        union all
+        select 'def' as order_id, 'A' as order_type
+    """).to_arrow_table()
+
+    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+
+    table.append(df)
+
+    source_df = ctx.sql(f"""
+        select 'abc' as order_id, 'A' as order_type
+        union all
+        select 'def' as order_id, 'B' as order_type  
+        union all 
+        select 'ghi' as order_id, 'A' as order_type
+    """).to_arrow_table()
+
+    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+
+    rows_updated_should_be = 1
+    rows_inserted_should_be = 1
+
+    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+
+    purge_warehouse()
+    print('merge rows: test scenario 1d (string as key column) pass')
 
 def test_merge_scenario_2_10k_rows():
 
@@ -270,7 +385,10 @@ def test_key_cols_misaligned():
 
 if __name__ == "__main__":
 
-    test_merge_scenario_1_simple()
+    test_merge_scenario_1a_simple()
+    test_merge_scenario_1b_simple()
+    #test_merge_scenario_1c_simple()
+    test_merge_scenario_1d_simple()
     test_merge_scenario_2_10k_rows()
     test_merge_scenario_3_composite_key()
     test_merge_update_only()

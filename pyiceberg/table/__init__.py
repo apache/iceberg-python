@@ -1111,22 +1111,9 @@ class Table:
         #register both source and target tables so we can find the deltas to update/append
         ctx.register_dataset(source_table_name, ds.dataset(df))
 
-        #instead of loading in the entire target table, let's just load in what we know exists
-        unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
-
-        pred = None
-
-        if len(join_cols) == 1:
-            pred = In(join_cols[0], unique_keys[0].to_pylist())
-        else:
-            pred = Or(*[
-                And(*[
-                    EqualTo(col, row[col])
-                    for col in join_cols
-                ])
-                for row in unique_keys.to_pylist()
-            ])
-        #print(pred)
+        #get list of rows that exist so we don't have to load the entire target table
+        pred = merge_rows_util.get_filter_list(df, join_cols)
+       
         ctx.register_dataset(target_table_name, ds.dataset(self.scan(row_filter=pred).to_arrow()))
 
         source_col_list = merge_rows_util.get_table_column_list(ctx, source_table_name)
@@ -1155,7 +1142,11 @@ class Table:
 
                 update_row_cnt = len(update_recs)
 
-                txn.overwrite(update_recs, overwrite_filter=pred)    
+                overwrite_filter = merge_rows_util.get_filter_list(update_recs, join_cols)
+
+                ## need to fix this; its overwriting everything based on a key match...not based on what has actually changed
+                ## maybe add that thing in as a function?
+                txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
 
             # Insert the new records
 

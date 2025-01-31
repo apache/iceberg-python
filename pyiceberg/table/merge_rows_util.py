@@ -19,7 +19,36 @@
 
 from datafusion import SessionContext
 from pyarrow import Table as pyarrow_table
+import pyarrow as pa
 from pyiceberg import table as pyiceberg_table
+
+from pyiceberg.expressions import (
+    BooleanExpression,
+    And,
+    EqualTo,
+    Or,
+    In,
+)
+
+def get_filter_list(df: pyarrow_table, join_cols: list) -> BooleanExpression:
+
+    unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
+
+    pred = None
+
+    if len(join_cols) == 1:
+        pred = In(join_cols[0], unique_keys[0].to_pylist())
+    else:
+        pred = Or(*[
+            And(*[
+                EqualTo(col, row[col])
+                for col in join_cols
+            ])
+            for row in unique_keys.to_pylist()
+        ])
+
+    return pred
+
 
 def get_table_column_list(connection: SessionContext, table_name: str) -> list:
     """
