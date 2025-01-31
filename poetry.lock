@@ -1831,13 +1831,13 @@ test = ["objgraph", "psutil"]
 
 [[package]]
 name = "griffe"
-version = "1.5.5"
+version = "1.5.6"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "griffe-1.5.5-py3-none-any.whl", hash = "sha256:2761b1e8876c6f1f9ab1af274df93ea6bbadd65090de5f38f4cb5cc84897c7dd"},
-    {file = "griffe-1.5.5.tar.gz", hash = "sha256:35ee5b38b93d6a839098aad0f92207e6ad6b70c3e8866c08ca669275b8cba585"},
+    {file = "griffe-1.5.6-py3-none-any.whl", hash = "sha256:b2a3afe497c6c1f952e54a23095ecc09435016293e77af8478ed65df1022a394"},
+    {file = "griffe-1.5.6.tar.gz", hash = "sha256:181f6666d5aceb6cd6e2da5a2b646cfb431e47a0da1fda283845734b67e10944"},
 ]
 
 [package.dependencies]
@@ -5358,4 +5358,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9, !=3.9.7"
-content-hash = "1de78ede28de9b93ddb760bd99a08c31950adcf20bb811273547409189caa054"
+content-hash = "66b432ec3645ad122e1c668f795fee1160fae2fd10012e2dfd04c04af90806ec"
