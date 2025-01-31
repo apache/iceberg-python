@@ -19,18 +19,10 @@ from __future__ import annotations
 import datetime
 import uuid
 from copy import copy
-from typing import (
-    Any,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Union,
-)
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
-from typing_extensions import Annotated
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids
@@ -44,6 +36,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
     assign_fresh_sort_order_ids,
 )
+from pyiceberg.table.statistics import StatisticsFile
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -220,6 +213,14 @@ class TableMetadataCommonFields(IcebergBaseModel):
     and the map values are snapshot reference objects.
     There is always a main branch reference pointing to the
     current-snapshot-id even if the refs map is null."""
+
+    statistics: List[StatisticsFile] = Field(default_factory=list)
+    """A optional list of table statistics files.
+    Table statistics files are valid Puffin files. Statistics are
+    informational. A reader can choose to ignore statistics
+    information. Statistics support is not required to read the
+    table correctly. A table can contain many statistics files
+    associated with different table snapshots."""
 
     # validators
     @field_validator("properties", mode="before")
@@ -450,9 +451,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         return TableMetadataV2.model_validate(metadata)
 
     format_version: Literal[1] = Field(alias="format-version", default=1)
-    """An integer version number for the format. Currently, this can be 1 or 2
-    based on the spec. Implementations must throw an exception if a table’s
-    version is higher than the supported version."""
+    """An integer version number for the format. Implementations must throw
+    an exception if a table’s version is higher than the supported version."""
 
     schema_: Schema = Field(alias="schema")
     """The table’s current schema. (Deprecated: use schemas and
@@ -498,16 +498,74 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
         return construct_refs(table_metadata)
 
     format_version: Literal[2] = Field(alias="format-version", default=2)
-    """An integer version number for the format. Currently, this can be 1 or 2
-    based on the spec. Implementations must throw an exception if a table’s
-    version is higher than the supported version."""
+    """An integer version number for the format. Implementations must throw
+    an exception if a table’s version is higher than the supported version."""
 
     last_sequence_number: int = Field(alias="last-sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     """The table’s highest assigned sequence number, a monotonically
     increasing long that tracks the order of snapshots in a table."""
 
 
-TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2], Field(discriminator="format_version")]
+class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
+    """Represents version 3 of the Table Metadata.
+
+    Version 3 of the Iceberg spec extends data types and existing metadata structures to add new capabilities:
+
+        - New data types: nanosecond timestamp(tz), unknown
+        - Default value support for columns
+        - Multi-argument transforms for partitioning and sorting
+        - Row Lineage tracking
+        - Binary deletion vectors
+
+    For more information:
+    https://iceberg.apache.org/spec/?column-projection#version-3-extended-types-and-capabilities
+    """
+
+    @model_validator(mode="before")
+    def cleanup_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        return cleanup_snapshot_id(data)
+
+    @model_validator(mode="after")
+    def check_schemas(cls, table_metadata: TableMetadata) -> TableMetadata:
+        return check_schemas(table_metadata)
+
+    @model_validator(mode="after")
+    def check_partition_specs(cls, table_metadata: TableMetadata) -> TableMetadata:
+        return check_partition_specs(table_metadata)
+
+    @model_validator(mode="after")
+    def check_sort_orders(cls, table_metadata: TableMetadata) -> TableMetadata:
+        return check_sort_orders(table_metadata)
+
+    @model_validator(mode="after")
+    def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
+        return construct_refs(table_metadata)
+
+    format_version: Literal[3] = Field(alias="format-version", default=3)
+    """An integer version number for the format. Implementations must throw
+    an exception if a table’s version is higher than the supported version."""
+
+    last_sequence_number: int = Field(alias="last-sequence-number", default=INITIAL_SEQUENCE_NUMBER)
+    """The table’s highest assigned sequence number, a monotonically
+    increasing long that tracks the order of snapshots in a table."""
+
+    row_lineage: bool = Field(alias="row-lineage", default=False)
+    """Indicates that row-lineage is enabled on the table
+
+    For more information:
+    https://iceberg.apache.org/spec/?column-projection#row-lineage
+    """
+
+    next_row_id: Optional[int] = Field(alias="next-row-id", default=None)
+    """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
+
+    def model_dump_json(
+        self, exclude_none: bool = True, exclude: Optional[Any] = None, by_alias: bool = True, **kwargs: Any
+    ) -> str:
+        raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")
+
+
+TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2, TableMetadataV3], Field(discriminator="format_version")]
 
 
 def new_table_metadata(
@@ -544,20 +602,36 @@ def new_table_metadata(
             last_partition_id=fresh_partition_spec.last_assigned_field_id,
             table_uuid=table_uuid,
         )
-
-    return TableMetadataV2(
-        location=location,
-        schemas=[fresh_schema],
-        last_column_id=fresh_schema.highest_field_id,
-        current_schema_id=fresh_schema.schema_id,
-        partition_specs=[fresh_partition_spec],
-        default_spec_id=fresh_partition_spec.spec_id,
-        sort_orders=[fresh_sort_order],
-        default_sort_order_id=fresh_sort_order.order_id,
-        properties=properties,
-        last_partition_id=fresh_partition_spec.last_assigned_field_id,
-        table_uuid=table_uuid,
-    )
+    elif format_version == 2:
+        return TableMetadataV2(
+            location=location,
+            schemas=[fresh_schema],
+            last_column_id=fresh_schema.highest_field_id,
+            current_schema_id=fresh_schema.schema_id,
+            partition_specs=[fresh_partition_spec],
+            default_spec_id=fresh_partition_spec.spec_id,
+            sort_orders=[fresh_sort_order],
+            default_sort_order_id=fresh_sort_order.order_id,
+            properties=properties,
+            last_partition_id=fresh_partition_spec.last_assigned_field_id,
+            table_uuid=table_uuid,
+        )
+    elif format_version == 3:
+        return TableMetadataV3(
+            location=location,
+            schemas=[fresh_schema],
+            last_column_id=fresh_schema.highest_field_id,
+            current_schema_id=fresh_schema.schema_id,
+            partition_specs=[fresh_partition_spec],
+            default_spec_id=fresh_partition_spec.spec_id,
+            sort_orders=[fresh_sort_order],
+            default_sort_order_id=fresh_sort_order.order_id,
+            properties=properties,
+            last_partition_id=fresh_partition_spec.last_assigned_field_id,
+            table_uuid=table_uuid,
+        )
+    else:
+        raise ValidationError(f"Unknown format version: {format_version}")
 
 
 class TableMetadataWrapper(IcebergRootModel[TableMetadata]):
@@ -584,6 +658,8 @@ class TableMetadataUtil:
             return TableMetadataV1(**data)
         elif format_version == 2:
             return TableMetadataV2(**data)
+        elif format_version == 3:
+            return TableMetadataV3(**data)
         else:
             raise ValidationError(f"Unknown format version: {format_version}")
 
@@ -600,8 +676,7 @@ class TableMetadataUtil:
             return TableMetadataV1.model_construct(**dict(table_metadata))
         elif table_metadata.format_version == 2:
             return TableMetadataV2.model_construct(**dict(table_metadata))
+        elif table_metadata.format_version == 3:
+            return TableMetadataV3.model_construct(**dict(table_metadata))
         else:
             raise ValidationError(f"Unknown format version: {table_metadata.format_version}")
-
-
-TableMetadata = Annotated[Union[TableMetadataV1, TableMetadataV2], Field(discriminator="format_version")]  # type: ignore

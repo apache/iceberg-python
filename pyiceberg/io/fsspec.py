@@ -40,13 +40,6 @@ from requests import HTTPError
 from pyiceberg.catalog import TOKEN
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
-    ADLFS_ACCOUNT_KEY,
-    ADLFS_ACCOUNT_NAME,
-    ADLFS_CLIENT_ID,
-    ADLFS_CONNECTION_STRING,
-    ADLFS_PREFIX,
-    ADLFS_SAS_TOKEN,
-    ADLFS_TENANT_ID,
     ADLS_ACCOUNT_KEY,
     ADLS_ACCOUNT_NAME,
     ADLS_CLIENT_ID,
@@ -61,7 +54,6 @@ from pyiceberg.io import (
     GCS_CACHE_TIMEOUT,
     GCS_CONSISTENCY,
     GCS_DEFAULT_LOCATION,
-    GCS_ENDPOINT,
     GCS_PROJECT_ID,
     GCS_REQUESTER_PAYS,
     GCS_SERVICE_HOST,
@@ -73,12 +65,12 @@ from pyiceberg.io import (
     S3_ENDPOINT,
     S3_PROXY_URI,
     S3_REGION,
+    S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
-    ADLFS_ClIENT_SECRET,
     ADLS_ClIENT_SECRET,
     FileIO,
     InputFile,
@@ -87,20 +79,19 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool
 
 logger = logging.getLogger(__name__)
 
 
 def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> AWSRequest:
-    if TOKEN not in properties:
-        raise SignError("Signer set, but token is not available")
-
     signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
     signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
-    signer_headers = {"Authorization": f"Bearer {properties[TOKEN]}"}
+    signer_headers = {}
+    if token := properties.get(TOKEN):
+        signer_headers = {"Authorization": f"Bearer {token}"}
+
     signer_body = {
         "method": request.method,
         "region": request.context["client_region"],
@@ -160,6 +151,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
         config_kwargs["connect_timeout"] = float(connect_timeout)
 
+    if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
+        config_kwargs["read_timeout"] = float(request_timeout)
+
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
@@ -172,12 +166,6 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
 
-    if properties.get(GCS_ENDPOINT):
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
-        )
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
@@ -186,7 +174,7 @@ def _gs(properties: Properties) -> AbstractFileSystem:
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
         session_kwargs=json.loads(properties.get(GCS_SESSION_KWARGS, "{}")),
-        endpoint_url=get_first_property_value(properties, GCS_SERVICE_HOST, GCS_ENDPOINT),
+        endpoint_url=properties.get(GCS_SERVICE_HOST),
         default_location=properties.get(GCS_DEFAULT_LOCATION),
         version_aware=property_as_bool(properties, GCS_VERSION_AWARE, False),
     )
@@ -195,50 +183,24 @@ def _gs(properties: Properties) -> AbstractFileSystem:
 def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
-    for property_name in properties:
-        if property_name.startswith(ADLFS_PREFIX):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {property_name} is deprecated. Please use properties that start with adls.",
-            )
+    for key, sas_token in {
+        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value
+        for key, value in properties.items()
+        if key.startswith(ADLS_SAS_TOKEN) and key.endswith(".windows.net")
+    }.items():
+        if ADLS_ACCOUNT_NAME not in properties:
+            properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
+        if ADLS_SAS_TOKEN not in properties:
+            properties[ADLS_SAS_TOKEN] = sas_token
 
     return AzureBlobFileSystem(
-        connection_string=get_first_property_value(
-            properties,
-            ADLS_CONNECTION_STRING,
-            ADLFS_CONNECTION_STRING,
-        ),
-        account_name=get_first_property_value(
-            properties,
-            ADLS_ACCOUNT_NAME,
-            ADLFS_ACCOUNT_NAME,
-        ),
-        account_key=get_first_property_value(
-            properties,
-            ADLS_ACCOUNT_KEY,
-            ADLFS_ACCOUNT_KEY,
-        ),
-        sas_token=get_first_property_value(
-            properties,
-            ADLS_SAS_TOKEN,
-            ADLFS_SAS_TOKEN,
-        ),
-        tenant_id=get_first_property_value(
-            properties,
-            ADLS_TENANT_ID,
-            ADLFS_TENANT_ID,
-        ),
-        client_id=get_first_property_value(
-            properties,
-            ADLS_CLIENT_ID,
-            ADLFS_CLIENT_ID,
-        ),
-        client_secret=get_first_property_value(
-            properties,
-            ADLS_ClIENT_SECRET,
-            ADLFS_ClIENT_SECRET,
-        ),
+        connection_string=properties.get(ADLS_CONNECTION_STRING),
+        account_name=properties.get(ADLS_ACCOUNT_NAME),
+        account_key=properties.get(ADLS_ACCOUNT_KEY),
+        sas_token=properties.get(ADLS_SAS_TOKEN),
+        tenant_id=properties.get(ADLS_TENANT_ID),
+        client_id=properties.get(ADLS_CLIENT_ID),
+        client_secret=properties.get(ADLS_ClIENT_SECRET),
     )
 
 

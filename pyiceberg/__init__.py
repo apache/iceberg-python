@@ -15,4 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+<<<<<<< HEAD
 __version__ = "0.8.1"
+=======
+__version__ = "0.9.0"
+>>>>>>> upstream/main

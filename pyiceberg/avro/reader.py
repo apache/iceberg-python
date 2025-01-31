@@ -51,7 +51,7 @@ from pyiceberg.utils.singleton import Singleton
 def _skip_map_array(decoder: BinaryDecoder, skip_entry: Callable[[], None]) -> None:
     """Skips over an array or map.
 
-    Both the array and map are encoded similar, and we can re-use
+    Both the array and map are encoded similar, and we can reuse
     the logic of skipping in an efficient way.
 
     From the Avro spec:

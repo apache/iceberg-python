@@ -353,6 +353,127 @@ lat: [[52.371807,37.773972,53.11254],[53.21917]]
 long: [[4.896029,-122.431297,6.0989],[6.56667]]
 ```
 
+### Partial overwrites
+
+When using the `overwrite` API, you can use an `overwrite_filter` to delete data that matches the filter before appending new data into the table.
+
+For example, with an iceberg table created as:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+And with initial data populating the table:
+
+```python
+import pyarrow as pa
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+You can overwrite the record of `Paris` with a record of `New York`:
+
+```python
+from pyiceberg.expressions import EqualTo
+df = pa.Table.from_pylist(
+    [
+        {"city": "New York", "lat": 40.7128, "long": 74.0060},
+    ]
+)
+tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
+```
+
+This produces the following result with `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
+lat: [[40.7128],[52.371807,37.773972,53.11254]]
+long: [[74.006],[4.896029,-122.431297,6.0989]]
+```
+
+If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
+For example, with an iceberg table with a partition specified on `"city"` field:
+
+```python
+from pyiceberg.schema import Schema
+from pyiceberg.types import DoubleType, NestedField, StringType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table(
+    "default.cities",
+    schema=schema,
+    partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="city_identity"))
+)
+```
+
+And we want to overwrite the data for the partition of `"Paris"`:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": -48.864716, "long": -2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+Then we can call `dynamic_partition_overwrite` with this arrow table:
+
+```python
+df_corrected = pa.Table.from_pylist([
+    {"city": "Paris", "lat": 48.864716, "long": 2.349014}
+])
+tbl.dynamic_partition_overwrite(df_corrected)
+```
+
+This produces the following result with `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["Paris"],["Amsterdam"],["Drachten"],["San Francisco"]]
+lat: [[48.864716],[52.371807],[53.11254],[37.773972]]
+long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
+```
+
 ## Inspecting tables
 
 To explore the table metadata, tables can be inspected.
@@ -884,7 +1005,7 @@ tbl.add_files(file_paths=file_paths)
 
 ## Schema evolution
 
-PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).
+PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overridden).
 
 In the examples below, the `.update_schema()` is called from the table itself.
 
@@ -951,8 +1072,13 @@ Using `add_column` you can add a column, without having to worry about the field
 with table.update_schema() as update:
     update.add_column("retries", IntegerType(), "Number of retries to place the bid")
     # In a struct
-    update.add_column("details.confirmed_by", StringType(), "Name of the exchange")
+    update.add_column("details", StructType())
+
+with table.update_schema() as update:
+    update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
 ```
+
+A complex type must exist before columns can be added to it. Fields in complex types are added in a tuple.
 
 ### Rename column
 
@@ -961,20 +1087,21 @@ Renaming a field in an Iceberg table is simple:
 ```python
 with table.update_schema() as update:
     update.rename_column("retries", "num_retries")
-    # This will rename `confirmed_by` to `exchange`
-    update.rename_column("properties.confirmed_by", "exchange")
+    # This will rename `confirmed_by` to `processed_by` in the `details` struct
+    update.rename_column(("details", "confirmed_by"), "processed_by")
 ```
 
 ### Move column
 
-Move a field inside of struct:
+Move order of fields:
 
 ```python
 with table.update_schema() as update:
     update.move_first("symbol")
+    # This will move `bid` after `ask`
     update.move_after("bid", "ask")
-    # This will move `confirmed_by` before `exchange`
-    update.move_before("details.created_by", "details.exchange")
+    # This will move `confirmed_by` before `exchange` in the `details` struct
+    update.move_before(("details", "confirmed_by"), ("details", "exchange"))
 ```
 
 ### Update column
@@ -1006,6 +1133,8 @@ Delete a field, careful this is a incompatible change (readers/writers might exp
 ```python
 with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
+    # In a struct
+    update.delete_column(("details", "confirmed_by"))
 ```
 
 ## Partition evolution
@@ -1050,7 +1179,7 @@ with table.update_spec() as update:
 Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
 
 ```python
-with table.update_spec() as update:some_partition_name
+with table.update_spec() as update:
     # Remove the partition field with the name
     update.remove_field("some_partition_name")
 ```
@@ -1127,6 +1256,29 @@ You can also use context managers to make more changes:
 ```python
 with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
+```
+
+## Table Statistics Management
+
+Manage table statistics with operations through the `Table` API:
+
+```python
+# To run a specific operation
+table.update_statistics().set_statistics(statistics_file=statistics_file).commit()
+# To run multiple operations
+table.update_statistics()
+  .set_statistics(statistics_file1)
+  .remove_statistics(snapshot_id2)
+  .commit()
+# Operations are applied on commit.
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.update_statistics() as update:
+    update.set_statistics(statistics_file)
+    update.remove_statistics(snapshot_id2)
 ```
 
 ## Query the data

@@ -33,11 +33,10 @@ from pydantic import Field, conlist, field_validator, model_serializer
 from pyiceberg.schema import P, PartnerAccessor, Schema, SchemaVisitor, SchemaWithPartnerVisitor, visit, visit_with_partner
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel
 from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
-from pyiceberg.utils.deprecated import deprecated
 
 
 class MappedField(IcebergBaseModel):
-    field_id: int = Field(alias="field-id")
+    field_id: Optional[int] = Field(alias="field-id", default=None)
     names: List[str] = conlist(str)
     fields: List[MappedField] = Field(default_factory=list)
 
@@ -49,12 +48,12 @@ class MappedField(IcebergBaseModel):
     @model_serializer
     def ser_model(self) -> Dict[str, Any]:
         """Set custom serializer to leave out the field when it is empty."""
-        fields = {"fields": self.fields} if len(self.fields) > 0 else {}
-        return {
-            "field-id": self.field_id,
-            "names": self.names,
-            **fields,
-        }
+        serialized: Dict[str, Any] = {"names": self.names}
+        if self.field_id is not None:
+            serialized["field-id"] = self.field_id
+        if len(self.fields) > 0:
+            serialized["fields"] = self.fields
+        return serialized
 
     def __len__(self) -> int:
         """Return the number of fields."""
@@ -65,7 +64,8 @@ class MappedField(IcebergBaseModel):
         # Otherwise the UTs fail because the order of the set can change
         fields_str = ", ".join([str(e) for e in self.fields]) or ""
         fields_str = " " + fields_str if fields_str else ""
-        return "([" + ", ".join(self.names) + "] -> " + (str(self.field_id) or "?") + fields_str + ")"
+        field_id = "?" if self.field_id is None else (str(self.field_id) or "?")
+        return "([" + ", ".join(self.names) + "] -> " + field_id + fields_str + ")"
 
 
 class NameMapping(IcebergRootModel[List[MappedField]]):
@@ -74,18 +74,6 @@ class NameMapping(IcebergRootModel[List[MappedField]]):
     @cached_property
     def _field_by_name(self) -> Dict[str, MappedField]:
         return visit_name_mapping(self, _IndexByName())
-
-    @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="Please use `apply_name_mapping` instead",
-    )
-    def find(self, *names: str) -> MappedField:
-        name = ".".join(names)
-        try:
-            return self._field_by_name[name]
-        except KeyError as e:
-            raise ValueError(f"Could not find field with name: {name}") from e
 
     def __len__(self) -> int:
         """Return the number of mappings."""
@@ -232,7 +220,9 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
 
     def fields(self, struct: List[MappedField], field_results: List[MappedField]) -> List[MappedField]:
         reassignments: Dict[str, int] = {
-            update.name: update.field_id for f in field_results if (update := self._updates.get(f.field_id))
+            update.name: update.field_id
+            for f in field_results
+            if f.field_id is not None and (update := self._updates.get(f.field_id))
         }
         return [
             updated_field
@@ -241,6 +231,8 @@ class _UpdateMapping(NameMappingVisitor[List[MappedField], MappedField]):
         ]
 
     def field(self, field: MappedField, field_result: List[MappedField]) -> MappedField:
+        if field.field_id is None:
+            return field
         field_names = field.names
         if (update := self._updates.get(field.field_id)) is not None and update.name not in field_names:
             field_names.append(update.name)
@@ -333,8 +325,8 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
         return StructType(*field_results)
 
     def field(self, field: NestedField, field_partner: Optional[MappedField], field_result: IcebergType) -> IcebergType:
-        if field_partner is None:
-            raise ValueError(f"Field missing from NameMapping: {'.'.join(self.current_path)}")
+        if field_partner is None or field_partner.field_id is None:
+            raise ValueError(f"Field or field ID missing from NameMapping: {'.'.join(self.current_path)}")
 
         return NestedField(
             field_id=field_partner.field_id,

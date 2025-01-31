@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import concurrent.futures
 import fnmatch
+import functools
 import itertools
 import logging
+import operator
 import os
 import re
 import uuid
@@ -90,7 +92,6 @@ from pyiceberg.io import (
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
     GCS_DEFAULT_LOCATION,
-    GCS_ENDPOINT,
     GCS_SERVICE_HOST,
     GCS_TOKEN,
     GCS_TOKEN_EXPIRES_AT_MS,
@@ -102,8 +103,10 @@ from pyiceberg.io import (
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
+    S3_FORCE_VIRTUAL_ADDRESSING,
     S3_PROXY_URI,
     S3_REGION,
+    S3_REQUEST_TIMEOUT,
     S3_ROLE_ARN,
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
@@ -135,6 +138,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import TruncateTransform
@@ -165,7 +169,6 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -188,6 +191,14 @@ DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
+
+
+class UnsupportedPyArrowTypeException(Exception):
+    """Cannot convert PyArrow type to corresponding Iceberg type."""
+
+    def __init__(self, field: pa.Field, *args: Any):
+        self.field = field
+        super().__init__(*args)
 
 
 class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
@@ -351,73 +362,140 @@ class PyArrowFileIO(FileIO):
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
     def _initialize_fs(self, scheme: str, netloc: Optional[str] = None) -> FileSystem:
-        if scheme in {"s3", "s3a", "s3n"}:
-            from pyarrow.fs import S3FileSystem
+        """Initialize FileSystem for different scheme."""
+        if scheme in {"oss"}:
+            return self._initialize_oss_fs()
 
-            client_kwargs: Dict[str, Any] = {
-                "endpoint_override": self.properties.get(S3_ENDPOINT),
-                "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-                "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-                "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-                "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
-            }
+        elif scheme in {"s3", "s3a", "s3n"}:
+            return self._initialize_s3_fs(netloc)
 
-            if proxy_uri := self.properties.get(S3_PROXY_URI):
-                client_kwargs["proxy_options"] = proxy_uri
+        elif scheme in {"hdfs", "viewfs"}:
+            return self._initialize_hdfs_fs(scheme, netloc)
 
-            if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-                client_kwargs["connect_timeout"] = float(connect_timeout)
-
-            if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-                client_kwargs["role_arn"] = role_arn
-
-            if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-                client_kwargs["session_name"] = session_name
-
-            return S3FileSystem(**client_kwargs)
-        elif scheme in ("hdfs", "viewfs"):
-            from pyarrow.fs import HadoopFileSystem
-
-            hdfs_kwargs: Dict[str, Any] = {}
-            if netloc:
-                return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
-            if host := self.properties.get(HDFS_HOST):
-                hdfs_kwargs["host"] = host
-            if port := self.properties.get(HDFS_PORT):
-                # port should be an integer type
-                hdfs_kwargs["port"] = int(port)
-            if user := self.properties.get(HDFS_USER):
-                hdfs_kwargs["user"] = user
-            if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
-                hdfs_kwargs["kerb_ticket"] = kerb_ticket
-
-            return HadoopFileSystem(**hdfs_kwargs)
         elif scheme in {"gs", "gcs"}:
-            from pyarrow.fs import GcsFileSystem
+            return self._initialize_gcs_fs()
 
-            gcs_kwargs: Dict[str, Any] = {}
-            if access_token := self.properties.get(GCS_TOKEN):
-                gcs_kwargs["access_token"] = access_token
-            if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
-                gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-            if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
-                gcs_kwargs["default_bucket_location"] = bucket_location
-            if endpoint := get_first_property_value(self.properties, GCS_SERVICE_HOST, GCS_ENDPOINT):
-                if self.properties.get(GCS_ENDPOINT):
-                    deprecation_message(
-                        deprecated_in="0.8.0",
-                        removed_in="0.9.0",
-                        help_message=f"The property {GCS_ENDPOINT} is deprecated, please use {GCS_SERVICE_HOST} instead",
-                    )
-                url_parts = urlparse(endpoint)
-                gcs_kwargs["scheme"] = url_parts.scheme
-                gcs_kwargs["endpoint_override"] = url_parts.netloc
+        elif scheme in {"file"}:
+            return self._initialize_local_fs()
 
-            return GcsFileSystem(**gcs_kwargs)
-        elif scheme == "file":
-            return PyArrowLocalFileSystem()
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
+
+    def _initialize_oss_fs(self) -> FileSystem:
+        from pyarrow.fs import S3FileSystem
+
+        client_kwargs: Dict[str, Any] = {
+            "endpoint_override": self.properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+        }
+
+        if proxy_uri := self.properties.get(S3_PROXY_URI):
+            client_kwargs["proxy_options"] = proxy_uri
+
+        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
+            client_kwargs["request_timeout"] = float(request_timeout)
+
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+            client_kwargs["role_arn"] = role_arn
+
+        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+            client_kwargs["session_name"] = session_name
+
+        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+
+        return S3FileSystem(**client_kwargs)
+
+    def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import S3FileSystem, resolve_s3_region
+
+        # Resolve region from netloc(bucket), fallback to user-provided region
+        provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+
+        try:
+            bucket_region = resolve_s3_region(bucket=netloc)
+        except (OSError, TypeError):
+            bucket_region = None
+            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
+
+        bucket_region = bucket_region or provided_region
+        if bucket_region != provided_region:
+            logger.warning(
+                f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
+                f"provided region {provided_region}, actual region {bucket_region}"
+            )
+
+        client_kwargs: Dict[str, Any] = {
+            "endpoint_override": self.properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": bucket_region,
+        }
+
+        if proxy_uri := self.properties.get(S3_PROXY_URI):
+            client_kwargs["proxy_options"] = proxy_uri
+
+        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+            client_kwargs["connect_timeout"] = float(connect_timeout)
+
+        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
+            client_kwargs["request_timeout"] = float(request_timeout)
+
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+            client_kwargs["role_arn"] = role_arn
+
+        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+            client_kwargs["session_name"] = session_name
+
+        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+
+        return S3FileSystem(**client_kwargs)
+
+    def _initialize_hdfs_fs(self, scheme: str, netloc: Optional[str]) -> FileSystem:
+        from pyarrow.fs import HadoopFileSystem
+
+        hdfs_kwargs: Dict[str, Any] = {}
+        if netloc:
+            return HadoopFileSystem.from_uri(f"{scheme}://{netloc}")
+        if host := self.properties.get(HDFS_HOST):
+            hdfs_kwargs["host"] = host
+        if port := self.properties.get(HDFS_PORT):
+            # port should be an integer type
+            hdfs_kwargs["port"] = int(port)
+        if user := self.properties.get(HDFS_USER):
+            hdfs_kwargs["user"] = user
+        if kerb_ticket := self.properties.get(HDFS_KERB_TICKET):
+            hdfs_kwargs["kerb_ticket"] = kerb_ticket
+
+        return HadoopFileSystem(**hdfs_kwargs)
+
+    def _initialize_gcs_fs(self) -> FileSystem:
+        from pyarrow.fs import GcsFileSystem
+
+        gcs_kwargs: Dict[str, Any] = {}
+        if access_token := self.properties.get(GCS_TOKEN):
+            gcs_kwargs["access_token"] = access_token
+        if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
+            gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
+        if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
+            gcs_kwargs["default_bucket_location"] = bucket_location
+        if endpoint := self.properties.get(GCS_SERVICE_HOST):
+            url_parts = urlparse(endpoint)
+            gcs_kwargs["scheme"] = url_parts.scheme
+            gcs_kwargs["endpoint_override"] = url_parts.netloc
+
+        return GcsFileSystem(**gcs_kwargs)
+
+    def _initialize_local_fs(self) -> FileSystem:
+        return PyArrowLocalFileSystem()
 
     def new_input(self, location: str) -> PyArrowFile:
         """Get a PyArrowFile instance to read bytes from the file at the given location.
@@ -895,13 +973,7 @@ def _(obj: pa.Schema, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 @visit_pyarrow.register(pa.StructType)
 def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
-    results = []
-
-    for field in obj:
-        visitor.before_field(field)
-        result = visit_pyarrow(field.type, visitor)
-        results.append(visitor.field(field, result))
-        visitor.after_field(field)
+    results = [visit_pyarrow(field, visitor) for field in obj]
 
     return visitor.struct(obj, results)
 
@@ -937,6 +1009,20 @@ def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
     # as we only support parquet in PyIceberg for now.
     logger.warning(f"Iceberg does not have a dictionary type. {type(obj)} will be inferred as {obj.value_type} on read.")
     return visit_pyarrow(obj.value_type, visitor)
+
+
+@visit_pyarrow.register(pa.Field)
+def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
+    field_type = obj.type
+
+    visitor.before_field(obj)
+    try:
+        result = visit_pyarrow(field_type, visitor)
+    except TypeError as e:
+        raise UnsupportedPyArrowTypeException(obj, f"Column '{obj.name}' has an unsupported type: {field_type}") from e
+    visitor.after_field(obj)
+
+    return visitor.field(obj, result)
 
 
 @visit_pyarrow.register(pa.DataType)
@@ -1109,7 +1195,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
                     logger.warning("Iceberg does not yet support 'ns' timestamp precision. Downcasting to 'us'.")
                 else:
                     raise TypeError(
-                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+                        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write.",
                     )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
@@ -1324,13 +1410,14 @@ def _task_to_table(
         return None
 
 
-def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
+def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
     deletes_per_file: Dict[str, List[ChunkedArray]] = {}
     unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[Dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args), [(fs, delete) for delete in unique_deletes]
+            lambda args: _read_deletes(*args),
+            [(_fs_from_file_path(io, delete_file.file_path), delete_file) for delete_file in unique_deletes],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1342,7 +1429,7 @@ def _read_all_delete_files(fs: FileSystem, tasks: Iterable[FileScanTask]) -> Dic
     return deletes_per_file
 
 
-def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
+def _fs_from_file_path(io: FileIO, file_path: str) -> FileSystem:
     scheme, netloc, _ = _parse_location(file_path)
     if isinstance(io, PyArrowFileIO):
         return io.fs_by_scheme(scheme, netloc)
@@ -1364,7 +1451,6 @@ def _fs_from_file_path(file_path: str, io: FileIO) -> FileSystem:
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
-    _fs: FileSystem
     _projected_schema: Schema
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
@@ -1374,7 +1460,6 @@ class ArrowScan:
     Attributes:
         _table_metadata: Current table metadata of the Iceberg table
         _io: PyIceberg FileIO implementation from which to fetch the io properties
-        _fs: PyArrow FileSystem to use to read the files
         _projected_schema: Iceberg Schema to project onto the data files
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
@@ -1392,7 +1477,6 @@ class ArrowScan:
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
-        self._fs = _fs_from_file_path(table_metadata.location, io)  # TODO: use different FileSystem per file
         self._projected_schema = projected_schema
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
@@ -1432,7 +1516,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
         executor = ExecutorFactory.get_or_create()
 
         def _table_from_scan_task(task: FileScanTask) -> pa.Table:
@@ -1495,7 +1579,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._fs, tasks)
+        deletes_per_file = _read_all_delete_files(self._io, tasks)
         return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
     def _record_batches_from_scan_tasks_and_deletes(
@@ -1506,7 +1590,7 @@ class ArrowScan:
             if self._limit is not None and total_row_count >= self._limit:
                 break
             batches = _task_to_record_batches(
-                self._fs,
+                _fs_from_file_path(self._io, task.file.file_path),
                 task,
                 self._bound_row_filter,
                 self._projected_schema,
@@ -1526,187 +1610,6 @@ class ArrowScan:
                 total_row_count += len(batch)
 
 
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="project_table is deprecated. Use ArrowScan.to_table instead.",
-)
-def project_table(
-    tasks: Iterable[FileScanTask],
-    table_metadata: TableMetadata,
-    io: FileIO,
-    row_filter: BooleanExpression,
-    projected_schema: Schema,
-    case_sensitive: bool = True,
-    limit: Optional[int] = None,
-) -> pa.Table:
-    """Resolve the right columns based on the identifier.
-
-    Args:
-        tasks (Iterable[FileScanTask]): A URI or a path to a local file.
-        table_metadata (TableMetadata): The table metadata of the table that's being queried
-        io (FileIO): A FileIO to open streams to the object store
-        row_filter (BooleanExpression): The expression for filtering rows.
-        projected_schema (Schema): The output schema.
-        case_sensitive (bool): Case sensitivity when looking up column names.
-        limit (Optional[int]): Limit the number of records.
-
-    Raises:
-        ResolveError: When an incompatible query is done.
-    """
-    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
-    if isinstance(io, PyArrowFileIO):
-        fs = io.fs_by_scheme(scheme, netloc)
-    else:
-        try:
-            from pyiceberg.io.fsspec import FsspecFileIO
-
-            if isinstance(io, FsspecFileIO):
-                from pyarrow.fs import PyFileSystem
-
-                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
-            else:
-                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
-        except ModuleNotFoundError as e:
-            # When FsSpec is not installed
-            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
-
-    use_large_types = property_as_bool(io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
-
-    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
-
-    projected_field_ids = {
-        id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
-    }.union(extract_field_ids(bound_row_filter))
-
-    deletes_per_file = _read_all_delete_files(fs, tasks)
-    executor = ExecutorFactory.get_or_create()
-    futures = [
-        executor.submit(
-            _task_to_table,
-            fs,
-            task,
-            bound_row_filter,
-            projected_schema,
-            projected_field_ids,
-            deletes_per_file.get(task.file.file_path),
-            case_sensitive,
-            table_metadata.name_mapping(),
-            use_large_types,
-        )
-        for task in tasks
-    ]
-    total_row_count = 0
-    # for consistent ordering, we need to maintain future order
-    futures_index = {f: i for i, f in enumerate(futures)}
-    completed_futures: SortedList[Future[pa.Table]] = SortedList(iterable=[], key=lambda f: futures_index[f])
-    for future in concurrent.futures.as_completed(futures):
-        completed_futures.add(future)
-        if table_result := future.result():
-            total_row_count += len(table_result)
-        # stop early if limit is satisfied
-        if limit is not None and total_row_count >= limit:
-            break
-
-    # by now, we've either completed all tasks or satisfied the limit
-    if limit is not None:
-        _ = [f.cancel() for f in futures if not f.done()]
-
-    tables = [f.result() for f in completed_futures if f.result()]
-
-    if len(tables) < 1:
-        return pa.Table.from_batches([], schema=schema_to_pyarrow(projected_schema, include_field_ids=False))
-
-    result = pa.concat_tables(tables, promote_options="permissive")
-
-    if limit is not None:
-        return result.slice(0, limit)
-
-    return result
-
-
-@deprecated(
-    deprecated_in="0.8.0",
-    removed_in="0.9.0",
-    help_message="project_table is deprecated. Use ArrowScan.to_record_batches instead.",
-)
-def project_batches(
-    tasks: Iterable[FileScanTask],
-    table_metadata: TableMetadata,
-    io: FileIO,
-    row_filter: BooleanExpression,
-    projected_schema: Schema,
-    case_sensitive: bool = True,
-    limit: Optional[int] = None,
-) -> Iterator[pa.RecordBatch]:
-    """Resolve the right columns based on the identifier.
-
-    Args:
-        tasks (Iterable[FileScanTask]): A URI or a path to a local file.
-        table_metadata (TableMetadata): The table metadata of the table that's being queried
-        io (FileIO): A FileIO to open streams to the object store
-        row_filter (BooleanExpression): The expression for filtering rows.
-        projected_schema (Schema): The output schema.
-        case_sensitive (bool): Case sensitivity when looking up column names.
-        limit (Optional[int]): Limit the number of records.
-
-    Raises:
-        ResolveError: When an incompatible query is done.
-    """
-    scheme, netloc, _ = PyArrowFileIO.parse_location(table_metadata.location)
-    if isinstance(io, PyArrowFileIO):
-        fs = io.fs_by_scheme(scheme, netloc)
-    else:
-        try:
-            from pyiceberg.io.fsspec import FsspecFileIO
-
-            if isinstance(io, FsspecFileIO):
-                from pyarrow.fs import PyFileSystem
-
-                fs = PyFileSystem(FSSpecHandler(io.get_fs(scheme)))
-            else:
-                raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}")
-        except ModuleNotFoundError as e:
-            # When FsSpec is not installed
-            raise ValueError(f"Expected PyArrowFileIO or FsspecFileIO, got: {io}") from e
-
-    use_large_types = property_as_bool(io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
-
-    bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
-
-    projected_field_ids = {
-        id for id in projected_schema.field_ids if not isinstance(projected_schema.find_type(id), (MapType, ListType))
-    }.union(extract_field_ids(bound_row_filter))
-
-    deletes_per_file = _read_all_delete_files(fs, tasks)
-
-    total_row_count = 0
-
-    for task in tasks:
-        # stop early if limit is satisfied
-        if limit is not None and total_row_count >= limit:
-            break
-        batches = _task_to_record_batches(
-            fs,
-            task,
-            bound_row_filter,
-            projected_schema,
-            projected_field_ids,
-            deletes_per_file.get(task.file.file_path),
-            case_sensitive,
-            table_metadata.name_mapping(),
-            use_large_types,
-        )
-        for batch in batches:
-            if limit is not None:
-                if total_row_count >= limit:
-                    break
-                elif total_row_count + len(batch) >= limit:
-                    batch = batch.slice(0, limit - total_row_count)
-            yield batch
-            total_row_count += len(batch)
-
-
 def _to_requested_schema(
     requested_schema: Schema,
     file_schema: Schema,
@@ -1715,7 +1618,7 @@ def _to_requested_schema(
     include_field_ids: bool = False,
     use_large_types: bool = True,
 ) -> pa.RecordBatch:
-    # We could re-use some of these visitors
+    # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
@@ -2287,7 +2190,10 @@ class DataFileStatistics:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
-        return lower_value
+
+        source_field = schema.find_field(partition_field.source_id)
+        transform = partition_field.transform.transform(source_field.field_type)
+        return transform(lower_value)
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
         return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
@@ -2427,6 +2333,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
         default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
     )
+    location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
 
     def write_parquet(task: WriteTask) -> DataFile:
         table_schema = table_metadata.schema()
@@ -2449,7 +2356,10 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             for batch in task.record_batches
         ]
         arrow_table = pa.Table.from_batches(batches)
-        file_path = f'{table_metadata.location}/data/{task.generate_data_file_path("parquet")}'
+        file_path = location_provider.new_data_location(
+            data_file_name=task.generate_data_file_filename("parquet"),
+            partition_key=task.partition_key,
+        )
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
             with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
@@ -2522,7 +2432,6 @@ def _check_pyarrow_schema_compatible(
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. Update the schema first (hint, use union_by_name)."
         ) from e
-
     _check_schema_compatible(requested_schema, provided_schema)
 
 
@@ -2634,27 +2543,31 @@ def _dataframe_to_data_files(
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                for batches in bin_pack_arrow_table(df, target_file_size)
-            ]),
+            tasks=iter(
+                [
+                    WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                    for batches in bin_pack_arrow_table(df, target_file_size)
+                ]
+            ),
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
-            tasks=iter([
-                WriteTask(
-                    write_uuid=write_uuid,
-                    task_id=next(counter),
-                    record_batches=batches,
-                    partition_key=partition.partition_key,
-                    schema=task_schema,
-                )
-                for partition in partitions
-                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
-            ]),
+            tasks=iter(
+                [
+                    WriteTask(
+                        write_uuid=write_uuid,
+                        task_id=next(counter),
+                        record_batches=batches,
+                        partition_key=partition.partition_key,
+                        schema=task_schema,
+                    )
+                    for partition in partitions
+                    for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+                ]
+            ),
         )
 
 
@@ -2664,38 +2577,8 @@ class _TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _get_table_partitions(
-    arrow_table: pa.Table,
-    partition_spec: PartitionSpec,
-    schema: Schema,
-    slice_instructions: list[dict[str, Any]],
-) -> list[_TablePartition]:
-    sorted_slice_instructions = sorted(slice_instructions, key=lambda x: x["offset"])
-
-    partition_fields = partition_spec.fields
-
-    offsets = [inst["offset"] for inst in sorted_slice_instructions]
-    projected_and_filtered = {
-        partition_field.source_id: arrow_table[schema.find_field(name_or_id=partition_field.source_id).name]
-        .take(offsets)
-        .to_pylist()
-        for partition_field in partition_fields
-    }
-
-    table_partitions = []
-    for idx, inst in enumerate(sorted_slice_instructions):
-        partition_slice = arrow_table.slice(**inst)
-        fieldvalues = [
-            PartitionFieldValue(partition_field, projected_and_filtered[partition_field.source_id][idx])
-            for partition_field in partition_fields
-        ]
-        partition_key = PartitionKey(raw_partition_field_values=fieldvalues, partition_spec=partition_spec, schema=schema)
-        table_partitions.append(_TablePartition(partition_key=partition_key, arrow_table_partition=partition_slice))
-    return table_partitions
-
-
 def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> List[_TablePartition]:
-    """Based on the iceberg table partition spec, slice the arrow table into partitions with their keys.
+    """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
     Example:
     Input:
@@ -2704,52 +2587,50 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
      'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
      'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
     The algorithm:
-    Firstly we group the rows into partitions by sorting with sort order [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement of "at_end".
-    This gives the same table as raw input.
-    Then we sort_indices using reverse order of [('n_legs', 'descending'), ('year', 'descending')]
-    and null_placement : "at_start".
-    This gives:
-    [8, 7, 4, 5, 6, 3, 1, 2, 0]
-    Based on this we get partition groups of indices:
-    [{'offset': 8, 'length': 1}, {'offset': 7, 'length': 1}, {'offset': 4, 'length': 3}, {'offset': 3, 'length': 1}, {'offset': 1, 'length': 2}, {'offset': 0, 'length': 1}]
-    We then retrieve the partition keys by offsets.
-    And slice the arrow table by offsets and lengths of each partition.
+    - We determine the set of unique partition keys
+    - Then we produce a set of partitions by filtering on each of the combinations
+    - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
-    partition_columns: List[Tuple[PartitionField, NestedField]] = [
-        (partition_field, schema.find_field(partition_field.source_id)) for partition_field in spec.fields
-    ]
-    partition_values_table = pa.table({
-        str(partition.field_id): partition.transform.pyarrow_transform(field.field_type)(arrow_table[field.name])
-        for partition, field in partition_columns
-    })
+    # Assign unique names to columns where the partition transform has been applied
+    # to avoid conflicts
+    partition_fields = [f"_partition_{field.name}" for field in spec.fields]
 
-    # Sort by partitions
-    sort_indices = pa.compute.sort_indices(
-        partition_values_table,
-        sort_keys=[(col, "ascending") for col in partition_values_table.column_names],
-        null_placement="at_end",
-    ).to_pylist()
-    arrow_table = arrow_table.take(sort_indices)
+    for partition, name in zip(spec.fields, partition_fields):
+        source_field = schema.find_field(partition.source_id)
+        arrow_table = arrow_table.append_column(
+            name, partition.transform.pyarrow_transform(source_field.field_type)(arrow_table[source_field.name])
+        )
 
-    # Get slice_instructions to group by partitions
-    partition_values_table = partition_values_table.take(sort_indices)
-    reversed_indices = pa.compute.sort_indices(
-        partition_values_table,
-        sort_keys=[(col, "descending") for col in partition_values_table.column_names],
-        null_placement="at_start",
-    ).to_pylist()
-    slice_instructions: List[Dict[str, Any]] = []
-    last = len(reversed_indices)
-    reversed_indices_size = len(reversed_indices)
-    ptr = 0
-    while ptr < reversed_indices_size:
-        group_size = last - reversed_indices[ptr]
-        offset = reversed_indices[ptr]
-        slice_instructions.append({"offset": offset, "length": group_size})
-        last = reversed_indices[ptr]
-        ptr = ptr + group_size
+    unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
-    table_partitions: List[_TablePartition] = _get_table_partitions(arrow_table, spec, schema, slice_instructions)
+    table_partitions = []
+    # TODO: As a next step, we could also play around with yielding instead of materializing the full list
+    for unique_partition in unique_partition_fields.to_pylist():
+        partition_key = PartitionKey(
+            field_values=[
+                PartitionFieldValue(field=field, value=unique_partition[name])
+                for field, name in zip(spec.fields, partition_fields)
+            ],
+            partition_spec=spec,
+            schema=schema,
+        )
+        filtered_table = arrow_table.filter(
+            functools.reduce(
+                operator.and_,
+                [
+                    pc.field(partition_field_name) == unique_partition[partition_field_name]
+                    if unique_partition[partition_field_name] is not None
+                    else pc.field(partition_field_name).is_null()
+                    for field, partition_field_name in zip(spec.fields, partition_fields)
+                ],
+            )
+        )
+        filtered_table = filtered_table.drop_columns(partition_fields)
+
+        # The combine_chunks seems to be counter-intuitive to do, but it actually returns
+        # fresh buffers that don't interfere with each other when it is written out to file
+        table_partitions.append(
+            _TablePartition(partition_key=partition_key, arrow_table_partition=filtered_table.combine_chunks())
+        )
 
     return table_partitions

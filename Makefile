@@ -22,12 +22,12 @@ help:  ## Display this help
 install-poetry:  ## Install poetry if the user has not done that yet.
 	 @if ! command -v poetry &> /dev/null; then \
          echo "Poetry could not be found. Installing..."; \
-         pip install --user poetry==1.8.3; \
+         pip install --user poetry==2.0.1; \
      else \
          echo "Poetry is already installed."; \
      fi
 
-install-dependencies: ## Install dependencies including dev and all extras
+install-dependencies: ## Install dependencies including dev, docs, and all extras
 	poetry install --all-extras
 
 install: | install-poetry install-dependencies
@@ -97,3 +97,12 @@ clean: ## Clean up the project Python working environment
 	@find . -name "*.pyd" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyo" -exec echo Deleting {} \; -delete
 	@echo "Cleanup complete"
+
+docs-install:
+	poetry install --with docs
+
+docs-serve:
+	poetry run mkdocs serve -f mkdocs/mkdocs.yml
+
+docs-build:
+	poetry run mkdocs build -f mkdocs/mkdocs.yml --strict
