@@ -439,6 +439,17 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a view exists.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            bool: True if the view exists, False otherwise.
+        """
+
+    @abstractmethod
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 

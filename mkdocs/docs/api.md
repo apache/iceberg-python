@@ -1258,6 +1258,19 @@ with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
+## Views
+
+PyIceberg supports view operations.
+
+### Check if a view exists
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+catalog.view_exists("default.bar")
+```
+
 ## Table Statistics Management
 
 Manage table statistics with operations through the `Table` API:
