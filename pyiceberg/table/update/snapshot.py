@@ -65,6 +65,7 @@ from pyiceberg.table.snapshots import (
 from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
+    RemoveSnapshotRefUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
     TableUpdate,
@@ -749,6 +750,28 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
+        """Remove a snapshot ref.
+
+        Args:
+            ref_name: branch / tag name to remove
+        Stages the updates and requirements for the remove-snapshot-ref.
+        Returns
+            This method for chaining
+        """
+        updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self._transaction.table_metadata.refs[ref_name].snapshot_id
+                if ref_name in self._transaction.table_metadata.refs
+                else None,
+                ref=ref_name,
+            ),
+        )
+        self._updates += updates
+        self._requirements += requirements
+        return self
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -770,6 +793,17 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates += update
         self._requirements += requirement
         return self
+
+    def remove_tag(self, tag_name: str) -> ManageSnapshots:
+        """
+        Remove a tag.
+
+        Args:
+            tag_name (str): name of tag to remove
+        Returns:
+            This for method chaining
+        """
+        return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
         self,
@@ -802,3 +836,14 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates += update
         self._requirements += requirement
         return self
+
+    def remove_branch(self, branch_name: str) -> ManageSnapshots:
+        """
+        Remove a branch.
+
+        Args:
+            branch_name (str): name of branch to remove
+        Returns:
+            This for method chaining
+        """
+        return self._remove_ref_snapshot(ref_name=branch_name)

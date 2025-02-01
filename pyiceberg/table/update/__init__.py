@@ -466,6 +466,23 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if (existing_ref := base_metadata.refs.get(update.ref_name, None)) is None:
+        return base_metadata
+
+    if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
+        raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
+
+    if update.ref_name == MAIN_BRANCH:
+        raise ValueError("Cannot remove main branch")
+
+    metadata_refs = {**base_metadata.refs}
+    metadata_refs.pop(update.ref_name, None)
+    context.add_update(update)
+    return base_metadata.model_copy(update={"refs": metadata_refs})
+
+
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
