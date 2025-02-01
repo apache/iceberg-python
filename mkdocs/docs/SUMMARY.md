@@ -30,7 +30,7 @@
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
     - [Release Notes](https://github.com/apache/iceberg-python/releases)
-- [Code Reference](reference/)
+- [Code Reference](reference/pyiceberg/index.md)
 
 <!-- markdown-link-check-enable-->
 

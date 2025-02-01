@@ -31,7 +31,8 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: [..]
+          paths:
+            - pyiceberg
 
 theme:
   name: material
