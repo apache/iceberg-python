@@ -78,6 +78,7 @@ from pyiceberg.table.update import (
     AssertRefSnapshotId,
     AssertTableUUID,
     RemovePropertiesUpdate,
+    RemoveSnapshotRefUpdate,
     RemoveStatisticsUpdate,
     SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
@@ -791,6 +792,15 @@ def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
         max_snapshot_age_ms=12312312312,
         max_ref_age_ms=123123123,
     )
+
+
+def test_update_remove_snapshots(table_v2: Table) -> None:
+    # assert fixture data to easily understand the test assumptions
+    assert len(table_v2.metadata.refs) == 2
+    update = RemoveSnapshotRefUpdate(ref_name="test")
+    new_metadata = update_table_metadata(table_v2.metadata, (update,))
+    assert len(new_metadata.refs) == 1
+    assert new_metadata.refs["main"].snapshot_id == 3055729675574597004
 
 
 def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
