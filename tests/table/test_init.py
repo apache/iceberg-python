@@ -822,12 +822,12 @@ def test_update_remove_snapshots_doesnt_exist(table_v2: Table) -> None:
         update_table_metadata(table_v2.metadata, (update,))
 
 
-def test_update_remove_snapshots_cant_remove_current_snapshot_id(table_v2: Table) -> None:
-    update = RemoveSnapshotsUpdate(
-        snapshot_ids=[3055729675574597004],
-    )
-    with pytest.raises(ValueError, match="Can't remove current snapshot id 3055729675574597004"):
-        update_table_metadata(table_v2.metadata, (update,))
+def test_update_remove_snapshots_remove_current_snapshot_id(table_v2: Table) -> None:
+    update = RemoveSnapshotsUpdate(snapshot_ids=[3055729675574597004])
+    new_metadata = update_table_metadata(table_v2.metadata, (update,))
+    assert len(new_metadata.refs) == 1
+    assert new_metadata.refs["test"].snapshot_id == 3051729675574597004
+    assert new_metadata.current_snapshot_id is None
 
 
 def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:

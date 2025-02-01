@@ -459,8 +459,6 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 @_apply_table_update.register(RemoveSnapshotsUpdate)
 def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     for remove_snapshot_id in update.snapshot_ids:
-        if remove_snapshot_id == base_metadata.current_snapshot_id:
-            raise ValueError(f"Can't remove current snapshot id {remove_snapshot_id}")
         if not any(s.snapshot_id == remove_snapshot_id for s in base_metadata.snapshots):
             raise ValueError(f"Snapshot with snapshot id {remove_snapshot_id} does not exist: {base_metadata.snapshots}")
 
@@ -502,13 +500,11 @@ def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _T
     if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
         raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
 
-    if update.ref_name == MAIN_BRANCH:
-        raise ValueError("Cannot remove main branch")
+    current_snapshot_id = None if update.ref_name == MAIN_BRANCH else base_metadata.current_snapshot_id
 
-    metadata_refs = {**base_metadata.refs}
-    metadata_refs.pop(update.ref_name, None)
+    metadata_refs = {ref_name: ref for ref_name, ref in base_metadata.refs.items() if ref_name != update.ref_name}
     context.add_update(update)
-    return base_metadata.model_copy(update={"refs": metadata_refs})
+    return base_metadata.model_copy(update={"refs": metadata_refs, "current_snapshot_id": current_snapshot_id})
 
 
 @_apply_table_update.register(AddSortOrderUpdate)
