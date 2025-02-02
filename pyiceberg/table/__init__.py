@@ -217,6 +217,9 @@ class TableProperties:
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
 
+    METADATA_DELETE_AFTER_COMMIT_ENABLED = "write.metadata.delete-after-commit.enabled"
+    METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT = False
+
     MAX_SNAPSHOT_AGE_MS = "history.expire.max-snapshot-age-ms"
     MAX_SNAPSHOT_AGE_MS_DEFAULT = 5 * 24 * 60 * 60 * 1000  # 5 days
 
