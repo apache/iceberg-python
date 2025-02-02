@@ -98,8 +98,7 @@ jobs:
           python-version: 3.12
 
       - name: Install Poetry
-        run: |
-          pip install poetry
+        run: make install-poetry
 
       - name: Validate current pyiceberg version
         env:
@@ -140,7 +139,7 @@ jobs:
             3.12
 
       - name: Install poetry
-        run: pip install poetry
+        run: make install-poetry
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -213,7 +212,7 @@ jobs:
             3.12
 
       - name: Install poetry
-        run: pip install poetry
+        run: make install-poetry
 
       - name: Set version with RC
         env:
