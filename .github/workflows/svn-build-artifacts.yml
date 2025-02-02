@@ -8,7 +8,7 @@ on:
         type: string
       RC:
         required: true
-        type: number
+        type: string
 
 jobs:
   svn-build-artifacts:
