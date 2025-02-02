@@ -1,0 +1,56 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+name: "Nightly PyPI Build"
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # Runs at midnight UTC every day
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  nightly-build:
+    uses: ./.github/workflows/pypi-build-artifacts.yml  # Reference the PyPI build workflow
+    with:
+      VERSION: "0.0.0"  # Generate nightly version
+      RC: "0"  # Reset RC for nightly builds
+
+  testpypi-publish:
+    name: Publish to TestPypi
+    needs:
+      - nightly-build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/pyiceberg-kevinliu
+
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+    steps:
+    - name: Download all the artifacts
+      uses: actions/download-artifact@v4
+      with:
+        merge-multiple: true
+        path: dist/
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        skip-existing: true
