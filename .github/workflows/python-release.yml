@@ -115,7 +115,7 @@ jobs:
           fi
 
   # SVN
-  svn_build_artifacts:
+  svn-build-artifacts:
     name: Build artifacts for SVN on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs:
@@ -174,11 +174,11 @@ jobs:
           name: "svn-release-candidate-${{ matrix.os }}"
           path: ./wheelhouse/*
 
-  svn_merge_artifacts:
+  svn-merge-artifacts:
     runs-on: ubuntu-latest
     needs:
       - validate-inputs
-      - svn_build_artifacts
+      - svn-build-artifacts
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
@@ -188,7 +188,7 @@ jobs:
           delete-merged: true
 
   # PyPi
-  pypi_build_artifacts:
+  pypi-build-artifacts:
     name: Build artifacts for PyPi on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs:
@@ -253,11 +253,11 @@ jobs:
           name: "pypi-release-candidate-${{ matrix.os }}"
           path: ./wheelhouse/*
 
-  pypi_merge_artifacts:
+  pypi-merge-artifacts:
     runs-on: ubuntu-latest
     needs:
       - validate-inputs
-      - pypi_build_artifacts
+      - pypi-build-artifacts
     steps:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
