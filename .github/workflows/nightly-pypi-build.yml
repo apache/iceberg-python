@@ -29,7 +29,7 @@ jobs:
     uses: ./.github/workflows/pypi-build-artifacts.yml  # Reference the PyPI build workflow
     with:
       VERSION: "0.0.0"  # Generate nightly version
-      RC: "0"  # Reset RC for nightly builds
+      RC: "1"  # Reset RC for nightly builds
 
   testpypi-publish:
     name: Publish to TestPypi
@@ -49,6 +49,8 @@ jobs:
       with:
         merge-multiple: true
         path: dist/
+    - name: List downloaded artifacts
+      run: ls -R dist/
     - name: Publish to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
