@@ -404,7 +404,22 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
-        raise NotImplementedError
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        io = self._load_file_io(location=metadata_location)
+        metadata_file = io.new_input(metadata_location)
+        staged_table = StagedTable(
+            identifier=(database_name, table_name),
+            metadata=FromInputFile.table_metadata(metadata_file),
+            metadata_location=metadata_location,
+            io=io,
+            catalog=self,
+        )
+        tbl = self._convert_iceberg_into_hive(staged_table)
+        with self._client as open_client:
+            self._create_hive_table(open_client, tbl)
+            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+
+        return self._convert_hive_into_iceberg(hive_table)
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         raise NotImplementedError
