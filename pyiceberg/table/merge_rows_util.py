@@ -15,11 +15,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-
-from datafusion import SessionContext
 from pyarrow import Table as pyarrow_table
 import pyarrow as pa
+from pyarrow import compute as pc
 from pyiceberg import table as pyiceberg_table
 
 from pyiceberg.expressions import (
@@ -50,47 +48,26 @@ def get_filter_list(df: pyarrow_table, join_cols: list) -> BooleanExpression:
     return pred
 
 
-def get_table_column_list(connection: SessionContext, table_name: str) -> list:
-    """
-    This function retrieves the column names and their data types for the specified table.
-    It returns a list of tuples where each tuple contains the column name and its data type.
-    
-    Args:
-        connection: DataFusion SessionContext.
-        table_name: The name of the table for which to retrieve column information.
-    
-    Returns:
-        A list of tuples containing column names and their corresponding data types.
-    """
-    # DataFusion logic
-    res = connection.sql(f"""
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = '{table_name}'
-    """).collect()
+def get_table_column_list_pa(df: pyarrow_table) -> list:
+    return set(col for col in df.column_names)
 
-    column_names = res[0][0].to_pylist()  # Extract the first column (column names)
-    data_types = res[0][1].to_pylist()    # Extract the second column (data types)
+def get_table_column_list_iceberg(table: pyiceberg_table) -> list:
+    return set(col for col in table.schema().column_names)
 
-    return list(zip(column_names, data_types))  # Combine into list of tuples
-
-def dups_check_in_source(source_table: str, join_cols: list, connection: SessionContext) -> bool:
+def dups_check_in_source(df: pyarrow_table, join_cols: list) -> bool:
     """
-    This function checks if there are duplicate rows in the source and target tables based on the join columns.
-    It returns True if there are duplicate rows in either table, otherwise it returns False.
+    This function checks if there are duplicate rows in the source table based on the join columns.
+    It returns True if there are duplicate rows in the source table, otherwise it returns False.
     """
     # Check for duplicates in the source table
-    source_dup_sql = f"""
-        SELECT {', '.join(join_cols)}, COUNT(*)
-        FROM {source_table}
-        GROUP BY {', '.join(join_cols)}
-        HAVING COUNT(*) > 1
-        LIMIT 1
-    """
-    source_dup_df = connection.sql(source_dup_sql).collect()
-    source_dup_count = len(source_dup_df)
-
-    return source_dup_count > 0 
+    source_dup_count = len(
+        df.select(join_cols)
+            .group_by(join_cols)
+            .aggregate([([], "count_all")])
+            .filter(pc.field("count_all") > 1)
+    )
+    
+    return source_dup_count > 0
 
 
 def do_join_columns_exist(source_df: pyarrow_table, target_iceberg_table: pyiceberg_table, join_cols: list) -> bool:
@@ -122,6 +99,7 @@ def get_rows_to_update_sql(source_table_name: str, target_table_name: str
     """
 
     # Determine non-join columns that exist in both tables
+    
     non_join_cols = source_cols_list.intersection(target_cols_list) - set(join_cols)
 
 

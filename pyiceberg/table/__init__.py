@@ -1106,6 +1106,14 @@ class Table:
 
             return {'error_msgs': f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}"}
 
+        if merge_rows_util.dups_check_in_source(df, join_cols):
+
+            return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No Merge executed'}
+
+
+        source_col_list = merge_rows_util.get_table_column_list_pa(df)
+        target_col_list = merge_rows_util.get_table_column_list_iceberg(self)
+
         ctx = SessionContext()
 
         #register both source and target tables so we can find the deltas to update/append
@@ -1116,17 +1124,6 @@ class Table:
        
         ctx.register_dataset(target_table_name, ds.dataset(self.scan(row_filter=pred).to_arrow()))
 
-        source_col_list = merge_rows_util.get_table_column_list(ctx, source_table_name)
-        target_col_list = merge_rows_util.get_table_column_list(ctx, target_table_name)
-        
-        source_col_names = set([col[0] for col in source_col_list])
-        target_col_names = set([col[0] for col in target_col_list])
-
-        #check for dups on source
-        if merge_rows_util.dups_check_in_source(source_table_name, join_cols, ctx):
-
-            return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No Merge executed'}
-
         update_row_cnt = 0
         insert_row_cnt = 0
 
@@ -1136,7 +1133,7 @@ class Table:
             
             if when_matched_update_all:
                 
-                update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
+                update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_list, target_col_list)
             
                 update_recs = ctx.sql(update_recs_sql).to_arrow_table()
 
@@ -1149,7 +1146,7 @@ class Table:
             # Insert the new records
 
             if when_not_matched_insert_all:
-                insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(source_table_name, target_table_name, join_cols, source_col_names, target_col_names)
+                insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(source_table_name, target_table_name, join_cols, source_col_list, target_col_list)
 
                 insert_recs = ctx.sql(insert_recs_sql).to_arrow_table()
 
