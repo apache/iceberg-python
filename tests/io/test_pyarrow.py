@@ -1191,12 +1191,14 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
     # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
     # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
     schema = Schema(
-        NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
+        NestedField(1, "field_1", StringType(), required=False),
+        NestedField(2, "field_2", IntegerType(), required=False),
+        NestedField(3, "field_3", IntegerType(), required=False),
     )
 
     partition_spec = PartitionSpec(
-        PartitionField(2, 1000, IdentityTransform(), "void_partition_id"),
-        PartitionField(2, 1001, IdentityTransform(), "partition_id"),
+        PartitionField(2, 1000, IdentityTransform(), "field_2"),
+        PartitionField(3, 1001, IdentityTransform(), "field_3"),
     )
 
     table = catalog.create_table(
@@ -1208,7 +1210,7 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
 
     file_data = pa.array(["foo"], type=pa.string())
     file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+    pq.write_table(pa.table([file_data], names=["field_1"]), file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1221,7 +1223,7 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         file_path=file_loc,
         file_format=FileFormat.PARQUET,
         # projected value
-        partition=Record(void_partition_id=12, partition_id=1),
+        partition=Record(field_2=2, field_3=3),
         file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
         spec_id=table.metadata.default_spec_id,
@@ -1237,11 +1239,13 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
     assert (
         str(table.scan().to_arrow())
         == """pyarrow.Table
-other_field: large_string
-partition_id: int64
+field_1: large_string
+field_2: int64
+field_3: int64
 ----
-other_field: [["foo"]]
-partition_id: [[1]]"""
+field_1: [["foo"]]
+field_2: [[2]]
+field_3: [[3]]"""
     )
 
 

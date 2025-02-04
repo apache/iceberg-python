@@ -1246,8 +1246,13 @@ def _get_column_projection_values(
                 if accesor is None:
                     continue
 
-                if partition_value := accesor.get(file.partition):
-                    projected_missing_fields[partition_field.name] = partition_value
+                # The partition field may not exist in the partition record of the data file.
+                # This can happen when new partition fields are introduced after the file was written.
+                try:
+                    if partition_value := accesor.get(file.partition):
+                        projected_missing_fields[partition_field.name] = partition_value
+                except IndexError:
+                    continue
 
     return True, projected_missing_fields
 
@@ -1283,10 +1288,11 @@ def _task_to_record_batches(
 
         # Apply column projection rules
         # https://iceberg.apache.org/spec/#column-projection
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
         should_project_columns, projected_missing_fields = _get_column_projection_values(
-            task.file, projected_schema, partition_spec, file_project_schema.field_ids
+            task.file, projected_schema, partition_spec, file_schema.field_ids
         )
+
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
