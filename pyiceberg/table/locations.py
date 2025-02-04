@@ -28,6 +28,8 @@ from pyiceberg.utils.properties import property_as_bool
 
 logger = logging.getLogger(__name__)
 
+WRITE_DATA_PATH = "write.data.path"
+
 
 class LocationProvider(ABC):
     """A base class for location providers, that provide data file locations for a table's write tasks.
@@ -40,9 +42,16 @@ class LocationProvider(ABC):
     table_location: str
     table_properties: Properties
 
+    data_path: str
+
     def __init__(self, table_location: str, table_properties: Properties):
         self.table_location = table_location
         self.table_properties = table_properties
+
+        if path := table_properties.get(WRITE_DATA_PATH):
+            self.data_path = path.rstrip("/")
+        else:
+            self.data_path = f"{self.table_location.rstrip('/')}/data"
 
     @abstractmethod
     def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
@@ -62,8 +71,11 @@ class SimpleLocationProvider(LocationProvider):
         super().__init__(table_location, table_properties)
 
     def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
-        prefix = f"{self.table_location}/data"
-        return f"{prefix}/{partition_key.to_path()}/{data_file_name}" if partition_key else f"{prefix}/{data_file_name}"
+        return (
+            f"{self.data_path}/{partition_key.to_path()}/{data_file_name}"
+            if partition_key
+            else f"{self.data_path}/{data_file_name}"
+        )
 
 
 class ObjectStoreLocationProvider(LocationProvider):
@@ -85,13 +97,12 @@ class ObjectStoreLocationProvider(LocationProvider):
         if self._include_partition_paths and partition_key:
             return self.new_data_location(f"{partition_key.to_path()}/{data_file_name}")
 
-        prefix = f"{self.table_location}/data"
         hashed_path = self._compute_hash(data_file_name)
 
         return (
-            f"{prefix}/{hashed_path}/{data_file_name}"
+            f"{self.data_path}/{hashed_path}/{data_file_name}"
             if self._include_partition_paths
-            else f"{prefix}/{hashed_path}-{data_file_name}"
+            else f"{self.data_path}/{hashed_path}-{data_file_name}"
         )
 
     @staticmethod
