@@ -79,7 +79,7 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
     signer_headers = {}
     if token := properties.get(TOKEN):
         signer_headers = {"Authorization": f"Bearer {token}"}
+    signer_headers.update(get_header_properties(properties))
 
     signer_body = {
         "method": request.method,
