@@ -94,7 +94,7 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def _get_entries_schema(self) -> "pa.Schema":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -157,11 +157,18 @@ class InspectTable:
                 pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
             ]
         )
+        return entries_schema
+
+    def entries(self, snapshot_id: Optional[int] = None, discard_deleted: bool = True) -> "pa.Table":
+        import pyarrow as pa
+        schema = self.tbl.metadata.schema()
+
+        entries_schema = self._get_entries_schema()
 
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
         for manifest in snapshot.manifests(self.tbl.io):
-            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=discard_deleted):
                 column_sizes = entry.data_file.column_sizes or {}
                 value_counts = entry.data_file.value_counts or {}
                 null_value_counts = entry.data_file.null_value_counts or {}
@@ -205,9 +212,9 @@ class InspectTable:
                             "record_count": entry.data_file.record_count,
                             "file_size_in_bytes": entry.data_file.file_size_in_bytes,
                             "column_sizes": dict(entry.data_file.column_sizes),
-                            "value_counts": dict(entry.data_file.value_counts),
-                            "null_value_counts": dict(entry.data_file.null_value_counts),
-                            "nan_value_counts": dict(entry.data_file.nan_value_counts),
+                            "value_counts": dict(entry.data_file.value_counts or {}),
+                            "null_value_counts": dict(entry.data_file.null_value_counts or {}),
+                            "nan_value_counts": dict(entry.data_file.nan_value_counts or {}),
                             "lower_bounds": entry.data_file.lower_bounds,
                             "upper_bounds": entry.data_file.upper_bounds,
                             "key_metadata": entry.data_file.key_metadata,
@@ -657,3 +664,16 @@ class InspectTable:
             lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
         )
         return pa.concat_tables(manifests_by_snapshots)
+
+    def all_entries(self) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots = self.tbl.snapshots()
+        if not snapshots:
+            return pa.Table.from_pylist([], self._get_entries_schema())
+
+        executor = ExecutorFactory.get_or_create()
+        all_entries: Iterator["pa.Table"] = executor.map(
+            lambda snapshot_id: self.entries(snapshot_id, discard_deleted=False), [snapshot.snapshot_id for snapshot in snapshots]
+        )
+        return pa.concat_tables(all_entries)
