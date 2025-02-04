@@ -85,10 +85,7 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
         {dup_row}
     """
 
-    #print(sql)
-
     df = ctx.sql(sql).to_arrow_table()
-
 
     return df
 
@@ -110,7 +107,7 @@ def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, 
 
     return table
 
-def test_merge_scenario_1a_simple():
+def test_merge_scenario_single_ins_upd():
 
     """
         tests a single insert and update
@@ -130,9 +127,8 @@ def test_merge_scenario_1a_simple():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: test scenario 1a pass')
 
-def test_merge_scenario_1b_simple():
+def test_merge_scenario_skip_upd_row():
 
     """
         tests a single insert and update; skips a row that does not need to be updated
@@ -168,10 +164,8 @@ def test_merge_scenario_1b_simple():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: test scenario 1b (skip 1 row) pass')
 
-
-def test_merge_scenario_1c_simple():
+def test_merge_scenario_date_as_key():
 
     """
         tests a single insert and update; primary key is a date column
@@ -207,9 +201,8 @@ def test_merge_scenario_1c_simple():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: test scenario 1c (date as key column) pass')
 
-def test_merge_scenario_1d_simple():
+def test_merge_scenario_string_as_key():
 
     """
         tests a single insert and update; primary key is a string column
@@ -245,9 +238,8 @@ def test_merge_scenario_1d_simple():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: test scenario 1d (string as key column) pass')
 
-def test_merge_scenario_2_10k_rows():
+def test_merge_scenario_10k_rows():
 
     """
         tests merging 10000 rows on a single key to simulate larger workload
@@ -268,9 +260,8 @@ def test_merge_scenario_2_10k_rows():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: test scenario 2 pass')
 
-def test_merge_scenario_3_composite_key():
+def test_merge_scenario_composite_key():
 
     """
         tests merging 200 rows with a composite key
@@ -291,7 +282,6 @@ def test_merge_scenario_3_composite_key():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: composite keys test pass')
 
 def test_merge_update_only():
     
@@ -313,7 +303,6 @@ def test_merge_update_only():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: update only pass')
 
 def test_merge_insert_only():
     """
@@ -334,7 +323,6 @@ def test_merge_insert_only():
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     purge_warehouse()
-    print('merge rows: insert only pass')
 
 def test_merge_source_dups():
 
@@ -354,7 +342,6 @@ def test_merge_source_dups():
     assert 'Duplicate rows found in source dataset' in error_msgs, f"error message should contain 'Duplicate rows found in source dataset', but got {error_msgs}"
 
     purge_warehouse()
-    print('merge rows: source dups test pass')
 
 def test_key_cols_misaligned():
 
@@ -381,17 +368,13 @@ def test_key_cols_misaligned():
 
     purge_warehouse()
 
-    print('merge rows: key cols misaligned test pass')
-
-if __name__ == "__main__":
-
-    test_merge_scenario_1a_simple()
-    test_merge_scenario_1b_simple()
-    test_merge_scenario_1c_simple()
-    test_merge_scenario_1d_simple()
-    test_merge_scenario_2_10k_rows()
-    test_merge_scenario_3_composite_key()
-    test_merge_update_only()
-    test_merge_insert_only()
-    test_merge_source_dups()
-    test_key_cols_misaligned()
+test_merge_scenario_single_ins_upd
+test_merge_scenario_skip_upd_row
+test_merge_scenario_date_as_key
+test_merge_scenario_string_as_key
+test_merge_scenario_10k_rows()
+test_merge_scenario_composite_key()
+test_merge_update_only()
+test_merge_insert_only()
+test_merge_source_dups()
+test_key_cols_misaligned()

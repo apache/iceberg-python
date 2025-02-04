@@ -48,10 +48,10 @@ def get_filter_list(df: pyarrow_table, join_cols: list) -> BooleanExpression:
     return pred
 
 
-def get_table_column_list_pa(df: pyarrow_table) -> list:
+def get_table_column_list_pa(df: pyarrow_table) -> set:
     return set(col for col in df.column_names)
 
-def get_table_column_list_iceberg(table: pyiceberg_table) -> list:
+def get_table_column_list_iceberg(table: pyiceberg_table) -> set:
     return set(col for col in table.schema().column_names)
 
 def dups_check_in_source(df: pyarrow_table, join_cols: list) -> bool:
@@ -68,7 +68,6 @@ def dups_check_in_source(df: pyarrow_table, join_cols: list) -> bool:
     )
     
     return source_dup_count > 0
-
 
 def do_join_columns_exist(source_df: pyarrow_table, target_iceberg_table: pyiceberg_table, join_cols: list) -> bool:
  
@@ -89,6 +88,8 @@ def do_join_columns_exist(source_df: pyarrow_table, target_iceberg_table: pyiceb
 
     return missing_columns
 
+
+
 def get_rows_to_update_sql(source_table_name: str, target_table_name: str
                            , join_cols: list
                            , source_cols_list: set
@@ -99,6 +100,7 @@ def get_rows_to_update_sql(source_table_name: str, target_table_name: str
     """
 
     # Determine non-join columns that exist in both tables
+
     
     non_join_cols = source_cols_list.intersection(target_cols_list) - set(join_cols)
 

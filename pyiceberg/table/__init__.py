@@ -137,6 +137,8 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
+from dataclasses import dataclass
+
 if TYPE_CHECKING:
     import daft
     import pandas as pd
@@ -1065,10 +1067,18 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
+    @dataclass
+    class MergeResult:
+        """docstring"""
+        rows_updated: int
+        rows_inserted: int
+        info_msgs: str
+        error_msgs: str
+
     def merge_rows(self, df: pa.Table, join_cols: list
                    , when_matched_update_all: bool = True
                    , when_not_matched_insert_all: bool = True
-                ) -> Dict:
+                ) -> MergeResult:
         """
         Shorthand API for performing an upsert/merge to an iceberg table.
         
@@ -1098,7 +1108,7 @@ class Table:
         target_table_name = "target"
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
-            return {'rows_updated': 0, 'rows_inserted': 0, 'msg': 'no merge options selected...exiting'}
+            return {'rows_updated': 0, 'rows_inserted': 0, 'info_msgs': 'no merge options selected...exiting'}
 
         missing_columns = merge_rows_util.do_join_columns_exist(df, self, join_cols)
         
@@ -1143,9 +1153,9 @@ class Table:
 
                 txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
 
-            # Insert the new records
 
             if when_not_matched_insert_all:
+                
                 insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(source_table_name, target_table_name, join_cols, source_col_list, target_col_list)
 
                 insert_recs = ctx.sql(insert_recs_sql).to_arrow_table()
