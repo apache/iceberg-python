@@ -31,8 +31,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths:
-            - pyiceberg
+          paths: [..]
 
 theme:
   name: material
@@ -62,3 +61,4 @@ markdown_extensions:
   - pymdownx.superfences
   - toc:
       permalink: true
+      
