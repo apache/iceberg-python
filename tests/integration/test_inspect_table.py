@@ -1101,3 +1101,55 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
         .reset_index()
     )
     assert_frame_equal(lhs, rhs, check_dtype=False)
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_inspect_all_entries(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pandas.testing import assert_frame_equal
+
+    identifier = "default.table_metadata_all_entries"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+        TBLPROPERTIES ('write.update.mode'='merge-on-read',
+                       'write.delete.mode'='merge-on-read', 'format-version'= {format_version})
+    """
+    )
+    tbl = session_catalog.load_table(identifier)
+
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (2, 'b')")
+
+    spark.sql(f"UPDATE {identifier} SET data = 'c' WHERE id = 1")
+
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 2")
+
+    spark.sql(f"INSERT OVERWRITE {identifier} VALUES (1, 'a')")
+
+    tbl.refresh()
+
+    df = tbl.inspect.all_entries()
+
+    assert df.column_names == [
+        "status",
+        "snapshot_id",
+        "sequence_number",
+        "file_sequence_number",
+        "data_file",
+        "readable_metrics",
+    ]
+
+    lhs = spark.table(f"{identifier}.all_entries").toPandas()
+    rhs = df.to_pandas()
+    assert_frame_equal(lhs, rhs, check_dtype=False)
