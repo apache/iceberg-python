@@ -50,6 +50,7 @@ from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -60,7 +61,6 @@ from pyiceberg.table.sorting import (
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import IntegerType, strtobool
-from pyiceberg.table import TableProperties
 
 CATALOG_TABLES = [c.__tablename__ for c in SqlCatalogBaseTable.__subclasses__()]
 
@@ -1635,28 +1635,27 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
-    
+
     original_metadata_location = table.metadata_location
-    
+
     for i in range(5):
         transaction = table.transaction()
         update = transaction.update_schema()
         update.add_column(path=f"new_column_{i}", field_type=IntegerType())
         update.commit()
         transaction.commit_transaction()
-    
+
     assert len(table.metadata.metadata_log) == 5
     assert os.path.exists(original_metadata_location[len("file://") :])
 
     # Set the max versions property to 2, and delete after commit
     new_property = {
         TableProperties.METADATA_PREVIOUS_VERSIONS_MAX: "2",
-        TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED: "true"
+        TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED: "true",
     }
 
     transaction = table.transaction()
-    update = transaction.set_properties(new_property)
-    update.commit_transaction()
+    transaction.set_properties(properties=new_property).commit_transaction()
 
     # Verify that only the most recent metadata files are kept
     assert len(table.metadata.metadata_log) == 2
@@ -1664,7 +1663,7 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
 
     transaction = table.transaction()
     update = transaction.update_schema()
-    update.add_column(path=f"new_column_x", field_type=IntegerType())
+    update.add_column(path="new_column_x", field_type=IntegerType())
     update.commit()
     transaction.commit_transaction()
 
