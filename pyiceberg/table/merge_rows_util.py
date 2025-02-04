@@ -47,13 +47,6 @@ def get_filter_list(df: pyarrow_table, join_cols: list) -> BooleanExpression:
 
     return pred
 
-
-def get_table_column_list_pa(df: pyarrow_table) -> set:
-    return set(col for col in df.column_names)
-
-def get_table_column_list_iceberg(table: pyiceberg_table) -> set:
-    return set(col for col in table.schema().column_names)
-
 def dups_check_in_source(df: pyarrow_table, join_cols: list) -> bool:
     """
     This function checks if there are duplicate rows in the source table based on the join columns.
@@ -88,58 +81,97 @@ def do_join_columns_exist(source_df: pyarrow_table, target_iceberg_table: pyiceb
 
     return missing_columns
 
-
-
-def get_rows_to_update_sql(source_table_name: str, target_table_name: str
-                           , join_cols: list
-                           , source_cols_list: set
-                           , target_cols_list: set) -> str:
+def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list) -> pa.Table:
+    
     """
-    This function returns the rows that need to be updated in the target table based on the source table. 
-    It compares the source and target tables based on the join columns and returns the rows that have different values in the non-join columns.
+        This function takes the source_table, trims it down to rows that match in both source and target.
+        It then does a scan for the non-key columns to see if any are mis-aligned before returning the final row set to update
     """
+    
+    all_columns = set(source_table.column_names)
+    join_cols_set = set(join_cols)
 
-    # Determine non-join columns that exist in both tables
+    non_key_cols = list(all_columns - join_cols_set)
 
     
-    non_join_cols = source_cols_list.intersection(target_cols_list) - set(join_cols)
+    match_expr = None
 
+    for col in join_cols:
+        target_values = target_table.column(col).to_pylist()
+        expr = pc.field(col).isin(target_values)
 
-    sql = f"""
-    SELECT {', '.join([f"src.{col}" for col in join_cols])},
-         {', '.join([f"src.{col}" for col in non_join_cols])}
-    FROM {source_table_name} as src
-        INNER JOIN {target_table_name} as tgt
-            ON {' AND '.join([f"src.{col} = tgt.{col}" for col in join_cols])}
-    EXCEPT DISTINCT
-    SELECT {', '.join([f"tgt.{col}" for col in join_cols])},
-         {', '.join([f"tgt.{col}" for col in non_join_cols])}
-    FROM {target_table_name} as tgt
-    """
-    return sql
+        if match_expr is None:
+            match_expr = expr
+        else:
+            match_expr = match_expr & expr
 
+    
+    matching_source_rows = source_table.filter(match_expr)
 
-def get_rows_to_insert_sql(source_table_name: str, target_table_name: str
-                           , join_cols: list
-                           , source_cols_list: set
-                           , target_cols_list: set) -> str:
- 
+    rows_to_update = []
 
-    # Determine non-join columns that exist in both tables
-    insert_cols = source_cols_list.intersection(target_cols_list) - set(join_cols)
+    for index in range(matching_source_rows.num_rows):
+        
+        source_row = matching_source_rows.slice(index, 1)
 
-    # Build the SQL query
-    sql = f"""
-    SELECT 
-        {', '.join([f"src.{col}" for col in join_cols])},
-        {', '.join([f"src.{col}" for col in insert_cols])}  
-    FROM 
-        {source_table_name} as src
-    LEFT JOIN 
-        {target_table_name} as tgt
-    ON 
-        {' AND '.join([f"src.{col} = tgt.{col}" for col in join_cols])}
-    WHERE 
-        tgt.{join_cols[0]} IS NULL  
-    """
-    return sql
+        
+        target_filter = None
+
+        for col in join_cols:
+            target_value = source_row.column(col)[0].as_py()  
+            if target_filter is None:
+                target_filter = pc.field(col) == target_value
+            else:
+                target_filter = target_filter & (pc.field(col) == target_value)
+
+        matching_target_row = target_table.filter(target_filter)
+
+        if matching_target_row.num_rows > 0:
+            needs_update = False
+
+            for non_key_col in non_key_cols:
+                source_value = source_row.column(non_key_col)[0].as_py()
+                target_value = matching_target_row.column(non_key_col)[0].as_py()
+
+                if source_value != target_value:
+                    needs_update = True
+                    break 
+
+            if needs_update:
+                rows_to_update.append(source_row)
+
+    if rows_to_update:
+        rows_to_update_table = pa.concat_tables(rows_to_update)
+    else:
+        rows_to_update_table = pa.Table.from_arrays([], names=source_table.column_names)
+
+    common_columns = set(source_table.column_names).intersection(set(target_table.column_names))
+    rows_to_update_table = rows_to_update_table.select(list(common_columns))
+
+    return rows_to_update_table
+
+def get_rows_to_insert(source_table: pa.Table, target_table: pa.Table, join_cols: list) -> pa.Table:
+  
+    source_filter_expr = None
+
+    for col in join_cols:
+
+        target_values = target_table.column(col).to_pylist()
+        expr = pc.field(col).isin(target_values)
+
+        if source_filter_expr is None:
+            source_filter_expr = expr
+        else:
+            source_filter_expr = source_filter_expr & expr
+
+    non_matching_expr = ~source_filter_expr
+
+    source_columns = set(source_table.column_names)
+    target_columns = set(target_table.column_names)
+  
+    common_columns = source_columns.intersection(target_columns)
+
+    non_matching_rows = source_table.filter(non_matching_expr).select(common_columns)
+
+    return non_matching_rows
+

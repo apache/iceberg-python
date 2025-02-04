@@ -16,8 +16,11 @@
 # under the License.
 
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.catalog import Table as pyiceberg_table
 import os
 import shutil
+import pyarrow as pa
+from datetime import datetime
 
 _TEST_NAMESPACE = "test_ns"
 
@@ -117,7 +120,6 @@ def test_merge_scenario_single_ins_upd():
 
     table = gen_target_iceberg_table(1, 2, False, ctx)
     source_df = gen_source_dataset(2, 3, False, False, ctx)
-
     res = table.merge_rows(df=source_df, join_cols=["order_id"])
 
     rows_updated_should_be = 1
@@ -125,7 +127,6 @@ def test_merge_scenario_single_ins_upd():
 
     assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
-
     purge_warehouse()
 
 def test_merge_scenario_skip_upd_row():
@@ -250,7 +251,6 @@ def test_merge_scenario_10k_rows():
     table = gen_target_iceberg_table(1, 10000, False, ctx)
     source_df = gen_source_dataset(5001, 15000, False, False, ctx)
     
-
     res = table.merge_rows(df=source_df, join_cols=["order_id"])
 
     rows_updated_should_be = 5000
@@ -368,10 +368,10 @@ def test_key_cols_misaligned():
 
     purge_warehouse()
 
-test_merge_scenario_single_ins_upd
-test_merge_scenario_skip_upd_row
-test_merge_scenario_date_as_key
-test_merge_scenario_string_as_key
+test_merge_scenario_single_ins_upd()
+test_merge_scenario_skip_upd_row()
+test_merge_scenario_date_as_key()
+test_merge_scenario_string_as_key()
 test_merge_scenario_10k_rows()
 test_merge_scenario_composite_key()
 test_merge_update_only()

@@ -1088,24 +1088,10 @@ class Table:
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
 
-        Returns:
-            A dictionary containing the number of rows updated and inserted.
+        Returns: a MergeResult class
         """
 
         from pyiceberg.table import merge_rows_util
-
-        try:
-            from datafusion import SessionContext
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For merge_rows, DataFusion needs to be installed") from e
-        
-        try:
-            from pyarrow import dataset as ds
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For merge_rows, PyArrow needs to be installed") from e
-
-        source_table_name = "source"
-        target_table_name = "target"
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
             return {'rows_updated': 0, 'rows_inserted': 0, 'info_msgs': 'no merge options selected...exiting'}
@@ -1120,19 +1106,9 @@ class Table:
 
             return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No Merge executed'}
 
-
-        source_col_list = merge_rows_util.get_table_column_list_pa(df)
-        target_col_list = merge_rows_util.get_table_column_list_iceberg(self)
-
-        ctx = SessionContext()
-
-        #register both source and target tables so we can find the deltas to update/append
-        ctx.register_dataset(source_table_name, ds.dataset(df))
-
         #get list of rows that exist so we don't have to load the entire target table
         pred = merge_rows_util.get_filter_list(df, join_cols)
-       
-        ctx.register_dataset(target_table_name, ds.dataset(self.scan(row_filter=pred).to_arrow()))
+        iceberg_table_trimmed = self.scan(row_filter=pred).to_arrow()
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -1142,10 +1118,8 @@ class Table:
         try:
             
             if when_matched_update_all:
-                
-                update_recs_sql = merge_rows_util.get_rows_to_update_sql(source_table_name, target_table_name, join_cols, source_col_list, target_col_list)
-            
-                update_recs = ctx.sql(update_recs_sql).to_arrow_table()
+
+                update_recs = merge_rows_util.get_rows_to_update(df, iceberg_table_trimmed, join_cols)
 
                 update_row_cnt = len(update_recs)
 
@@ -1156,9 +1130,7 @@ class Table:
 
             if when_not_matched_insert_all:
                 
-                insert_recs_sql = merge_rows_util.get_rows_to_insert_sql(source_table_name, target_table_name, join_cols, source_col_list, target_col_list)
-
-                insert_recs = ctx.sql(insert_recs_sql).to_arrow_table()
+                insert_recs = merge_rows_util.get_rows_to_insert(df, iceberg_table_trimmed, join_cols)
 
                 insert_row_cnt = len(insert_recs)
 
