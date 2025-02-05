@@ -3375,6 +3375,7 @@ description = "Blazingly fast DataFrame library"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"polars\""
 files = [
     {file = "polars-1.21.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:063f8807f633f8fd15458a43971d930f6ee568b8e95936d7736c9054fc4f6f52"},
     {file = "polars-1.21.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:519863e0990e3323e7a32fc66bac3ad9da51938a1ffce6c09a92e0b1adb026a5"},
@@ -5666,6 +5667,7 @@ gcsfs = ["gcsfs"]
 glue = ["boto3", "mypy-boto3-glue"]
 hive = ["thrift"]
 pandas = ["pandas", "pyarrow"]
+polars = ["polars"]
 pyarrow = ["pyarrow"]
 pyiceberg-core = ["pyiceberg-core"]
 ray = ["pandas", "pyarrow", "ray", "ray"]
@@ -5679,4 +5681,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9, !=3.9.7"
-content-hash = "e4fc69611b0546361a01b248c535fe4ead506d0de5fce5cf5457b77054879329"
+content-hash = "7e30bdd1589f1663f848a870a2a6859d29f6f2bc651382091ae2b3f197374d3d"
