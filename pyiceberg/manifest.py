@@ -160,6 +160,13 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="Map of column id to number of NaN values in the column",
         ),
         NestedField(
+            field_id=111,
+            name="distinct_counts",
+            field_type=MapType(key_id=123, key_type=IntegerType(), value_id=124, value_type=LongType()),
+            required=False,
+            doc="Map of column id to distinct count",
+        ),
+        NestedField(
             field_id=125,
             name="lower_bounds",
             field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
@@ -242,6 +249,13 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
             doc="Map of column id to number of NaN values in the column",
         ),
         NestedField(
+            field_id=111,
+            name="distinct_counts",
+            field_type=MapType(key_id=123, key_type=IntegerType(), value_id=124, value_type=LongType()),
+            required=False,
+            doc="Map of column id to distinct count",
+        ),
+        NestedField(
             field_id=125,
             name="lower_bounds",
             field_type=MapType(key_id=126, key_type=IntegerType(), value_id=127, value_type=BinaryType()),
@@ -320,6 +334,7 @@ class DataFile(Record):
         "value_counts",
         "null_value_counts",
         "nan_value_counts",
+        "distinct_counts",
         "lower_bounds",
         "upper_bounds",
         "key_metadata",
@@ -338,6 +353,7 @@ class DataFile(Record):
     value_counts: Dict[int, int]
     null_value_counts: Dict[int, int]
     nan_value_counts: Dict[int, int]
+    distinct_counts: Dict[int, int]
     lower_bounds: Dict[int, bytes]
     upper_bounds: Dict[int, bytes]
     key_metadata: Optional[bytes]

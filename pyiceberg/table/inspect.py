@@ -105,6 +105,7 @@ class InspectTable:
                 pa.field("value_count", pa.int64(), nullable=True),
                 pa.field("null_value_count", pa.int64(), nullable=True),
                 pa.field("nan_value_count", pa.int64(), nullable=True),
+                pa.field("distinct_count", pa.int64(), nullable=True),
                 pa.field("lower_bound", pa_bound_type, nullable=True),
                 pa.field("upper_bound", pa_bound_type, nullable=True),
             ])
@@ -135,6 +136,7 @@ class InspectTable:
                     pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
                     pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
                     pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+                    pa.field("distinct_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
                     pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
                     pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
                     pa.field("key_metadata", pa.binary(), nullable=True),
@@ -155,6 +157,7 @@ class InspectTable:
                 value_counts = entry.data_file.value_counts or {}
                 null_value_counts = entry.data_file.null_value_counts or {}
                 nan_value_counts = entry.data_file.nan_value_counts or {}
+                distinct_counts = entry.data_file.distinct_counts or {}
                 lower_bounds = entry.data_file.lower_bounds or {}
                 upper_bounds = entry.data_file.upper_bounds or {}
                 readable_metrics = {
@@ -163,6 +166,7 @@ class InspectTable:
                         "value_count": value_counts.get(field.field_id),
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
+                        "distinct_count": distinct_counts.get(field.field_id),
                         # Makes them readable
                         "lower_bound": from_bytes(field.field_type, lower_bound)
                         if (lower_bound := lower_bounds.get(field.field_id))
@@ -196,6 +200,7 @@ class InspectTable:
                         "value_counts": dict(entry.data_file.value_counts),
                         "null_value_counts": dict(entry.data_file.null_value_counts),
                         "nan_value_counts": entry.data_file.nan_value_counts,
+                        "distinct_counts": entry.data_file.distinct_counts,
                         "lower_bounds": entry.data_file.lower_bounds,
                         "upper_bounds": entry.data_file.upper_bounds,
                         "key_metadata": entry.data_file.key_metadata,
@@ -488,6 +493,7 @@ class InspectTable:
                 pa.field("value_count", pa.int64(), nullable=True),
                 pa.field("null_value_count", pa.int64(), nullable=True),
                 pa.field("nan_value_count", pa.int64(), nullable=True),
+                pa.field("distinct_count", pa.int64(), nullable=True),
                 pa.field("lower_bound", pa_bound_type, nullable=True),
                 pa.field("upper_bound", pa_bound_type, nullable=True),
             ])
@@ -508,6 +514,7 @@ class InspectTable:
             pa.field("value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
             pa.field("null_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
             pa.field("nan_value_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
+            pa.field("distinct_counts", pa.map_(pa.int32(), pa.int64()), nullable=True),
             pa.field("lower_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
             pa.field("upper_bounds", pa.map_(pa.int32(), pa.binary()), nullable=True),
             pa.field("key_metadata", pa.binary(), nullable=True),
@@ -536,6 +543,7 @@ class InspectTable:
                 value_counts = data_file.value_counts or {}
                 null_value_counts = data_file.null_value_counts or {}
                 nan_value_counts = data_file.nan_value_counts or {}
+                distinct_counts = data_file.distinct_counts or {}
                 lower_bounds = data_file.lower_bounds or {}
                 upper_bounds = data_file.upper_bounds or {}
                 readable_metrics = {
@@ -544,6 +552,7 @@ class InspectTable:
                         "value_count": value_counts.get(field.field_id),
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
+                        "distinct_count": distinct_counts.get(field.field_id),
                         "lower_bound": from_bytes(field.field_type, lower_bound)
                         if (lower_bound := lower_bounds.get(field.field_id))
                         else None,
@@ -564,6 +573,7 @@ class InspectTable:
                     "value_counts": dict(data_file.value_counts) if data_file.value_counts is not None else None,
                     "null_value_counts": dict(data_file.null_value_counts) if data_file.null_value_counts is not None else None,
                     "nan_value_counts": dict(data_file.nan_value_counts) if data_file.nan_value_counts is not None else None,
+                    "distinct_counts": dict(data_file.distinct_counts) if data_file.distinct_counts is not None else None,
                     "lower_bounds": dict(data_file.lower_bounds) if data_file.lower_bounds is not None else None,
                     "upper_bounds": dict(data_file.upper_bounds) if data_file.upper_bounds is not None else None,
                     "key_metadata": data_file.key_metadata,

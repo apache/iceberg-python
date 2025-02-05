@@ -2254,6 +2254,7 @@ class DataFileStatistics:
     value_counts: Dict[int, int]
     null_value_counts: Dict[int, int]
     nan_value_counts: Dict[int, int]
+    distinct_counts: Dict[int, int]
     column_aggregates: Dict[int, StatsAggregator]
     split_offsets: List[int]
 
@@ -2302,6 +2303,7 @@ class DataFileStatistics:
             "value_counts": self.value_counts,
             "null_value_counts": self.null_value_counts,
             "nan_value_counts": self.nan_value_counts,
+            "distinct_counts": self.distinct_counts,
             "lower_bounds": lower_bounds,
             "upper_bounds": upper_bounds,
             "split_offsets": self.split_offsets,
@@ -2321,6 +2323,7 @@ def data_file_statistics_from_parquet_metadata(
     - value_counts
     - null_value_counts
     - nan_value_counts
+    - distinct_counts
     - column_aggregates
     - split_offsets
 
@@ -2336,7 +2339,7 @@ def data_file_statistics_from_parquet_metadata(
 
     null_value_counts: Dict[int, int] = {}
     nan_value_counts: Dict[int, int] = {}
-
+    distinct_counts: Dict[int, int] = {}
     col_aggs = {}
 
     invalidate_col: Set[int] = set()
@@ -2406,6 +2409,7 @@ def data_file_statistics_from_parquet_metadata(
         value_counts=value_counts,
         null_value_counts=null_value_counts,
         nan_value_counts=nan_value_counts,
+        distinct_counts=distinct_counts,
         column_aggregates=col_aggs,
         split_offsets=split_offsets,
     )

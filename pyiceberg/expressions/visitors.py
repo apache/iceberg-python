@@ -1096,6 +1096,7 @@ class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
     value_counts: Dict[int, int]
     null_counts: Dict[int, int]
     nan_counts: Dict[int, int]
+    distinct_counts: Dict[int, int]
     lower_bounds: Dict[int, bytes]
     upper_bounds: Dict[int, bytes]
 
@@ -1159,6 +1160,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
         self.value_counts = file.value_counts or EMPTY_DICT
         self.null_counts = file.null_value_counts or EMPTY_DICT
         self.nan_counts = file.nan_value_counts or EMPTY_DICT
+        self.distinct_counts = file.distinct_counts or EMPTY_DICT
         self.lower_bounds = file.lower_bounds or EMPTY_DICT
         self.upper_bounds = file.upper_bounds or EMPTY_DICT
 
@@ -1486,6 +1488,7 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         self.value_counts = file.value_counts or EMPTY_DICT
         self.null_counts = file.null_value_counts or EMPTY_DICT
         self.nan_counts = file.nan_value_counts or EMPTY_DICT
+        self.distinct_counts = file.distinct_counts or EMPTY_DICT
         self.lower_bounds = file.lower_bounds or EMPTY_DICT
         self.upper_bounds = file.upper_bounds or EMPTY_DICT
 
