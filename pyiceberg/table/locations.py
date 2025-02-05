@@ -28,8 +28,6 @@ from pyiceberg.utils.properties import property_as_bool
 
 logger = logging.getLogger(__name__)
 
-WRITE_DATA_PATH = "write.data.path"
-
 
 class LocationProvider(ABC):
     """A base class for location providers, that provide data file locations for a table's write tasks.
@@ -48,7 +46,7 @@ class LocationProvider(ABC):
         self.table_location = table_location
         self.table_properties = table_properties
 
-        if path := table_properties.get(WRITE_DATA_PATH):
+        if path := table_properties.get(TableProperties.WRITE_DATA_PATH):
             self.data_path = path.rstrip("/")
         else:
             self.data_path = f"{self.table_location.rstrip('/')}/data"
