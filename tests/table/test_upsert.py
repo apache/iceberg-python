@@ -19,15 +19,16 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.catalog import Table as pyiceberg_table
 import os
 import shutil
-import pyarrow as pa
-from datetime import datetime
+# import pyarrow as pa
+# from datetime import datetime
+import pytest
 
 _TEST_NAMESPACE = "test_ns"
 
 try:
     from datafusion import SessionContext
 except ModuleNotFoundError as e:
-    raise ModuleNotFoundError("For merge_rows, DataFusion needs to be installed") from e
+    raise ModuleNotFoundError("For upsert testing, DataFusion needs to be installed") from e
 
 def get_test_warehouse_path():
     curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -110,24 +111,80 @@ def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, 
 
     return table
 
-def test_merge_scenario_single_ins_upd():
 
-    """
-        tests a single insert and update
-    """
+def gen_target_iceberg_table_v2(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: SqlCatalog, namespace: str):
 
+    additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
+
+    df = ctx.sql(f"""
+        with t as (SELECT unnest(range({start_row},{end_row+1})) as order_id)
+        SELECT t.order_id {additional_columns}
+            , date '2021-01-01' as order_date, 'A' as order_type
+        from t
+    """).to_arrow_table()
+
+    #catalog = get_sql_catalog(_TEST_NAMESPACE)
+    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+
+    table.append(df)
+
+    return table
+
+@pytest.fixture
+def catalog_conn():
+    warehouse_path = get_test_warehouse_path()
+    os.makedirs(warehouse_path, exist_ok=True)
+    print(warehouse_path)
+    catalog = SqlCatalog(
+        "default",
+        **{
+            #"uri": f"sqlite:///:memory:",
+            "uri": f"sqlite:///{warehouse_path}/test.db",
+            "warehouse": f"file://{warehouse_path}",
+        },
+    )
+
+    catalog.create_namespace(namespace="test_ns")
+
+    try:
+        yield catalog
+    finally:
+        # If SqlCatalog has a method to close the connection, use it here
+        # If not, ensure the database connection is cleaned up properly
+        # For example, delete the database file if it's created in a temporary directory
+        if os.path.exists(f"{warehouse_path}/test.db"):
+            os.remove(f"{warehouse_path}/test.db")
+
+@pytest.mark.parametrize(
+    "run_scenario, join_cols, src_start_row, src_end_row, target_start_row, target_end_row, expected_updated, expected_inserted",
+    [
+        (1, ["order_id"], 1, 2, 2, 3, 1, 1),
+        #(2, ["order_id"], 5001, 15000, 1, 10000, 5000, 5000),
+    ]
+)
+def test_merge_rows(catalog_conn, run_scenario, join_cols, src_start_row, src_end_row, target_start_row, target_end_row, expected_updated, expected_inserted):
+
+    
     ctx = SessionContext()
 
-    table = gen_target_iceberg_table(1, 2, False, ctx)
-    source_df = gen_source_dataset(2, 3, False, False, ctx)
-    res = table.upsert(df=source_df, join_cols=["order_id"])
+    cat = catalog_conn
 
-    rows_updated_should_be = 1
-    rows_inserted_should_be = 1
+    source_df = gen_source_dataset(src_start_row, src_end_row, False, False, ctx)
+    ice_table = gen_target_iceberg_table_v2(target_start_row, target_end_row, False, ctx, cat, _TEST_NAMESPACE)
+    res = ice_table.upsert(df=source_df, join_cols=join_cols)
 
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    print('ran in the pytest area')
+
+    print(res)
+
+    assert res['rows_updated'] == expected_updated, f"rows updated should be {expected_updated}, but got {res['rows_updated']}"
+    assert res['rows_inserted'] == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res['rows_inserted']}"
+
     purge_warehouse()
+
+    #catalog.drop_namespace(_TEST_NAMESPACE)
+
+    print('asserts succeeded in pytest area')
 
 def test_merge_scenario_skip_upd_row():
 
@@ -371,14 +428,3 @@ def test_key_cols_misaligned():
     assert 'Field "order_id" does not exist in schema' in error_msgs, f"""error message should contain 'Field "order_id" does not exist in schema', but got {error_msgs}"""
 
     purge_warehouse()
-
-test_merge_scenario_single_ins_upd()
-test_merge_scenario_skip_upd_row()
-test_merge_scenario_date_as_key()
-test_merge_scenario_string_as_key()
-test_merge_scenario_10k_rows()
-test_merge_scenario_composite_key()
-test_merge_update_only()
-test_merge_insert_only()
-test_merge_source_dups()
-test_key_cols_misaligned()
