@@ -1104,7 +1104,7 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_inspect_positional_deletes(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     from pandas.testing import assert_frame_equal
 
@@ -1127,8 +1127,6 @@ def test_inspect_positional_deletes(spark: SparkSession, session_catalog: Catalo
     )
     tbl = session_catalog.load_table(identifier)
 
-    # check all_manifests when there are no snapshots
-
     spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
 
     spark.sql(f"INSERT INTO {identifier} VALUES (2, 'b')")
@@ -1140,21 +1138,10 @@ def test_inspect_positional_deletes(spark: SparkSession, session_catalog: Catalo
     tbl.refresh()
     df = tbl.inspect.position_deletes()
 
-    assert df.column_names == [
-        "file_path",
-        "pos",
-        "row",
-        "spec_id",
-        "delete_file_path"
-    ]
+    assert df.column_names == ["file_path", "pos", "row", "partition", "spec_id", "delete_file_path"]
 
-    int_cols = [
-        "pos"
-    ]
-    string_cols = [
-        "file_path",
-        "delete_file_path"
-    ]
+    int_cols = ["pos"]
+    string_cols = ["file_path", "delete_file_path"]
 
     for column in int_cols:
         for value in df[column]:
@@ -1164,7 +1151,6 @@ def test_inspect_positional_deletes(spark: SparkSession, session_catalog: Catalo
         for value in df[column]:
             assert isinstance(value.as_py(), str)
 
-    new_df = spark.sql(f"select * from {identifier}.position_deletes").toPandas()
     lhs = spark.table(f"{identifier}.position_deletes").toPandas()
     rhs = df.to_pandas()
     assert_frame_equal(lhs, rhs, check_dtype=False)

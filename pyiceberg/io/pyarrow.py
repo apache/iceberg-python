@@ -921,17 +921,9 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
     return _get_file_format(data_file.file_format, **file_format_kwargs).make_fragment(path, fs)
 
 
-def _read_delete_file(fs: FileSystem, data_file: DataFile) -> pa.Table:
-    positinal_delete_schema = pa.schema(
-        [
-            pa.field("file_path", pa.string(), nullable=False),
-            pa.field("pos", pa.int64(), nullable=False),
-            pa.field("row", pa.int64(), nullable=True),
-        ]
-    )
-
+def _read_delete_file(fs: FileSystem, data_file: DataFile, schema: "pa.Schema") -> pa.Table:
     delete_fragment = _construct_fragment(fs, data_file, file_format_kwargs={"pre_buffer": True, "buffer_size": ONE_MEGABYTE})
-    table = ds.Scanner.from_fragment(fragment=delete_fragment, schema=positinal_delete_schema).to_table()
+    table = ds.Scanner.from_fragment(fragment=delete_fragment, schema=schema).to_table()
     return table
 
 
