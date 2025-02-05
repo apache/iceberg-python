@@ -1533,3 +1533,71 @@ df.show(2)
 
 (Showing first 2 rows)
 ```
+
+### Polars
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [`polars` to be installed](index.md).
+
+<!-- prettier-ignore-end -->
+
+PyIceberg makes it easy to filter out data from a huge table and pull it into a Polars dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
+
+```python
+schema = Schema(
+    NestedField(field_id=1, name='ticket_id', field_type=LongType(), required=True),
+    NestedField(field_id=2, name='customer_id', field_type=LongType(), required=True),
+    NestedField(field_id=3, name='issue', field_type=StringType(), required=False),
+    NestedField(field_id=4, name='created_at', field_type=TimestampType(), required=True), 
+  required=True
+)
+
+iceberg_table = catalog.create_table(
+    identifier='default.product_support_issues',
+    schema=schema
+)
+
+pa_table_data = pa.Table.from_pylist(
+[
+    {'ticket_id': 1, 'customer_id': 546, 'issue': 'User Login issue', 'created_at': 1650020000000000},
+    {'ticket_id': 2, 'customer_id': 547, 'issue': 'Payment not going through', 'created_at': 1650028640000000},
+    ...
+    {'ticket_id': 19, 'customer_id': 564, 'issue': 'App crashing', 'created_at': 1650175520000000},
+    {'ticket_id': 20, 'customer_id': 565, 'issue': 'Unable to download invoice', 'created_at': 1650184160000000},
+    {'ticket_id': 21, 'customer_id': 566, 'issue': 'Incorrect billing amount', 'created_at': 1650192800000000},
+], schema=iceberg_table.schema().as_arrow()
+)
+
+iceberg_table.append(
+    df=pa_table_data
+)
+
+table.scan(
+    row_filter="ticket_id > 10",
+).to_polars()
+```
+
+This will return a Polars DataFrame:
+
+```python
+shape: (11, 4)
+┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
+│ ticket_id ┆ customer_id ┆ issue                      ┆ created_at          │
+│ ---       ┆ ---         ┆ ---                        ┆ ---                 │
+│ i64       ┆ i64         ┆ str                        ┆ datetime[μs]        │
+╞═══════════╪═════════════╪════════════════════════════╪═════════════════════╡
+│ 11        ┆ 556         ┆ Website not loading        ┆ 2022-04-16 10:53:20 │
+│ 12        ┆ 557         ┆ Incorrect order received   ┆ 2022-04-16 13:17:20 │
+│ 13        ┆ 558         ┆ Unable to track order      ┆ 2022-04-16 15:41:20 │
+│ 14        ┆ 559         ┆ Order delayed              ┆ 2022-04-16 18:05:20 │
+│ 15        ┆ 560         ┆ Product not as described   ┆ 2022-04-16 20:29:20 │
+│ …         ┆ …           ┆ …                          ┆ …                   │
+│ 17        ┆ 562         ┆ Duplicate charge           ┆ 2022-04-17 01:17:20 │
+│ 18        ┆ 563         ┆ Unable to update profile   ┆ 2022-04-17 03:41:20 │
+│ 19        ┆ 564         ┆ App crashing               ┆ 2022-04-17 06:05:20 │
+│ 20        ┆ 565         ┆ Unable to download invoice ┆ 2022-04-17 08:29:20 │
+│ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
+└───────────┴─────────────┴────────────────────────────┴─────────────────────┘
+```
