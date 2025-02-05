@@ -24,6 +24,7 @@ from typing import (
     Generic,
     List,
     Set,
+    SupportsFloat,
     Tuple,
     TypeVar,
     Union,
@@ -1795,18 +1796,18 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             return AlwaysFalse()
 
     def visit_is_nan(self, term: BoundTerm[L]) -> BooleanExpression:
-        # if isnan(term.eval(self.struct)):
-        if term.eval(self.struct) is not None:
-            return AlwaysTrue()
+        val = term.eval(self.struct)
+        if isinstance(val, SupportsFloat) and math.isnan(val):
+            return self.visit_true()
         else:
-            return AlwaysFalse()
+            return self.visit_false()
 
     def visit_not_nan(self, term: BoundTerm[L]) -> BooleanExpression:
-        # if not isnan(term.eval(self.struct)):
-        if not term.eval(self.struct) is not None:
-            return AlwaysTrue()
+        val = term.eval(self.struct)
+        if isinstance(val, SupportsFloat) and not math.isnan(val):
+            return self.visit_true()
         else:
-            return AlwaysFalse()
+            return self.visit_false()
 
     def visit_less_than(self, term: BoundTerm[L], literal: Literal[L]) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
