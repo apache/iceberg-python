@@ -143,6 +143,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
+    import polars as pl
 
     from pyiceberg.catalog import Catalog
 
@@ -1335,6 +1336,9 @@ class TableScan(ABC):
     @abstractmethod
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
 
+    @abstractmethod
+    def to_polars(self) -> pl.DataFrame: ...
+
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
         return type(self)(**{**self.__dict__, **overrides})
@@ -1624,6 +1628,19 @@ class DataScan(TableScan):
 
         return ray.data.from_arrow(self.to_arrow())
 
+    def to_polars(self) -> pl.DataFrame:
+        """Read a Polars DataFrame from this Iceberg table.
+
+        Returns:
+            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table
+        """
+        import polars as pl
+
+        result = pl.from_arrow(self.to_arrow())
+        if isinstance(result, pl.Series):
+            result = result.to_frame()
+
+        return result
 
 @dataclass(frozen=True)
 class WriteTask:
