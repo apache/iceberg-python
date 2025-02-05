@@ -28,8 +28,7 @@ from functools import singledispatchmethod
 from math import isnan
 from typing import Any, Generic, Type
 from uuid import UUID
-from datetime import date
-from datetime import datetime
+from datetime import date, datetime
 
 from pyiceberg.typedef import L
 from pyiceberg.types import (

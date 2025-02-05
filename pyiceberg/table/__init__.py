@@ -1067,13 +1067,13 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
-    @dataclass
+    @dataclass(frozen=True)
     class UpsertResult:
-        """docstring"""
-        rows_updated: int
-        rows_inserted: int
-        info_msgs: str
-        error_msgs: str
+        """Summary the upsert operation"""
+        rows_updated: int = 0
+        rows_inserted: int = 0
+        info_msgs: Optional[str] = None
+        error_msgs: Optional[str] = None
 
     def upsert(self, df: pa.Table, join_cols: list
                    , when_matched_update_all: bool = True
@@ -1095,6 +1095,7 @@ class Table:
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
             return {'rows_updated': 0, 'rows_inserted': 0, 'info_msgs': 'no upsert options selected...exiting'}
+            #return UpsertResult(info_msgs='no upsert options selected...exiting')
 
         if upsert_util.dups_check_in_source(df, join_cols):
 
@@ -1107,31 +1108,28 @@ class Table:
         update_row_cnt = 0
         insert_row_cnt = 0
 
-        txn = self.transaction()
-
         try:
+
+            with self.transaction() as txn:
             
-            if when_matched_update_all:
+                if when_matched_update_all:
 
-                update_recs = upsert_util.get_rows_to_update(df, iceberg_table_trimmed, join_cols)
+                    update_recs = upsert_util.get_rows_to_update(df, iceberg_table_trimmed, join_cols)
 
-                update_row_cnt = len(update_recs)
+                    update_row_cnt = len(update_recs)
 
-                overwrite_filter = upsert_util.get_filter_list(update_recs, join_cols)
+                    overwrite_filter = upsert_util.get_filter_list(update_recs, join_cols)
 
-                txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
+                    txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
 
 
-            if when_not_matched_insert_all:
-                
-                insert_recs = upsert_util.get_rows_to_insert(df, iceberg_table_trimmed, join_cols)
+                if when_not_matched_insert_all:
+                    
+                    insert_recs = upsert_util.get_rows_to_insert(df, iceberg_table_trimmed, join_cols)
 
-                insert_row_cnt = len(insert_recs)
+                    insert_row_cnt = len(insert_recs)
 
-                txn.append(insert_recs)
-
-            if when_matched_update_all or when_not_matched_insert_all:
-                txn.commit_transaction()
+                    txn.append(insert_recs)
 
             return {
                 "rows_updated": update_row_cnt,
@@ -1139,7 +1137,6 @@ class Table:
             }
 
         except Exception as e:
-            print(f"Error: {e}")
             raise e
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:

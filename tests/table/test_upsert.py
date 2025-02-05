@@ -19,8 +19,6 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.catalog import Table as pyiceberg_table
 import os
 import shutil
-# import pyarrow as pa
-# from datetime import datetime
 import pytest
 
 _TEST_NAMESPACE = "test_ns"
@@ -34,22 +32,8 @@ def get_test_warehouse_path():
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     return f"{curr_dir}/warehouse"
 
-def get_sql_catalog(namespace: str) -> SqlCatalog:
-    warehouse_path = get_test_warehouse_path()
-    catalog = SqlCatalog(
-        "default",
-        **{
-            "uri": f"sqlite:///:memory:",
-            "warehouse": f"file://{warehouse_path}",
-        },
-    )
-
-    catalog.create_namespace(namespace=namespace)
-    return catalog
-
 def purge_warehouse():
     warehouse_path = get_test_warehouse_path()
-
     if os.path.exists(warehouse_path):
         shutil.rmtree(warehouse_path)
 
@@ -93,25 +77,6 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
 
     return df
 
-def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext):
-
-    additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
-
-    df = ctx.sql(f"""
-        with t as (SELECT unnest(range({start_row},{end_row+1})) as order_id)
-        SELECT t.order_id {additional_columns}
-            , date '2021-01-01' as order_date, 'A' as order_type
-        from t
-    """).to_arrow_table()
-
-    catalog = get_sql_catalog(_TEST_NAMESPACE)
-    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
-
-    table.append(df)
-
-    return table
-
-
 def gen_target_iceberg_table_v2(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: SqlCatalog, namespace: str):
 
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
@@ -123,14 +88,13 @@ def gen_target_iceberg_table_v2(start_row: int, end_row: int, composite_key: boo
         from t
     """).to_arrow_table()
 
-    #catalog = get_sql_catalog(_TEST_NAMESPACE)
     table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
 
     table.append(df)
 
     return table
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def catalog_conn():
     warehouse_path = get_test_warehouse_path()
     os.makedirs(warehouse_path, exist_ok=True)
@@ -138,59 +102,51 @@ def catalog_conn():
     catalog = SqlCatalog(
         "default",
         **{
-            #"uri": f"sqlite:///:memory:",
-            "uri": f"sqlite:///{warehouse_path}/test.db",
+            "uri": f"sqlite:///:memory:",
             "warehouse": f"file://{warehouse_path}",
         },
     )
 
     catalog.create_namespace(namespace="test_ns")
 
-    try:
-        yield catalog
-    finally:
-        # If SqlCatalog has a method to close the connection, use it here
-        # If not, ensure the database connection is cleaned up properly
-        # For example, delete the database file if it's created in a temporary directory
-        if os.path.exists(f"{warehouse_path}/test.db"):
-            os.remove(f"{warehouse_path}/test.db")
+    yield catalog
 
 @pytest.mark.parametrize(
-    "run_scenario, join_cols, src_start_row, src_end_row, target_start_row, target_end_row, expected_updated, expected_inserted",
+    "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted",
     [
-        (1, ["order_id"], 1, 2, 2, 3, 1, 1),
-        #(2, ["order_id"], 5001, 15000, 1, 10000, 5000, 5000),
+        (["order_id"], 1, 2, 2, 3, True, True, 1, 1), # single row
+        (["order_id"], 5001, 15000, 1, 10000, True, True, 5000, 5000), #10k rows
+        (["order_id"], 501, 1500, 1, 1000, True, False, 500, 0), # update only
+        (["order_id"], 501, 1500, 1, 1000, False, True, 0, 500), # insert only
     ]
 )
-def test_merge_rows(catalog_conn, run_scenario, join_cols, src_start_row, src_end_row, target_start_row, target_end_row, expected_updated, expected_inserted):
+def test_merge_rows(catalog_conn, join_cols, src_start_row, src_end_row, target_start_row, target_end_row
+                    , when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted):
 
-    
     ctx = SessionContext()
 
-    cat = catalog_conn
+    catalog = catalog_conn
 
     source_df = gen_source_dataset(src_start_row, src_end_row, False, False, ctx)
-    ice_table = gen_target_iceberg_table_v2(target_start_row, target_end_row, False, ctx, cat, _TEST_NAMESPACE)
-    res = ice_table.upsert(df=source_df, join_cols=join_cols)
-
-    print('ran in the pytest area')
-
-    print(res)
+    ice_table = gen_target_iceberg_table_v2(target_start_row, target_end_row, False, ctx, catalog, _TEST_NAMESPACE)
+    res = ice_table.upsert(df=source_df, join_cols=join_cols, when_matched_update_all=when_matched_update_all, when_not_matched_insert_all=when_not_matched_insert_all)
 
     assert res['rows_updated'] == expected_updated, f"rows updated should be {expected_updated}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res['rows_inserted']}"
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-    #catalog.drop_namespace(_TEST_NAMESPACE)
+@pytest.fixture(scope="session", autouse=True)
+def cleanup():
+    yield  # This allows other tests to run first
+    purge_warehouse()  
 
-    print('asserts succeeded in pytest area')
-
-def test_merge_scenario_skip_upd_row():
+def test_merge_scenario_skip_upd_row(catalog_conn):
 
     """
         tests a single insert and update; skips a row that does not need to be updated
     """
+
 
     ctx = SessionContext()
 
@@ -200,7 +156,7 @@ def test_merge_scenario_skip_upd_row():
         select 2 as order_id, date '2021-01-01' as order_date, 'A' as order_type
     """).to_arrow_table()
 
-    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    catalog = catalog_conn
     table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
 
     table.append(df)
@@ -221,9 +177,9 @@ def test_merge_scenario_skip_upd_row():
     assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-def test_merge_scenario_date_as_key():
+def test_merge_scenario_date_as_key(catalog_conn):
 
     """
         tests a single insert and update; primary key is a date column
@@ -237,7 +193,7 @@ def test_merge_scenario_date_as_key():
         select date '2021-01-02' as order_date, 'A' as order_type
     """).to_arrow_table()
 
-    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    catalog = catalog_conn
     table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
 
     table.append(df)
@@ -258,9 +214,9 @@ def test_merge_scenario_date_as_key():
     assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-def test_merge_scenario_string_as_key():
+def test_merge_scenario_string_as_key(catalog_conn):
 
     """
         tests a single insert and update; primary key is a string column
@@ -274,7 +230,7 @@ def test_merge_scenario_string_as_key():
         select 'def' as order_id, 'A' as order_type
     """).to_arrow_table()
 
-    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    catalog = catalog_conn
     table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
 
     table.append(df)
@@ -295,30 +251,9 @@ def test_merge_scenario_string_as_key():
     assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-def test_merge_scenario_10k_rows():
-
-    """
-        tests merging 10000 rows on a single key to simulate larger workload
-    """
-
-    ctx = SessionContext()
-
-    table = gen_target_iceberg_table(1, 10000, False, ctx)
-    source_df = gen_source_dataset(5001, 15000, False, False, ctx)
-    
-    res = table.upsert(df=source_df, join_cols=["order_id"])
-
-    rows_updated_should_be = 5000
-    rows_inserted_should_be = 5000
-
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
-
-    purge_warehouse()
-
-def test_merge_scenario_composite_key():
+def test_merge_scenario_composite_key(catalog_conn):
 
     """
         tests merging 200 rows with a composite key
@@ -326,7 +261,8 @@ def test_merge_scenario_composite_key():
 
     ctx = SessionContext()
 
-    table = gen_target_iceberg_table(1, 200, True, ctx)
+    catalog = catalog_conn
+    table = gen_target_iceberg_table_v2(1, 200, True, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(101, 300, True, False, ctx)
     
 
@@ -338,50 +274,9 @@ def test_merge_scenario_composite_key():
     assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
     assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-def test_merge_update_only():
-    
-    """
-        tests explicit merge options to do update only
-    """
-
-    ctx = SessionContext()
-
-    table = gen_target_iceberg_table(1, 1000, False, ctx)
-    source_df = gen_source_dataset(501, 1500, False, False, ctx)
-    
-    res = table.upsert(df=source_df, join_cols=["order_id"], when_matched_update_all=True, when_not_matched_insert_all=False)
-
-    rows_updated_should_be = 500
-    rows_inserted_should_be = 0
-
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
-
-    purge_warehouse()
-
-def test_merge_insert_only():
-    """
-        tests explicit merge options to do insert only
-    """
-
-    ctx = SessionContext()
-
-    table = gen_target_iceberg_table(1, 1000, False, ctx)
-    source_df = gen_source_dataset(501, 1500, False, False, ctx)
-    
-    res = table.upsert(df=source_df, join_cols=["order_id"], when_matched_update_all=False, when_not_matched_insert_all=True)
-
-    rows_updated_should_be = 0
-    rows_inserted_should_be = 500
-
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
-
-    purge_warehouse()
-
-def test_merge_source_dups():
+def test_merge_source_dups(catalog_conn):
 
     """
         tests duplicate rows in source
@@ -389,7 +284,9 @@ def test_merge_source_dups():
 
     ctx = SessionContext()
 
-    table = gen_target_iceberg_table(1, 10, False, ctx)
+
+    catalog = catalog_conn
+    table = gen_target_iceberg_table_v2(1, 10, False, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(5, 15, False, True, ctx)
     
     res = table.upsert(df=source_df, join_cols=["order_id"])
@@ -398,9 +295,9 @@ def test_merge_source_dups():
 
     assert 'Duplicate rows found in source dataset' in error_msgs, f"error message should contain 'Duplicate rows found in source dataset', but got {error_msgs}"
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-def test_key_cols_misaligned():
+def test_key_cols_misaligned(catalog_conn):
 
     """
         tests join columns missing from one of the tables
@@ -408,10 +305,9 @@ def test_key_cols_misaligned():
 
     ctx = SessionContext()
 
-    #generate dummy target iceberg table
     df = ctx.sql("select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type").to_arrow_table()
 
-    catalog = get_sql_catalog(_TEST_NAMESPACE)
+    catalog = catalog_conn
     table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
 
     table.append(df)
@@ -427,4 +323,5 @@ def test_key_cols_misaligned():
 
     assert 'Field "order_id" does not exist in schema' in error_msgs, f"""error message should contain 'Field "order_id" does not exist in schema', but got {error_msgs}"""
 
-    purge_warehouse()
+    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
+
