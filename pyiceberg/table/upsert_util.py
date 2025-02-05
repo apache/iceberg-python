@@ -62,25 +62,6 @@ def dups_check_in_source(df: pyarrow_table, join_cols: list) -> bool:
     
     return source_dup_count > 0
 
-def do_join_columns_exist(source_df: pyarrow_table, target_iceberg_table: pyiceberg_table, join_cols: list) -> bool:
- 
-    """
-    This function checks if the join columns exist in both the source and target tables.
-    It returns a dictionary indicating which join columns are missing from each table.
-    """
-    missing_columns = {
-        'source': [],
-        'target': []
-    }
-
-    for col in join_cols:
-        if col not in source_df.column_names:
-            missing_columns['source'].append(col)
-        if col not in target_iceberg_table.schema().column_names:
-            missing_columns['target'].append(col)
-
-    return missing_columns
-
 def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list) -> pa.Table:
     
     """

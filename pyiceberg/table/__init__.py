@@ -1068,46 +1068,40 @@ class Table:
         return self.metadata.name_mapping()
 
     @dataclass
-    class MergeResult:
+    class UpsertResult:
         """docstring"""
         rows_updated: int
         rows_inserted: int
         info_msgs: str
         error_msgs: str
 
-    def merge_rows(self, df: pa.Table, join_cols: list
+    def upsert(self, df: pa.Table, join_cols: list
                    , when_matched_update_all: bool = True
                    , when_not_matched_insert_all: bool = True
-                ) -> MergeResult:
+                ) -> UpsertResult:
         """
-        Shorthand API for performing an upsert/merge to an iceberg table.
+        Shorthand API for performing an upsert to an iceberg table.
         
         Args:
-            df: The input dataframe to merge with the table's data.
+            df: The input dataframe to upsert with the table's data.
             join_cols: The columns to join on.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
 
-        Returns: a MergeResult class
+        Returns: a UpsertResult class
         """
 
-        from pyiceberg.table import merge_rows_util
+        from pyiceberg.table import upsert_util
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
-            return {'rows_updated': 0, 'rows_inserted': 0, 'info_msgs': 'no merge options selected...exiting'}
+            return {'rows_updated': 0, 'rows_inserted': 0, 'info_msgs': 'no upsert options selected...exiting'}
 
-        missing_columns = merge_rows_util.do_join_columns_exist(df, self, join_cols)
-        
-        if missing_columns['source'] or missing_columns['target']:
+        if upsert_util.dups_check_in_source(df, join_cols):
 
-            return {'error_msgs': f"Join columns missing in tables: Source table columns missing: {missing_columns['source']}, Target table columns missing: {missing_columns['target']}"}
-
-        if merge_rows_util.dups_check_in_source(df, join_cols):
-
-            return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No Merge executed'}
+            return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No upsert executed'}
 
         #get list of rows that exist so we don't have to load the entire target table
-        pred = merge_rows_util.get_filter_list(df, join_cols)
+        pred = upsert_util.get_filter_list(df, join_cols)
         iceberg_table_trimmed = self.scan(row_filter=pred).to_arrow()
 
         update_row_cnt = 0
@@ -1119,18 +1113,18 @@ class Table:
             
             if when_matched_update_all:
 
-                update_recs = merge_rows_util.get_rows_to_update(df, iceberg_table_trimmed, join_cols)
+                update_recs = upsert_util.get_rows_to_update(df, iceberg_table_trimmed, join_cols)
 
                 update_row_cnt = len(update_recs)
 
-                overwrite_filter = merge_rows_util.get_filter_list(update_recs, join_cols)
+                overwrite_filter = upsert_util.get_filter_list(update_recs, join_cols)
 
                 txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
 
 
             if when_not_matched_insert_all:
                 
-                insert_recs = merge_rows_util.get_rows_to_insert(df, iceberg_table_trimmed, join_cols)
+                insert_recs = upsert_util.get_rows_to_insert(df, iceberg_table_trimmed, join_cols)
 
                 insert_row_cnt = len(insert_recs)
 

@@ -120,7 +120,7 @@ def test_merge_scenario_single_ins_upd():
 
     table = gen_target_iceberg_table(1, 2, False, ctx)
     source_df = gen_source_dataset(2, 3, False, False, ctx)
-    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+    res = table.upsert(df=source_df, join_cols=["order_id"])
 
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
@@ -156,7 +156,7 @@ def test_merge_scenario_skip_upd_row():
         select 3 as order_id, date '2021-01-01' as order_date, 'A' as order_type
     """).to_arrow_table()
 
-    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+    res = table.upsert(df=source_df, join_cols=["order_id"])
 
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
@@ -193,7 +193,7 @@ def test_merge_scenario_date_as_key():
         select date '2021-01-03' as order_date, 'A' as order_type
     """).to_arrow_table()
 
-    res = table.merge_rows(df=source_df, join_cols=["order_date"])
+    res = table.upsert(df=source_df, join_cols=["order_date"])
 
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
@@ -230,7 +230,7 @@ def test_merge_scenario_string_as_key():
         select 'ghi' as order_id, 'A' as order_type
     """).to_arrow_table()
 
-    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+    res = table.upsert(df=source_df, join_cols=["order_id"])
 
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
@@ -251,7 +251,7 @@ def test_merge_scenario_10k_rows():
     table = gen_target_iceberg_table(1, 10000, False, ctx)
     source_df = gen_source_dataset(5001, 15000, False, False, ctx)
     
-    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+    res = table.upsert(df=source_df, join_cols=["order_id"])
 
     rows_updated_should_be = 5000
     rows_inserted_should_be = 5000
@@ -273,7 +273,7 @@ def test_merge_scenario_composite_key():
     source_df = gen_source_dataset(101, 300, True, False, ctx)
     
 
-    res = table.merge_rows(df=source_df, join_cols=["order_id", "order_line_id"])
+    res = table.upsert(df=source_df, join_cols=["order_id", "order_line_id"])
 
     rows_updated_should_be = 100
     rows_inserted_should_be = 100
@@ -294,7 +294,7 @@ def test_merge_update_only():
     table = gen_target_iceberg_table(1, 1000, False, ctx)
     source_df = gen_source_dataset(501, 1500, False, False, ctx)
     
-    res = table.merge_rows(df=source_df, join_cols=["order_id"], when_matched_update_all=True, when_not_matched_insert_all=False)
+    res = table.upsert(df=source_df, join_cols=["order_id"], when_matched_update_all=True, when_not_matched_insert_all=False)
 
     rows_updated_should_be = 500
     rows_inserted_should_be = 0
@@ -314,7 +314,7 @@ def test_merge_insert_only():
     table = gen_target_iceberg_table(1, 1000, False, ctx)
     source_df = gen_source_dataset(501, 1500, False, False, ctx)
     
-    res = table.merge_rows(df=source_df, join_cols=["order_id"], when_matched_update_all=False, when_not_matched_insert_all=True)
+    res = table.upsert(df=source_df, join_cols=["order_id"], when_matched_update_all=False, when_not_matched_insert_all=True)
 
     rows_updated_should_be = 0
     rows_inserted_should_be = 500
@@ -335,7 +335,7 @@ def test_merge_source_dups():
     table = gen_target_iceberg_table(1, 10, False, ctx)
     source_df = gen_source_dataset(5, 15, False, True, ctx)
     
-    res = table.merge_rows(df=source_df, join_cols=["order_id"])
+    res = table.upsert(df=source_df, join_cols=["order_id"])
 
     error_msgs = res['error_msgs']
 
@@ -361,10 +361,14 @@ def test_key_cols_misaligned():
 
     df_src = ctx.sql("select 1 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
 
-    res = table.merge_rows(df=df_src, join_cols=['order_id'])
-    error_msgs = res['error_msgs']
+    try:
 
-    assert 'Join columns missing in tables' in error_msgs, f"error message should contain 'Join columns missing in tables', but got {error_msgs}"
+        res = table.upsert(df=df_src, join_cols=['order_id'])
+
+    except KeyError as e:
+        error_msgs = str(e)
+
+    assert 'Field "order_id" does not exist in schema' in error_msgs, f"""error message should contain 'Field "order_id" does not exist in schema', but got {error_msgs}"""
 
     purge_warehouse()
 
