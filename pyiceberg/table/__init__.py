@@ -1111,11 +1111,11 @@ class Table:
         from pyiceberg.table import upsert_util
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
-            raise Exception('no upsert options selected...exiting')
+            raise ValueError('no upsert options selected...exiting')
 
         if upsert_util.has_duplicate_rows(df, join_cols):
 
-            raise Exception('Duplicate rows found in source dataset based on the key columns. No upsert executed')
+            raise ValueError('Duplicate rows found in source dataset based on the key columns. No upsert executed')
 
         #get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
@@ -1124,38 +1124,37 @@ class Table:
         update_row_cnt = 0
         insert_row_cnt = 0
 
-        try:
+        
 
-            with self.transaction() as txn:
-            
-                if when_matched_update_all:
-                    
-                    #function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-                    rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
+        with self.transaction() as txn:
+        
+            if when_matched_update_all:
+                
+                #function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
 
-                    update_row_cnt = len(rows_to_update)
+                update_row_cnt = len(rows_to_update)
 
-                    #build the match predicate filter
-                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+                #build the match predicate filter
+                overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                    txn.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)    
+                txn.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)    
 
 
-                if when_not_matched_insert_all:
-                    
-                    rows_to_insert = upsert_util.get_rows_to_insert(df, matched_iceberg_table, join_cols)
+            if when_not_matched_insert_all:
+                
+                rows_to_insert = upsert_util.get_rows_to_insert(df, matched_iceberg_table, join_cols)
 
-                    insert_row_cnt = len(rows_to_insert)
+                insert_row_cnt = len(rows_to_insert)
 
-                    txn.append(rows_to_insert)
+                txn.append(rows_to_insert)
 
-            return {
-                "rows_updated": update_row_cnt,
-                "rows_inserted": insert_row_cnt
-            }
+        return {
+            "rows_updated": update_row_cnt,
+            "rows_inserted": insert_row_cnt
+        }
 
-        except Exception as e:
-            raise e
+        #return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
