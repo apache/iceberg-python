@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       VERSION: ${{ steps.set-version.outputs.VERSION }}
-      RC: ${{ steps.set-version.outputs.RC }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,24 +42,21 @@ jobs:
       - name: Install Poetry
         run: make install-poetry
 
-      - name: Extract version and rc
+      - name: Set version
         id: set-version
         run: |
-          VERSION=$(poetry version --short)
-          RC="$(date +%Y%m%d)"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "RC=$RC" >> "$GITHUB_OUTPUT"
+          CURRENT_VERSION=$(poetry version --short)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          echo "VERSION=${CURRENT_VERSION}.dev${TIMESTAMP}" >> "$GITHUB_OUTPUT"
 
-      - name: Debug version and rc
-        run: echo "Publishing version ${{ steps.set-version.outputs.VERSION }}rc${{ steps.set-version.outputs.RC }}"
+      - name: Debug version
+        run: echo "Publishing version ${{ steps.set-version.outputs.VERSION }}"
 
   nightly-build:
     needs: set-version
     uses: ./.github/workflows/pypi-build-artifacts.yml
     with:
-      version: ${{ needs.set-version.outputs.VERSION }}  # i.e. 0.9.0
-      rc: ${{ needs.set-version.outputs.RC }}  # i.e. 20250203
-
+      version: ${{ needs.set-version.outputs.VERSION }}
   testpypi-publish:
     name: Publish to TestPypi
     needs:
