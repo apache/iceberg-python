@@ -1536,12 +1536,16 @@ df.show(2)
 
 ### Polars
 
+PyIceberg interfaces closely with Polars Dataframes and LazyFrame which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
 <!-- prettier-ignore-start -->
 
 !!! note "Requirements"
     This requires [`polars` to be installed](index.md).
 
 <!-- prettier-ignore-end -->
+
+#### Working with Polars DataFrame
 
 PyIceberg makes it easy to filter out data from a huge table and pull it into a Polars dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
 
@@ -1580,6 +1584,42 @@ table.scan(
 ```
 
 This will return a Polars DataFrame:
+
+```python
+shape: (11, 4)
+┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
+│ ticket_id ┆ customer_id ┆ issue                      ┆ created_at          │
+│ ---       ┆ ---         ┆ ---                        ┆ ---                 │
+│ i64       ┆ i64         ┆ str                        ┆ datetime[μs]        │
+╞═══════════╪═════════════╪════════════════════════════╪═════════════════════╡
+│ 11        ┆ 556         ┆ Website not loading        ┆ 2022-04-16 10:53:20 │
+│ 12        ┆ 557         ┆ Incorrect order received   ┆ 2022-04-16 13:17:20 │
+│ 13        ┆ 558         ┆ Unable to track order      ┆ 2022-04-16 15:41:20 │
+│ 14        ┆ 559         ┆ Order delayed              ┆ 2022-04-16 18:05:20 │
+│ 15        ┆ 560         ┆ Product not as described   ┆ 2022-04-16 20:29:20 │
+│ …         ┆ …           ┆ …                          ┆ …                   │
+│ 17        ┆ 562         ┆ Duplicate charge           ┆ 2022-04-17 01:17:20 │
+│ 18        ┆ 563         ┆ Unable to update profile   ┆ 2022-04-17 03:41:20 │
+│ 19        ┆ 564         ┆ App crashing               ┆ 2022-04-17 06:05:20 │
+│ 20        ┆ 565         ┆ Unable to download invoice ┆ 2022-04-17 08:29:20 │
+│ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
+└───────────┴─────────────┴────────────────────────────┴─────────────────────┘
+```
+
+#### Working with Polars LazyFrame
+
+PyIceberg supports creation of a Polars LazyFrame based on an Iceberg Table.
+
+using the above code example:
+
+
+```python
+
+lf = iceberg_table.to_polars().filter(pl.col("ticket_id") > 10)
+print(lf.collect())
+```
+
+This above code snippet returns a Polars LazyFrame and defines a filter to be executed by Polars:
 
 ```python
 shape: (11, 4)

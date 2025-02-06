@@ -1208,6 +1208,16 @@ class Table:
         import daft
 
         return daft.read_iceberg(self)
+    
+    def to_polars(self) -> pl.LazyFrame:
+        """Lazily read from this Apache Iceberg table.
+
+        Returns:
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+        """
+        import polars as pl
+
+        return pl.scan_iceberg(self)
 
 
 class StaticTable(Table):
