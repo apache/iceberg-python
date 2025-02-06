@@ -1114,7 +1114,6 @@ class Table:
             raise ValueError('no upsert options selected...exiting')
 
         if upsert_util.has_duplicate_rows(df, join_cols):
-
             raise ValueError('Duplicate rows found in source dataset based on the key columns. No upsert executed')
 
         #get list of rows that exist so we don't have to load the entire target table
@@ -1124,9 +1123,7 @@ class Table:
         update_row_cnt = 0
         insert_row_cnt = 0
 
-        
-
-        with self.transaction() as txn:
+        with self.transaction() as tx:
         
             if when_matched_update_all:
                 
@@ -1138,8 +1135,7 @@ class Table:
                 #build the match predicate filter
                 overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                txn.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)    
-
+                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)    
 
             if when_not_matched_insert_all:
                 
@@ -1147,7 +1143,7 @@ class Table:
 
                 insert_row_cnt = len(rows_to_insert)
 
-                txn.append(rows_to_insert)
+                tx.append(rows_to_insert)
 
         return {
             "rows_updated": update_row_cnt,

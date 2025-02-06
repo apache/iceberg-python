@@ -47,7 +47,7 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list) -> bool:
     This function checks if there are duplicate rows in the source table based on the join columns.
     It returns True if there are duplicate rows in the source table, otherwise it returns False.
     """
-    # Check for duplicates in the source table
+   
     source_dup_count = len(
         df.select(join_cols)
             .group_by(join_cols)

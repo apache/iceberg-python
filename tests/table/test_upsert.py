@@ -14,19 +14,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.catalog import Table as pyiceberg_table
 import os
 import shutil
 import pytest
+from datafusion import SessionContext
 
 _TEST_NAMESPACE = "test_ns"
-
-try:
-    from datafusion import SessionContext
-except ModuleNotFoundError as e:
-    raise ModuleNotFoundError("For upsert testing, DataFusion needs to be installed") from e
 
 def get_test_warehouse_path():
     curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -110,6 +105,7 @@ def catalog_conn():
     catalog.create_namespace(namespace=_TEST_NAMESPACE)
 
     yield catalog
+    purge_warehouse()  
 
 @pytest.mark.parametrize(
     "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted",
@@ -135,11 +131,6 @@ def test_merge_rows(catalog_conn, join_cols, src_start_row, src_end_row, target_
     assert res['rows_inserted'] == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res['rows_inserted']}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup():
-    yield  # This allows other tests to run first
-    purge_warehouse()  
 
 def test_merge_scenario_skip_upd_row(catalog_conn):
 
