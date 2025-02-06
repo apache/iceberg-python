@@ -77,7 +77,7 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
 
     return df
 
-def gen_target_iceberg_table_v2(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: SqlCatalog, namespace: str):
+def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: SqlCatalog, namespace: str):
 
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
@@ -107,7 +107,7 @@ def catalog_conn():
         },
     )
 
-    catalog.create_namespace(namespace="test_ns")
+    catalog.create_namespace(namespace=_TEST_NAMESPACE)
 
     yield catalog
 
@@ -128,7 +128,7 @@ def test_merge_rows(catalog_conn, join_cols, src_start_row, src_end_row, target_
     catalog = catalog_conn
 
     source_df = gen_source_dataset(src_start_row, src_end_row, False, False, ctx)
-    ice_table = gen_target_iceberg_table_v2(target_start_row, target_end_row, False, ctx, catalog, _TEST_NAMESPACE)
+    ice_table = gen_target_iceberg_table(target_start_row, target_end_row, False, ctx, catalog, _TEST_NAMESPACE)
     res = ice_table.upsert(df=source_df, join_cols=join_cols, when_matched_update_all=when_matched_update_all, when_not_matched_insert_all=when_not_matched_insert_all)
 
     assert res['rows_updated'] == expected_updated, f"rows updated should be {expected_updated}, but got {res['rows_updated']}"
@@ -146,7 +146,6 @@ def test_merge_scenario_skip_upd_row(catalog_conn):
     """
         tests a single insert and update; skips a row that does not need to be updated
     """
-
 
     ctx = SessionContext()
 
@@ -262,7 +261,7 @@ def test_merge_scenario_composite_key(catalog_conn):
     ctx = SessionContext()
 
     catalog = catalog_conn
-    table = gen_target_iceberg_table_v2(1, 200, True, ctx, catalog, _TEST_NAMESPACE)
+    table = gen_target_iceberg_table(1, 200, True, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(101, 300, True, False, ctx)
     
 
@@ -286,14 +285,12 @@ def test_merge_source_dups(catalog_conn):
 
 
     catalog = catalog_conn
-    table = gen_target_iceberg_table_v2(1, 10, False, ctx, catalog, _TEST_NAMESPACE)
+    table = gen_target_iceberg_table(1, 10, False, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(5, 15, False, True, ctx)
     
-    res = table.upsert(df=source_df, join_cols=["order_id"])
+    with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
+        table.upsert(df=source_df, join_cols=["order_id"])
 
-    error_msgs = res['error_msgs']
-
-    assert 'Duplicate rows found in source dataset' in error_msgs, f"error message should contain 'Duplicate rows found in source dataset', but got {error_msgs}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -314,14 +311,8 @@ def test_key_cols_misaligned(catalog_conn):
 
     df_src = ctx.sql("select 1 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
 
-    try:
-
-        res = table.upsert(df=df_src, join_cols=['order_id'])
-
-    except KeyError as e:
-        error_msgs = str(e)
-
-    assert 'Field "order_id" does not exist in schema' in error_msgs, f"""error message should contain 'Field "order_id" does not exist in schema', but got {error_msgs}"""
+    with pytest.raises(Exception, match=r"""Field ".*" does not exist in schema"""):
+        table.upsert(df=df_src, join_cols=['order_id'])
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 

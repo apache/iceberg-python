@@ -28,16 +28,14 @@ from pyiceberg.expressions import (
     In,
 )
 
-def get_filter_list(df: pyarrow_table, join_cols: list) -> BooleanExpression:
+def create_match_filter(df: pyarrow_table, join_cols: list) -> BooleanExpression:
 
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
 
-    pred = None
-
     if len(join_cols) == 1:
-        pred = In(join_cols[0], unique_keys[0].to_pylist())
+        return In(join_cols[0], unique_keys[0].to_pylist())
     else:
-        pred = Or(*[
+        return Or(*[
             And(*[
                 EqualTo(col, row[col])
                 for col in join_cols
@@ -45,9 +43,7 @@ def get_filter_list(df: pyarrow_table, join_cols: list) -> BooleanExpression:
             for row in unique_keys.to_pylist()
         ])
 
-    return pred
-
-def dups_check_in_source(df: pyarrow_table, join_cols: list) -> bool:
+def has_duplicate_rows(df: pyarrow_table, join_cols: list) -> bool:
     """
     This function checks if there are duplicate rows in the source table based on the join columns.
     It returns True if there are duplicate rows in the source table, otherwise it returns False.
@@ -144,7 +140,7 @@ def get_rows_to_insert(source_table: pa.Table, target_table: pa.Table, join_cols
             source_filter_expr = expr
         else:
             source_filter_expr = source_filter_expr & expr
-
+    
     non_matching_expr = ~source_filter_expr
 
     source_columns = set(source_table.column_names)

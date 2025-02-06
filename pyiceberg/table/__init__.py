@@ -52,7 +52,6 @@ from pyiceberg.expressions import (
     IsNull,
     Or,
     Reference,
-    In,
 )
 from pyiceberg.expressions.visitors import (
     _InclusiveMetricsEvaluator,
@@ -1072,8 +1071,6 @@ class Table:
         """Summary the upsert operation"""
         rows_updated: int = 0
         rows_inserted: int = 0
-        info_msgs: Optional[str] = None
-        error_msgs: Optional[str] = None
 
     def upsert(self, df: pa.Table, join_cols: list
                    , when_matched_update_all: bool = True
@@ -1083,27 +1080,46 @@ class Table:
         Shorthand API for performing an upsert to an iceberg table.
         
         Args:
+            self: the target Iceberg table to execute the upsert on
             df: The input dataframe to upsert with the table's data.
-            join_cols: The columns to join on.
+            join_cols: The columns to join on. These are essentially analogous to primary keys
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
 
-        Returns: a UpsertResult class
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
+
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
+
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
+
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
+
+
+        Returns: a UpsertResult class (contains details of rows updated and inserted)
         """
 
         from pyiceberg.table import upsert_util
 
         if when_matched_update_all == False and when_not_matched_insert_all == False:
-            return {'rows_updated': 0, 'rows_inserted': 0, 'info_msgs': 'no upsert options selected...exiting'}
-            #return UpsertResult(info_msgs='no upsert options selected...exiting')
+            raise Exception('no upsert options selected...exiting')
 
-        if upsert_util.dups_check_in_source(df, join_cols):
+        if upsert_util.has_duplicate_rows(df, join_cols):
 
-            return {'error_msgs': 'Duplicate rows found in source dataset based on the key columns. No upsert executed'}
+            raise Exception('Duplicate rows found in source dataset based on the key columns. No upsert executed')
 
         #get list of rows that exist so we don't have to load the entire target table
-        pred = upsert_util.get_filter_list(df, join_cols)
-        iceberg_table_trimmed = self.scan(row_filter=pred).to_arrow()
+        matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        matched_iceberg_table = self.scan(row_filter=matched_predicate).to_arrow()
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -1113,23 +1129,25 @@ class Table:
             with self.transaction() as txn:
             
                 if when_matched_update_all:
+                    
+                    #function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                    rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
 
-                    update_recs = upsert_util.get_rows_to_update(df, iceberg_table_trimmed, join_cols)
+                    update_row_cnt = len(rows_to_update)
 
-                    update_row_cnt = len(update_recs)
+                    #build the match predicate filter
+                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                    overwrite_filter = upsert_util.get_filter_list(update_recs, join_cols)
-
-                    txn.overwrite(update_recs, overwrite_filter=overwrite_filter)    
+                    txn.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)    
 
 
                 if when_not_matched_insert_all:
                     
-                    insert_recs = upsert_util.get_rows_to_insert(df, iceberg_table_trimmed, join_cols)
+                    rows_to_insert = upsert_util.get_rows_to_insert(df, matched_iceberg_table, join_cols)
 
-                    insert_row_cnt = len(insert_recs)
+                    insert_row_cnt = len(rows_to_insert)
 
-                    txn.append(insert_recs)
+                    txn.append(rows_to_insert)
 
             return {
                 "rows_updated": update_row_cnt,
