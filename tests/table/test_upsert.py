@@ -90,6 +90,10 @@ def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, 
 
     return table
 
+def assert_upsert_result(res, expected_updated, expected_inserted):
+    assert res.rows_updated == expected_updated, f"rows updated should be {expected_updated}, but got {res.rows_updated}"
+    assert res.rows_inserted == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res.rows_inserted}"
+
 @pytest.fixture(scope="session")
 def catalog_conn():
     warehouse_path = get_test_warehouse_path()
@@ -128,8 +132,7 @@ def test_merge_rows(catalog_conn, join_cols, src_start_row, src_end_row, target_
     ice_table = gen_target_iceberg_table(target_start_row, target_end_row, False, ctx, catalog, _TEST_NAMESPACE)
     res = ice_table.upsert(df=source_df, join_cols=join_cols, when_matched_update_all=when_matched_update_all, when_not_matched_insert_all=when_not_matched_insert_all)
 
-    assert res.rows_updated == expected_updated, f"rows updated should be {expected_updated}, but got {res['rows_updated']}"
-    assert res.rows_inserted == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res['rows_inserted']}"
+    assert_upsert_result(res, expected_updated, expected_inserted)
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -162,11 +165,10 @@ def test_merge_scenario_skip_upd_row(catalog_conn):
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
-    rows_updated_should_be = 1
-    rows_inserted_should_be = 1
+    expected_updated = 1
+    expected_inserted = 1
 
-    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert_upsert_result(res, expected_updated, expected_inserted)
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -199,11 +201,10 @@ def test_merge_scenario_date_as_key(catalog_conn):
 
     res = table.upsert(df=source_df, join_cols=["order_date"])
 
-    rows_updated_should_be = 1
-    rows_inserted_should_be = 1
+    expected_updated = 1
+    expected_inserted = 1
 
-    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert_upsert_result(res, expected_updated, expected_inserted)
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -236,11 +237,10 @@ def test_merge_scenario_string_as_key(catalog_conn):
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
-    rows_updated_should_be = 1
-    rows_inserted_should_be = 1
+    expected_updated = 1
+    expected_inserted = 1
 
-    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert_upsert_result(res, expected_updated, expected_inserted)
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -256,14 +256,12 @@ def test_merge_scenario_composite_key(catalog_conn):
     table = gen_target_iceberg_table(1, 200, True, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(101, 300, True, False, ctx)
     
-
     res = table.upsert(df=source_df, join_cols=["order_id", "order_line_id"])
 
-    rows_updated_should_be = 100
-    rows_inserted_should_be = 100
+    expected_updated = 100
+    expected_inserted = 100
 
-    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert_upsert_result(res, expected_updated, expected_inserted)
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -275,14 +273,12 @@ def test_merge_source_dups(catalog_conn):
 
     ctx = SessionContext()
 
-
     catalog = catalog_conn
     table = gen_target_iceberg_table(1, 10, False, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(5, 15, False, True, ctx)
     
     with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
         table.upsert(df=source_df, join_cols=["order_id"])
-
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
