@@ -150,6 +150,11 @@ if TYPE_CHECKING:
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
+@dataclass()
+class UpsertResult:
+    """Summary the upsert operation"""
+    rows_updated: int = 0
+    rows_inserted: int = 0
 
 class TableProperties:
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
@@ -1066,12 +1071,6 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
-    @dataclass(frozen=True)
-    class UpsertResult:
-        """Summary the upsert operation"""
-        rows_updated: int = 0
-        rows_inserted: int = 0
-
     def upsert(self, df: pa.Table, join_cols: list
                    , when_matched_update_all: bool = True
                    , when_not_matched_insert_all: bool = True
@@ -1145,12 +1144,7 @@ class Table:
 
                 tx.append(rows_to_insert)
 
-        return {
-            "rows_updated": update_row_cnt,
-            "rows_inserted": insert_row_cnt
-        }
-
-        #return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
+        return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """

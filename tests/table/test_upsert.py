@@ -16,6 +16,7 @@
 # under the License.
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.catalog import Table as pyiceberg_table
+from pyiceberg.table import UpsertResult
 import os
 import shutil
 import pytest
@@ -127,8 +128,8 @@ def test_merge_rows(catalog_conn, join_cols, src_start_row, src_end_row, target_
     ice_table = gen_target_iceberg_table(target_start_row, target_end_row, False, ctx, catalog, _TEST_NAMESPACE)
     res = ice_table.upsert(df=source_df, join_cols=join_cols, when_matched_update_all=when_matched_update_all, when_not_matched_insert_all=when_not_matched_insert_all)
 
-    assert res['rows_updated'] == expected_updated, f"rows updated should be {expected_updated}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res['rows_inserted']}"
+    assert res.rows_updated == expected_updated, f"rows updated should be {expected_updated}, but got {res['rows_updated']}"
+    assert res.rows_inserted == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res['rows_inserted']}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -164,8 +165,8 @@ def test_merge_scenario_skip_upd_row(catalog_conn):
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
 
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -201,8 +202,8 @@ def test_merge_scenario_date_as_key(catalog_conn):
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
 
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -238,8 +239,8 @@ def test_merge_scenario_string_as_key(catalog_conn):
     rows_updated_should_be = 1
     rows_inserted_should_be = 1
 
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
@@ -261,8 +262,8 @@ def test_merge_scenario_composite_key(catalog_conn):
     rows_updated_should_be = 100
     rows_inserted_should_be = 100
 
-    assert res['rows_updated'] == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
-    assert res['rows_inserted'] == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
+    assert res.rows_updated == rows_updated_should_be, f"rows updated should be {rows_updated_should_be}, but got {res['rows_updated']}"
+    assert res.rows_inserted == rows_inserted_should_be, f"rows inserted should be {rows_inserted_should_be}, but got {res['rows_inserted']}"
 
     catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
