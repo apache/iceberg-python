@@ -196,6 +196,8 @@ class TableProperties:
     WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
+    WRITE_DATA_PATH = "write.data.path"
+
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
     DELETE_MODE_MERGE_ON_READ = "merge-on-read"

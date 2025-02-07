@@ -54,19 +54,20 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                                      | Options                           | Default | Description                                                                                                                                                                                                         |
-|------------------------------------------|-----------------------------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                                                                                                                                                |
-| `write.parquet.compression-level`        | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                                                                                                          |
-| `write.parquet.row-group-limit`          | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                                                                                                                                                  |
-| `write.parquet.page-size-bytes`          | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                                                                                         |
-| `write.parquet.page-row-limit`           | Number of rows                    | 20000   | Set a target threshold for the maximum number of rows within a column chunk                                                                                                                                         |
-| `write.parquet.dict-size-bytes`          | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                                                                                                                                                    |
-| `write.metadata.previous-versions-max`   | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.                                                                                                                             |
-| `write.metadata.delete-after-commit.enabled` | Boolean                       | False   | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
-| `write.object-storage.enabled`           | Boolean                           | True    | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. Note: the default value of `True` differs from Iceberg's Java implementation |
-| `write.object-storage.partitioned-paths` | Boolean                           | True    | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                                                                                 |
-| `write.py-location-provider.impl`        | String of form `module.ClassName` | null    | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                                                                                           |
+| Key                                      | Options                            | Default                    | Description                                                                                                                                          |
+|------------------------------------------|------------------------------------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}`  | zstd                       | Sets the Parquet compression coddec.                                                                                                                 |
+| `write.parquet.compression-level`        | Integer                            | null                       | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                                           |
+| `write.parquet.row-group-limit`          | Number of rows                     | 1048576                    | The upper bound of the number of entries within a single row group                                                                                   |
+| `write.parquet.page-size-bytes`          | Size in bytes                      | 1MB                        | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                          |
+| `write.parquet.page-row-limit`           | Number of rows                     | 20000                      | Set a target threshold for the maximum number of rows within a column chunk                                                                          |
+| `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
+| `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
+| `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
+| `write.object-storage.enabled`           | Boolean                            | True                       | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. Note: the default value of `True` differs from Iceberg's Java implementation |
+| `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
+| `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
+| `write.data.path`                        | String pointing to location        | `{metadata.location}/data` | Sets the location under which data is written.                                                                                                       |
 
 ### Table behavior options
 
@@ -211,8 +212,8 @@ file paths that are optimized for object storage.
 
 ### Simple Location Provider
 
-The `SimpleLocationProvider` places a table's file names underneath a `data` directory in the table's base storage
-location (this is `table.metadata.location` - see the [Iceberg table specification](https://iceberg.apache.org/spec/#table-metadata)).
+The `SimpleLocationProvider` provides paths prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+
 For example, a non-partitioned table might have a data file with location:
 
 ```txt
@@ -240,9 +241,9 @@ When several files are stored under the same prefix, cloud object stores such as
 resulting in slowdowns. The `ObjectStoreLocationProvider` counteracts this by injecting deterministic hashes, in the form of binary directories,
 into file paths, to distribute files across a larger number of object store prefixes.
 
-Paths still contain partitions just before the file name, in Hive-style, and a `data` directory beneath the table's location,
-in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). For example, a table
-partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
+Paths are prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields), in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+
+For example, a table partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
 
 ```txt
 s3://bucket/ns/table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
