@@ -14,24 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.catalog import Table as pyiceberg_table
-from pyiceberg.table import UpsertResult
-import os
-import shutil
+from tests.catalog.test_base import InMemoryCatalog
 import pytest
 from datafusion import SessionContext
 
 _TEST_NAMESPACE = "test_ns"
-
-def get_test_warehouse_path():
-    curr_dir = os.path.dirname(os.path.abspath(__file__))
-    return f"{curr_dir}/warehouse"
-
-def purge_warehouse():
-    warehouse_path = get_test_warehouse_path()
-    if os.path.exists(warehouse_path):
-        shutil.rmtree(warehouse_path)
 
 def show_iceberg_table(table, ctx: SessionContext):
     import pyarrow.dataset as ds
@@ -73,7 +60,7 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
 
     return df
 
-def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: SqlCatalog, namespace: str):
+def gen_target_iceberg_table(start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: InMemoryCatalog, namespace: str):
 
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
@@ -96,21 +83,9 @@ def assert_upsert_result(res, expected_updated, expected_inserted):
 
 @pytest.fixture(scope="session")
 def catalog_conn():
-    warehouse_path = get_test_warehouse_path()
-    os.makedirs(warehouse_path, exist_ok=True)
-    print(warehouse_path)
-    catalog = SqlCatalog(
-        "default",
-        **{
-            "uri": f"sqlite:///:memory:",
-            "warehouse": f"file://{warehouse_path}",
-        },
-    )
-
+    catalog = InMemoryCatalog('test')
     catalog.create_namespace(namespace=_TEST_NAMESPACE)
-
     yield catalog
-    purge_warehouse()  
 
 @pytest.mark.parametrize(
     "join_cols, src_start_row, src_end_row, target_start_row, target_end_row, when_matched_update_all, when_not_matched_insert_all, expected_updated, expected_inserted",
