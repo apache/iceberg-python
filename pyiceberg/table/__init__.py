@@ -1127,6 +1127,8 @@ class Table:
             if when_matched_update_all:
                 
                 #function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                #we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                #this extra step avoids unnecessary IO and writes
                 rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
 
                 update_row_cnt = len(rows_to_update)

@@ -17,7 +17,6 @@
 from pyarrow import Table as pyarrow_table
 import pyarrow as pa
 from pyarrow import compute as pc
-from pyiceberg import table as pyiceberg_table
 
 from pyiceberg.expressions import (
     BooleanExpression,
@@ -44,18 +43,15 @@ def create_match_filter(df: pyarrow_table, join_cols: list) -> BooleanExpression
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list) -> bool:
     """
-    This function checks if there are duplicate rows in the source table based on the join columns.
-    It returns True if there are duplicate rows in the source table, otherwise it returns False.
+    This function checks if there are duplicate rows in in a pyarrow table based on the join columns.
     """
    
-    source_dup_count = len(
+    return len(
         df.select(join_cols)
             .group_by(join_cols)
             .aggregate([([], "count_all")])
             .filter(pc.field("count_all") > 1)
-    )
-    
-    return source_dup_count > 0
+    ) > 0
 
 def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list) -> pa.Table:
     
@@ -69,7 +65,6 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
 
     non_key_cols = list(all_columns - join_cols_set)
 
-    
     match_expr = None
 
     for col in join_cols:
@@ -80,7 +75,6 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
             match_expr = expr
         else:
             match_expr = match_expr & expr
-
     
     matching_source_rows = source_table.filter(match_expr)
 
@@ -90,7 +84,6 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         
         source_row = matching_source_rows.slice(index, 1)
 
-        
         target_filter = None
 
         for col in join_cols:
