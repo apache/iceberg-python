@@ -1359,14 +1359,10 @@ def _task_to_record_batches(
 
                 # Apply the user filter
                 if pyarrow_filter is not None:
-                    # we need to switch back and forth between RecordBatch and Table
-                    # as Expression filter isn't yet supported in RecordBatch
-                    # https://github.com/apache/arrow/issues/39220
-                    arrow_table = pa.Table.from_batches([batch])
-                    arrow_table = arrow_table.filter(pyarrow_filter)
-                    if len(arrow_table) == 0:
+                    filtered_batch = batch.filter(pyarrow_filter)
+                    if len(filtered_batch) == 0:
                         continue
-                    output_batches = arrow_table.to_batches()
+                    output_batches = filtered_batch
             for output_batch in output_batches:
                 yield _to_requested_schema(
                     projected_schema,
