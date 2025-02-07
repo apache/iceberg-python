@@ -22,10 +22,10 @@ class InMemoryCatalog(SqlCatalog):
     """
     An in-memory catalog implementation that uses SqlCatalog with SQLite in-memory database.
 
-    This is useful for test, demo, and playground but not in production as data is not persisted.
+    This is useful for test, demo, and playground but not in production as it does not support concurrent access.
     """
 
-    def __init__(self, name: str, warehouse: str = "file:///tmp/warehouse", **kwargs: str) -> None:
+    def __init__(self, name: str, warehouse: str = "file:///tmp/iceberg/warehouse", **kwargs: str) -> None:
         self._warehouse_location = warehouse
         if "uri" not in kwargs:
             kwargs["uri"] = "sqlite:///:memory:"

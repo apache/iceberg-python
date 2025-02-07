@@ -829,9 +829,9 @@ def test_json_properties_get_table_does_not_exist(catalog: InMemoryCatalog) -> N
     # pylint: disable=unused-argument
 
     runner = CliRunner()
-    result = runner.invoke(run, ["--output=json", "properties", "get", "table", "doesnotexist"])
+    result = runner.invoke(run, ["--output=json", "properties", "get", "table", "default.doesnotexist"])
     assert result.exit_code == 1
-    assert result.output == """{"type": "ValueError", "message": "Empty namespace identifier"}\n"""
+    assert result.output == """{"type": "NoSuchTableError", "message": "Table does not exist: default.doesnotexist"}\n"""
 
 
 def test_json_properties_get_namespace(catalog: InMemoryCatalog, namespace_properties: Properties) -> None:

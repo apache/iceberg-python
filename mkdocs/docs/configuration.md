@@ -388,6 +388,23 @@ catalog:
 | echo          | true                                                         | false   | SQLAlchemy engine [echo param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.echo) to log all statements to the default log handler                      |
 | pool_pre_ping | true                                                         | false   | SQLAlchemy engine [pool_pre_ping param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.pool_pre_ping) to test connections for liveness upon each checkout |
 
+### In Memory Catalog
+
+The in-memory catalog is built on top of `SqlCatalog` and uses SQLite in-memory database for its backend.
+
+It is useful for test, demo, and playground but not in production as it does not support concurrent access.
+
+```yaml
+catalog:
+  default:
+    type: in-memory
+    warehouse: /tmp/pyiceberg/warehouse
+```
+
+| Key       | Example                  | Default                       | Description                                                          |
+| --------- |--------------------------|-------------------------------|----------------------------------------------------------------------|
+| warehouse | /tmp/pyiceberg/warehouse | file:///tmp/iceberg/warehouse | The directory where the in-memory catalog will store its data files. |
+
 ### Hive Catalog
 
 ```yaml
