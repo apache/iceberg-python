@@ -1360,7 +1360,7 @@ def _task_to_record_batches(
                 # Apply the user filter
                 if pyarrow_filter is not None:
                     filtered_batch = batch.filter(pyarrow_filter)
-                    if len(filtered_batch) == 0:
+                    if filtered_batch.num_rows == 0:
                         continue
                     output_batches = filtered_batch
             for output_batch in output_batches:
