@@ -29,6 +29,7 @@ from typing import (
 )
 
 import boto3
+from botocore.config import Config
 from mypy_boto3_glue.client import GlueClient
 from mypy_boto3_glue.type_defs import (
     ColumnTypeDef,
@@ -40,12 +41,7 @@ from mypy_boto3_glue.type_defs import (
 )
 
 from pyiceberg.catalog import (
-    DEPRECATED_ACCESS_KEY_ID,
     DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
@@ -72,11 +68,13 @@ from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableResponse,
     Table,
-    TableRequirement,
-    TableUpdate,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
@@ -131,6 +129,14 @@ GLUE_REGION = "glue.region"
 GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
+GLUE_MAX_RETRIES = "glue.max-retries"
+GLUE_RETRY_MODE = "glue.retry-mode"
+
+MAX_RETRIES = 10
+STANDARD_RETRY_MODE = "standard"
+ADAPTIVE_RETRY_MODE = "adaptive"
+LEGACY_RETRY_MODE = "legacy"
+EXISTING_RETRY_MODES = [STANDARD_RETRY_MODE, ADAPTIVE_RETRY_MODE, LEGACY_RETRY_MODE]
 
 
 def _construct_parameters(
@@ -300,21 +306,26 @@ class GlueCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: Any):
         super().__init__(name, **properties)
 
+        retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
+
         session = boto3.Session(
-            profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, DEPRECATED_PROFILE_NAME),
-            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION, DEPRECATED_REGION),
+            profile_name=properties.get(GLUE_PROFILE_NAME),
+            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
             botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(
-                properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID, DEPRECATED_ACCESS_KEY_ID
-            ),
-            aws_secret_access_key=get_first_property_value(
-                properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, DEPRECATED_SECRET_ACCESS_KEY
-            ),
-            aws_session_token=get_first_property_value(
-                properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN, DEPRECATED_SESSION_TOKEN
+            aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
+        )
+        self.glue: GlueClient = session.client(
+            "glue",
+            endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT),
+            config=Config(
+                retries={
+                    "max_attempts": properties.get(GLUE_MAX_RETRIES, MAX_RETRIES),
+                    "mode": retry_mode_prop_value if retry_mode_prop_value in EXISTING_RETRY_MODES else STANDARD_RETRY_MODE,
+                }
             ),
         )
-        self.glue: GlueClient = session.client("glue", endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT))
 
         if glue_catalog_id := properties.get(GLUE_ID):
             _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
@@ -468,7 +479,7 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
 
         current_glue_table: Optional[TableTypeDef]
@@ -545,8 +556,7 @@ class GlueCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         return self._convert_glue_to_iceberg(self._get_glue_table(database_name=database_name, table_name=table_name))
 
@@ -559,8 +569,7 @@ class GlueCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         try:
             self.glue.delete_table(DatabaseName=database_name, Name=table_name)
         except self.glue.exceptions.EntityNotFoundException as e:
@@ -585,8 +594,7 @@ class GlueCatalog(MetastoreCatalog):
             NoSuchPropertyException: When from table miss some required properties.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
             get_table_response = self.glue.get_table(DatabaseName=from_database_name, Name=from_table_name)
@@ -620,7 +628,7 @@ class GlueCatalog(MetastoreCatalog):
                 log_message += f"Rolled back table creation for {to_database_name}.{to_table_name}."
             except NoSuchTableError:
                 log_message += (
-                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. " f"Please clean up manually"
+                    f"Failed to roll back table creation for {to_database_name}.{to_table_name}. Please clean up manually"
                 )
 
             raise ValueError(log_message) from e
@@ -668,7 +676,7 @@ class GlueCatalog(MetastoreCatalog):
         self.glue.delete_database(Name=database_name)
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
@@ -696,7 +704,7 @@ class GlueCatalog(MetastoreCatalog):
 
         except self.glue.exceptions.EntityNotFoundException as e:
             raise NoSuchNamespaceError(f"Database does not exist: {database_name}") from e
-        return [(database_name, table["Name"]) for table in table_list]
+        return [(database_name, table["Name"]) for table in table_list if self.__is_iceberg_table(table)]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
@@ -779,3 +787,10 @@ class GlueCatalog(MetastoreCatalog):
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        raise NotImplementedError
+
+    @staticmethod
+    def __is_iceberg_table(table: TableTypeDef) -> bool:
+        return table.get("Parameters", {}).get(TABLE_TYPE, "").lower() == ICEBERG

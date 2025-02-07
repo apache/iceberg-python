@@ -30,10 +30,12 @@ from pyiceberg.table import (
     CommitTableResponse,
     CreateTableTransaction,
     Table,
+)
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 
 if TYPE_CHECKING:
@@ -119,6 +121,9 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:

@@ -32,10 +32,9 @@ from pyiceberg import __version__
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
+from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef
-
-DEFAULT_MIN_SNAPSHOTS_TO_KEEP = 1
-DEFAULT_MAX_SNAPSHOT_AGE_MS = 432000000
+from pyiceberg.utils.properties import property_as_int
 
 
 def catch_exception() -> Callable:  # type: ignore
@@ -435,13 +434,21 @@ def list_refs(ctx: Context, identifier: str, type: str, verbose: bool) -> None:
 def _retention_properties(ref: SnapshotRef, table_properties: Dict[str, str]) -> Dict[str, str]:
     retention_properties = {}
     if ref.snapshot_ref_type == "branch":
-        default_min_snapshots_to_keep = table_properties.get(
-            "history.expire.min-snapshots-to-keep", DEFAULT_MIN_SNAPSHOTS_TO_KEEP
+        default_min_snapshots_to_keep = property_as_int(
+            table_properties,
+            TableProperties.MIN_SNAPSHOTS_TO_KEEP,
+            TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT,
         )
+
+        default_max_snapshot_age_ms = property_as_int(
+            table_properties,
+            TableProperties.MAX_SNAPSHOT_AGE_MS,
+            TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT,
+        )
+
         retention_properties["min_snapshots_to_keep"] = (
             str(ref.min_snapshots_to_keep) if ref.min_snapshots_to_keep else str(default_min_snapshots_to_keep)
         )
-        default_max_snapshot_age_ms = table_properties.get("history.expire.max-snapshot-age-ms", DEFAULT_MAX_SNAPSHOT_AGE_MS)
         retention_properties["max_snapshot_age_ms"] = (
             str(ref.max_snapshot_age_ms) if ref.max_snapshot_age_ms else str(default_max_snapshot_age_ms)
         )

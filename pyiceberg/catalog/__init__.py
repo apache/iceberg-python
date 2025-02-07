@@ -55,12 +55,14 @@ from pyiceberg.table import (
     CreateTableTransaction,
     StagedTable,
     Table,
+)
+from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
     update_table_metadata,
 )
-from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.typedef import (
     EMPTY_DICT,
     Identifier,
@@ -68,7 +70,8 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated, deprecation_message
+from pyiceberg.utils.deprecated import deprecated as deprecated
+from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -104,20 +107,7 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     re.X,
 )
 
-DEPRECATED_PROFILE_NAME = "profile_name"
-DEPRECATED_REGION = "region_name"
 DEPRECATED_BOTOCORE_SESSION = "botocore_session"
-DEPRECATED_ACCESS_KEY_ID = "aws_access_key_id"
-DEPRECATED_SECRET_ACCESS_KEY = "aws_secret_access_key"
-DEPRECATED_SESSION_TOKEN = "aws_session_token"
-DEPRECATED_PROPERTY_NAMES = {
-    DEPRECATED_PROFILE_NAME,
-    DEPRECATED_REGION,
-    DEPRECATED_BOTOCORE_SESSION,
-    DEPRECATED_ACCESS_KEY_ID,
-    DEPRECATED_SECRET_ACCESS_KEY,
-    DEPRECATED_SESSION_TOKEN,
-}
 
 
 class CatalogType(Enum):
@@ -308,8 +298,8 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Opt
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(name, **properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize Catalog: %s", catalog_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=exc)
         return None
 
 
@@ -449,6 +439,17 @@ class Catalog(ABC):
         """
 
     @abstractmethod
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a view exists.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            bool: True if the view exists, False otherwise.
+        """
+
+    @abstractmethod
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         """Register a new table using existing metadata.
 
@@ -562,8 +563,6 @@ class Catalog(ABC):
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
 
-        If namespace not provided, will list all tables in the catalog.
-
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
@@ -591,8 +590,6 @@ class Catalog(ABC):
     @abstractmethod
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List views under the given namespace in the catalog.
-
-        If namespace is not provided, lists all views in the catalog.
 
         Args:
             namespace (str | Identifier): Namespace identifier to search.
@@ -644,44 +641,6 @@ class Catalog(ABC):
         Raises:
             NoSuchViewError: If a view with the given name does not exist.
         """
-
-    @deprecated(
-        deprecated_in="0.8.0",
-        removed_in="0.9.0",
-        help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
-    )
-    def identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
-        """Convert an identifier to a tuple and drop this catalog's name from the first element.
-
-        Args:
-            identifier (str | Identifier): Table identifier.
-
-        Returns:
-            Identifier: a tuple of strings with this catalog's name removed
-        """
-        identifier_tuple = Catalog.identifier_to_tuple(identifier)
-        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
-            identifier_tuple = identifier_tuple[1:]
-        return identifier_tuple
-
-    def _identifier_to_tuple_without_catalog(self, identifier: Union[str, Identifier]) -> Identifier:
-        """Convert an identifier to a tuple and drop this catalog's name from the first element.
-
-        Args:
-            identifier (str | Identifier): Table identifier.
-
-        Returns:
-            Identifier: a tuple of strings with this catalog's name removed
-        """
-        identifier_tuple = Catalog.identifier_to_tuple(identifier)
-        if len(identifier_tuple) >= 3 and identifier_tuple[0] == self.name:
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message="Support for parsing catalog level identifier in Catalog identifiers is deprecated. Please refer to the table using only its namespace and its table name.",
-            )
-            identifier_tuple = identifier_tuple[1:]
-        return identifier_tuple
 
     @staticmethod
     def identifier_to_tuple(identifier: Union[str, Identifier]) -> Identifier:
@@ -796,13 +755,12 @@ class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-        for property_name in DEPRECATED_PROPERTY_NAMES:
-            if self.properties.get(property_name):
-                deprecation_message(
-                    deprecated_in="0.7.0",
-                    removed_in="0.8.0",
-                    help_message=f"The property {property_name} is deprecated. Please use properties that start with client., glue., and dynamo. instead",
-                )
+        if self.properties.get(DEPRECATED_BOTOCORE_SESSION):
+            deprecation_message(
+                deprecated_in="0.8.0",
+                removed_in="0.9.0",
+                help_message=f"The property {DEPRECATED_BOTOCORE_SESSION} is deprecated and will be removed.",
+            )
 
     def create_table_transaction(
         self,
@@ -825,17 +783,15 @@ class MetastoreCatalog(Catalog, ABC):
             return False
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        table = self.load_table(identifier_tuple)
-        self.drop_table(identifier_tuple)
+        table = self.load_table(identifier)
+        self.drop_table(identifier)
         io = load_file_io(self.properties, table.metadata_location)
         metadata = table.metadata
         manifest_lists_to_delete = set()
         manifests_to_delete: List[ManifestFile] = []
         for snapshot in metadata.snapshots:
             manifests_to_delete += snapshot.manifests(io)
-            if snapshot.manifest_list is not None:
-                manifest_lists_to_delete.add(snapshot.manifest_list)
+            manifest_lists_to_delete.add(snapshot.manifest_list)
 
         manifest_paths_to_delete = {manifest.manifest_path for manifest in manifests_to_delete}
         prev_metadata_files = {log.metadata_file for log in metadata.metadata_log}
@@ -1013,4 +969,4 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             TableMetadata: An empty TableMetadata instance.
         """
-        return TableMetadataV1(location="", last_column_id=-1, schema=Schema())
+        return TableMetadataV1.model_construct(last_column_id=-1, schema=Schema())

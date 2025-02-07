@@ -15,10 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 from enum import Enum
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import Field, model_validator
-from typing_extensions import Annotated
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.typedef import IcebergBaseModel

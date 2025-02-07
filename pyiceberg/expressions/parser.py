@@ -21,6 +21,7 @@ from pyparsing import (
     CaselessKeyword,
     DelimitedList,
     Group,
+    MatchFirst,
     ParserElement,
     ParseResults,
     Suppress,
@@ -57,6 +58,7 @@ from pyiceberg.expressions import (
     StartsWith,
 )
 from pyiceberg.expressions.literals import (
+    BooleanLiteral,
     DecimalLiteral,
     Literal,
     LongLiteral,
@@ -77,7 +79,9 @@ NULL = CaselessKeyword("null")
 NAN = CaselessKeyword("nan")
 LIKE = CaselessKeyword("like")
 
-identifier = Word(alphas, alphanums + "_$").set_results_name("identifier")
+unquoted_identifier = Word(alphas + "_", alphanums + "_$")
+quoted_identifier = Suppress('"') + unquoted_identifier + Suppress('"')
+identifier = MatchFirst([unquoted_identifier, quoted_identifier]).set_results_name("identifier")
 column = DelimitedList(identifier, delim=".", combine=False).set_results_name("column")
 
 like_regex = r"(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)"
@@ -100,16 +104,18 @@ boolean = one_of(["true", "false"], caseless=True).set_results_name("boolean")
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
-literal = Group(string | decimal | integer).set_results_name("literal")
-literal_set = Group(DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer)).set_results_name("literal_set")
+literal = Group(string | decimal | integer | boolean).set_results_name("literal")
+literal_set = Group(
+    DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
+).set_results_name("literal_set")
 
 
 @boolean.set_parse_action
-def _(result: ParseResults) -> BooleanExpression:
+def _(result: ParseResults) -> Literal[bool]:
     if strtobool(result.boolean):
-        return AlwaysTrue()
+        return BooleanLiteral(True)
     else:
-        return AlwaysFalse()
+        return BooleanLiteral(False)
 
 
 @string.set_parse_action
@@ -265,14 +271,29 @@ def handle_or(result: ParseResults) -> Or:
     return Or(*result[0])
 
 
-boolean_expression = infix_notation(
-    predicate,
-    [
-        (Suppress(NOT), 1, opAssoc.RIGHT, handle_not),
-        (Suppress(AND), 2, opAssoc.LEFT, handle_and),
-        (Suppress(OR), 2, opAssoc.LEFT, handle_or),
-    ],
-).set_name("expr")
+def handle_always_expression(result: ParseResults) -> BooleanExpression:
+    # If the entire result is "true" or "false", return AlwaysTrue or AlwaysFalse
+    expr = result[0]
+    if isinstance(expr, BooleanLiteral):
+        if expr.value:
+            return AlwaysTrue()
+        else:
+            return AlwaysFalse()
+    return result[0]
+
+
+boolean_expression = (
+    infix_notation(
+        predicate,
+        [
+            (Suppress(NOT), 1, opAssoc.RIGHT, handle_not),
+            (Suppress(AND), 2, opAssoc.LEFT, handle_and),
+            (Suppress(OR), 2, opAssoc.LEFT, handle_or),
+        ],
+    )
+    .set_name("expr")
+    .add_parse_action(handle_always_expression)
+)
 
 
 def parse(expr: str) -> BooleanExpression:

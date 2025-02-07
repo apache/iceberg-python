@@ -328,8 +328,8 @@ class NestedField(IcebergType):
         data["type"] = data["type"] if "type" in data else field_type
         data["required"] = required
         data["doc"] = doc
-        data["initial-default"] = initial_default
-        data["write-default"] = write_default
+        data["initial-default"] = data["initial-default"] if "initial-default" in data else initial_default
+        data["write-default"] = data["write-default"] if "write-default" in data else write_default
         super().__init__(**data)
 
     def __str__(self) -> str:
@@ -377,13 +377,13 @@ class StructType(IcebergType):
 
     def field_by_name(self, name: str, case_sensitive: bool = True) -> Optional[NestedField]:
         if case_sensitive:
+            for field in self.fields:
+                if field.name == name:
+                    return field
+        else:
             name_lower = name.lower()
             for field in self.fields:
                 if field.name.lower() == name_lower:
-                    return field
-        else:
-            for field in self.fields:
-                if field.name == name:
                     return field
         return None
 

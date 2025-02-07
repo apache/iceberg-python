@@ -61,9 +61,13 @@ from pyiceberg.io import load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import CommitTableResponse, Table, TableRequirement, TableUpdate
+from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import strtobool
 
@@ -72,6 +76,7 @@ if TYPE_CHECKING:
 
 DEFAULT_ECHO_VALUE = "false"
 DEFAULT_POOL_PRE_PING_VALUE = "false"
+DEFAULT_INIT_CATALOG_TABLES = "true"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -119,10 +124,12 @@ class SqlCatalog(MetastoreCatalog):
         echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
         echo = strtobool(echo_str) if echo_str != "debug" else "debug"
         pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+        init_catalog_tables = strtobool(self.properties.get("init_catalog_tables", DEFAULT_INIT_CATALOG_TABLES))
 
         self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
 
-        self._ensure_tables_exist()
+        if init_catalog_tables:
+            self._ensure_tables_exist()
 
     def _ensure_tables_exist(self) -> None:
         with Session(self.engine) as session:
@@ -193,9 +200,8 @@ class SqlCatalog(MetastoreCatalog):
         """
         schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
 
-        identifier_nocatalog = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_identifier = Catalog.namespace_from(identifier_nocatalog)
-        table_name = Catalog.table_name_from(identifier_nocatalog)
+        namespace_identifier = Catalog.namespace_from(identifier)
+        table_name = Catalog.table_name_from(identifier)
         if not self._namespace_exists(namespace_identifier):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace_identifier}")
 
@@ -239,10 +245,9 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If the table already exists
             NoSuchNamespaceError: If namespace does not exist
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         if not self._namespace_exists(namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
@@ -278,10 +283,9 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         with Session(self.engine) as session:
             stmt = select(IcebergTables).where(
                 IcebergTables.catalog_name == self.name,
@@ -302,10 +306,9 @@ class SqlCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        namespace_tuple = Catalog.namespace_from(identifier_tuple)
+        namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
-        table_name = Catalog.table_name_from(identifier_tuple)
+        table_name = Catalog.table_name_from(identifier)
         with Session(self.engine) as session:
             if self.engine.dialect.supports_sane_rowcount:
                 res = session.execute(
@@ -349,14 +352,12 @@ class SqlCatalog(MetastoreCatalog):
             TableAlreadyExistsError: If a table with the new name already exist.
             NoSuchNamespaceError: If the target namespace does not exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        to_identifier_tuple = self._identifier_to_tuple_without_catalog(to_identifier)
-        from_namespace_tuple = Catalog.namespace_from(from_identifier_tuple)
+        from_namespace_tuple = Catalog.namespace_from(from_identifier)
         from_namespace = Catalog.namespace_to_string(from_namespace_tuple)
-        from_table_name = Catalog.table_name_from(from_identifier_tuple)
-        to_namespace_tuple = Catalog.namespace_from(to_identifier_tuple)
+        from_table_name = Catalog.table_name_from(from_identifier)
+        to_namespace_tuple = Catalog.namespace_from(to_identifier)
         to_namespace = Catalog.namespace_to_string(to_namespace_tuple)
-        to_table_name = Catalog.table_name_from(to_identifier_tuple)
+        to_table_name = Catalog.table_name_from(to_identifier)
         if not self._namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
         with Session(self.engine) as session:
@@ -412,7 +413,7 @@ class SqlCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = table.name()
         namespace_tuple = Catalog.namespace_from(table_identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(table_identifier)
@@ -423,7 +424,7 @@ class SqlCatalog(MetastoreCatalog):
         except NoSuchTableError:
             current_table = None
 
-        updated_staged_table = self._update_and_stage_table(current_table, table.identifier, requirements, updates)
+        updated_staged_table = self._update_and_stage_table(current_table, table.name(), requirements, updates)
         if current_table and updated_staged_table.metadata == current_table.metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
@@ -573,8 +574,6 @@ class SqlCatalog(MetastoreCatalog):
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
         """List tables under the given namespace in the catalog.
 
-        If namespace not provided, will list all tables in the catalog.
-
         Args:
             namespace (str | Identifier): Namespace identifier to search.
 
@@ -701,6 +700,9 @@ class SqlCatalog(MetastoreCatalog):
         return properties_update_summary
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:

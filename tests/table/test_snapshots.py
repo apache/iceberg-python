@@ -112,6 +112,13 @@ def test_deserialize_snapshot(snapshot: Snapshot) -> None:
     assert actual == snapshot
 
 
+def test_deserialize_snapshot_without_operation(snapshot: Snapshot) -> None:
+    payload = """{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, "manifest-list": "s3:/a/b/c.avro", "summary": {}, "schema-id": 3}"""
+    with pytest.warns(UserWarning, match="Encountered invalid snapshot summary: operation is missing, defaulting to overwrite"):
+        actual = Snapshot.model_validate_json(payload)
+    assert actual.summary.operation == Operation.OVERWRITE
+
+
 def test_deserialize_snapshot_with_properties(snapshot_with_properties: Snapshot) -> None:
     payload = """{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append","foo":"bar"},"schema-id":3}"""
     snapshot = Snapshot.model_validate_json(payload)

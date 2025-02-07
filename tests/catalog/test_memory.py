@@ -38,9 +38,11 @@ from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
+    Table,
+)
+from pyiceberg.table.update import (
     AddSchemaUpdate,
     SetCurrentSchemaUpdate,
-    Table,
 )
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties
