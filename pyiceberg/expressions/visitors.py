@@ -1739,18 +1739,15 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     A residual expression is made by partially evaluating an expression using partition values.
     For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
-    utc_timestamp &gt;= a and utc_timestamp &lt;= b, then there are 4 possible residuals expressions
+    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residuals expressions
     for the partition data, d:
 
 
-    1. If d &gt; day(a) and d &lt; day(b), the residual is always true
-    2. If d == day(a) and d != day(b), the residual is utc_timestamp &gt;= a
-    3. if d == day(b) and d != day(a), the residual is utc_timestamp &lt;= b
-    4. If d == day(a) == day(b), the residual is utc_timestamp &gt;= a and utc_timestamp &lt;= b
-
+    1. If d > day(a) and d &lt; day(b), the residual is always true
+    2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
+    3. if d == day(b) and d != day(a), the residual is utc_timestamp < b
+    4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
     Partition data is passed using StructLike. Residuals are returned by residualFor(StructLike).
-
-    This class is thread-safe.
     """
 
     schema: Schema
@@ -1894,20 +1891,24 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             strict_result = None
 
             if strict_projection is not None:
-                bound = strict_projection.bind(struct_to_schema(self.spec.partition_type(self.schema)))
+                bound = strict_projection.bind(
+                    struct_to_schema(self.spec.partition_type(self.schema)), case_sensitive=self.case_sensitive
+                )
                 if isinstance(bound, BoundPredicate):
                     strict_result = super().visit_bound_predicate(bound)
                 else:
                     # if the result is not a predicate, then it must be a constant like alwaysTrue or alwaysFalse
                     strict_result = bound
 
-            if strict_result is not None and isinstance(strict_result, AlwaysTrue):
+            if isinstance(strict_result, AlwaysTrue):
                 return AlwaysTrue()
 
             inclusive_projection = part.transform.project(part.name, predicate)
             inclusive_result = None
             if inclusive_projection is not None:
-                bound_inclusive = inclusive_projection.bind(struct_to_schema(self.spec.partition_type(self.schema)))
+                bound_inclusive = inclusive_projection.bind(
+                    struct_to_schema(self.spec.partition_type(self.schema)), case_sensitive=self.case_sensitive
+                )
                 if isinstance(bound_inclusive, BoundPredicate):
                     # using predicate method specific to inclusive
                     inclusive_result = super().visit_bound_predicate(bound_inclusive)
@@ -1915,18 +1916,17 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
                     # if the result is not a predicate, then it must be a constant like alwaysTrue or
                     # alwaysFalse
                     inclusive_result = bound_inclusive
-            if inclusive_result is not None and isinstance(inclusive_result, AlwaysFalse):
+            if isinstance(inclusive_result, AlwaysFalse):
                 return AlwaysFalse()
 
         return predicate
 
     def visit_unbound_predicate(self, predicate: UnboundPredicate[L]) -> BooleanExpression:
-        bound = predicate.bind(self.schema, case_sensitive=True)
+        bound = predicate.bind(self.schema, case_sensitive=self.case_sensitive)
 
         if isinstance(bound, BoundPredicate):
             bound_residual = self.visit_bound_predicate(predicate=bound)
-            # if isinstance(bound_residual, BooleanExpression):
-            if bound_residual not in (AlwaysFalse(), AlwaysTrue()):
+            if not isinstance(bound_residual, (AlwaysFalse, AlwaysTrue)):
                 # replace inclusive original unbound predicate
                 return predicate
 
@@ -1955,7 +1955,8 @@ class UnpartitionedResidualEvaluator(ResidualEvaluator):
 def residual_evaluator_of(
     spec: PartitionSpec, expr: BooleanExpression, case_sensitive: bool, schema: Schema
 ) -> ResidualEvaluator:
-    if len(spec.fields) != 0:
-        return ResidualEvaluator(spec=spec, expr=expr, schema=schema, case_sensitive=case_sensitive)
-    else:
-        return UnpartitionedResidualEvaluator(schema=schema, expr=expr)
+    return (
+        UnpartitionedResidualEvaluator(schema=schema, expr=expr)
+        if spec.is_unpartitioned()
+        else ResidualEvaluator(spec=spec, expr=expr, schema=schema, case_sensitive=case_sensitive)
+    )

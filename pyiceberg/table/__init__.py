@@ -1616,7 +1616,7 @@ class DataScan(TableScan):
         """
         import pyarrow as pa
 
-        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+        from pyiceberg.io.pyarrow import ArrowScan
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
@@ -1680,17 +1680,8 @@ class DataScan(TableScan):
                     row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
                 )
-                if task.file.file_size_in_bytes > 512 * 1024 * 1024:
-                    target_schema = schema_to_pyarrow(self.projection())
-                    batches = arrow_scan.to_record_batches([task])
-                    from pyarrow import RecordBatchReader
-
-                    reader = RecordBatchReader.from_batches(target_schema, batches)
-                    for batch in reader:
-                        res += batch.num_rows
-                else:
-                    tbl = arrow_scan.to_table([task])
-                    res += len(tbl)
+                tbl = arrow_scan.to_table([task])
+                res += len(tbl)
         return res
 
 
