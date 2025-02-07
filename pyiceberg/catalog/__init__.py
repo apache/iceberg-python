@@ -860,10 +860,10 @@ class MetastoreCatalog(Catalog, ABC):
             enforce_validation=current_table is None,
             metadata_location=current_table.metadata_location if current_table else None,
         )
+        io = self._load_file_io(properties=updated_metadata.properties, location=updated_metadata.location)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
         # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true
-        io = self._load_file_io(properties=updated_metadata.properties, location=updated_metadata.location)
         if current_table is not None:
             self._delete_old_metadata(io, current_table.metadata, updated_metadata)
 
