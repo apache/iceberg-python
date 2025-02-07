@@ -82,8 +82,9 @@ def get_first_property_value(
 def get_header_properties(
     properties: Properties,
 ) -> Properties:
+    header_prefix_len = len(HEADER_PREFIX)
     return {
-        key[len(HEADER_PREFIX):]: value
+        key[header_prefix_len:]: value
         for key, value in properties.items()
         if key.startswith(HEADER_PREFIX)
     }
