@@ -240,7 +240,7 @@ When several files are stored under the same prefix, cloud object stores such as
 resulting in slowdowns. The `ObjectStoreLocationProvider` counteracts this by injecting deterministic hashes, in the form of binary directories,
 into file paths, to distribute files across a larger number of object store prefixes.
 
-Paths still are also prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields), in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+Paths are prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields), in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). This can be overridden by setting [`write.data.path` table configuration](#write-options).
 
 For example, a table partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
 
