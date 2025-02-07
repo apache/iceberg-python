@@ -1639,11 +1639,9 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
     original_metadata_location = table.metadata_location
 
     for i in range(5):
-        transaction = table.transaction()
-        update = transaction.update_schema()
-        update.add_column(path=f"new_column_{i}", field_type=IntegerType())
-        update.commit()
-        transaction.commit_transaction()
+        with table.transaction() as transaction:
+            with transaction.update_schema() as update:
+                update.add_column(path=f"new_column_{i}", field_type=IntegerType())
 
     assert len(table.metadata.metadata_log) == 5
     assert os.path.exists(original_metadata_location[len("file://") :])
@@ -1654,18 +1652,16 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
         TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED: "true",
     }
 
-    transaction = table.transaction()
-    transaction.set_properties(properties=new_property).commit_transaction()
+    with table.transaction() as transaction:
+        transaction.set_properties(properties=new_property)
 
     # Verify that only the most recent metadata files are kept
     assert len(table.metadata.metadata_log) == 2
     updated_metadata_1, updated_metadata_2 = table.metadata.metadata_log
 
-    transaction = table.transaction()
-    update = transaction.update_schema()
-    update.add_column(path="new_column_x", field_type=IntegerType())
-    update.commit()
-    transaction.commit_transaction()
+    with table.transaction() as transaction:
+        with transaction.update_schema() as update:
+            update.add_column(path="new_column_x", field_type=IntegerType())
 
     assert len(table.metadata.metadata_log) == 2
     assert not os.path.exists(original_metadata_location[len("file://") :])
