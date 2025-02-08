@@ -1143,26 +1143,20 @@ def test_inspect_all_entries(spark: SparkSession, session_catalog: Catalog, form
             "readable_metrics",
         ]
 
-        # Make sure that they are filled properly
+        # Check first 4 columns are of the correct type
         for int_column in ["status", "snapshot_id", "sequence_number", "file_sequence_number"]:
             for value in df[int_column]:
                 assert isinstance(value.as_py(), int)
 
-        for snapshot_id in df["snapshot_id"]:
-            assert isinstance(snapshot_id.as_py(), int)
-
+        # The rest of the code checks the data_file and readable_metrics columns
+        # Convert both dataframes to pandas and sort them the same way for comparison
         lhs = df.to_pandas()
-        lhs["content"] = lhs["data_file"].apply(lambda x: x.get("content"))
-        lhs["file_path"] = lhs["data_file"].apply(lambda x: x.get("file_path"))
-        lhs = lhs.sort_values(["status", "snapshot_id", "sequence_number", "content", "file_path"]).drop(
-            columns=["file_path", "content"]
-        )
         rhs = spark_df.toPandas()
-        rhs["content"] = rhs["data_file"].apply(lambda x: x.get("content"))
-        rhs["file_path"] = rhs["data_file"].apply(lambda x: x.get("file_path"))
-        rhs = rhs.sort_values(["status", "snapshot_id", "sequence_number", "content", "file_path"]).drop(
-            columns=["file_path", "content"]
-        )
+        for df_to_check in [lhs, rhs]:
+            df_to_check["content"] = df_to_check["data_file"].apply(lambda x: x.get("content"))
+            df_to_check["file_path"] = df_to_check["data_file"].apply(lambda x: x.get("file_path"))
+            df_to_check.sort_values(["status", "snapshot_id", "sequence_number", "content", "file_path"], inplace=True)
+            df_to_check.drop(columns=["file_path", "content"], inplace=True)
 
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):

@@ -160,10 +160,9 @@ class InspectTable:
         )
         return entries_schema
 
-    def _get_entries(self, manifest: ManifestFile, discard_deleted: bool = True) -> "pa.Table":
+    def _get_entries(self, schema: "pa.Schema", manifest: ManifestFile, discard_deleted: bool = True) -> "pa.Table":
         import pyarrow as pa
 
-        schema = self.tbl.metadata.schema()
         entries_schema = self._get_entries_schema()
         entries = []
         for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=discard_deleted):
@@ -209,7 +208,7 @@ class InspectTable:
                         "partition": partition_record_dict,
                         "record_count": entry.data_file.record_count,
                         "file_size_in_bytes": entry.data_file.file_size_in_bytes,
-                        "column_sizes": dict(entry.data_file.column_sizes) if entry.data_file.column_sizes is not None else None,
+                        "column_sizes": dict(entry.data_file.column_sizes) or None,
                         "value_counts": dict(entry.data_file.value_counts) if entry.data_file.value_counts is not None else None,
                         "null_value_counts": dict(entry.data_file.null_value_counts)
                         if entry.data_file.null_value_counts is not None
@@ -234,13 +233,18 @@ class InspectTable:
             schema=entries_schema,
         )
 
-    def entries(self, snapshot_id: Optional[int] = None, discard_deleted: bool = True) -> "pa.Table":
+    def entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
+
+        if snapshot.schema_id is None:
+            raise ValueError(f"Cannot find schema_id for snapshot {snapshot.snapshot_id}")
+
+        schema = self.tbl.schemas().get(snapshot.schema_id)
         for manifest in snapshot.manifests(self.tbl.io):
-            manifest_entries = self._get_entries(manifest)
+            manifest_entries = self._get_entries(schema=schema, manifest=manifest, discard_deleted=True)
             entries.append(manifest_entries)
         return pa.concat_tables(entries)
 
@@ -724,19 +728,29 @@ class InspectTable:
     def all_delete_files(self) -> "pa.Table":
         return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_entries(self) -> "pa.Table":
+    def all_entries(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
-        snapshots = self.tbl.snapshots()
+        snapshots = self.tbl.snapshots() if snapshot_id is None else [self._get_snapshot(snapshot_id)]
         if not snapshots:
             return pa.Table.from_pylist([], self._get_entries_schema())
+
+        schemas = self.tbl.schemas()
+        snapshot_schemas: Dict[int, "pa.Schema"] = {}
+        for snapshot in snapshots:
+            if snapshot.schema_id is None:
+                raise ValueError(f"Cannot find schema_id for snapshot: {snapshot.snapshot_id}")
+            else:
+                snapshot_schemas[snapshot.snapshot_id] = schemas.get(snapshot.schema_id)
 
         executor = ExecutorFactory.get_or_create()
         all_manifests: Iterator[List[ManifestFile]] = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io), snapshots)
         unique_flattened_manifests = list(
             {manifest.manifest_path: manifest for manifest_list in all_manifests for manifest in manifest_list}.values()
         )
+
         entries: Iterator["pa.Table"] = executor.map(
-            lambda manifest: self._get_entries(manifest, discard_deleted=False), unique_flattened_manifests
+            lambda manifest: self._get_entries(snapshot_schemas[manifest.added_snapshot_id], manifest, discard_deleted=True),
+            unique_flattened_manifests,
         )
         return pa.concat_tables(entries)

@@ -792,6 +792,8 @@ readable_metrics: [
 [6.0989]]
 ```
 
+To show all the table's current manifest entries for both data and delete files, use `table.inspect.all_entries()`.
+
 ### References
 
 To show a table's known snapshot references:
