@@ -619,15 +619,26 @@ class SqlCatalog(MetastoreCatalog):
         table_stmt = select(IcebergTables.table_namespace).where(IcebergTables.catalog_name == self.name)
         namespace_stmt = select(IcebergNamespaceProperties.namespace).where(IcebergNamespaceProperties.catalog_name == self.name)
         if namespace:
-            namespace_str = Catalog.namespace_to_string(namespace, NoSuchNamespaceError)
-            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_str))
-            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_str))
+            namespace_like = Catalog.namespace_to_string(namespace, NoSuchNamespaceError) + "%"
+            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_like))
+            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_like))
         stmt = union(
             table_stmt,
             namespace_stmt,
         )
         with Session(self.engine) as session:
-            return [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
+            namespaces = [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
+            sub_namespaces_level_length = len(Catalog.identifier_to_tuple(namespace)) + 1 if namespace else 1
+
+            # only get sub namespaces/children
+            namespaces = list({ns[:sub_namespaces_level_length] for ns in namespaces if len(ns) >= sub_namespaces_level_length})
+
+            if namespace:
+                namespace_tuple = Catalog.identifier_to_tuple(namespace)
+                # exclude fuzzy matches when `namespace` contains `%` or `_`
+                namespaces = [ns for ns in namespaces if ns[: len(namespace_tuple)] == namespace_tuple]
+
+            return namespaces
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.

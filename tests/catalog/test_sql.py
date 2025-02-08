@@ -17,7 +17,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Generator, List, cast
+from typing import Any, Generator, cast
 
 import pyarrow as pa
 import pytest
@@ -1135,17 +1135,31 @@ def test_namespace_exists(catalog: SqlCatalog) -> None:
         lazy_fixture("catalog_sqlite"),
     ],
 )
-@pytest.mark.parametrize("namespace_list", [lazy_fixture("database_list"), lazy_fixture("hierarchical_namespace_list")])
-def test_list_namespaces(catalog: SqlCatalog, namespace_list: List[str]) -> None:
+def test_list_namespaces(catalog: SqlCatalog) -> None:
+    namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%"]
     for namespace in namespace_list:
         catalog.create_namespace(namespace)
-    # Test global list
+
     ns_list = catalog.list_namespaces()
-    for namespace in namespace_list:
-        assert Catalog.identifier_to_tuple(namespace) in ns_list
-        # Test individual namespace list
-        assert len(one_namespace := catalog.list_namespaces(namespace)) == 1
-        assert Catalog.identifier_to_tuple(namespace) == one_namespace[0]
+    expected_list = [("db",), ("db2",), ("db%",)]
+    assert len(ns_list) == len(expected_list)
+    for ns in expected_list:
+        assert ns in ns_list
+
+    ns_list = catalog.list_namespaces("db")
+    expected_list = [("db", "ns1"), ("db", "ns2")]
+    assert len(ns_list) == len(expected_list)
+    for ns in expected_list:
+        assert ns in ns_list
+
+    ns_list = catalog.list_namespaces("db.ns1")
+    expected_list = [("db", "ns1", "ns2")]
+    assert len(ns_list) == len(expected_list)
+    for ns in expected_list:
+        assert ns in ns_list
+
+    ns_list = catalog.list_namespaces("db.ns1.ns2")
+    assert len(ns_list) == 0
 
 
 @pytest.mark.parametrize(
