@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import struct
 from abc import ABC, abstractmethod
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
 from math import isnan
@@ -49,8 +49,8 @@ from pyiceberg.types import (
     UUIDType,
 )
 from pyiceberg.utils.datetime import (
-    date_to_days,
     date_str_to_days,
+    date_to_days,
     datetime_to_micros,
     micros_to_days,
     time_str_to_micros,
