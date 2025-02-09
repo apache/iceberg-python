@@ -1363,8 +1363,10 @@ def _task_to_record_batches(
 
             # Apply the user filter
             if pyarrow_filter is not None:
+                # filter fails if we pass an empty batch
                 if current_batch.num_rows > 0:
                     current_batch = current_batch.filter(pyarrow_filter)
+                # skip empty batches
                 if current_batch.num_rows == 0:
                     continue
 
