@@ -875,7 +875,6 @@ class MetastoreCatalog(Catalog, ABC):
             enforce_validation=current_table is None,
             metadata_location=current_table.metadata_location if current_table else None,
         )
-        io = self._load_file_io(properties=updated_metadata.properties, location=updated_metadata.location)
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
         new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
@@ -884,7 +883,7 @@ class MetastoreCatalog(Catalog, ABC):
             identifier=table_identifier,
             metadata=updated_metadata,
             metadata_location=new_metadata_location,
-            io=io,
+            io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
             catalog=self,
         )
 
