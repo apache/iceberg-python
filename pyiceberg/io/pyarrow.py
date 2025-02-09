@@ -1359,10 +1359,11 @@ def _task_to_record_batches(
 
                 # Apply the user filter
                 if pyarrow_filter is not None:
-                    filtered_batch = batch.filter(pyarrow_filter)
-                    if filtered_batch.num_rows == 0:
+                    if batch.num_rows == 0:
                         continue
-                    output_batches = filtered_batch
+                    filtered_batch = batch.filter(pyarrow_filter)
+                    if filtered_batch.num_rows > 0:
+                        output_batches = [filtered_batch]
             for output_batch in output_batches:
                 yield _to_requested_schema(
                     projected_schema,
