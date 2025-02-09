@@ -1348,30 +1348,33 @@ def _task_to_record_batches(
         next_index = 0
         batches = fragment_scanner.to_batches()
         for batch in batches:
-            next_index = next_index + len(batch)
-            current_index = next_index - len(batch)
-            output_batches = iter([batch])
+            current_index = next_index
+            next_index = current_index + len(batch)
+
+            current_batch = batch
+            
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
-                batch = batch.take(indices)
-                output_batches = iter([batch])
+                current_batch = current_batch.take(indices)
+                # skip empty batches
+                if current_batch.num_rows == 0:
+                    continue
 
-                # Apply the user filter
-                if pyarrow_filter is not None:
-                    if batch.num_rows == 0:
-                        continue
-                    filtered_batch = batch.filter(pyarrow_filter)
-                    if filtered_batch.num_rows > 0:
-                        output_batches = [filtered_batch]
-            for output_batch in output_batches:
-                yield _to_requested_schema(
-                    projected_schema,
-                    file_project_schema,
-                    output_batch,
-                    downcast_ns_timestamp_to_us=True,
-                    use_large_types=use_large_types,
-                )
+            # Apply the user filter
+            if pyarrow_filter is not None:
+                if current_batch.num_rows > 0:
+                    current_batch = current_batch.filter(pyarrow_filter)
+                if current_batch.num_rows == 0:
+                    continue
+
+            yield _to_requested_schema(
+                projected_schema,
+                file_project_schema,
+                current_batch,
+                downcast_ns_timestamp_to_us=True,
+                use_large_types=use_large_types,
+            )
 
 
 def _task_to_table(
