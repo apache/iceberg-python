@@ -20,6 +20,7 @@ import pytest
 
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT
@@ -133,3 +134,26 @@ def test_hash_injection(data_file_name: str, expected_hash: str) -> None:
     provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
 
     assert provider.new_data_location(data_file_name) == f"table_location/data/{expected_hash}/{data_file_name}"
+
+
+def test_object_location_provider_write_data_path() -> None:
+    provider = load_location_provider(
+        table_location="s3://table-location/table",
+        table_properties={TableProperties.WRITE_DATA_PATH: "s3://table-location/custom/data/path"},
+    )
+
+    assert (
+        provider.new_data_location("file.parquet") == "s3://table-location/custom/data/path/0010/1111/0101/11011101/file.parquet"
+    )
+
+
+def test_simple_location_provider_write_data_path() -> None:
+    provider = load_location_provider(
+        table_location="table_location",
+        table_properties={
+            TableProperties.WRITE_DATA_PATH: "s3://table-location/custom/data/path",
+            "write.object-storage.enabled": "false",
+        },
+    )
+
+    assert provider.new_data_location("file.parquet") == "s3://table-location/custom/data/path/file.parquet"

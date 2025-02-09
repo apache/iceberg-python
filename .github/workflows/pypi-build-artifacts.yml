@@ -25,9 +25,6 @@ on:
       VERSION:
         required: true
         type: string
-      RC:
-        required: true
-        type: string
 
 jobs:
   pypi-build-artifacts:
@@ -35,7 +32,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
+        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14 ]
 
     steps:
       - uses: actions/checkout@v4
@@ -56,8 +53,7 @@ jobs:
       - name: Set version with RC
         env:
           VERSION: ${{ inputs.VERSION }}
-          RC: ${{ inputs.RC }}
-        run: python -m poetry version "${{ env.VERSION }}rc${{ env.RC }}" # e.g., 0.8.0rc1
+        run: python -m poetry version "${{ env.VERSION }}"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
@@ -97,6 +93,6 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "pypi-release-candidate-${{ inputs.VERSION }}rc${{ inputs.RC }}"
+          name: "pypi-release-candidate-${{ inputs.VERSION }}"
           pattern: pypi-release-candidate*
           delete-merged: true
