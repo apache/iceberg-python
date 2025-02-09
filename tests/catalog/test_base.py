@@ -142,9 +142,6 @@ class InMemoryCatalog(MetastoreCatalog):
 
         updated_metadata = update_table_metadata(base_metadata, updates)
 
-        # delete old metadata
-        self._delete_old_metadata(current_table.io, base_metadata, updated_metadata)
-
         if updated_metadata == base_metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
