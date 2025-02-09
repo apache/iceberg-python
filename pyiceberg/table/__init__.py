@@ -1184,8 +1184,13 @@ class Table:
         response = self.catalog.commit_table(self, requirements, updates)
 
         # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
-        # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true
-        self.catalog._delete_old_metadata(self.io, self.metadata, response.metadata)
+        # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true and uses
+        # TableProperties.METADATA_PREVIOUS_VERSIONS_MAX to determine how many previous versions to keep -
+        # everything else will be removed.
+        try:
+            self.catalog._delete_old_metadata(self.io, self.metadata, response.metadata)
+        except Exception as e:
+            warnings.warn(f"Failed to delete old metadata after commit: {e}")
 
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location
