@@ -269,7 +269,7 @@ class Transaction:
         existing_requirements = {type(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
-                self._requirements = self._requirements + requirements
+                self._requirements = self._requirements + new_requirement
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
