@@ -747,6 +747,21 @@ class Catalog(ABC):
         except ModuleNotFoundError:
             pass
         raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
+    
+    @staticmethod
+    def _delete_old_metadata(io: FileIO, base: TableMetadata, metadata: TableMetadata) -> None:
+        """Delete oldest metadata if config is set to true."""
+        delete_after_commit: bool = property_as_bool(
+            metadata.properties,
+            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED,
+            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT,
+        )
+
+        if delete_after_commit:
+            removed_previous_metadata_files: set[str] = {log.metadata_file for log in base.metadata_log}
+            current_metadata_files: set[str] = {log.metadata_file for log in metadata.metadata_log}
+            removed_previous_metadata_files.difference_update(current_metadata_files)
+            delete_files(io, removed_previous_metadata_files, METADATA)
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""
@@ -862,11 +877,6 @@ class MetastoreCatalog(Catalog, ABC):
         )
         io = self._load_file_io(properties=updated_metadata.properties, location=updated_metadata.location)
 
-        # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
-        # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true
-        if current_table is not None:
-            self._delete_old_metadata(io, current_table.metadata, updated_metadata)
-
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
         new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
 
@@ -920,20 +930,6 @@ class MetastoreCatalog(Catalog, ABC):
             return f"{warehouse_path}/{database_name}.db/{table_name}"
 
         raise ValueError("No default path is set, please specify a location when creating a table")
-
-    def _delete_old_metadata(self, io: FileIO, base: TableMetadata, metadata: TableMetadata) -> None:
-        """Delete oldest metadata if config is set to true."""
-        delete_after_commit: bool = property_as_bool(
-            metadata.properties,
-            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED,
-            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT,
-        )
-
-        if delete_after_commit:
-            removed_previous_metadata_files: set[str] = {log.metadata_file for log in base.metadata_log}
-            current_metadata_files: set[str] = {log.metadata_file for log in metadata.metadata_log}
-            removed_previous_metadata_files.difference_update(current_metadata_files)
-            delete_files(io, removed_previous_metadata_files, METADATA)
 
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
