@@ -141,7 +141,6 @@ class InMemoryCatalog(MetastoreCatalog):
             requirement.validate(base_metadata)
 
         updated_metadata = update_table_metadata(base_metadata, updates)
-
         if updated_metadata == base_metadata:
             # no changes, do nothing
             return CommitTableResponse(metadata=base_metadata, metadata_location=current_table.metadata_location)
