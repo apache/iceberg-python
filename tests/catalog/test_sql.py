@@ -1624,13 +1624,6 @@ def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with
         lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
-@pytest.mark.parametrize(
-    "table_identifier",
-    [
-        lazy_fixture("random_table_identifier"),
-        lazy_fixture("random_hierarchical_identifier"),
-    ],
-)
 def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
@@ -1659,6 +1652,7 @@ def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Sche
     assert len(table.metadata.metadata_log) == 2
     updated_metadata_1, updated_metadata_2 = table.metadata.metadata_log
 
+    # new metadata log was added, so earlier metadata logs are removed.
     with table.transaction() as transaction:
         with transaction.update_schema() as update:
             update.add_column(path="new_column_x", field_type=IntegerType())
