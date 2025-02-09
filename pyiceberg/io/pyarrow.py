@@ -1352,20 +1352,19 @@ def _task_to_record_batches(
             next_index = current_index + len(batch)
 
             current_batch = batch
-            
+
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
-                # skip empty batches
-                if current_batch.num_rows == 0:
-                    continue
+
+            # skip empty batches
+            if current_batch.num_rows == 0:
+                continue
 
             # Apply the user filter
             if pyarrow_filter is not None:
-                # filter fails if we pass an empty batch
-                if current_batch.num_rows > 0:
-                    current_batch = current_batch.filter(pyarrow_filter)
+                current_batch = current_batch.filter(pyarrow_filter)
                 # skip empty batches
                 if current_batch.num_rows == 0:
                     continue
