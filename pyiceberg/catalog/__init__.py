@@ -747,7 +747,7 @@ class Catalog(ABC):
         except ModuleNotFoundError:
             pass
         raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
-    
+
     @staticmethod
     def _delete_old_metadata(io: FileIO, base: TableMetadata, metadata: TableMetadata) -> None:
         """Delete oldest metadata if config is set to true."""
