@@ -468,9 +468,10 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 
 @_apply_table_update.register(RemoveSnapshotRefUpdate)
 def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if (existing_ref := base_metadata.refs.get(update.ref_name, None)) is None:
+    if update.ref_name not in base_metadata.refs:
         return base_metadata
 
+    existing_ref = base_metadata.refs[update.ref_name]
     if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
         raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
 
