@@ -287,6 +287,55 @@ class UUIDLocationProvider(LocationProvider):
         return f"{prefix}/{partition_key.to_path()}/{data_file_name}" if partition_key else f"{prefix}/{data_file_name}"
 ```
 
+### Loading a Custom FileIO Implementation
+
+The `PyIceberg` library allows you to use custom FileIO implementations, enabling flexible file handling tailored to your specific needs. This feature is particularly useful when working with different storage backends or file formats. To implement a custom FileIO, you can specify the `PY_IO_IMPL` property in your configuration. The property should point to the custom FileIO class you wish to use.
+
+An example, custom `FileIO` implementation is shown below.
+
+```py
+from pyiceberg.io import InputFile, OutputFile
+from pyiceberg.io.fsspec import FsspecFileIO
+from urllib.parse import urlparse
+import os
+
+class RelativeFileIO(FsspecFileIO):
+    def __init__(self, properties: Properties):
+        self._root = properties.get("root-path")
+        super().__init__(properties)
+
+    def new_input(self, location: str) -> InputFile:
+        uri = urlparse(self._root)
+        fs = self.get_fs(uri.scheme)
+        return RelativeInputFile(location, self._root, fs)
+
+    def new_output(self, location: str) -> OutputFile:
+        uri = urlparse(self._root)
+        fs = self.get_fs(uri.scheme)
+        return RelativeOutputFile(location, self._root, fs)
+
+    def delete(self, location: Union[str, InputFile, OutputFile]) -> None:
+        if isinstance(location, (InputFile, OutputFile)):
+            str_location = location.location  # Use InputFile or OutputFile location
+        else:
+            str_location = location
+
+        uri = urlparse(self._root)
+        fs = self.get_fs(uri.scheme)
+        fs.rm(os.path.join(self._root, str_location))
+
+
+def load_catalog(warehouse_root: str) -> Catalog:
+    catalog = SqlCatalog(
+        "default", **{
+            "uri": f"sqlite:///{warehouse_root}/catalog.db",
+            "warehouse": "test",
+            "root-path": f"file://{warehouse_root}",
+            "py-io-impl": RelativeFileIO.__module__ + "." + RelativeFileIO.__qualname__,
+        },
+    )
+```
+
 ## Catalogs
 
 PyIceberg currently has native catalog type support for REST, SQL, Hive, Glue and DynamoDB.
