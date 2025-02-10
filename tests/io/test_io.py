@@ -18,6 +18,7 @@
 import os
 import pickle
 import tempfile
+from typing import Any
 
 import pytest
 
@@ -277,8 +278,9 @@ def test_import_file_io() -> None:
     assert isinstance(_import_file_io(ARROW_FILE_IO, {}), PyArrowFileIO)
 
 
-def test_import_file_io_does_not_exist() -> None:
+def test_import_file_io_does_not_exist(caplog: Any) -> None:
     assert _import_file_io("pyiceberg.does.not.exist.FileIO", {}) is None
+    assert "ModuleNotFoundError: No module named 'pyiceberg.does'" in caplog.text
 
 
 def test_load_file() -> None:

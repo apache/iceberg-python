@@ -18,10 +18,11 @@
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import Annotated, Any, Callable, Optional, Union
 from uuid import UUID
 
 import mmh3 as mmh3
+import pyarrow as pa
 import pytest
 from pydantic import (
     BeforeValidator,
@@ -29,7 +30,6 @@ from pydantic import (
     RootModel,
     WithJsonSchema,
 )
-from typing_extensions import Annotated
 
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -115,9 +115,6 @@ from pyiceberg.utils.datetime import (
     timestamp_to_micros,
     timestamptz_to_micros,
 )
-
-if TYPE_CHECKING:
-    import pyarrow as pa
 
 
 @pytest.mark.parametrize(
@@ -1563,3 +1560,43 @@ def test_ymd_pyarrow_transforms(
     else:
         with pytest.raises(ValueError):
             transform.pyarrow_transform(DateType())(arrow_table_date_timestamps[source_col])
+
+
+@pytest.mark.parametrize(
+    "source_type, input_arr, expected, num_buckets",
+    [
+        (IntegerType(), pa.array([1, 2]), pa.array([6, 2], type=pa.int32()), 10),
+        (
+            IntegerType(),
+            pa.chunked_array([pa.array([1, 2]), pa.array([3, 4])]),
+            pa.chunked_array([pa.array([6, 2], type=pa.int32()), pa.array([5, 0], type=pa.int32())]),
+            10,
+        ),
+        (IntegerType(), pa.array([1, 2]), pa.array([6, 2], type=pa.int32()), 10),
+    ],
+)
+def test_bucket_pyarrow_transforms(
+    source_type: PrimitiveType,
+    input_arr: Union[pa.Array, pa.ChunkedArray],
+    expected: Union[pa.Array, pa.ChunkedArray],
+    num_buckets: int,
+) -> None:
+    transform: Transform[Any, Any] = BucketTransform(num_buckets=num_buckets)
+    assert expected == transform.pyarrow_transform(source_type)(input_arr)
+
+
+@pytest.mark.parametrize(
+    "source_type, input_arr, expected, width",
+    [
+        (StringType(), pa.array(["developer", "iceberg"]), pa.array(["dev", "ice"]), 3),
+        (IntegerType(), pa.array([1, -1]), pa.array([0, -10]), 10),
+    ],
+)
+def test_truncate_pyarrow_transforms(
+    source_type: PrimitiveType,
+    input_arr: Union[pa.Array, pa.ChunkedArray],
+    expected: Union[pa.Array, pa.ChunkedArray],
+    width: int,
+) -> None:
+    transform: Transform[Any, Any] = TruncateTransform(width=width)
+    assert expected == transform.pyarrow_transform(source_type)(input_arr)

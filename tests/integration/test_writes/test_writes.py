@@ -1426,6 +1426,23 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
 
 
 @pytest.mark.integration
+def test_view_exists(
+    spark: SparkSession,
+    session_catalog: Catalog,
+) -> None:
+    identifier = "default.some_view"
+    spark.sql(
+        f"""
+        CREATE VIEW {identifier}
+        AS
+        (SELECT 1 as some_col)
+    """
+    ).collect()
+    assert session_catalog.view_exists(identifier)
+    session_catalog.drop_view(identifier)  # clean up
+
+
+@pytest.mark.integration
 def test_overwrite_all_data_with_filter(session_catalog: Catalog) -> None:
     schema = Schema(
         NestedField(1, "id", StringType(), required=True),

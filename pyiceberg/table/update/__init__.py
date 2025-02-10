@@ -20,10 +20,9 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator
-from typing_extensions import Annotated
+from pydantic import Field, field_validator, model_validator
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -36,6 +35,7 @@ from pyiceberg.table.snapshots import (
     SnapshotLogEntry,
 )
 from pyiceberg.table.sorting import SortOrder
+from pyiceberg.table.statistics import StatisticsFile, filter_statistics_by_snapshot_id
 from pyiceberg.typedef import (
     IcebergBaseModel,
     Properties,
@@ -174,6 +174,29 @@ class RemovePropertiesUpdate(IcebergBaseModel):
     removals: List[str]
 
 
+class SetStatisticsUpdate(IcebergBaseModel):
+    action: Literal["set-statistics"] = Field(default="set-statistics")
+    statistics: StatisticsFile
+    snapshot_id: Optional[int] = Field(
+        None,
+        alias="snapshot-id",
+        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
+    )
+
+    @model_validator(mode="before")
+    def validate_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        stats = cast(StatisticsFile, data["statistics"])
+
+        data["snapshot_id"] = stats.snapshot_id
+
+        return data
+
+
+class RemoveStatisticsUpdate(IcebergBaseModel):
+    action: Literal["remove-statistics"] = Field(default="remove-statistics")
+    snapshot_id: int = Field(alias="snapshot-id")
+
+
 TableUpdate = Annotated[
     Union[
         AssignUUIDUpdate,
@@ -191,6 +214,8 @@ TableUpdate = Annotated[
         SetLocationUpdate,
         SetPropertiesUpdate,
         RemovePropertiesUpdate,
+        SetStatisticsUpdate,
+        RemoveStatisticsUpdate,
     ],
     Field(discriminator="action"),
 ]
@@ -473,6 +498,25 @@ def _(
 
     context.add_update(update)
     return base_metadata.model_copy(update={"default_sort_order_id": new_sort_order_id})
+
+
+@_apply_table_update.register(SetStatisticsUpdate)
+def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})
+
+
+@_apply_table_update.register(RemoveStatisticsUpdate)
+def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if not any(stat.snapshot_id == update.snapshot_id for stat in base_metadata.statistics):
+        raise ValueError(f"Statistics with snapshot id {update.snapshot_id} does not exist")
+
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    context.add_update(update)
+
+    return base_metadata.model_copy(update={"statistics": statistics})
 
 
 def update_table_metadata(
