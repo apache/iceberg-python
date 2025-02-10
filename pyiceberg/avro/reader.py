@@ -175,11 +175,29 @@ class TimestampReader(IntegerReader):
     """
 
 
+class TimestampNanoReader(IntegerReader):
+    """Reads a nanosecond granularity timestamp from the stream.
+
+    Long is decoded as python integer which represents
+    the number of nanoseconds from the unix epoch, 1 January 1970.
+    """
+
+
 class TimestamptzReader(IntegerReader):
     """Reads a microsecond granularity timestamptz from the stream.
 
     Long is decoded as python integer which represents
     the number of microseconds from the unix epoch, 1 January 1970.
+
+    Adjusted to UTC.
+    """
+
+
+class TimestamptzNanoReader(IntegerReader):
+    """Reads a microsecond granularity timestamptz from the stream.
+
+    Long is decoded as python integer which represents
+    the number of nanoseconds from the unix epoch, 1 January 1970.
 
     Adjusted to UTC.
     """

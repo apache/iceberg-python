@@ -35,6 +35,8 @@ from pyiceberg.avro.writer import (
     FloatWriter,
     IntegerWriter,
     StringWriter,
+    TimestampNanoWriter,
+    TimestamptzNanoWriter,
     TimestamptzWriter,
     TimestampWriter,
     TimeWriter,
@@ -57,7 +59,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -114,8 +118,16 @@ def test_timestamp_writer() -> None:
     assert construct_writer(TimestampType()) == TimestampWriter()
 
 
+def test_timestamp_ns_writer() -> None:
+    assert construct_writer(TimestampNanoType()) == TimestampNanoWriter()
+
+
 def test_timestamptz_writer() -> None:
     assert construct_writer(TimestamptzType()) == TimestamptzWriter()
+
+
+def test_timestamptz_ns_writer() -> None:
+    assert construct_writer(TimestamptzNanoType()) == TimestamptzNanoWriter()
 
 
 def test_string_writer() -> None:

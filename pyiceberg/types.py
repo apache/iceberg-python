@@ -180,7 +180,7 @@ class IcebergType(IcebergBaseModel):
         return isinstance(self, StructType)
 
     def minimum_format_version(self) -> int:
-        """Minimum Iceberg format version after which this type is supported"""
+        """Minimum Iceberg format version after which this type is supported."""
         return 1
 
 

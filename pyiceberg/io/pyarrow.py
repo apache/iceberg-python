@@ -160,7 +160,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -648,8 +650,14 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     def visit_timestamp(self, _: TimestampType) -> pa.DataType:
         return pa.timestamp(unit="us")
 
+    def visit_timestamp_ns(self, _: TimestampNanoType) -> pa.DataType:
+        return pa.timestamp(unit="ns")
+
     def visit_timestamptz(self, _: TimestamptzType) -> pa.DataType:
         return pa.timestamp(unit="us", tz="UTC")
+
+    def visit_timestamptz_ns(self, _: TimestamptzNanoType) -> pa.DataType:
+        return pa.timestamp(unit="ns", tz="UTC")
 
     def visit_string(self, _: StringType) -> pa.DataType:
         return pa.large_string()
@@ -1851,7 +1859,13 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
     def visit_timestamp(self, timestamp_type: TimestampType) -> str:
         return "INT64"
 
+    def visit_timestamp_ns(self, timestamp_type: TimestampNanoType) -> str:
+        return "INT64"
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> str:
+        return "INT64"
+
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType) -> str:
         return "INT64"
 
     def visit_string(self, string_type: StringType) -> str:

@@ -91,6 +91,35 @@ def timestamp_to_micros(timestamp_str: str) -> int:
     raise ValueError(f"Invalid timestamp without zone: {timestamp_str} (must be ISO-8601)")
 
 
+def time_str_to_nanos(time_str: str) -> int:
+    """Convert an ISO-8601 formatted time to nanoseconds from midnight."""
+    return time_to_nanos(time.fromisoformat(time_str))
+
+
+def time_to_nanos(t: time) -> int:
+    """Convert a datetime.time object to nanoseconds from midnight."""
+    return (((t.hour * 60 + t.minute) * 60) + t.second) * 1_000_000 + t.microsecond + t.nanosecond
+
+
+def datetime_to_nanos(dt: datetime) -> int:
+    """Convert a datetime to nanoseconds from 1970-01-01T00:00:00.000000000."""
+    if dt.tzinfo:
+        delta = dt - EPOCH_TIMESTAMPTZ
+    else:
+        delta = dt - EPOCH_TIMESTAMP
+    return (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds + delta.nanoseconds
+
+
+def timestamp_to_nanos(timestamp_str: str) -> int:
+    """Convert an ISO-9601 formatted timestamp without zone to microseconds from 1970-01-01T00:00:00.000000000."""
+    if ISO_TIMESTAMP.fullmatch(timestamp_str):
+        return datetime_to_nanos(datetime.fromisoformat(timestamp_str))
+    if ISO_TIMESTAMPTZ.fullmatch(timestamp_str):
+        # When we can match a timestamp without a zone, we can give a more specific error
+        raise ValueError(f"Zone offset provided, but not expected: {timestamp_str}")
+    raise ValueError(f"Invalid timestamp without zone: {timestamp_str} (must be ISO-8601)")
+
+
 def datetime_to_millis(dt: datetime) -> int:
     """Convert a datetime to milliseconds from 1970-01-01T00:00:00.000000."""
     if dt.tzinfo:
