@@ -143,4 +143,3 @@ def get_rows_to_insert(source_table: pa.Table, target_table: pa.Table, join_cols
     non_matching_rows = source_table.filter(non_matching_expr).select(common_columns)
 
     return non_matching_rows
-
