@@ -1131,7 +1131,7 @@ class Table:
 
         from pyiceberg.table import upsert_util
 
-        if when_matched_update_all == False and when_not_matched_insert_all == False:
+        if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError('no upsert options selected...exiting')
 
         if upsert_util.has_duplicate_rows(df, join_cols):
