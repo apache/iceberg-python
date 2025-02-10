@@ -137,8 +137,6 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool
 
-from dataclasses import dataclass
-
 if TYPE_CHECKING:
     import daft
     import pandas as pd
@@ -1145,9 +1143,9 @@ class Table:
         insert_row_cnt = 0
 
         with self.transaction() as tx:
-        
+
             if when_matched_update_all:
-                
+
                 #function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
                 #we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
                 #this extra step avoids unnecessary IO and writes
@@ -1158,10 +1156,10 @@ class Table:
                 #build the match predicate filter
                 overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)    
+                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
-                
+
                 rows_to_insert = upsert_util.get_rows_to_insert(df, matched_iceberg_table, join_cols)
 
                 insert_row_cnt = len(rows_to_insert)

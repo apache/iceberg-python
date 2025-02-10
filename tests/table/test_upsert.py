@@ -14,9 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from tests.catalog.test_base import InMemoryCatalog
 import pytest
 from datafusion import SessionContext
+
+from tests.catalog.test_base import InMemoryCatalog
 
 _TEST_NAMESPACE = "test_ns"
 
@@ -119,7 +120,7 @@ def test_merge_scenario_skip_upd_row(catalog_conn):
 
     ctx = SessionContext()
 
-    df = ctx.sql(f"""
+    df = ctx.sql("""
         select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
         union all
         select 2 as order_id, date '2021-01-01' as order_date, 'A' as order_type
@@ -130,7 +131,7 @@ def test_merge_scenario_skip_upd_row(catalog_conn):
 
     table.append(df)
 
-    source_df = ctx.sql(f"""
+    source_df = ctx.sql("""
         select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type
         union all
         select 2 as order_id, date '2021-01-01' as order_date, 'B' as order_type  
@@ -155,7 +156,7 @@ def test_merge_scenario_date_as_key(catalog_conn):
 
     ctx = SessionContext()
 
-    df = ctx.sql(f"""
+    df = ctx.sql("""
         select date '2021-01-01' as order_date, 'A' as order_type
         union all
         select date '2021-01-02' as order_date, 'A' as order_type
@@ -166,7 +167,7 @@ def test_merge_scenario_date_as_key(catalog_conn):
 
     table.append(df)
 
-    source_df = ctx.sql(f"""
+    source_df = ctx.sql("""
         select date '2021-01-01' as order_date, 'A' as order_type
         union all
         select date '2021-01-02' as order_date, 'B' as order_type  
@@ -191,7 +192,7 @@ def test_merge_scenario_string_as_key(catalog_conn):
 
     ctx = SessionContext()
 
-    df = ctx.sql(f"""
+    df = ctx.sql("""
         select 'abc' as order_id, 'A' as order_type
         union all
         select 'def' as order_id, 'A' as order_type
@@ -202,7 +203,7 @@ def test_merge_scenario_string_as_key(catalog_conn):
 
     table.append(df)
 
-    source_df = ctx.sql(f"""
+    source_df = ctx.sql("""
         select 'abc' as order_id, 'A' as order_type
         union all
         select 'def' as order_id, 'B' as order_type  
@@ -230,7 +231,7 @@ def test_merge_scenario_composite_key(catalog_conn):
     catalog = catalog_conn
     table = gen_target_iceberg_table(1, 200, True, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(101, 300, True, False, ctx)
-    
+
     res = table.upsert(df=source_df, join_cols=["order_id", "order_line_id"])
 
     expected_updated = 100
@@ -251,7 +252,7 @@ def test_merge_source_dups(catalog_conn):
     catalog = catalog_conn
     table = gen_target_iceberg_table(1, 10, False, ctx, catalog, _TEST_NAMESPACE)
     source_df = gen_source_dataset(5, 15, False, True, ctx)
-    
+
     with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
         table.upsert(df=source_df, join_cols=["order_id"])
 

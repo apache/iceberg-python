@@ -29,7 +29,6 @@ from functools import singledispatchmethod
 from math import isnan
 from typing import Any, Generic, Type
 from uuid import UUID
-from datetime import date, datetime
 
 from pyiceberg.typedef import L
 from pyiceberg.types import (
@@ -57,11 +56,9 @@ from pyiceberg.utils.datetime import (
     time_str_to_micros,
     timestamp_to_micros,
     timestamptz_to_micros,
-    date_to_days,
 )
 from pyiceberg.utils.decimal import decimal_to_unscaled, unscaled_to_decimal
 from pyiceberg.utils.singleton import Singleton
-
 
 UUID_BYTES_LENGTH = 16
 
