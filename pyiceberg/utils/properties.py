@@ -24,7 +24,6 @@ from typing import (
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
 
-
 HEADER_PREFIX = "header."
 
 
@@ -83,8 +82,4 @@ def get_header_properties(
     properties: Properties,
 ) -> Properties:
     header_prefix_len = len(HEADER_PREFIX)
-    return {
-        key[header_prefix_len:]: value
-        for key, value in properties.items()
-        if key.startswith(HEADER_PREFIX)
-    }
+    return {key[header_prefix_len:]: value for key, value in properties.items() if key.startswith(HEADER_PREFIX)}
