@@ -842,6 +842,24 @@ class ManifestFile(Record):
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
+    def copy_with_snapshot_id(self, snapshot_id: int) -> ManifestFile:
+        return ManifestFile(
+            manifest_path=self.manifest_path,
+            manifest_length=self.manifest_length,
+            partition_spec_id=self.partition_spec_id,
+            content=self.content,
+            sequence_number=self.sequence_number,
+            min_sequence_number=self.min_sequence_number,
+            added_snapshot_id=snapshot_id,
+            added_files_count=self.added_files_count,
+            existing_files_count=self.existing_files_count,
+            deleted_files_count=self.deleted_files_count,
+            added_rows_count=self.added_rows_count,
+            existing_rows_count=self.existing_rows_count,
+            deleted_rows_count=self.deleted_rows_count,
+            partitions=self.partitions,
+            key_metadata=self.key_metadata,
+        )
     def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> List[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
@@ -865,11 +883,9 @@ class ManifestFile(Record):
                 for entry in reader
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
-
     def __hash__(self) -> int:
         """Return the hash of the file path."""
         return hash(self.manifest_path)
-
 
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
