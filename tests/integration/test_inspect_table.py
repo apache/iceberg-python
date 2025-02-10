@@ -1101,3 +1101,45 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
         .reset_index()
     )
     assert_frame_equal(lhs, rhs, check_dtype=False)
+
+def test_inspect_all_example(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pandas.testing import assert_frame_equal
+
+    identifier = "default.table_metadata_all_manifests"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            id int,
+            data string
+        )
+        PARTITIONED BY (data)
+        TBLPROPERTIES ('write.update.mode'='merge-on-read',
+                       'write.delete.mode'='merge-on-read')
+    """
+    )
+    tbl = session_catalog.load_table(identifier)
+    # check all_manifests when there are no snapshots
+    lhs = tbl.inspect.all_manifests().to_pandas()
+    rhs = spark.table(f"{identifier}.all_manifests").toPandas()
+    assert_frame_equal(lhs, rhs, check_dtype=False)
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (1, 'a')")
+
+    spark.sql(f"INSERT INTO {identifier} VALUES (2, 'b')")
+
+    spark.sql(f"UPDATE {identifier} SET data = 'c' WHERE id = 1")
+
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 2")
+
+    spark.sql(f"INSERT OVERWRITE {identifier} VALUES (1, 'a')")
+
+    tbl.refresh()
+
+
+    tbl.rewrite_manifests()
+    print("efd")
