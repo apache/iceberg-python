@@ -22,7 +22,17 @@ hide:
   - under the License.
   -->
 
-# Contributing to the Iceberg Python library
+# Contributing
+
+We welcome contributions to Apache Iceberg! To learn more about contributing to Apache Iceberg, please refer to the [official Iceberg contribution guidelines](https://iceberg.apache.org/contribute/). These guidelines are intended as helpful suggestions to make the contribution process as seamless as possible, and are not strict rules.
+
+If you would like to discuss your proposed change before contributing, we encourage you to visit our [Community](https://iceberg.apache.org/community/) page. There, you will find various ways to connect with the community, including Slack and our mailing lists. Alternatively, you can open a [new issue](https://github.com/apache/iceberg-python/issues) directly in the GitHub repository.
+
+For first-time contributors, feel free to check out our [good first issues](https://github.com/apache/iceberg-python/issues/?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) for an easy way to get started.
+
+## Contributing to PyIceberg
+
+The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-python>.
 
 For the development, Poetry is used for packing and dependency management. You can install this using:
 
@@ -42,7 +52,7 @@ To get started, you can run `make install`, which installs Poetry and all the de
 
 If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
 
-To set up IDEA with Poetry ([also on Loom](https://www.loom.com/share/6d36464d45f244729d91003e7f671fd2)):
+To set up IDEA with Poetry:
 
 - Open up the Python project in IntelliJ
 - Make sure that you're on latest main (that includes Poetry)
@@ -70,7 +80,7 @@ pip3 install -e ".[s3fs,hive]"
 
 Install it directly for GitHub (not recommended), but sometimes handy:
 
-```
+```shell
 pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyarrow]"
 ```
 
@@ -106,28 +116,28 @@ For Python, `pytest` is used a testing framework in combination with `coverage` 
 make test
 ```
 
-By default, S3 and ADLFS tests are ignored because that require minio and azurite to be running.
+By default, S3 and ADLS tests are ignored because that require minio and azurite to be running.
 To run the S3 suite:
 
 ```bash
 make test-s3
 ```
 
-To run the ADLFS suite:
+To run the ADLS suite:
 
 ```bash
-make test-adlfs
+make test-adls
 ```
 
 To pass additional arguments to pytest, you can use `PYTEST_ARGS`.
 
-_Run pytest in verbose mode_
+### Run pytest in verbose mode
 
 ```sh
 make test PYTEST_ARGS="-v"
 ```
 
-_Run pytest with pdb enabled_
+### Run pytest with pdb enabled
 
 ```sh
 make test PYTEST_ARGS="--pdb"
@@ -176,7 +186,7 @@ def load_something():
 
 Which will warn:
 
-```
+```text
 Call to load_something, deprecated in 0.1.0, will be removed in 0.2.0. Please use load_something_else() instead.
 ```
 
@@ -194,7 +204,7 @@ deprecation_message(
 
 Which will warn:
 
-```
+```text
 Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. Please use the something_else property instead.
 ```
 
@@ -202,7 +212,7 @@ Deprecated in 0.1.0, will be removed in 0.2.0. The old_property is deprecated. P
 
 For the type annotation the types from the `Typing` package are used.
 
-PyIceberg offers support from Python 3.8 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
+PyIceberg offers support from Python 3.9 onwards, we can't use the [type hints from the standard collections](https://peps.python.org/pep-0585/).
 
 ## Third party libraries
 

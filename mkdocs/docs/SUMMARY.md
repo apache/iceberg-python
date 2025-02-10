@@ -18,6 +18,7 @@
 <!-- prettier-ignore-start -->
 
 <!-- markdown-link-check-disable -->
+# Summary
 
 - [Getting started](index.md)
 - [Configuration](configuration.md)
@@ -28,6 +29,7 @@
 - Releases
     - [Verify a release](verify-release.md)
     - [How to release](how-to-release.md)
+    - [Release Notes](https://github.com/apache/iceberg-python/releases)
 - [Code Reference](reference/)
 
 <!-- markdown-link-check-enable-->

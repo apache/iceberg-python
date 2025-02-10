@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 from collections import defaultdict
 from enum import Enum
 from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional
@@ -24,7 +25,7 @@ from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mappin
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, read_manifest_list
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
@@ -182,7 +183,10 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     operation: Operation = Field()
     _additional_properties: Dict[str, str] = PrivateAttr()
 
-    def __init__(self, operation: Operation, **data: Any) -> None:
+    def __init__(self, operation: Optional[Operation] = None, **data: Any) -> None:
+        if operation is None:
+            warnings.warn("Encountered invalid snapshot summary: operation is missing, defaulting to overwrite")
+            operation = Operation.OVERWRITE
         super().__init__(operation=operation, **data)
         self._additional_properties = data
 
@@ -235,9 +239,7 @@ class Snapshot(IcebergBaseModel):
     parent_snapshot_id: Optional[int] = Field(alias="parent-snapshot-id", default=None)
     sequence_number: Optional[int] = Field(alias="sequence-number", default=INITIAL_SEQUENCE_NUMBER)
     timestamp_ms: int = Field(alias="timestamp-ms", default_factory=lambda: int(time.time() * 1000))
-    manifest_list: Optional[str] = Field(
-        alias="manifest-list", description="Location of the snapshot's manifest list file", default=None
-    )
+    manifest_list: str = Field(alias="manifest-list", description="Location of the snapshot's manifest list file")
     summary: Optional[Summary] = Field(default=None)
     schema_id: Optional[int] = Field(alias="schema-id", default=None)
 
@@ -250,10 +252,8 @@ class Snapshot(IcebergBaseModel):
         return result_str
 
     def manifests(self, io: FileIO) -> List[ManifestFile]:
-        if self.manifest_list is not None:
-            file = io.new_input(self.manifest_list)
-            return list(read_manifest_list(file))
-        return []
+        """Return the manifests for the given snapshot."""
+        return list(_manifests(io, self.manifest_list))
 
 
 class MetadataLogEntry(IcebergBaseModel):

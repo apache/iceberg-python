@@ -1228,7 +1228,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if lower_bound >= literal.value:
+            if lower_bound >= literal.value:  # type: ignore[operator]
                 return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
@@ -1249,7 +1249,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if lower_bound > literal.value:
+            if lower_bound > literal.value:  # type: ignore[operator]
                 return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
@@ -1266,7 +1266,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
-            if upper_bound <= literal.value:
+            if upper_bound <= literal.value:  # type: ignore[operator]
                 if self._is_nan(upper_bound):
                     # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                     return ROWS_MIGHT_MATCH
@@ -1287,7 +1287,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
             upper_bound = from_bytes(field.field_type, upper_bound_bytes)
-            if upper_bound < literal.value:
+            if upper_bound < literal.value:  # type: ignore[operator]
                 if self._is_nan(upper_bound):
                     # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                     return ROWS_MIGHT_MATCH
@@ -1312,7 +1312,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if lower_bound > literal.value:
+            if lower_bound > literal.value:  # type: ignore[operator]
                 return ROWS_CANNOT_MATCH
 
         if upper_bound_bytes := self.upper_bounds.get(field_id):
@@ -1321,7 +1321,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            if upper_bound < literal.value:
+            if upper_bound < literal.value:  # type: ignore[operator]
                 return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
@@ -1349,7 +1349,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            literals = {lit for lit in literals if lower_bound <= lit}
+            literals = {lit for lit in literals if lower_bound <= lit}  # type: ignore[operator]
             if len(literals) == 0:
                 return ROWS_CANNOT_MATCH
 
@@ -1359,7 +1359,7 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             if self._is_nan(upper_bound):
                 return ROWS_MIGHT_MATCH
 
-            literals = {lit for lit in literals if upper_bound >= lit}
+            literals = {lit for lit in literals if upper_bound >= lit}  # type: ignore[operator]
             if len(literals) == 0:
                 return ROWS_CANNOT_MATCH
 

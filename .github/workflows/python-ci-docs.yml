@@ -17,9 +17,14 @@
 # under the License.
 #
 
-name: "Python Docs"
+name: "Python CI Docs"
+
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,26 +36,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install poetry
+        run: make install-poetry
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: 3.12
       - name: Install
-        working-directory: ./mkdocs
-        run: pip install -r requirements.txt
-      - name: Build
-        working-directory: ./mkdocs
-        run: mkdocs build --strict
-      - name: Copy
-        working-directory: ./mkdocs
-        run: mv ./site /tmp/site
-      - name: Push changes to gh-pages branch
-        run: |
-          git checkout --orphan gh-pages-tmp
-          git rm --quiet -rf .
-          cp -r /tmp/site/* .
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'actions@github.com'
-          echo "py.iceberg.apache.org" > CNAME
-          git add --all
-          git commit -m 'Publish Python docs'
-          git push -f origin gh-pages-tmp:gh-pages || true
+        run: make docs-install
+      - name: Build docs
+        run: make docs-build

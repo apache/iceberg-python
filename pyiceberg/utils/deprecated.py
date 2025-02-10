@@ -41,22 +41,23 @@ def deprecated(deprecated_in: str, removed_in: str, help_message: Optional[str] 
     return decorator
 
 
+def deprecation_notice(deprecated_in: str, removed_in: str, help_message: Optional[str]) -> str:
+    """Return a deprecation notice."""
+    return f"Deprecated in {deprecated_in}, will be removed in {removed_in}. {help_message}"
+
+
 def deprecation_message(deprecated_in: str, removed_in: str, help_message: Optional[str]) -> None:
     """Mark properties or behaviors as deprecated.
 
     Adding this will result in a warning being emitted.
     """
-    message = f"Deprecated in {deprecated_in}, will be removed in {removed_in}. {help_message}"
-
-    _deprecation_warning(message)
+    _deprecation_warning(deprecation_notice(deprecated_in, removed_in, help_message))
 
 
 def _deprecation_warning(message: str) -> None:
-    warnings.simplefilter("always", DeprecationWarning)  # turn off filter
-
-    warnings.warn(
-        message,
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-    warnings.simplefilter("default", DeprecationWarning)  # reset filter
+    with warnings.catch_warnings():  # temporarily override warning handling
+        warnings.warn(
+            message,
+            category=DeprecationWarning,
+            stacklevel=2,
+        )

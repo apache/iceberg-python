@@ -14,14 +14,40 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+import pytest
+
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import BucketTransform, TruncateTransform
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    TruncateTransform,
+    YearTransform,
+)
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
+    BinaryType,
+    DateType,
+    DecimalType,
+    FixedType,
     IntegerType,
+    LongType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
 )
 
 
@@ -118,6 +144,27 @@ def test_deserialize_partition_spec() -> None:
     )
 
 
+def test_partition_spec_to_path() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="str", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="other_str", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="int", field_type=IntegerType(), required=True),
+    )
+
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="my#str%bucket"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="other str+bucket"),
+        PartitionField(source_id=3, field_id=1002, transform=BucketTransform(num_buckets=25), name="my!int:bucket"),
+        spec_id=3,
+    )
+
+    record = Record(**{"my#str%bucket": "my+str", "other str+bucket": "( )", "my!int:bucket": 10})  # type: ignore
+
+    # Both partition field names and values should be URL encoded, with spaces mapping to plus signs, to match the Java
+    # behaviour: https://github.com/apache/iceberg/blob/ca3db931b0f024f0412084751ac85dd4ef2da7e7/api/src/main/java/org/apache/iceberg/PartitionSpec.java#L198-L204
+    assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
+
+
 def test_partition_type(table_schema_simple: Schema) -> None:
     spec = PartitionSpec(
         PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate"),
@@ -129,3 +176,56 @@ def test_partition_type(table_schema_simple: Schema) -> None:
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
         NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
     )
+
+
+@pytest.mark.parametrize(
+    "source_type, value",
+    [
+        (IntegerType(), 22),
+        (LongType(), 22),
+        (DecimalType(5, 9), Decimal(19.25)),
+        (DateType(), datetime.date(1925, 5, 22)),
+        (TimeType(), datetime.time(19, 25, 00)),
+        (TimestampType(), datetime.datetime(19, 5, 1, 22, 1, 1)),
+        (TimestamptzType(), datetime.datetime(19, 5, 1, 22, 1, 1, tzinfo=datetime.timezone.utc)),
+        (StringType(), "abc"),
+        (UUIDType(), UUID("12345678-1234-5678-1234-567812345678").bytes),
+        (FixedType(5), 'b"\x8e\xd1\x87\x01"'),
+        (BinaryType(), b"\x8e\xd1\x87\x01"),
+    ],
+)
+def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType, value: Any) -> None:
+    import pyarrow as pa
+
+    all_transforms = [  # type: ignore
+        IdentityTransform(),
+        BucketTransform(10),
+        TruncateTransform(10),
+        YearTransform(),
+        MonthTransform(),
+        DayTransform(),
+        HourTransform(),
+    ]
+    for t in all_transforms:
+        if t.can_transform(source_type):
+            try:
+                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+            except ValueError as e:
+                # Skipping unsupported feature
+                if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
+                    continue
+                raise
+
+
+def test_deserialize_partition_field_v2() -> None:
+    json_partition_spec = """{"source-id": 1, "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+
+    field = PartitionField.model_validate_json(json_partition_spec)
+    assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")
+
+
+def test_deserialize_partition_field_v3() -> None:
+    json_partition_spec = """{"source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+
+    field = PartitionField.model_validate_json(json_partition_spec)
+    assert field == PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=19), name="str_truncate")

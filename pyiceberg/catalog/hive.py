@@ -26,6 +26,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Type,
     Union,
 )
@@ -79,13 +80,16 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
-    CommitTableRequest,
     CommitTableResponse,
     StagedTable,
     Table,
     TableProperties,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.update import (
+    TableRequirement,
+    TableUpdate,
+)
 from pyiceberg.typedef import EMPTY_DICT, Identifier, Properties
 from pyiceberg.types import (
     BinaryType,
@@ -273,11 +277,7 @@ class HiveCatalog(MetastoreCatalog):
 
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-        self._client = _HiveClient(
-            properties["uri"],
-            properties.get("ugi"),
-            PropertyUtil.property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
-        )
+        self._client = self._create_hive_client(properties)
 
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
@@ -286,6 +286,23 @@ class HiveCatalog(MetastoreCatalog):
             LOCK_CHECK_RETRIES,
             DEFAULT_LOCK_CHECK_RETRIES,
         )
+
+    @staticmethod
+    def _create_hive_client(properties: Dict[str, str]) -> _HiveClient:
+        last_exception = None
+        for uri in properties["uri"].split(","):
+            try:
+                return _HiveClient(
+                    properties["uri"],
+                    properties.get("ugi"),
+                    property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
+                )
+            except BaseException as e:
+                last_exception = e
+        if last_exception is not None:
+            raise last_exception
+        else:
+            raise ValueError(f"Unable to connect to hive using uri: {properties['uri']}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
         properties: Dict[str, str] = table.parameters
@@ -317,7 +334,7 @@ class HiveCatalog(MetastoreCatalog):
         )
 
     def _convert_iceberg_into_hive(self, table: Table) -> HiveTable:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
+        identifier_tuple = table.name()
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         current_time_millis = int(time.time() * 1000)
 
@@ -407,6 +424,27 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        io = self._load_file_io(location=metadata_location)
+        metadata_file = io.new_input(metadata_location)
+        staged_table = StagedTable(
+            identifier=(database_name, table_name),
+            metadata=FromInputFile.table_metadata(metadata_file),
+            metadata_location=metadata_location,
+            io=io,
+            catalog=self,
+        )
+        tbl = self._convert_iceberg_into_hive(staged_table)
+        with self._client as open_client:
+            self._create_hive_table(open_client, tbl)
+            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+
+        return self._convert_hive_into_iceberg(hive_table)
+
+    def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
@@ -438,11 +476,15 @@ class HiveCatalog(MetastoreCatalog):
 
         return _do_wait_for_lock()
 
-    def _commit_table(self, table_request: CommitTableRequest) -> CommitTableResponse:
-        """Update the table.
+    def commit_table(
+        self, table: Table, requirements: Tuple[TableRequirement, ...], updates: Tuple[TableUpdate, ...]
+    ) -> CommitTableResponse:
+        """Commit updates to a table.
 
         Args:
-            table_request (CommitTableRequest): The table requests to be carried out.
+            table (Table): The table to be updated.
+            requirements: (Tuple[TableRequirement, ...]): Table requirements.
+            updates: (Tuple[TableUpdate, ...]): Table updates.
 
         Returns:
             CommitTableResponse: The updated metadata.
@@ -451,10 +493,8 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(
-            tuple(table_request.identifier.namespace.root + [table_request.identifier.name])
-        )
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        table_identifier = table.name()
+        database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
         with self._client as open_client:
@@ -465,7 +505,7 @@ class HiveCatalog(MetastoreCatalog):
                     if lock.state == LockState.WAITING:
                         self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
                     else:
-                        raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}")
+                        raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
 
                 hive_table: Optional[HiveTable]
                 current_table: Optional[Table]
@@ -476,7 +516,7 @@ class HiveCatalog(MetastoreCatalog):
                     hive_table = None
                     current_table = None
 
-                updated_staged_table = self._update_and_stage_table(current_table, table_request)
+                updated_staged_table = self._update_and_stage_table(current_table, table_identifier, requirements, updates)
                 if current_table and updated_staged_table.metadata == current_table.metadata:
                     # no changes, do nothing
                     return CommitTableResponse(metadata=current_table.metadata, metadata_location=current_table.metadata_location)
@@ -506,7 +546,7 @@ class HiveCatalog(MetastoreCatalog):
                     )
                     self._create_hive_table(open_client, hive_table)
             except WaitingForLockException as e:
-                raise CommitFailedException(f"Failed to acquire lock for {table_request.identifier}, state: {lock.state}") from e
+                raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}") from e
             finally:
                 open_client.unlock(UnlockRequest(lockid=lock.lockid))
 
@@ -529,8 +569,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         with self._client as open_client:
             hive_table = self._get_hive_table(open_client, database_name, table_name)
@@ -546,8 +585,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         try:
             with self._client as open_client:
                 open_client.drop_table(dbname=database_name, name=table_name, deleteData=False)
@@ -574,8 +612,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: When a table with the name does not exist.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
             with self._client as open_client:
@@ -629,7 +666,7 @@ class HiveCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     def list_tables(self, namespace: Union[str, Identifier]) -> List[Identifier]:
-        """List tables under the given namespace in the catalog (including non-Iceberg tables).
+        """List Iceberg tables under the given namespace in the catalog.
 
         When the database doesn't exist, it will just return an empty list.
 
@@ -644,7 +681,13 @@ class HiveCatalog(MetastoreCatalog):
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
-            return [(database_name, table_name) for table_name in open_client.get_all_tables(db_name=database_name)]
+            return [
+                (database_name, table.tableName)
+                for table in open_client.get_table_objects_by_name(
+                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                )
+                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
+            ]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         """List namespaces from the given namespace. If not given, list top-level namespaces from the catalog.
@@ -724,3 +767,6 @@ class HiveCatalog(MetastoreCatalog):
         expected_to_change = (removals or set()).difference(removed)
 
         return PropertiesUpdateSummary(removed=list(removed or []), updated=list(updated or []), missing=list(expected_to_change))
+
+    def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError

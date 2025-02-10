@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+import json
 import uuid
 from copy import copy
 from typing import Any, Dict
@@ -42,29 +43,11 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
-    AddSnapshotUpdate,
-    AddSortOrderUpdate,
-    AssertCreate,
-    AssertCurrentSchemaId,
-    AssertDefaultSortOrderId,
-    AssertDefaultSpecId,
-    AssertLastAssignedFieldId,
-    AssertLastAssignedPartitionId,
-    AssertRefSnapshotId,
-    AssertTableUUID,
     CommitTableRequest,
-    RemovePropertiesUpdate,
-    SetDefaultSortOrderUpdate,
-    SetPropertiesUpdate,
-    SetSnapshotRefUpdate,
     StaticTable,
     Table,
     TableIdentifier,
-    UpdateSchema,
-    _apply_table_update,
     _match_deletes_to_data_file,
-    _TableMetadataUpdateContext,
-    update_table_metadata,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import SnapshotRef
@@ -82,6 +65,29 @@ from pyiceberg.table.sorting import (
     SortField,
     SortOrder,
 )
+from pyiceberg.table.statistics import BlobMetadata, StatisticsFile
+from pyiceberg.table.update import (
+    AddSnapshotUpdate,
+    AddSortOrderUpdate,
+    AssertCreate,
+    AssertCurrentSchemaId,
+    AssertDefaultSortOrderId,
+    AssertDefaultSpecId,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
+    AssertRefSnapshotId,
+    AssertTableUUID,
+    RemovePropertiesUpdate,
+    RemoveStatisticsUpdate,
+    SetDefaultSortOrderUpdate,
+    SetPropertiesUpdate,
+    SetSnapshotRefUpdate,
+    SetStatisticsUpdate,
+    _apply_table_update,
+    _TableMetadataUpdateContext,
+    update_table_metadata,
+)
+from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
@@ -510,6 +516,41 @@ def test_add_column(table_v2: Table) -> None:
     )
     assert apply_schema.schema_id == 2
     assert apply_schema.highest_field_id == 4
+
+
+def test_update_column(table_v1: Table, table_v2: Table) -> None:
+    """
+    Table should be able to update existing property `doc`
+    Table should also be able to update property `required`, if the field is not an identifier field.
+    """
+    COMMENT2 = "comment2"
+    for table in [table_v1, table_v2]:
+        original_schema = table.schema()
+        # update existing doc to a new doc
+        assert original_schema.find_field("y").doc == "comment"
+        new_schema = table.transaction().update_schema().update_column("y", doc=COMMENT2)._apply()
+        assert new_schema.find_field("y").doc == COMMENT2, "failed to update existing field doc"
+
+        # update existing doc to an empty string
+        assert new_schema.find_field("y").doc == COMMENT2
+        new_schema2 = table.transaction().update_schema().update_column("y", doc="")._apply()
+        assert new_schema2.find_field("y").doc == "", "failed to remove existing field doc"
+
+        # update required to False
+        assert original_schema.find_field("z").required is True
+        new_schema3 = table.transaction().update_schema().update_column("z", required=False)._apply()
+        assert new_schema3.find_field("z").required is False, "failed to update existing field required"
+
+        # assert the above two updates also works with union_by_name
+        assert (
+            table.update_schema().union_by_name(new_schema)._apply() == new_schema
+        ), "failed to update existing field doc with union_by_name"
+        assert (
+            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
+        ), "failed to remove existing field doc with union_by_name"
+        assert (
+            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
+        ), "failed to update existing field required with union_by_name"
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
@@ -1040,52 +1081,56 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
 
 
 def test_correct_schema() -> None:
-    table_metadata = TableMetadataV2(**{
-        "format-version": 2,
-        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
-        "location": "s3://bucket/test/location",
-        "last-sequence-number": 34,
-        "last-updated-ms": 1602638573590,
-        "last-column-id": 3,
-        "current-schema-id": 1,
-        "schemas": [
-            {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
-            {
-                "type": "struct",
-                "schema-id": 1,
-                "identifier-field-ids": [1, 2],
-                "fields": [
-                    {"id": 1, "name": "x", "required": True, "type": "long"},
-                    {"id": 2, "name": "y", "required": True, "type": "long"},
-                    {"id": 3, "name": "z", "required": True, "type": "long"},
-                ],
-            },
-        ],
-        "default-spec-id": 0,
-        "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
-        "last-partition-id": 1000,
-        "default-sort-order-id": 0,
-        "sort-orders": [],
-        "current-snapshot-id": 123,
-        "snapshots": [
-            {
-                "snapshot-id": 234,
-                "timestamp-ms": 1515100955770,
-                "sequence-number": 0,
-                "summary": {"operation": "append"},
-                "manifest-list": "s3://a/b/1.avro",
-                "schema-id": 10,
-            },
-            {
-                "snapshot-id": 123,
-                "timestamp-ms": 1515100955770,
-                "sequence-number": 0,
-                "summary": {"operation": "append"},
-                "manifest-list": "s3://a/b/1.avro",
-                "schema-id": 0,
-            },
-        ],
-    })
+    table_metadata = TableMetadataV2(
+        **{
+            "format-version": 2,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": "s3://bucket/test/location",
+            "last-sequence-number": 34,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 3,
+            "current-schema-id": 1,
+            "schemas": [
+                {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+                {
+                    "type": "struct",
+                    "schema-id": 1,
+                    "identifier-field-ids": [1, 2],
+                    "fields": [
+                        {"id": 1, "name": "x", "required": True, "type": "long"},
+                        {"id": 2, "name": "y", "required": True, "type": "long"},
+                        {"id": 3, "name": "z", "required": True, "type": "long"},
+                    ],
+                },
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [
+                {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}
+            ],
+            "last-partition-id": 1000,
+            "default-sort-order-id": 0,
+            "sort-orders": [],
+            "current-snapshot-id": 123,
+            "snapshots": [
+                {
+                    "snapshot-id": 234,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 10,
+                },
+                {
+                    "snapshot-id": 123,
+                    "timestamp-ms": 1515100955770,
+                    "sequence-number": 0,
+                    "summary": {"operation": "append"},
+                    "manifest-list": "s3://a/b/1.avro",
+                    "schema-id": 0,
+                },
+            ],
+        }
+    )
 
     t = Table(
         identifier=("default", "t1"),
@@ -1206,3 +1251,83 @@ def test_update_metadata_log_overflow(table_v2: Table) -> None:
         table_v2.metadata_location,
     )
     assert len(new_metadata.metadata_log) == 1
+
+
+def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
+    snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
+
+    blob_metadata = BlobMetadata(
+        type="apache-datasketches-theta-v1",
+        snapshot_id=snapshot_id,
+        sequence_number=2,
+        fields=[1],
+        properties={"prop-key": "prop-value"},
+    )
+
+    statistics_file = StatisticsFile(
+        snapshot_id=snapshot_id,
+        statistics_path="s3://bucket/warehouse/stats.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[blob_metadata],
+    )
+
+    update = SetStatisticsUpdate(
+        snapshot_id=snapshot_id,
+        statistics=statistics_file,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+
+    expected = """
+    {
+      "snapshot-id": 3055729675574597004,
+      "statistics-path": "s3://bucket/warehouse/stats.puffin",
+      "file-size-in-bytes": 124,
+      "file-footer-size-in-bytes": 27,
+      "blob-metadata": [
+        {
+          "type": "apache-datasketches-theta-v1",
+          "snapshot-id": 3055729675574597004,
+          "sequence-number": 2,
+          "fields": [
+            1
+          ],
+          "properties": {
+            "prop-key": "prop-value"
+          }
+        }
+      ]
+    }"""
+
+    assert len(new_metadata.statistics) == 2
+
+    updated_statistics = [stat for stat in new_metadata.statistics if stat.snapshot_id == snapshot_id]
+
+    assert len(updated_statistics) == 1
+    assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
+
+
+def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
+    update = RemoveStatisticsUpdate(
+        snapshot_id=3055729675574597004,
+    )
+
+    remove_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (update,),
+    )
+
+    assert len(remove_metadata.statistics) == 1
+
+    with pytest.raises(
+        ValueError,
+        match="Statistics with snapshot id 123456789 does not exist",
+    ):
+        update_table_metadata(
+            table_v2_with_statistics.metadata,
+            (RemoveStatisticsUpdate(snapshot_id=123456789),),
+        )

@@ -17,15 +17,16 @@
 # pylint:disable=redefined-outer-name
 import math
 import os
+import random
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
-import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 import pytz
@@ -39,12 +40,13 @@ from pyiceberg.catalog.hive import HiveCatalog
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import GreaterThanOrEqual, In, Not
+from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan, Not
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
-from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
+from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
     DateType,
     DoubleType,
@@ -284,6 +286,33 @@ def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_w
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_object_storage_data_files(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    tbl = _create_table(
+        session_catalog=session_catalog,
+        identifier="default.object_stored",
+        properties={"format-version": format_version, TableProperties.OBJECT_STORE_ENABLED: True},
+        data=[arrow_table_with_null],
+    )
+    tbl.append(arrow_table_with_null)
+
+    paths = tbl.inspect.data_files().to_pydict()["file_path"]
+    assert len(paths) == 2
+
+    for location in paths:
+        assert location.startswith("s3://warehouse/default/object_stored/data/")
+        parts = location.split("/")
+        assert len(parts) == 11
+
+        # Entropy binary directories should have been injected
+        for dir_name in parts[6:10]:
+            assert dir_name
+            assert all(c in "01" for c in dir_name)
+
+
+@pytest.mark.integration
 def test_python_writes_with_spark_snapshot_reads(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
 ) -> None:
@@ -322,20 +351,24 @@ def test_python_writes_special_character_column_with_spark_reads(
             {"street": "789", "city": "Random", "zip": 10112, column_name_with_special_character: "c"},
         ],
     }
-    pa_schema = pa.schema([
-        pa.field(column_name_with_special_character, pa.string()),
-        pa.field("id", pa.int32()),
-        pa.field("name", pa.string()),
-        pa.field(
-            "address",
-            pa.struct([
-                pa.field("street", pa.string()),
-                pa.field("city", pa.string()),
-                pa.field("zip", pa.int32()),
-                pa.field(column_name_with_special_character, pa.string()),
-            ]),
-        ),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field(column_name_with_special_character, pa.string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.string()),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.string()),
+                        pa.field("city", pa.string()),
+                        pa.field("zip", pa.int32()),
+                        pa.field(column_name_with_special_character, pa.string()),
+                    ]
+                ),
+            ),
+        ]
+    )
     arrow_table_with_special_character_column = pa.Table.from_pydict(TEST_DATA_WITH_SPECIAL_CHARACTER_COLUMN, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
@@ -355,10 +388,12 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
         "id": [1, 2, 3, 1, 1],
         "name": ["AB", "CD", "EF", "CD", "EF"],
     }
-    pa_schema = pa.schema([
-        pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
-        pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
+            pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
+        ]
+    )
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
 
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
@@ -385,20 +420,24 @@ def test_python_writes_with_small_and_large_types_spark_reads(
             {"street": "789", "city": "Random", "zip": 10112, "bar": "c"},
         ],
     }
-    pa_schema = pa.schema([
-        pa.field("foo", pa.large_string()),
-        pa.field("id", pa.int32()),
-        pa.field("name", pa.string()),
-        pa.field(
-            "address",
-            pa.struct([
-                pa.field("street", pa.string()),
-                pa.field("city", pa.string()),
-                pa.field("zip", pa.int32()),
-                pa.field("bar", pa.large_string()),
-            ]),
-        ),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field("foo", pa.large_string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.string()),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.string()),
+                        pa.field("city", pa.string()),
+                        pa.field("zip", pa.int32()),
+                        pa.field("bar", pa.large_string()),
+                    ]
+                ),
+            ),
+        ]
+    )
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": format_version}, schema=pa_schema)
 
@@ -407,20 +446,24 @@ def test_python_writes_with_small_and_large_types_spark_reads(
     pyiceberg_df = tbl.scan().to_pandas()
     assert spark_df.equals(pyiceberg_df)
     arrow_table_on_read = tbl.scan().to_arrow()
-    assert arrow_table_on_read.schema == pa.schema([
-        pa.field("foo", pa.large_string()),
-        pa.field("id", pa.int32()),
-        pa.field("name", pa.large_string()),
-        pa.field(
-            "address",
-            pa.struct([
-                pa.field("street", pa.large_string()),
-                pa.field("city", pa.large_string()),
-                pa.field("zip", pa.int32()),
-                pa.field("bar", pa.large_string()),
-            ]),
-        ),
-    ])
+    assert arrow_table_on_read.schema == pa.schema(
+        [
+            pa.field("foo", pa.large_string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.large_string()),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.large_string()),
+                        pa.field("city", pa.large_string()),
+                        pa.field("zip", pa.int32()),
+                        pa.field("bar", pa.large_string()),
+                    ]
+                ),
+            ),
+        ]
+    )
 
 
 @pytest.mark.integration
@@ -549,7 +592,7 @@ def test_write_parquet_unsupported_properties(
     identifier = "default.write_parquet_unsupported_properties"
 
     tbl = _create_table(session_catalog, identifier, properties, [])
-    with pytest.raises(NotImplementedError):
+    with pytest.warns(UserWarning, match=r"Parquet writer option.*"):
         tbl.append(arrow_table_with_null)
 
 
@@ -716,10 +759,12 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
             "foo": ["a", None, "z"],
             "bar": [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with tbl.transaction() as txn:
@@ -737,7 +782,7 @@ def test_write_and_evolve(session_catalog: Catalog, format_version: int) -> None
 def test_create_table_transaction(catalog: Catalog, format_version: int) -> None:
     if format_version == 1 and isinstance(catalog, RestCatalog):
         pytest.skip(
-            "There is a bug in the REST catalog (maybe server side) that prevents create and commit a staged version 1 table"
+            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
         )
 
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
@@ -759,10 +804,12 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
             "foo": ["a", None, "z"],
             "bar": [19, None, 25],
         },
-        schema=pa.schema([
-            pa.field("foo", pa.string(), nullable=True),
-            pa.field("bar", pa.int32(), nullable=True),
-        ]),
+        schema=pa.schema(
+            [
+                pa.field("foo", pa.string(), nullable=True),
+                pa.field("bar", pa.int32(), nullable=True),
+            ]
+        ),
     )
 
     with catalog.create_table_transaction(
@@ -784,6 +831,62 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
     tbl = catalog.load_table(identifier=identifier)
     assert tbl.format_version == format_version
     assert len(tbl.scan().to_arrow()) == 6
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_create_table_with_non_default_values(catalog: Catalog, table_schema_with_all_types: Schema, format_version: int) -> None:
+    if format_version == 1 and isinstance(catalog, RestCatalog):
+        pytest.skip(
+            "There is a bug in the REST catalog image (https://github.com/apache/iceberg/issues/8756) that prevents create and commit a staged version 1 table"
+        )
+
+    identifier = f"default.arrow_create_table_transaction_with_non_default_values_{catalog.name}_{format_version}"
+    identifier_ref = f"default.arrow_create_table_transaction_with_non_default_values_ref_{catalog.name}_{format_version}"
+
+    try:
+        catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    try:
+        catalog.drop_table(identifier=identifier_ref)
+    except NoSuchTableError:
+        pass
+
+    iceberg_spec = PartitionSpec(
+        *[PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="integer_partition")]
+    )
+
+    sort_order = SortOrder(*[SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.ASC)])
+
+    txn = catalog.create_table_transaction(
+        identifier=identifier,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+    txn.commit_transaction()
+
+    tbl = catalog.load_table(identifier)
+
+    tbl_ref = catalog.create_table(
+        identifier=identifier_ref,
+        schema=table_schema_with_all_types,
+        partition_spec=iceberg_spec,
+        sort_order=sort_order,
+        properties={"format-version": format_version},
+    )
+
+    assert tbl.format_version == tbl_ref.format_version
+    assert tbl.schema() == tbl_ref.schema()
+    assert tbl.schemas() == tbl_ref.schemas()
+    assert tbl.spec() == tbl_ref.spec()
+    assert tbl.specs() == tbl_ref.specs()
+    assert tbl.sort_order() == tbl_ref.sort_order()
+    assert tbl.sort_orders() == tbl_ref.sort_orders()
 
 
 @pytest.mark.integration
@@ -1013,9 +1116,11 @@ def test_table_write_schema_with_valid_nullability_diff(
     table_schema = Schema(
         NestedField(field_id=1, name="long", field_type=LongType(), required=False),
     )
-    other_schema = pa.schema((
-        pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
+        )
+    )
     arrow_table = pa.Table.from_pydict(
         {
             "long": [1, 9],
@@ -1056,13 +1161,15 @@ def test_table_write_schema_with_valid_upcast(
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
     assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
-        pa.schema((
-            pa.field("long", pa.int64(), nullable=True),
-            pa.field("list", pa.large_list(pa.int64()), nullable=False),
-            pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
-            pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
-            pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
-        ))
+        pa.schema(
+            (
+                pa.field("long", pa.int64(), nullable=True),
+                pa.field("list", pa.large_list(pa.int64()), nullable=False),
+                pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+                pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
+                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+            )
+        )
     )
     lhs = spark.table(f"{identifier}").toPandas()
     rhs = written_arrow_table.to_pandas()
@@ -1243,7 +1350,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (9, b"\x00\x9bj\xca8\xf1\x05\x00"),
             (10, b"\x9eK\x00\x00"),
             (11, b"\x01"),
-            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" b"\x00\x00\x00\x00"),
+            (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
         ]
         assert tbl_a_data_file["nan_value_counts"] == []
         assert tbl_a_data_file["null_value_counts"] == [
@@ -1276,7 +1383,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (9, b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
             (10, b"\xd9K\x00\x00"),
             (11, b"\x12"),
-            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11" b"\x11\x11\x11\x11"),
+            (12, b"\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11"),
         ]
         assert tbl_a_data_file["value_counts"] == [
             (1, 3),
@@ -1310,13 +1417,29 @@ def test_table_v1_with_null_nested_namespace(session_catalog: Catalog, arrow_tab
     identifier = "default.lower.table_v1_with_null_nested_namespace"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
     assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
-    # TODO: Add session_catalog.table_exists check here when we integrate a REST catalog image
-    # that supports HEAD request on table endpoint
 
-    # assert session_catalog.table_exists(identifier)
+    assert session_catalog.load_table(identifier) is not None
+    assert session_catalog.table_exists(identifier)
 
     # We expect no error here
     session_catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+def test_view_exists(
+    spark: SparkSession,
+    session_catalog: Catalog,
+) -> None:
+    identifier = "default.some_view"
+    spark.sql(
+        f"""
+        CREATE VIEW {identifier}
+        AS
+        (SELECT 1 as some_col)
+    """
+    ).collect()
+    assert session_catalog.view_exists(identifier)
+    session_catalog.drop_view(identifier)  # clean up
 
 
 @pytest.mark.integration
@@ -1344,18 +1467,7 @@ def test_overwrite_all_data_with_filter(session_catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
-def test_delete_threshold() -> None:
-    catalog = load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
+def test_delete_threshold(session_catalog: Catalog) -> None:
     schema = Schema(
         NestedField(field_id=101, name="id", field_type=LongType(), required=True),
         NestedField(field_id=103, name="created_at", field_type=DateType(), required=False),
@@ -1365,13 +1477,13 @@ def test_delete_threshold() -> None:
     partition_spec = PartitionSpec(PartitionField(source_id=103, field_id=2000, transform=DayTransform(), name="created_at_day"))
 
     try:
-        catalog.drop_table(
+        session_catalog.drop_table(
             identifier="default.scores",
         )
     except NoSuchTableError:
         pass
 
-    catalog.create_table(
+    session_catalog.create_table(
         identifier="default.scores",
         schema=schema,
         partition_spec=partition_spec,
@@ -1383,19 +1495,19 @@ def test_delete_threshold() -> None:
     date_start, date_end = date(2024, 1, 1), date(2024, 2, 1)
 
     # Generate the 'id' column
-    id_column = np.random.randint(id_min, id_max, num_rows)
+    id_column = [random.randint(id_min, id_max) for _ in range(num_rows)]
 
     # Generate the 'created_at' column as dates only
-    date_range = pd.date_range(start=date_start, end=date_end, freq="D")  # Daily frequency for dates
-    created_at_column = np.random.choice(date_range, num_rows)  # Convert to string (YYYY-MM-DD format)
+    date_range = pd.date_range(start=date_start, end=date_end, freq="D").to_list()  # Daily frequency for dates
+    created_at_column = [random.choice(date_range) for _ in range(num_rows)]  # Convert to string (YYYY-MM-DD format)
 
     # Generate the 'relevancy_score' column with a peak around 0.1
-    relevancy_score_column = np.random.beta(a=2, b=20, size=num_rows)  # Adjusting parameters to peak around 0.1
+    relevancy_score_column = [random.betavariate(2, 20) for _ in range(num_rows)]  # Adjusting parameters to peak around 0.1
 
     # Create the dataframe
     df = pd.DataFrame({"id": id_column, "created_at": created_at_column, "relevancy_score": relevancy_score_column})
 
-    iceberg_table = catalog.load_table("default.scores")
+    iceberg_table = session_catalog.load_table("default.scores")
 
     # Convert the pandas DataFrame to a PyArrow Table with the Iceberg schema
     arrow_schema = iceberg_table.schema().as_arrow()
@@ -1409,3 +1521,121 @@ def test_delete_threshold() -> None:
     assert len(iceberg_table.scan(row_filter=Not(delete_condition)).to_arrow()) == lower_before
     iceberg_table.delete(delete_condition)
     assert len(iceberg_table.scan().to_arrow()) == lower_before
+
+
+@pytest.mark.integration
+def test_rewrite_manifest_after_partition_evolution(session_catalog: Catalog) -> None:
+    random.seed(876)
+    N = 1440
+    d = {
+        "timestamp": pa.array([datetime(2023, 1, 1, 0, 0, 0) + timedelta(minutes=i) for i in range(N)]),
+        "category": pa.array([random.choice(["A", "B", "C"]) for _ in range(N)]),
+        "value": pa.array([random.gauss(0, 1) for _ in range(N)]),
+    }
+    data = pa.Table.from_pydict(d)
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.test_error_table",
+        )
+    except NoSuchTableError:
+        pass
+
+    table = session_catalog.create_table(
+        "default.test_error_table",
+        schema=data.schema,
+    )
+
+    with table.update_spec() as update:
+        update.add_field("timestamp", transform=HourTransform())
+
+    table.append(data)
+
+    with table.update_spec() as update:
+        update.add_field("category", transform=IdentityTransform())
+
+    data_ = data.filter(
+        (pc.field("category") == "A")
+        & (pc.field("timestamp") >= datetime(2023, 1, 1, 0))
+        & (pc.field("timestamp") < datetime(2023, 1, 1, 1))
+    )
+
+    table.overwrite(
+        df=data_,
+        overwrite_filter=And(
+            And(
+                GreaterThanOrEqual("timestamp", datetime(2023, 1, 1, 0).isoformat()),
+                LessThan("timestamp", datetime(2023, 1, 1, 1).isoformat()),
+            ),
+            EqualTo("category", "A"),
+        ),
+    )
+
+
+@pytest.mark.integration
+def test_writing_null_structs(session_catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    schema = pa.schema(
+        [
+            pa.field(
+                "struct_field_1",
+                pa.struct(
+                    [
+                        pa.field("string_nested_1", pa.string()),
+                        pa.field("int_item_2", pa.int32()),
+                        pa.field("float_item_2", pa.float32()),
+                    ]
+                ),
+            ),
+        ]
+    )
+
+    records = [
+        {
+            "struct_field_1": {
+                "string_nested_1": "nest_1",
+                "int_item_2": 1234,
+                "float_item_2": 1.234,
+            },
+        },
+        {},
+    ]
+
+    try:
+        session_catalog.drop_table(
+            identifier="default.test_writing_null_structs",
+        )
+    except NoSuchTableError:
+        pass
+
+    table = session_catalog.create_table("default.test_writing_null_structs", schema)
+
+    pyarrow_table: pa.Table = pa.Table.from_pylist(records, schema=schema)
+    table.append(pyarrow_table)
+
+    assert pyarrow_table.to_pandas()["struct_field_1"].tolist() == table.scan().to_pandas()["struct_field_1"].tolist()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_abort_table_transaction_on_exception(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.table_test_abort_table_transaction_on_exception"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
+
+    # Pre-populate some data
+    tbl.append(arrow_table_with_null)
+    table_size = len(arrow_table_with_null)
+    assert len(tbl.scan().to_pandas()) == table_size
+
+    # try to commit a transaction that raises exception at the middle
+    with pytest.raises(ValueError):
+        with tbl.transaction() as txn:
+            txn.append(arrow_table_with_null)
+            raise ValueError
+            txn.append(arrow_table_with_null)  # type: ignore
+
+    # Validate the transaction is aborted and no partial update is applied
+    assert len(tbl.scan().to_pandas()) == table_size  # type: ignore

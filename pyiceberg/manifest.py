@@ -28,9 +28,13 @@ from typing import (
     List,
     Literal,
     Optional,
+    Tuple,
     Type,
+    Union,
 )
 
+from cachetools import LRUCache, cached
+from cachetools.keys import hashkey
 from pydantic_core import to_json
 
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
@@ -93,6 +97,13 @@ class FileFormat(str, Enum):
     AVRO = "AVRO"
     PARQUET = "PARQUET"
     ORC = "ORC"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Union[None, str]:
+        for member in cls:
+            if member.value == str(value).upper():
+                return member
+        return None
 
     def __repr__(self) -> str:
         """Return the string representation of the FileFormat class."""
@@ -281,28 +292,32 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 
 
 def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
-    data_file_partition_type = StructType(*[
-        NestedField(
-            field_id=field.field_id,
-            name=field.name,
-            field_type=field.field_type,
-            required=field.required,
-        )
-        for field in partition_type.fields
-    ])
+    data_file_partition_type = StructType(
+        *[
+            NestedField(
+                field_id=field.field_id,
+                name=field.name,
+                field_type=field.field_type,
+                required=field.required,
+            )
+            for field in partition_type.fields
+        ]
+    )
 
-    return StructType(*[
-        NestedField(
-            field_id=102,
-            name="partition",
-            field_type=data_file_partition_type,
-            required=True,
-            doc="Partition data tuple, schema based on the partition spec",
-        )
-        if field.field_id == 102
-        else field
-        for field in DATA_FILE_TYPE[format_version].fields
-    ])
+    return StructType(
+        *[
+            NestedField(
+                field_id=102,
+                name="partition",
+                field_type=data_file_partition_type,
+                required=True,
+                doc="Partition data tuple, schema based on the partition spec",
+            )
+            if field.field_id == 102
+            else field
+            for field in DATA_FILE_TYPE[format_version].fields
+        ]
+    )
 
 
 class DataFile(Record):
@@ -387,10 +402,12 @@ MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_v
 
 
 def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file: StructType) -> Schema:
-    return Schema(*[
-        NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
-        for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
-    ])
+    return Schema(
+        *[
+            NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
+            for field in MANIFEST_ENTRY_SCHEMAS[format_version].fields
+        ]
+    )
 
 
 class ManifestEntry(Record):
@@ -618,6 +635,13 @@ class ManifestFile(Record):
                 for entry in reader
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
+
+
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
+def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+    """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
+    file = io.new_input(manifest_list)
+    return tuple(read_manifest_list(file))
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
@@ -947,7 +971,11 @@ class ManifestListWriterV1(ManifestListWriter):
         super().__init__(
             format_version=1,
             output_file=output_file,
-            meta={"snapshot-id": str(snapshot_id), "parent-snapshot-id": str(parent_snapshot_id), "format-version": "1"},
+            meta={
+                "snapshot-id": str(snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
+                "format-version": "1",
+            },
         )
 
     def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
@@ -966,7 +994,7 @@ class ManifestListWriterV2(ManifestListWriter):
             output_file=output_file,
             meta={
                 "snapshot-id": str(snapshot_id),
-                "parent-snapshot-id": str(parent_snapshot_id),
+                "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
             },

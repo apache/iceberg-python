@@ -40,7 +40,7 @@ After downloading the source tarball, signature, checksum, and KEYS file, here a
 First, import the keys.
 
 ```sh
-curl https://dist.apache.org/repos/dist/dev/iceberg/KEYS -o KEYS
+curl https://downloads.apache.org/iceberg/KEYS -o KEYS
 gpg --import KEYS
 ```
 
@@ -84,7 +84,7 @@ cd pyiceberg-${PYICEBERG_RELEASE_VERSION}
 
 Run RAT checks to validate license header:
 
-```
+```shell
 ./dev/check-license
 ```
 
@@ -111,14 +111,16 @@ To run the full test coverage, with both unit tests and integration tests:
 make test-coverage
 ```
 
-This will spin up Docker containers to faciliate running test coverage.
+This will spin up Docker containers to facilitate running test coverage.
 
 # Cast the vote
 
 Votes are cast by replying to the release candidate announcement email on the dev mailing list with either `+1`, `0`, or `-1`. For example :
 
-> \[ \] +1 Release this as PyIceberg 0.3.0 <br>
-> \[ \] +0 <br>
-> \[ \] -1 Do not release this because… <br>
+> [ ] +1 Release this as PyIceberg 0.3.0
+>
+> [ ] +0
+>
+> [ ] -1 Do not release this because…
 
 In addition to your vote, it’s customary to specify if your vote is binding or non-binding. Only members of the Project Management Committee have formally binding votes. If you’re unsure, you can specify that your vote is non-binding. To read more about voting in the Apache framework, checkout the [Voting](https://www.apache.org/foundation/voting.html) information page on the Apache foundation’s website.
