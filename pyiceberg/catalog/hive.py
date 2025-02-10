@@ -121,7 +121,7 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
-HIVE_KERBEROS_AUTH = "hive.kerberos-authorization"
+HIVE_KERBEROS_AUTH = "hive.kerberos-authentication"
 HIVE_KERBEROS_AUTH_DEFAULT = False
 
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
@@ -163,11 +163,7 @@ class _HiveClient:
         self._client = Client(protocol)
 
     def __enter__(self) -> Client:
-        if not self._kerberos_auth:
-            self._transport.open()
-        else:
-            self._init_thrift_client()
-            self._transport.open()
+        self._transport.open()
 
         if self._ugi:
             self._client.set_ugi(*self._ugi)
