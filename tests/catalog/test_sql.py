@@ -1141,7 +1141,7 @@ def test_list_namespaces(catalog: SqlCatalog) -> None:
         catalog.create_namespace(namespace)
 
     ns_list = catalog.list_namespaces()
-    expected_list = [("db",), ("db2",), ("db%",)]
+    expected_list: list[tuple[str, ...]] = [("db",), ("db2",), ("db%",)]
     assert len(ns_list) == len(expected_list)
     for ns in expected_list:
         assert ns in ns_list
