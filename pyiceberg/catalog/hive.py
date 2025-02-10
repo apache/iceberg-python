@@ -152,7 +152,7 @@ class _HiveClient:
 
         self._init_thrift_client()
 
-    def _init_thrift_client(self):
+    def _init_thrift_client(self) -> None:
         url_parts = urlparse(self._uri)
 
         socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
@@ -168,7 +168,6 @@ class _HiveClient:
 
     def __enter__(self) -> Client:
         self._transport.open()
-
         if self._ugi:
             self._client.set_ugi(*self._ugi)
         return self._client
@@ -293,7 +292,7 @@ class HiveCatalog(MetastoreCatalog):
         for uri in properties["uri"].split(","):
             try:
                 return _HiveClient(
-                    properties["uri"],
+                    uri,
                     properties.get("ugi"),
                     property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
                 )

@@ -40,7 +40,6 @@ pip install "pyiceberg[s3fs,hive]"
 
 You can mix and match optional dependencies depending on your needs:
 
-
 | Key           | Description:                                                              |
 |---------------|---------------------------------------------------------------------------|
 | hive          | Support for the Hive metastore                                            |

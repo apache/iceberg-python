@@ -394,9 +394,9 @@ catalog:
 catalog:
   default:
     uri: thrift://localhost:9083
-    hive.hive2-compatible: true
-    hive.kerberos-authentication: true
     s3.endpoint: http://localhost:9000
+    s3.access-key-id: admin
+    s3.secret-access-key: password
 ```
 
 | Key                          | Example | Description                       |
