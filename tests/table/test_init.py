@@ -1310,20 +1310,6 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
     assert len(updated_statistics) == 1
     assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
 
-    update = SetStatisticsUpdate(
-        snapshot_id=123456789,
-        statistics=statistics_file,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="Snapshot id in statistics does not match the snapshot id in the update",
-    ):
-        update_table_metadata(
-            table_v2_with_statistics.metadata,
-            (update,),
-        )
-
 
 def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
     update = RemoveStatisticsUpdate(

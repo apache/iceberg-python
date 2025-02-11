@@ -529,6 +529,9 @@ class DynamoDbCatalog(MetastoreCatalog):
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        raise NotImplementedError
+
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:
         try:
             return self._get_dynamo_item(identifier=f"{database_name}.{table_name}", namespace=database_name)
