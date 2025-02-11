@@ -1237,9 +1237,22 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def metadata_file_location(self, file_name: str) -> str:
-        """Get the metadata file location using write.metadata.path from properties if set."""
-        return self.catalog.metadata_file_location(self.metadata.location, file_name, self.metadata.properties)
+    @staticmethod
+    def metadata_file_location(table_location: str, file_name: str, properties: Properties = EMPTY_DICT) -> str:
+        """Get the full path for a metadata file.
+
+        Args:
+            table_location (str): The base table location
+            file_name (str): Name of the metadata file
+            properties (Properties): Table properties that may contain custom metadata path
+
+        Returns:
+            str: Full path where the metadata file should be stored
+        """
+        if metadata_path := properties.get(TableProperties.WRITE_METADATA_PATH):
+            return f"{metadata_path.rstrip("/")}/{file_name}"
+
+        return f"{table_location}/metadata/{file_name}"
 
 
 class StaticTable(Table):
