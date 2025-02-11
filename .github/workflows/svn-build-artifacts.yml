@@ -25,9 +25,6 @@ on:
       VERSION:
         required: true
         type: string
-      RC:
-        required: true
-        type: string
 
 jobs:
   svn-build-artifacts:
@@ -35,7 +32,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
+        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14 ]
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +88,6 @@ jobs:
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v4
         with:
-          name: "svn-release-candidate-${{ inputs.VERSION }}rc${{ inputs.RC }}"
+          name: "svn-release-candidate-${{ inputs.VERSION }}"
           pattern: svn-release-candidate*
           delete-merged: true

@@ -121,8 +121,7 @@ jobs:
       - validate-library-version
     uses: ./.github/workflows/svn-build-artifacts.yml
     with:
-      version: ${{ needs.validate-inputs.outputs.VERSION }}
-      rc: ${{ needs.validate-inputs.outputs.RC }}
+      version: ${{ needs.validate-inputs.outputs.VERSION }}rc${{ needs.validate-inputs.outputs.RC }}
 
   # PyPi
   pypi-build-artifacts:
@@ -131,5 +130,4 @@ jobs:
       - validate-library-version
     uses: ./.github/workflows/pypi-build-artifacts.yml
     with:
-      version: ${{ needs.validate-inputs.outputs.VERSION }}
-      rc: ${{ needs.validate-inputs.outputs.RC }}
+      version: ${{ needs.validate-inputs.outputs.VERSION }}rc${{ needs.validate-inputs.outputs.RC }}

@@ -198,6 +198,8 @@ class TableProperties:
     WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
+    WRITE_DATA_PATH = "write.data.path"
+
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
     DELETE_MODE_MERGE_ON_READ = "merge-on-read"
@@ -269,7 +271,7 @@ class Transaction:
         existing_requirements = {type(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
-                self._requirements = self._requirements + requirements
+                self._requirements = self._requirements + (new_requirement,)
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
