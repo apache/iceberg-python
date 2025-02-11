@@ -1768,9 +1768,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 array = self._cast_if_needed(field, field_array)
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
-            elif field.optional:
+            elif field.optional or field.initial_default is not None:
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
-                field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
+                if field.initial_default is None:
+                    field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
+                else:
+                    field_arrays.append(pa.repeat(field.initial_default, len(struct_array)))
                 fields.append(self._construct_field(field, arrow_type))
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")

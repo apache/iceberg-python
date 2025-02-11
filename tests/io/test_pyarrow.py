@@ -2203,6 +2203,17 @@ def test_identity_partition_on_multi_columns() -> None:
         ) == arrow_table.sort_by([("born_year", "ascending"), ("n_legs", "ascending"), ("animal", "ascending")])
 
 
+def test_initial_value() -> None:
+    # Have some fake data, otherwise it will generate a table without records
+    data = pa.record_batch([pa.nulls(10, pa.int32())], ["some_field"])
+    result = _to_requested_schema(
+        Schema(NestedField(1, "so-true", BooleanType(), required=True, initial_default=True)), Schema(), data
+    )
+    assert result.column_names == ["so-true"]
+    for val in result[0]:
+        assert val.as_py() is True
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
