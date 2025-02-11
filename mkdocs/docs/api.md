@@ -1543,14 +1543,14 @@ PyIceberg interfaces closely with Polars Dataframes and LazyFrame which provides
 !!! note "Requirements"
     This requires [`polars` to be installed](index.md).
 
-```
+```python
 pip install pyiceberg['polars']
 ```
 <!-- prettier-ignore-end -->
 
-PyIceberg data can be analyzed and accessed thru Polars using either DataFrame or LazyFrame.
-If your code utilizes the Apache Icberg data scanning and retrival API, and further analize the resulted DataFrame in Polars, use the scan().to_plars() API.
-If the intent is to utilize Polars high perfromance filtering and retrival functionality use LazyFrame exported from the Icberg Table directly, Table().to_polars() API.
+PyIceberg data can be analyzed and accessed through Polars using either DataFrame or LazyFrame.
+If your code utilizes the Apache Iceberg data scanning and retrieval API and then analyzes the resulting DataFrame in Polars, use the `table.scan().to_polars()` API.
+If the intent is to utilize Polars' high-performance filtering and retrieval functionalities, use LazyFrame exported from the Iceberg table with the `table.to_polars()` API.
 
 ```pyhton
 # Get LazyFrame
@@ -1642,9 +1642,7 @@ PyIceberg supports creation of a Polars LazyFrame based on an Iceberg Table.
 
 using the above code example:
 
-
 ```python
-
 lf = iceberg_table.to_polars().filter(pl.col("ticket_id") > 10)
 print(lf.collect())
 ```
