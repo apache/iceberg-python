@@ -1552,7 +1552,7 @@ PyIceberg data can be analyzed and accessed through Polars using either DataFram
 If your code utilizes the Apache Iceberg data scanning and retrieval API and then analyzes the resulting DataFrame in Polars, use the `table.scan().to_polars()` API.
 If the intent is to utilize Polars' high-performance filtering and retrieval functionalities, use LazyFrame exported from the Iceberg table with the `table.to_polars()` API.
 
-```pyhton
+```python
 # Get LazyFrame
 iceberg_table.to_polars()
 
