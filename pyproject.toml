@@ -1944,6 +1944,10 @@ ignore_missing_imports = true
 module = "tenacity.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "datafusion.*"
+ignore_missing_imports = true
+
 [tool.poetry.scripts]
 pyiceberg = "pyiceberg.cli.console:run"
 

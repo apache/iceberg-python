@@ -14,6 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import functools
+import operator
+
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
 from pyarrow import compute as pc
@@ -53,16 +56,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
 
     non_key_cols = list(all_columns - join_cols_set)
 
-    match_expr = None
-
-    for col in join_cols:
-        target_values = target_table.column(col).to_pylist()
-        expr = pc.field(col).isin(target_values)
-
-        if match_expr is None:
-            match_expr = expr
-        else:
-            match_expr = match_expr & expr
+    match_expr = functools.reduce(operator.and_, [pc.field(col).isin(target_table.column(col).to_pylist()) for col in join_cols])
 
     matching_source_rows = source_table.filter(match_expr)
 
@@ -71,14 +65,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     for index in range(matching_source_rows.num_rows):
         source_row = matching_source_rows.slice(index, 1)
 
-        target_filter = None
-
-        for col in join_cols:
-            target_value = source_row.column(col)[0].as_py()
-            if target_filter is None:
-                target_filter = pc.field(col) == target_value
-            else:
-                target_filter = target_filter & (pc.field(col) == target_value)
+        target_filter = functools.reduce(operator.and_, [pc.field(col) == source_row.column(col)[0].as_py() for col in join_cols])
 
         matching_target_row = target_table.filter(target_filter)
 
