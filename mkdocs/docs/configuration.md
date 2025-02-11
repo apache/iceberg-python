@@ -68,6 +68,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
 | `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
 | `write.data.path`                        | String pointing to location        | `{metadata.location}/data` | Sets the location under which data is written.                                                                                                       |
+| `write.metadata.path`                    | String pointing to location        | `{metadata.location}/metadata` | Sets the location under which metadata is written.                                                                                                                                                                  |
 
 ### Table behavior options
 

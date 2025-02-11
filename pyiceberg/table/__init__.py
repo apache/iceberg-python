@@ -200,6 +200,7 @@ class TableProperties:
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     WRITE_DATA_PATH = "write.data.path"
+    WRITE_METADATA_PATH = "write.metadata.path"
 
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
@@ -1235,6 +1236,10 @@ class Table:
         import polars as pl
 
         return pl.scan_iceberg(self)
+
+    def metadata_file_location(self, file_name: str) -> str:
+        """Get the metadata file location using write.metadata.path from properties if set."""
+        return self.catalog.metadata_file_location(self.metadata.location, file_name, self.metadata.properties)
 
 
 class StaticTable(Table):

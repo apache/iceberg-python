@@ -173,7 +173,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        metadata_location = self._get_metadata_location(table_location=location, properties=properties)
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )

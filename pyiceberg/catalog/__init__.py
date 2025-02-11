@@ -760,6 +760,24 @@ class Catalog(ABC):
         raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
 
     @staticmethod
+    def metadata_file_location(table_location: str, file_name: str, properties: Properties = EMPTY_DICT) -> str:
+        """Get the full path for a metadata file.
+
+        Args:
+            table_location (str): The base table location
+            file_name (str): Name of the metadata file
+            properties (Properties): Table properties that may contain custom metadata path
+
+        Returns:
+            str: Full path where the metadata file should be stored
+        """
+        if metadata_path := properties.get(TableProperties.WRITE_METADATA_PATH):
+            base_path = metadata_path.rstrip("/")
+        else:
+            base_path = f"{table_location}/metadata"
+        return f"{base_path}/{file_name}"
+
+    @staticmethod
     def _delete_old_metadata(io: FileIO, base: TableMetadata, metadata: TableMetadata) -> None:
         """Delete oldest metadata if config is set to true."""
         delete_after_commit: bool = property_as_bool(
@@ -857,7 +875,7 @@ class MetastoreCatalog(Catalog, ABC):
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        metadata_location = self._get_metadata_location(table_location=location, properties=properties)
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -888,7 +906,9 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
+        new_metadata_location = self._get_metadata_location(
+            updated_metadata.location, new_metadata_version, updated_metadata.properties
+        )
 
         return StagedTable(
             identifier=table_identifier,
@@ -946,11 +966,12 @@ class MetastoreCatalog(Catalog, ABC):
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
 
     @staticmethod
-    def _get_metadata_location(location: str, new_version: int = 0) -> str:
+    def _get_metadata_location(table_location: str, new_version: int = 0, properties: Properties = EMPTY_DICT) -> str:
         if new_version < 0:
             raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
-        version_str = f"{new_version:05d}"
-        return f"{location}/metadata/{version_str}-{uuid.uuid4()}.metadata.json"
+
+        file_name = f"{new_version:05d}-{uuid.uuid4()}.metadata.json"
+        return Catalog.metadata_file_location(table_location, file_name, properties)
 
     @staticmethod
     def _parse_metadata_version(metadata_location: str) -> int:

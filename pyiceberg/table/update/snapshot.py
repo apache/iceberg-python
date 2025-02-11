@@ -84,16 +84,6 @@ if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 
-def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
-    return f"{location}/metadata/{commit_uuid}-m{num}.avro"
-
-
-def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
-    # Mimics the behavior in Java:
-    # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
-    return f"{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
-
-
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     commit_uuid: uuid.UUID
     _io: FileIO
@@ -243,13 +233,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
         summary = self._summary(self.snapshot_properties)
-
-        manifest_list_file_path = _generate_manifest_list_path(
-            location=self._transaction.table_metadata.location,
-            snapshot_id=self._snapshot_id,
-            attempt=0,
-            commit_uuid=self.commit_uuid,
-        )
+        file_name = f"{self.commit_uuid}-m{self._snapshot_id}-a0.avro"
+        manifest_list_file_path = self._transaction._table.metadata_file_location(file_name)
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -295,13 +280,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
 
     def new_manifest_output(self) -> OutputFile:
-        return self._io.new_output(
-            _new_manifest_path(
-                location=self._transaction.table_metadata.location,
-                num=next(self._manifest_num_counter),
-                commit_uuid=self.commit_uuid,
-            )
-        )
+        file_name = f"{self.commit_uuid}-m{next(self._manifest_num_counter)}.avro"
+        file_path = self._transaction._table.metadata_file_location(file_name)
+        return self._io.new_output(file_path)
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> List[ManifestEntry]:
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
