@@ -194,7 +194,7 @@ def test_is_nan() -> None:
 
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(double=None))
+    residual = res_eval.residual_for(Record(double=float('nan')))
     assert residual == AlwaysTrue()
 
     residual = res_eval.residual_for(Record(double=2))
