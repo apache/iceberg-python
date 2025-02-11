@@ -1490,7 +1490,7 @@ class DataScan(TableScan):
                 spec=spec,
                 expr=self.row_filter,
                 case_sensitive=self.case_sensitive,
-                schema=self.projection(),
+                schema=self.table_metadata.schema(),
             )
         )
 
