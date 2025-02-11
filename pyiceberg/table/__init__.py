@@ -122,13 +122,13 @@ from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
+    FormatVersion,
     IcebergBaseModel,
     IcebergRootModel,
     Identifier,
     KeyDefaultDict,
     Properties,
     Record,
-    TableVersion,
 )
 from pyiceberg.types import (
     strtobool,
@@ -284,7 +284,7 @@ class Transaction:
             table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
 
-    def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
+    def upgrade_table_version(self, format_version: FormatVersion) -> Transaction:
         """Set the table to a certain version.
 
         Args:
@@ -293,7 +293,7 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        if format_version not in {1, 2}:
+        if format_version not in (FormatVersion.V1, FormatVersion.V2):
             raise ValueError(f"Unsupported table format version: {format_version}")
 
         if format_version < self.table_metadata.format_version:
@@ -948,7 +948,7 @@ class Table:
         )
 
     @property
-    def format_version(self) -> TableVersion:
+    def format_version(self) -> FormatVersion:
         return self.metadata.format_version
 
     def schema(self) -> Schema:

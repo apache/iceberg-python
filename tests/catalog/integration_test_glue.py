@@ -37,6 +37,7 @@ from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType
 from tests.conftest import clean_up, get_bucket_name, get_glue_endpoint, get_s3_path
+from pyiceberg.typedef import FormatVersion
 
 # The number of tables/databases used in list_table/namespace test
 LIST_TEST_NUMBER = 2
@@ -494,7 +495,7 @@ def test_commit_table_properties(
     assert table_info["Table"]["Description"] == "test_description"
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_create_table_transaction(
     test_catalog: Catalog,
     s3: boto3.client,
@@ -502,7 +503,7 @@ def test_create_table_transaction(
     table_name: str,
     database_name: str,
     athena: AthenaQueryHelper,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)

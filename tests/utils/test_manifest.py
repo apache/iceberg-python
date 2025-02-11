@@ -41,7 +41,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField,
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Record, TableVersion
+from pyiceberg.typedef import FormatVersion, Record, TableVersion
 from pyiceberg.types import IntegerType, NestedField
 
 
@@ -346,7 +346,7 @@ def test_write_empty_manifest() -> None:
 
         with pytest.raises(ValueError, match="An empty manifest file has been written"):
             with write_manifest(
-                format_version=1,
+                format_version=FormatVersion.V1,
                 spec=UNPARTITIONED_PARTITION_SPEC,
                 schema=test_schema,
                 output_file=io.new_output(tmp_avro_file),
@@ -355,16 +355,16 @@ def test_write_empty_manifest() -> None:
                 pass
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_write_manifest(
-    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: TableVersion
+    generated_manifest_file_file_v1: str, generated_manifest_file_file_v2: str, format_version: FormatVersion
 ) -> None:
     io = load_file_io()
     snapshot = Snapshot(
         snapshot_id=25,
         parent_snapshot_id=19,
         timestamp_ms=1602638573590,
-        manifest_list=generated_manifest_file_file_v1 if format_version == 1 else generated_manifest_file_file_v2,
+        manifest_list=generated_manifest_file_file_v1 if format_version is FormatVersion.V1 else generated_manifest_file_file_v2,
         summary=Summary(Operation.APPEND),
         schema_id=3,
     )
@@ -411,7 +411,7 @@ def test_write_manifest(
 
         assert manifest_entry.status == ManifestEntryStatus.ADDED
         assert manifest_entry.snapshot_id == 8744736658442914487
-        assert manifest_entry.sequence_number == -1 if format_version == 1 else 3
+        assert manifest_entry.sequence_number == -1 if format_version is FormatVersion.V1 else 3
         assert isinstance(manifest_entry.data_file, DataFile)
 
         data_file = manifest_entry.data_file
@@ -525,12 +525,12 @@ def test_write_manifest(
         assert data_file.sort_order_id == 0
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 @pytest.mark.parametrize("parent_snapshot_id", [19, None])
 def test_write_manifest_list(
     generated_manifest_file_file_v1: str,
     generated_manifest_file_file_v2: str,
-    format_version: TableVersion,
+    format_version: FormatVersion,
     parent_snapshot_id: Optional[int],
 ) -> None:
     io = load_file_io()
@@ -539,7 +539,7 @@ def test_write_manifest_list(
         snapshot_id=25,
         parent_snapshot_id=parent_snapshot_id,
         timestamp_ms=1602638573590,
-        manifest_list=generated_manifest_file_file_v1 if format_version == 1 else generated_manifest_file_file_v2,
+        manifest_list=generated_manifest_file_file_v1 if format_version is FormatVersion.V1 else generated_manifest_file_file_v2,
         summary=Summary(Operation.APPEND),
         schema_id=3,
     )
@@ -563,7 +563,7 @@ def test_write_manifest_list(
         else:
             expected_metadata = {"snapshot-id": "25", "parent-snapshot-id": "null", "format-version": str(format_version)}
 
-        if format_version == 2:
+        if format_version is FormatVersion.V2:
             expected_metadata["sequence-number"] = "0"
         _verify_metadata_with_fastavro(path, expected_metadata)
 
@@ -571,9 +571,9 @@ def test_write_manifest_list(
 
         assert manifest_file.manifest_length == 7989
         assert manifest_file.partition_spec_id == 0
-        assert manifest_file.content == ManifestContent.DATA if format_version == 1 else ManifestContent.DELETES
-        assert manifest_file.sequence_number == 0 if format_version == 1 else 3
-        assert manifest_file.min_sequence_number == 0 if format_version == 1 else 3
+        assert manifest_file.content == ManifestContent.DATA if format_version is FormatVersion.V1 else ManifestContent.DELETES
+        assert manifest_file.sequence_number == 0 if format_version is FormatVersion.V1 else 3
+        assert manifest_file.min_sequence_number == 0 if format_version is FormatVersion.V1 else 3
         assert manifest_file.added_snapshot_id == 9182715666859759686
         assert manifest_file.added_files_count == 3
         assert manifest_file.existing_files_count == 0
@@ -600,8 +600,8 @@ def test_write_manifest_list(
 
         entry = entries[0]
 
-        assert entry.sequence_number == 0 if format_version == 1 else 3
-        assert entry.file_sequence_number == 0 if format_version == 1 else 3
+        assert entry.sequence_number == 0 if format_version is FormatVersion.V1 else 3
+        assert entry.file_sequence_number == 0 if format_version is FormatVersion.V1 else 3
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
 
@@ -621,9 +621,9 @@ def test_write_manifest_list(
 def test_file_format_case_insensitive(raw_file_format: str, expected_file_format: FileFormat) -> None:
     if expected_file_format:
         parsed_file_format = FileFormat(raw_file_format)
-        assert (
-            parsed_file_format == expected_file_format
-        ), f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        assert parsed_file_format == expected_file_format, (
+            f"File format {raw_file_format}: {parsed_file_format} != {expected_file_format}"
+        )
     else:
         with pytest.raises(ValueError):
             _ = FileFormat(raw_file_format)

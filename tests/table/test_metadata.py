@@ -39,7 +39,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import UTF8
+from pyiceberg.typedef import UTF8, FormatVersion
 from pyiceberg.types import (
     BooleanType,
     FloatType,
@@ -84,7 +84,7 @@ def test_v2_metadata_parsing(example_table_metadata_v2: Dict[str, Any]) -> None:
     """Test retrieving values from a TableMetadata instance of version 2"""
     table_metadata = TableMetadataUtil.parse_obj(example_table_metadata_v2)
 
-    assert table_metadata.format_version == 2
+    assert table_metadata.format_version is FormatVersion.V2
     assert table_metadata.table_uuid == UUID("9c12d441-03fe-4693-9a96-a0705ddf69c1")
     assert table_metadata.location == "s3://bucket/test/location"
     assert table_metadata.last_sequence_number == 34
@@ -110,7 +110,7 @@ def test_v1_metadata_parsing_directly(example_table_metadata_v1: Dict[str, Any])
     assert isinstance(table_metadata, TableMetadataV1)
 
     # The version 1 will automatically be bumped to version 2
-    assert table_metadata.format_version == 1
+    assert table_metadata.format_version is FormatVersion.V1
     assert table_metadata.table_uuid == UUID("d20125c8-7284-442c-9aea-15fee620737c")
     assert table_metadata.location == "s3://bucket/test/location"
     assert table_metadata.last_updated_ms == 1602638573874
@@ -268,7 +268,7 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
         sort_orders=[expected_sort_order],
         default_sort_order_id=1,
         refs={},
-        format_version=1,
+        format_version=FormatVersion.V1,
     )
 
     assert actual.model_dump() == expected.model_dump()
@@ -760,7 +760,7 @@ def test_make_metadata_fresh() -> None:
         ],
         default_sort_order_id=1,
         refs={},
-        format_version=2,
+        format_version=FormatVersion.V2,
         last_sequence_number=0,
     )
 

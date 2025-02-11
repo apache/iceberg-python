@@ -21,6 +21,7 @@ from pyiceberg.exceptions import NoSuchTableError, TableAlreadyExistsError
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -40,7 +41,7 @@ TABLE_SCHEMA = Schema(
 def _create_table(
     session_catalog: Catalog,
     identifier: str,
-    format_version: int,
+    format_version: FormatVersion,
     location: str,
     partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
     schema: Schema = TABLE_SCHEMA,

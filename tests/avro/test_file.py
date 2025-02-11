@@ -40,7 +40,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
 )
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, FormatVersion
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -238,8 +238,8 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
         assert todict(entry) == fa_entry
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: FormatVersion) -> None:
     data_file = DataFile(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
@@ -296,7 +296,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
             it = iter(avro_reader)
             avro_entry = next(it)
 
-            if format_version == 1:
+            if format_version is FormatVersion.V1:
                 v1_datafile = copy(data_file)
                 # Not part of V1
                 v1_datafile.equality_ids = None
@@ -309,7 +309,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
                     file_sequence_number=None,
                     data_file=v1_datafile,
                 )
-            elif format_version == 2:
+            elif format_version is FormatVersion.V2:
                 assert entry == avro_entry
             else:
                 raise ValueError(f"Unsupported version: {format_version}")

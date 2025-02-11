@@ -92,6 +92,7 @@ from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
 )
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -542,15 +543,15 @@ def test_update_column(table_v1: Table, table_v2: Table) -> None:
         assert new_schema3.find_field("z").required is False, "failed to update existing field required"
 
         # assert the above two updates also works with union_by_name
-        assert (
-            table.update_schema().union_by_name(new_schema)._apply() == new_schema
-        ), "failed to update existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema2)._apply() == new_schema2
-        ), "failed to remove existing field doc with union_by_name"
-        assert (
-            table.update_schema().union_by_name(new_schema3)._apply() == new_schema3
-        ), "failed to update existing field required with union_by_name"
+        assert table.update_schema().union_by_name(new_schema)._apply() == new_schema, (
+            "failed to update existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema2)._apply() == new_schema2, (
+            "failed to remove existing field doc with union_by_name"
+        )
+        assert table.update_schema().union_by_name(new_schema3)._apply() == new_schema3, (
+            "failed to update existing field required with union_by_name"
+        )
 
 
 def test_add_primitive_type_column(table_v2: Table) -> None:
@@ -817,7 +818,7 @@ def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
 def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     base_metadata = table_v1.metadata
     transaction = table_v1.transaction()
-    transaction.upgrade_table_version(format_version=2)
+    transaction.upgrade_table_version(format_version=FormatVersion.V2)
 
     schema_update_1 = transaction.update_schema()
     schema_update_1.add_column(path="b", field_type=IntegerType())
@@ -856,7 +857,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     new_metadata = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
 
     # UpgradeFormatVersionUpdate
-    assert new_metadata.format_version == 2
+    assert new_metadata.format_version is FormatVersion.V2
     assert isinstance(new_metadata, TableMetadataV2)
 
     # UpdateSchema

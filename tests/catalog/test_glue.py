@@ -36,7 +36,7 @@ from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Properties
+from pyiceberg.typedef import Properties, FormatVersion
 from pyiceberg.types import IntegerType
 from tests.conftest import (
     BUCKET_NAME,
@@ -93,7 +93,7 @@ def test_create_v1_table(
     test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table((database_name, table_name), table_schema_nested, properties={"format-version": "1"})
-    assert table.format_version == 1
+    assert table.format_version is FormatVersion.V1
 
     table_info = _glue.get_table(
         DatabaseName=database_name,
@@ -848,7 +848,7 @@ def test_commit_overwrite_table_snapshot_properties(
 
 
 @mock_aws
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_create_table_transaction(
     _glue: boto3.client,
     _bucket_initialize: None,
@@ -856,7 +856,7 @@ def test_create_table_transaction(
     table_schema_nested: Schema,
     database_name: str,
     table_name: str,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
@@ -882,7 +882,7 @@ def test_create_table_transaction(
 
     assert TABLE_METADATA_LOCATION_REGEX.match(table.metadata_location)
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
-    assert table.format_version == format_version
+    assert table.format_version is format_version
     assert table.schema().find_field("b").field_type == IntegerType()
     assert table.properties == {"test_a": "test_aa", "test_b": "test_b", "test_c": "test_c"}
     assert table.spec().last_assigned_field_id == 1001

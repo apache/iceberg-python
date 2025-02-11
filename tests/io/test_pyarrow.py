@@ -78,7 +78,7 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import UTF8, Properties, Record
+from pyiceberg.typedef import UTF8, FormatVersion, Properties, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -961,7 +961,7 @@ def project(
         table_metadata=TableMetadataV2(
             location="file://a/b/",
             last_column_id=1,
-            format_version=2,
+            format_version=FormatVersion.V2,
             schemas=[table_schema or schema],
             partition_specs=[PartitionSpec()],
         ),
@@ -1421,7 +1421,7 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
         table_metadata=TableMetadataV2(
             location=metadata_location,
             last_column_id=1,
-            format_version=2,
+            format_version=FormatVersion.V2,
             current_schema_id=1,
             schemas=[table_schema_simple],
             partition_specs=[PartitionSpec()],
@@ -1458,7 +1458,7 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
         table_metadata=TableMetadataV2(
             location=metadata_location,
             last_column_id=1,
-            format_version=2,
+            format_version=FormatVersion.V2,
             current_schema_id=1,
             schemas=[table_schema_simple],
             partition_specs=[PartitionSpec()],
@@ -1488,7 +1488,7 @@ def test_pyarrow_wrap_fsspec(example_task: FileScanTask, table_schema_simple: Sc
         table_metadata=TableMetadataV2(
             location=metadata_location,
             last_column_id=1,
-            format_version=2,
+            format_version=FormatVersion.V2,
             current_schema_id=1,
             schemas=[table_schema_simple],
             partition_specs=[PartitionSpec()],
