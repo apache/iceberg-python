@@ -149,11 +149,14 @@ if TYPE_CHECKING:
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
+
 @dataclass()
 class UpsertResult:
     """Summary the upsert operation"""
+
     rows_updated: int = 0
     rows_inserted: int = 0
+
 
 class TableProperties:
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
@@ -1091,12 +1094,10 @@ class Table:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
 
-    def upsert(self, df: pa.Table, join_cols: list
-                   , when_matched_update_all: bool = True
-                   , when_not_matched_insert_all: bool = True
-                ) -> UpsertResult:
-        """
-        Shorthand API for performing an upsert to an iceberg table.
+    def upsert(
+        self, df: pa.Table, join_cols: list, when_matched_update_all: bool = True, when_not_matched_insert_all: bool = True
+    ) -> UpsertResult:
+        """Shorthand API for performing an upsert to an iceberg table.
         
         Args:
             self: the target Iceberg table to execute the upsert on
@@ -1124,18 +1125,19 @@ class Table:
                 (Function effectively does nothing)
 
 
-        Returns: a UpsertResult class (contains details of rows updated and inserted)
+        Returns: 
+            An UpsertResult class (contains details of rows updated and inserted)
         """
 
         from pyiceberg.table import upsert_util
 
         if not when_matched_update_all and not when_not_matched_insert_all:
-            raise ValueError('no upsert options selected...exiting')
+            raise ValueError("no upsert options selected...exiting")
 
         if upsert_util.has_duplicate_rows(df, join_cols):
-            raise ValueError('Duplicate rows found in source dataset based on the key columns. No upsert executed')
+            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
-        #get list of rows that exist so we don't have to load the entire target table
+        # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
         matched_iceberg_table = self.scan(row_filter=matched_predicate).to_arrow()
 
@@ -1143,23 +1145,20 @@ class Table:
         insert_row_cnt = 0
 
         with self.transaction() as tx:
-
             if when_matched_update_all:
-
-                #function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-                #we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
-                #this extra step avoids unnecessary IO and writes
+                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                # this extra step avoids unnecessary IO and writes
                 rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
 
                 update_row_cnt = len(rows_to_update)
 
-                #build the match predicate filter
+                # build the match predicate filter
                 overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
                 tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
-
                 rows_to_insert = upsert_util.get_rows_to_insert(df, matched_iceberg_table, join_cols)
 
                 insert_row_cnt = len(rows_to_insert)
