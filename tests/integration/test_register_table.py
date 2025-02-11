@@ -67,7 +67,7 @@ def test_register_table(
 ) -> None:
     identifier = "default.register_table"
     location = "s3a://warehouse/default/register_table"
-    tbl = _create_table(catalog, identifier, 2, location)
+    tbl = _create_table(catalog, identifier, FormatVersion.V2, location)
     assert catalog.table_exists(identifier=identifier)
     catalog.drop_table(identifier=identifier)
     assert not catalog.table_exists(identifier=identifier)
@@ -82,7 +82,7 @@ def test_register_table_existing(
 ) -> None:
     identifier = "default.register_table_existing"
     location = "s3a://warehouse/default/register_table_existing"
-    tbl = _create_table(catalog, identifier, 2, location)
+    tbl = _create_table(catalog, identifier, FormatVersion.V2, location)
     assert catalog.table_exists(identifier=identifier)
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):

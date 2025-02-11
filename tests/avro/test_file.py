@@ -152,9 +152,9 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
         with avro.AvroOutputFile[ManifestEntry](
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
-            file_schema=MANIFEST_ENTRY_SCHEMAS[1],
+            file_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V1],
             schema_name="manifest_entry",
-            record_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2],
             metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
@@ -218,7 +218,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
 
         with avro.AvroOutputFile[ManifestEntry](
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
-            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            file_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2],
             schema_name="manifest_entry",
             metadata=additional_metadata,
         ) as out:
@@ -279,7 +279,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Fo
         # Read as V2
         with avro.AvroFile[ManifestEntry](
             input_file=PyArrowFileIO().new_input(tmp_avro_file),
-            read_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            read_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2],
             read_types={-1: ManifestEntry, 2: DataFile},
         ) as avro_reader:
             it = iter(avro_reader)

@@ -270,7 +270,7 @@ def test_query_filter_v1_v2_append_null(
 
     # When
     with tbl.transaction() as tx:
-        tx.upgrade_table_version(format_version=2)
+        tx.upgrade_table_version(format_version=FormatVersion.V2)
 
     tbl.append(arrow_table_with_null)
 
