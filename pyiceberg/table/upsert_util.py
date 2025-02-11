@@ -27,7 +27,7 @@ from pyiceberg.expressions import (
 )
 
 
-def create_match_filter(df: pyarrow_table, join_cols: list) -> BooleanExpression:
+def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
 
     if len(join_cols) == 1:
@@ -35,20 +35,19 @@ def create_match_filter(df: pyarrow_table, join_cols: list) -> BooleanExpression
     else:
         return Or(*[And(*[EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()])
 
-def has_duplicate_rows(df: pyarrow_table, join_cols: list) -> bool:
-    """
-    This function checks if there are duplicate rows in in a pyarrow table based on the join columns.
-    """
 
+def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
+    """Check for duplicate rows in a PyArrow table based on the join columns."""
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
+
 def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
-
     """
-    This function takes the source_table, trims it down to rows that match in both source and target.
-    It then does a scan for the non-key columns to see if any are mis-aligned before returning the final row set to update
-    """
+    Return a table with rows that need to be updated in the target table based on the join columns.
 
+    When a row is matched, an additional scan is done to evaluate the non-key columns to detect if an actual change has occurred.
+    Only matched rows that have an actual change to a non-key column value will be returned in the final output.
+    """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
 
@@ -106,6 +105,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     rows_to_update_table = rows_to_update_table.select(list(common_columns))
 
     return rows_to_update_table
+
 
 def get_rows_to_insert(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
     source_filter_expr = pc.scalar(True)
