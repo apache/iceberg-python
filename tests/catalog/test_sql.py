@@ -1624,7 +1624,7 @@ def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with
         lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
-def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
+def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema) -> None:
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
     table = catalog.create_table(table_identifier, table_schema_nested)
