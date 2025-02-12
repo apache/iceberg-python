@@ -99,71 +99,78 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 @pytest.mark.parametrize(
     "config_setup, expected_result",
     [
-        # Validate lookup works with: config > home > cwd
-        (
-            {"config_location": "config", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
-            {"catalog": {"default": {"uri": "https://service.io/api"}}},
-        ),
-        (
-            {"config_location": "home", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
-            {"catalog": {"default": {"uri": "https://service.io/api"}}},
-        ),
-        (
-            {"config_location": "current", "config_content": {"catalog": {"default": {"uri": "https://service.io/api"}}}},
-            {"catalog": {"default": {"uri": "https://service.io/api"}}},
-        ),
-        (
-            {"config_location": "none", "config_content": None},
-            None,
-        ),
-        # Validate lookup order: home > cwd if present in both
+        # PYICEBERG_HOME takes precedence
         (
             {
-                "config_location": "both",
-                "home_content": {"catalog": {"default": {"uri": "https://service.io/home"}}},
-                "current_content": {"catalog": {"default": {"uri": "https://service.io/current"}}},
+                "pyiceberg_home_content": "https://service.io/pyiceberg_home",
+                "home_content": "https://service.io/user-home",
+                "cwd_content": "https://service.io/cwd",
             },
-            {"catalog": {"default": {"uri": "https://service.io/home"}}},
+            "https://service.io/pyiceberg_home",
+        ),
+        # Home directory (~) is checked after PYICEBERG_HOME
+        (
+            {
+                "pyiceberg_home_content": None,
+                "home_content": "https://service.io/user-home",
+                "cwd_content": "https://service.io/cwd",
+            },
+            "https://service.io/user-home",
+        ),
+        # Current working directory (.) is the last fallback
+        (
+            {
+                "pyiceberg_home_content": None,
+                "home_content": None,
+                "cwd_content": "https://service.io/cwd",
+            },
+            "https://service.io/cwd",
+        ),
+        # No configuration files found
+        (
+            {
+                "pyiceberg_home_content": None,
+                "home_content": None,
+                "cwd_content": None,
+            },
+            None,
         ),
     ],
 )
-def test_from_multiple_configuration_files(
+def test_config_lookup_order(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
     config_setup: Dict[str, Any],
-    expected_result: Optional[Dict[str, Any]],
+    expected_result: Optional[str],
 ) -> None:
-    def create_config_files(
-        paths: Dict[str, str],
-        contents: Dict[str, Optional[Dict[str, Any]]],
-    ) -> None:
-        """Helper to create configuration files in specified paths."""
-        for location, content in contents.items():
-            if content:
-                config_file_path = os.path.join(paths[location], ".pyiceberg.yaml")
-                with open(config_file_path, "w", encoding="UTF8") as file:
-                    yaml_str = as_document(content).as_yaml() if content else ""
-                    file.write(yaml_str)
+    """
+    Test that the configuration lookup prioritizes PYICEBERG_HOME, then home (~), then cwd.
+    """
+    def create_config_file(path: str, uri: Optional[str]) -> None:
+        if uri:
+            config_file_path = os.path.join(path, ".pyiceberg.yaml")
+            content = {"catalog": {"default": {"uri": uri}}}
+            with open(config_file_path, "w", encoding="utf-8") as file:
+                yaml_str = as_document(content).as_yaml()
+                file.write(yaml_str)
 
-    paths = {
-        "config": str(tmp_path_factory.mktemp("config")),
-        "home": str(tmp_path_factory.mktemp("home")),
-        "current": str(tmp_path_factory.mktemp("current")),
-    }
+    # Create temporary directories for PYICEBERG_HOME, home (~), and cwd
+    pyiceberg_home = str(tmp_path_factory.mktemp("pyiceberg_home"))
+    home_dir = str(tmp_path_factory.mktemp("home"))
+    cwd_dir = str(tmp_path_factory.mktemp("cwd"))
 
-    contents = {
-        "config": config_setup.get("config_content") if config_setup.get("config_location") == "config" else None,
-        "home": config_setup.get("home_content") if config_setup.get("config_location") in ["home", "both"] else None,
-        "current": config_setup.get("current_content") if config_setup.get("config_location") in ["current", "both"] else None,
-    }
+    # Create configuration files in the respective directories
+    create_config_file(pyiceberg_home, config_setup.get("pyiceberg_home_content"))
+    create_config_file(home_dir, config_setup.get("home_content"))
+    create_config_file(cwd_dir, config_setup.get("cwd_content"))
 
-    create_config_files(paths, contents)
+    # Mock environment and paths
+    monkeypatch.setenv("PYICEBERG_HOME", pyiceberg_home)
+    monkeypatch.setattr(os.path, "expanduser", lambda _: home_dir)
+    monkeypatch.chdir(cwd_dir)
 
-    monkeypatch.setenv("PYICEBERG_HOME", paths["config"])
-    monkeypatch.setattr(os.path, "expanduser", lambda _: paths["home"])
-    if config_setup.get("config_location") in ["current", "both"]:
-        monkeypatch.chdir(paths["current"])
-
+    # Perform the lookup and validate the result
+    result = Config()._from_configuration_files()
     assert (
-        Config()._from_configuration_files() == expected_result
-    ), f"Unexpected configuration result for content: {expected_result}"
+        result["catalog"]["default"]["uri"] if result else None
+    ) == expected_result, f"Unexpected configuration result. Expected: {expected_result}, Actual: {result}"
