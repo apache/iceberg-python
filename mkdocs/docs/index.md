@@ -40,23 +40,24 @@ pip install "pyiceberg[s3fs,hive]"
 
 You can mix and match optional dependencies depending on your needs:
 
-| Key          | Description:                                                              |
-| ------------ | ------------------------------------------------------------------------- |
-| hive         | Support for the Hive metastore                                            |
-| glue         | Support for AWS Glue                                                      |
-| dynamodb     | Support for AWS DynamoDB                                                  |
-| sql-postgres | Support for SQL Catalog backed by Postgresql                              |
-| sql-sqlite   | Support for SQL Catalog backed by SQLite                                  |
-| pyarrow      | PyArrow as a FileIO implementation to interact with the object store      |
-| pandas       | Installs both PyArrow and Pandas                                          |
-| duckdb       | Installs both PyArrow and DuckDB                                          |
-| ray          | Installs PyArrow, Pandas, and Ray                                         |
-| daft         | Installs Daft                                                             |
-| s3fs         | S3FS as a FileIO implementation to interact with the object store         |
-| adlfs        | ADLFS as a FileIO implementation to interact with the object store        |
-| snappy       | Support for snappy Avro compression                                       |
-| gcsfs        | GCSFS as a FileIO implementation to interact with the object store        |
-| rest-sigv4   | Support for generating AWS SIGv4 authentication headers for REST Catalogs |
+| Key           | Description:                                                              |
+|---------------|---------------------------------------------------------------------------|
+| hive          | Support for the Hive metastore                                            |
+| hive-kerberos | Support for Hive metastore in Kerberos environment                       |
+| glue          | Support for AWS Glue                                                      |
+| dynamodb      | Support for AWS DynamoDB                                                  |
+| sql-postgres  | Support for SQL Catalog backed by Postgresql                              |
+| sql-sqlite    | Support for SQL Catalog backed by SQLite                                  |
+| pyarrow       | PyArrow as a FileIO implementation to interact with the object store      |
+| pandas        | Installs both PyArrow and Pandas                                          |
+| duckdb        | Installs both PyArrow and DuckDB                                          |
+| ray           | Installs PyArrow, Pandas, and Ray                                         |
+| daft          | Installs Daft                                                             |
+| s3fs          | S3FS as a FileIO implementation to interact with the object store         |
+| adlfs         | ADLFS as a FileIO implementation to interact with the object store        |
+| snappy        | Support for snappy Avro compression                                       |
+| gcsfs         | GCSFS as a FileIO implementation to interact with the object store        |
+| rest-sigv4    | Support for generating AWS SIGv4 authentication headers for REST Catalogs |
 
 You either need to install `s3fs`, `adlfs`, `gcsfs`, or `pyarrow` to be able to fetch files from an object store.
 
