@@ -1415,7 +1415,7 @@ def _task_to_record_batches(
                 if current_batch.num_rows == 0:
                     continue
 
-            yield _to_requested_schema(
+            result_batch = _to_requested_schema(
                 projected_schema,
                 file_project_schema,
                 current_batch,
@@ -1423,14 +1423,14 @@ def _task_to_record_batches(
                 use_large_types=use_large_types,
             )
 
-                # Inject projected column values if available
-                if should_project_columns:
-                    for name, value in projected_missing_fields.items():
-                        index = result_batch.schema.get_field_index(name)
-                        if index != -1:
-                            result_batch = result_batch.set_column(index, name, [value])
+            # Inject projected column values if available
+            if should_project_columns:
+                for name, value in projected_missing_fields.items():
+                    index = result_batch.schema.get_field_index(name)
+                    if index != -1:
+                        result_batch = result_batch.set_column(index, name, [value])
 
-                yield result_batch
+            yield result_batch
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
