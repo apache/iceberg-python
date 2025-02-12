@@ -28,11 +28,11 @@ hide:
 
 There are three ways to pass in configuration:
 
-- Using the `~/.pyiceberg.yaml` configuration file
+- Using the `.pyiceberg.yaml` configuration file (Recommended)
 - Through environment variables
 - By passing in credentials through the CLI or the Python API
 
-The configuration file is recommended since that's the easiest way to manage the credentials.
+The configuration file can be stored in either the directory specified by the `PYICEBERG_HOME` environment variable, the home directory, or current working directory (in this order).
 
 To change the path searched for the `.pyiceberg.yaml`, you can overwrite the `PYICEBERG_HOME` environment variable.
 
@@ -63,6 +63,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.page-row-limit`           | Number of rows                     | 20000                      | Set a target threshold for the maximum number of rows within a column chunk                                                                          |
 | `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
 | `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
+| `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
 | `write.object-storage.enabled`           | Boolean                            | True                       | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. Note: the default value of `True` differs from Iceberg's Java implementation |
 | `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
 | `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
