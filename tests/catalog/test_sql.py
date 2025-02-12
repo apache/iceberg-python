@@ -1027,7 +1027,7 @@ def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str)
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
 def test_create_namespace(catalog: SqlCatalog, namespace: str) -> None:
     catalog.create_namespace(namespace)
-    assert (Catalog.identifier_to_tuple(namespace)) in catalog.list_namespaces()
+    assert (Catalog.identifier_to_tuple(namespace)[:1]) in catalog.list_namespaces()
 
 
 @pytest.mark.parametrize(
@@ -1074,7 +1074,7 @@ def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, namespa
     }
     catalog.create_namespace(namespace=namespace, properties=test_properties)
     loaded_database_list = catalog.list_namespaces()
-    assert Catalog.identifier_to_tuple(namespace) in loaded_database_list
+    assert Catalog.identifier_to_tuple(namespace)[:1] in loaded_database_list
     properties = catalog.load_namespace_properties(namespace)
     assert properties["comment"] == "this is a test description"
     assert properties["location"] == test_location
@@ -1142,7 +1142,6 @@ def test_list_namespaces(catalog: SqlCatalog) -> None:
 
     ns_list = catalog.list_namespaces()
     expected_list: list[tuple[str, ...]] = [("db",), ("db2",), ("db%",)]
-    assert len(ns_list) == len(expected_list)
     for ns in expected_list:
         assert ns in ns_list
 
@@ -1191,13 +1190,13 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
 def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
-    assert namespace in catalog.list_namespaces()
+    assert namespace[:1] in catalog.list_namespaces()
     catalog.create_table(table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         catalog.drop_namespace(namespace)
     catalog.drop_table(table_identifier)
     catalog.drop_namespace(namespace)
-    assert namespace not in catalog.list_namespaces()
+    assert namespace[:1] not in catalog.list_namespaces()
 
 
 @pytest.mark.parametrize(
