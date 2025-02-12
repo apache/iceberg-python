@@ -1100,29 +1100,29 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-            self: the target Iceberg table to execute the upsert on
+            
             df: The input dataframe to upsert with the table's data.
             join_cols: The columns to join on. These are essentially analogous to primary keys
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
 
-            Example Use Cases:
-                Case 1: Both Parameters = True (Full Upsert)
-                Existing row found → Update it
-                New row found → Insert it
+                Example Use Cases:
+                    Case 1: Both Parameters = True (Full Upsert)
+                    Existing row found → Update it
+                    New row found → Insert it
 
-                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                Existing row found → Do nothing (no updates)
-                New row found → Insert it
+                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                    Existing row found → Do nothing (no updates)
+                    New row found → Insert it
 
-                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                Existing row found → Update it
-                New row found → Do nothing (no inserts)
+                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                    Existing row found → Update it
+                    New row found → Do nothing (no inserts)
 
-                Case 4: Both Parameters = False (No Merge Effect)
-                Existing row found → Do nothing
-                New row found → Do nothing
-                (Function effectively does nothing)
+                    Case 4: Both Parameters = False (No Merge Effect)
+                    Existing row found → Do nothing
+                    New row found → Do nothing
+                    (Function effectively does nothing)
 
 
         Returns:
