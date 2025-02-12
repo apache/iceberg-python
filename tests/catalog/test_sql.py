@@ -50,6 +50,7 @@ from pyiceberg.io import FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import (
     NullOrder,
@@ -1613,3 +1614,50 @@ def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with
         tbl.append(arrow_table_with_null)
 
     assert len(tbl.scan().to_arrow()) == 5 * len(arrow_table_with_null)
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+        lazy_fixture("catalog_sqlite_without_rowcount"),
+    ],
+)
+def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema, random_table_identifier: str) -> None:
+    namespace = Catalog.namespace_from(random_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(random_table_identifier, table_schema_nested)
+
+    original_metadata_location = table.metadata_location
+
+    for i in range(5):
+        with table.transaction() as transaction:
+            with transaction.update_schema() as update:
+                update.add_column(path=f"new_column_{i}", field_type=IntegerType())
+
+    assert len(table.metadata.metadata_log) == 5
+    assert os.path.exists(original_metadata_location[len("file://") :])
+
+    # Set the max versions property to 2, and delete after commit
+    new_property = {
+        TableProperties.METADATA_PREVIOUS_VERSIONS_MAX: "2",
+        TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED: "true",
+    }
+
+    with table.transaction() as transaction:
+        transaction.set_properties(properties=new_property)
+
+    # Verify that only the most recent metadata files are kept
+    assert len(table.metadata.metadata_log) == 2
+    updated_metadata_1, updated_metadata_2 = table.metadata.metadata_log
+
+    # new metadata log was added, so earlier metadata logs are removed.
+    with table.transaction() as transaction:
+        with transaction.update_schema() as update:
+            update.add_column(path="new_column_x", field_type=IntegerType())
+
+    assert len(table.metadata.metadata_log) == 2
+    assert not os.path.exists(original_metadata_location[len("file://") :])
+    assert not os.path.exists(updated_metadata_1.metadata_file[len("file://") :])
+    assert os.path.exists(updated_metadata_2.metadata_file[len("file://") :])

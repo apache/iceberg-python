@@ -1432,37 +1432,6 @@ def _task_to_record_batches(
                 yield result_batch
 
 
-def _task_to_table(
-    fs: FileSystem,
-    task: FileScanTask,
-    bound_row_filter: BooleanExpression,
-    projected_schema: Schema,
-    projected_field_ids: Set[int],
-    positional_deletes: Optional[List[ChunkedArray]],
-    case_sensitive: bool,
-    name_mapping: Optional[NameMapping] = None,
-    use_large_types: bool = True,
-) -> Optional[pa.Table]:
-    batches = list(
-        _task_to_record_batches(
-            fs,
-            task,
-            bound_row_filter,
-            projected_schema,
-            projected_field_ids,
-            positional_deletes,
-            case_sensitive,
-            name_mapping,
-            use_large_types,
-        )
-    )
-
-    if len(batches) > 0:
-        return pa.Table.from_batches(batches)
-    else:
-        return None
-
-
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
     deletes_per_file: Dict[str, List[ChunkedArray]] = {}
     unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
