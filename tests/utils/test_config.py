@@ -146,6 +146,7 @@ def test_config_lookup_order(
     """
     Test that the configuration lookup prioritizes PYICEBERG_HOME, then home (~), then cwd.
     """
+
     def create_config_file(path: str, uri: Optional[str]) -> None:
         if uri:
             config_file_path = os.path.join(path, ".pyiceberg.yaml")
@@ -172,5 +173,5 @@ def test_config_lookup_order(
     # Perform the lookup and validate the result
     result = Config()._from_configuration_files()
     assert (
-        result["catalog"]["default"]["uri"] if result else None
+        result["catalog"]["default"]["uri"] if result else None  # type: ignore
     ) == expected_result, f"Unexpected configuration result. Expected: {expected_result}, Actual: {result}"
