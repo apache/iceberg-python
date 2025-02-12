@@ -1394,6 +1394,10 @@ class FileScanTask(ScanTask):
         self.length = length or data_file.file_size_in_bytes
         self.residual = residual
 
+    def set_residual(self, expr: BooleanExpression) -> "FileScanTask":
+        self.residual = expr
+        return self
+
 
 def _open_manifest(
     io: FileIO,
@@ -1584,8 +1588,12 @@ class DataScan(TableScan):
                     data_entry,
                     positional_delete_entries,
                 ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
+                residual=bind(
+                    self.table_metadata.schema(),
+                    residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                        data_entry.data_file.partition
+                    ),
+                    case_sensitive=self.case_sensitive,
                 ),
             )
             for data_entry in data_entries
