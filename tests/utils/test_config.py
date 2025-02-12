@@ -164,6 +164,6 @@ def test_from_multiple_configuration_files(
     if config_setup.get("config_location") in ["current", "both"]:
         monkeypatch.chdir(paths["current"])
 
-    assert Config()._from_configuration_files() == expected_result, (
-        f"Unexpected configuration result for content: {expected_result}"
-    )
+    assert (
+        Config()._from_configuration_files() == expected_result
+    ), f"Unexpected configuration result for content: {expected_result}"
