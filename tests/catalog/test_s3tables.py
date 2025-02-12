@@ -47,13 +47,15 @@ def aws_region() -> str:
 
 
 @pytest.fixture
-def table_bucket_arn(monkeypatch: pytest.MonkeyPatch, moto_endpoint_url: str) -> str:
+def table_bucket_arn(monkeypatch: pytest.MonkeyPatch, moto_endpoint_url: str, aws_region: str) -> str:
     monkeypatch.setenv("AWS_ENDPOINT_URL", moto_endpoint_url)
 
     prefix = "pyiceberg-table-bucket-"
     random_tag = "".join(choice(string.ascii_letters) for _ in range(12))
     name = (prefix + random_tag).lower()
-    table_bucket_arn = boto3.client("s3tables", endpoint_url=moto_endpoint_url).create_table_bucket(name=name)["arn"]
+    table_bucket_arn = boto3.client("s3tables", endpoint_url=moto_endpoint_url, region_name=aws_region).create_table_bucket(
+        name=name
+    )["arn"]
     return table_bucket_arn
 
 
