@@ -125,12 +125,14 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionField, PartitionFieldValue, PartitionKey, PartitionSpec, partition_record_value
 from pyiceberg.schema import (
+    Accessor,
     PartnerAccessor,
     PreOrderSchemaVisitor,
     Schema,
     SchemaVisitorPerPrimitiveType,
     SchemaWithPartnerVisitor,
     _check_schema_compatible,
+    build_position_accessors,
     pre_order_visit,
     promote,
     prune_columns,
@@ -141,7 +143,7 @@ from pyiceberg.schema import (
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
-from pyiceberg.transforms import TruncateTransform
+from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
     BinaryType,
@@ -1298,6 +1300,45 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
         return -1
 
 
+def _get_column_projection_values(
+    file: DataFile, projected_schema: Schema, partition_spec: Optional[PartitionSpec], file_project_field_ids: Set[int]
+) -> Tuple[bool, Dict[str, Any]]:
+    """Apply Column Projection rules to File Schema."""
+    project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
+    should_project_columns = len(project_schema_diff) > 0
+    projected_missing_fields: Dict[str, Any] = {}
+
+    if not should_project_columns:
+        return False, {}
+
+    partition_schema: StructType
+    accessors: Dict[int, Accessor]
+
+    if partition_spec is not None:
+        partition_schema = partition_spec.partition_type(projected_schema)
+        accessors = build_position_accessors(partition_schema)
+    else:
+        return False, {}
+
+    for field_id in project_schema_diff:
+        for partition_field in partition_spec.fields_by_source_id(field_id):
+            if isinstance(partition_field.transform, IdentityTransform):
+                accessor = accessors.get(partition_field.field_id)
+
+                if accessor is None:
+                    continue
+
+                # The partition field may not exist in the partition record of the data file.
+                # This can happen when new partition fields are introduced after the file was written.
+                try:
+                    if partition_value := accessor.get(file.partition):
+                        projected_missing_fields[partition_field.name] = partition_value
+                except IndexError:
+                    continue
+
+    return True, projected_missing_fields
+
+
 def _task_to_record_batches(
     fs: FileSystem,
     task: FileScanTask,
@@ -1308,6 +1349,7 @@ def _task_to_record_batches(
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
     use_large_types: bool = True,
+    partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = _parse_location(task.file.file_path)
     arrow_format = ds.ParquetFileFormat(pre_buffer=True, buffer_size=(ONE_MEGABYTE * 8))
@@ -1319,16 +1361,20 @@ def _task_to_record_batches(
         # When V3 support is introduced, we will update `downcast_ns_timestamp_to_us` flag based on
         # the table format version.
         file_schema = pyarrow_to_schema(physical_schema, name_mapping, downcast_ns_timestamp_to_us=True)
+
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
+        # Apply column projection rules
+        # https://iceberg.apache.org/spec/#column-projection
+        should_project_columns, projected_missing_fields = _get_column_projection_values(
+            task.file, projected_schema, partition_spec, file_schema.field_ids
+        )
 
-        if file_schema is None:
-            raise ValueError(f"Missing Iceberg schema in Metadata for file: {path}")
+        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -1377,36 +1423,14 @@ def _task_to_record_batches(
                 use_large_types=use_large_types,
             )
 
+                # Inject projected column values if available
+                if should_project_columns:
+                    for name, value in projected_missing_fields.items():
+                        index = result_batch.schema.get_field_index(name)
+                        if index != -1:
+                            result_batch = result_batch.set_column(index, name, [value])
 
-def _task_to_table(
-    fs: FileSystem,
-    task: FileScanTask,
-    bound_row_filter: BooleanExpression,
-    projected_schema: Schema,
-    projected_field_ids: Set[int],
-    positional_deletes: Optional[List[ChunkedArray]],
-    case_sensitive: bool,
-    name_mapping: Optional[NameMapping] = None,
-    use_large_types: bool = True,
-) -> Optional[pa.Table]:
-    batches = list(
-        _task_to_record_batches(
-            fs,
-            task,
-            bound_row_filter,
-            projected_schema,
-            projected_field_ids,
-            positional_deletes,
-            case_sensitive,
-            name_mapping,
-            use_large_types,
-        )
-    )
-
-    if len(batches) > 0:
-        return pa.Table.from_batches(batches)
-    else:
-        return None
+                yield result_batch
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:
@@ -1598,6 +1622,7 @@ class ArrowScan:
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
                 self._use_large_types,
+                self._table_metadata.spec(),
             )
             for batch in batches:
                 if self._limit is not None:

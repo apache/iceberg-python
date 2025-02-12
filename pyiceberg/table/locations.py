@@ -22,7 +22,6 @@ from typing import Optional
 import mmh3
 
 from pyiceberg.partitioning import PartitionKey
-from pyiceberg.table import TableProperties
 from pyiceberg.typedef import Properties
 from pyiceberg.utils.properties import property_as_bool
 
@@ -45,6 +44,8 @@ class LocationProvider(ABC):
     def __init__(self, table_location: str, table_properties: Properties):
         self.table_location = table_location
         self.table_properties = table_properties
+
+        from pyiceberg.table import TableProperties
 
         if path := table_properties.get(TableProperties.WRITE_DATA_PATH):
             self.data_path = path.rstrip("/")
@@ -85,6 +86,8 @@ class ObjectStoreLocationProvider(LocationProvider):
 
     def __init__(self, table_location: str, table_properties: Properties):
         super().__init__(table_location, table_properties)
+        from pyiceberg.table import TableProperties
+
         self._include_partition_paths = property_as_bool(
             self.table_properties,
             TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS,
@@ -131,6 +134,8 @@ def _import_location_provider(
     try:
         path_parts = location_provider_impl.split(".")
         if len(path_parts) < 2:
+            from pyiceberg.table import TableProperties
+
             raise ValueError(
                 f"{TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
             )
@@ -144,6 +149,8 @@ def _import_location_provider(
 
 
 def load_location_provider(table_location: str, table_properties: Properties) -> LocationProvider:
+    from pyiceberg.table import TableProperties
+
     table_location = table_location.rstrip("/")
 
     if location_provider_impl := table_properties.get(TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL):

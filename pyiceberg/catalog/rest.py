@@ -79,7 +79,7 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -139,7 +139,6 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
-HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -554,15 +553,12 @@ class RestCatalog(Catalog):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
 
     def _config_headers(self, session: Session) -> None:
-        header_properties = self._extract_headers_from_properties()
+        header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
-
-    def _extract_headers_from_properties(self) -> Dict[str, str]:
-        return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
     def _create_table(
         self,
