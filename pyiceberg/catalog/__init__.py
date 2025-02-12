@@ -55,6 +55,7 @@ from pyiceberg.table import (
     CreateTableTransaction,
     StagedTable,
     Table,
+    TableProperties,
 )
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
@@ -72,6 +73,7 @@ from pyiceberg.typedef import (
 from pyiceberg.utils.config import Config, merge_config
 from pyiceberg.utils.deprecated import deprecated as deprecated
 from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -116,6 +118,7 @@ class CatalogType(Enum):
     GLUE = "glue"
     DYNAMODB = "dynamodb"
     SQL = "sql"
+    IN_MEMORY = "in-memory"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -162,12 +165,22 @@ def load_sql(name: str, conf: Properties) -> Catalog:
         ) from exc
 
 
+def load_in_memory(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.memory import InMemoryCatalog
+
+        return InMemoryCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
+
+
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
     CatalogType.GLUE: load_glue,
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
+    CatalogType.IN_MEMORY: load_in_memory,
 }
 
 
@@ -745,6 +758,21 @@ class Catalog(ABC):
         except ModuleNotFoundError:
             pass
         raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
+
+    @staticmethod
+    def _delete_old_metadata(io: FileIO, base: TableMetadata, metadata: TableMetadata) -> None:
+        """Delete oldest metadata if config is set to true."""
+        delete_after_commit: bool = property_as_bool(
+            metadata.properties,
+            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED,
+            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT,
+        )
+
+        if delete_after_commit:
+            removed_previous_metadata_files: set[str] = {log.metadata_file for log in base.metadata_log}
+            current_metadata_files: set[str] = {log.metadata_file for log in metadata.metadata_log}
+            removed_previous_metadata_files.difference_update(current_metadata_files)
+            delete_files(io, removed_previous_metadata_files, METADATA)
 
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""
