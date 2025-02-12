@@ -1105,7 +1105,7 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-            
+
             df: The input dataframe to upsert with the table's data.
             join_cols: The columns to join on. These are essentially analogous to primary keys
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
