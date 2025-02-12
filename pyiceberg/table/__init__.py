@@ -1238,19 +1238,40 @@ class Table:
         return pl.scan_iceberg(self)
 
     @staticmethod
-    def metadata_file_location(table_location: str, file_name: str, properties: Properties = EMPTY_DICT) -> str:
-        """Get the full path for a metadata file.
+    def new_table_metadata_file_location(table_location: str, new_version: int = 0, properties: Properties = EMPTY_DICT) -> str:
+        """Return a fully-qualified metadata file location for a new table version.
+
+        Args:
+            table_location (str): the base table location.
+            new_version (int): Version number of the metadata file.
+            properties (Properties): Table properties that may contain a custom metadata path.
+
+        Returns:
+            str: fully-qualified URI for the new table metadata file.
+
+        Raises:
+            ValueError: If the version is negative.
+        """
+        if new_version < 0:
+            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
+
+        file_name = f"{new_version:05d}-{uuid.uuid4()}.metadata.json"
+        return Table.new_metadata_location(table_location, file_name, properties)
+
+    @staticmethod
+    def new_metadata_location(table_location: str, file_name: str, properties: Properties = EMPTY_DICT) -> str:
+        """Return a fully-qualified metadata file location for the given filename.
 
         Args:
             table_location (str): The base table location
             file_name (str): Name of the metadata file
-            properties (Properties): Table properties that may contain custom metadata path
+            properties (Properties): Table properties that may contain a custom metadata path
 
         Returns:
-            str: Full path where the metadata file should be stored
+            str: A fully-qualified location URI for the metadata file.
         """
         if metadata_path := properties.get(TableProperties.WRITE_METADATA_PATH):
-            return f"{metadata_path.rstrip("/")}/{file_name}"
+            return f"{metadata_path.rstrip('/')}/{file_name}"
 
         return f"{table_location}/metadata/{file_name}"
 

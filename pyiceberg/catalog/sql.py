@@ -207,7 +207,7 @@ class SqlCatalog(MetastoreCatalog):
 
         namespace = Catalog.namespace_to_string(namespace_identifier)
         location = self._resolve_table_location(location, namespace, table_name)
-        metadata_location = self._get_metadata_location(table_location=location, properties=properties)
+        metadata_location = Table.new_table_metadata_file_location(table_location=location, properties=properties)
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )

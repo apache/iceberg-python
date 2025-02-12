@@ -580,7 +580,7 @@ def test_table_writes_metadata_to_custom_location(catalog: InMemoryCatalog) -> N
     table.append(df)
     manifests = table.current_snapshot().manifests(table.io)  # type: ignore
 
-    assert table.metadata_file_location(table.location(), "", table.properties).startswith(metadata_path)
+    assert table.new_metadata_location(table.location(), "", table.properties).startswith(metadata_path)
     assert manifests[0].manifest_path.startswith(metadata_path)
     assert table.location() != metadata_path
     assert table.metadata_location.startswith(metadata_path)
@@ -599,6 +599,6 @@ def test_table_writes_metadata_to_default_path(catalog: InMemoryCatalog) -> None
     table.append(df)
     manifests = table.current_snapshot().manifests(table.io)  # type: ignore
 
-    assert table.metadata_file_location(table.location(), "", table.properties).startswith(metadata_path)
+    assert table.new_metadata_location(table.location(), "", table.properties).startswith(metadata_path)
     assert manifests[0].manifest_path.startswith(metadata_path)
     assert table.metadata_location.startswith(metadata_path)

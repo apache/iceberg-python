@@ -857,7 +857,7 @@ class MetastoreCatalog(Catalog, ABC):
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(table_location=location, properties=properties)
+        metadata_location = Table.new_table_metadata_file_location(table_location=location, properties=properties)
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -888,7 +888,7 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        new_metadata_location = self._get_metadata_location(
+        new_metadata_location = Table.new_table_metadata_file_location(
             updated_metadata.location, new_metadata_version, updated_metadata.properties
         )
 
@@ -946,14 +946,6 @@ class MetastoreCatalog(Catalog, ABC):
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
-
-    @staticmethod
-    def _get_metadata_location(table_location: str, new_version: int = 0, properties: Properties = EMPTY_DICT) -> str:
-        if new_version < 0:
-            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
-
-        file_name = f"{new_version:05d}-{uuid.uuid4()}.metadata.json"
-        return Table.metadata_file_location(table_location, file_name, properties)
 
     @staticmethod
     def _parse_metadata_version(metadata_location: str) -> int:

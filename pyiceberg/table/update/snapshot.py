@@ -88,7 +88,7 @@ def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
     return f"{commit_uuid}-m{num}.avro"
 
 
-def _generate_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
+def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
     return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
@@ -245,12 +245,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         summary = self._summary(self.snapshot_properties)
         table_location = self._transaction.table_metadata.location
         properties = self._transaction.table_metadata.properties
-        file_name = _generate_manifest_list_file_name(
+        file_name = _new_manifest_list_file_name(
             snapshot_id=self._snapshot_id,
             attempt=0,
             commit_uuid=self.commit_uuid,
         )
-        manifest_list_file_path = self._transaction._table.metadata_file_location(table_location, file_name, properties)
+        manifest_list_file_path = self._transaction._table.new_metadata_location(table_location, file_name, properties)
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -299,7 +299,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         table_location = self._transaction.table_metadata.location
         properties = self._transaction.table_metadata.properties
         file_name = _new_manifest_file_name(num=next(self._manifest_num_counter), commit_uuid=self.commit_uuid)
-        file_path = self._transaction._table.metadata_file_location(table_location, file_name, properties)
+        file_path = self._transaction._table.new_metadata_location(table_location, file_name, properties)
         return self._io.new_output(file_path)
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> List[ManifestEntry]:
