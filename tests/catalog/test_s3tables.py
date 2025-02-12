@@ -41,8 +41,8 @@ def table_name(table_name: str) -> str:
     return table_name.replace("-", "_")
 
 
-@pytest.fixture
-def aws_region() -> str:
+@pytest.fixture()
+def aws_region(_aws_credentials: None) -> str:
     return "us-east-1"
 
 
