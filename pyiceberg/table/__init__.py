@@ -142,10 +142,10 @@ from pyiceberg.utils.properties import property_as_bool
 if TYPE_CHECKING:
     import daft
     import pandas as pd
+    import polars as pl
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
-    import polars as pl
 
     from pyiceberg.catalog import Catalog
 
@@ -1212,7 +1212,7 @@ class Table:
         import daft
 
         return daft.read_iceberg(self)
-    
+
     def to_polars(self) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 

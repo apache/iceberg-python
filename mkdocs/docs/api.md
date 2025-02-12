@@ -1582,7 +1582,7 @@ schema = Schema(
     NestedField(field_id=1, name='ticket_id', field_type=LongType(), required=True),
     NestedField(field_id=2, name='customer_id', field_type=LongType(), required=True),
     NestedField(field_id=3, name='issue', field_type=StringType(), required=False),
-    NestedField(field_id=4, name='created_at', field_type=TimestampType(), required=True), 
+    NestedField(field_id=4, name='created_at', field_type=TimestampType(), required=True),
   required=True
 )
 
