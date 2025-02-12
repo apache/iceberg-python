@@ -1108,19 +1108,6 @@ files = [
 ]
 
 [[package]]
-name = "decorator"
-version = "5.1.1"
-description = "Decorators for Humans"
-optional = true
-python-versions = ">=3.5"
-groups = ["main"]
-markers = "extra == \"gcsfs\""
-files = [
-    {file = "decorator-5.1.1-py3-none-any.whl", hash = "sha256:b8c3f85900b9dc423225913c5aace94729fe1fa9763b38939a95226f02d37186"},
-    {file = "decorator-5.1.1.tar.gz", hash = "sha256:637996211036b6385ef91435e4fae22989472f9d571faba8927ba8253acbc330"},
-]
-
-[[package]]
 name = "datafusion"
 version = "44.0.0"
 description = "Build and run queries against data"
@@ -1134,6 +1121,23 @@ files = [
     {file = "datafusion-44.0.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:22d2e3ecf5d0b1b75c8ad48c8d9af14a0ac4de1633e86d3b397614f68aa8123c"},
     {file = "datafusion-44.0.0-cp38-abi3-win_amd64.whl", hash = "sha256:b36774dca54a0e1c88c8080b8c72cc2df5e95f4340a0cdbdd18a0473401551c5"},
     {file = "datafusion-44.0.0.tar.gz", hash = "sha256:5fc3740406ff531527aa8baa5954fe0bf1f02ea72170e172746b38cffc0d8d50"},
+]
+
+[package.dependencies]
+pyarrow = ">=11.0.0"
+typing-extensions = {version = "*", markers = "python_version < \"3.13\""}
+
+[[package]]
+name = "decorator"
+version = "5.1.1"
+description = "Decorators for Humans"
+optional = true
+python-versions = ">=3.5"
+groups = ["main"]
+markers = "extra == \"gcsfs\""
+files = [
+    {file = "decorator-5.1.1-py3-none-any.whl", hash = "sha256:b8c3f85900b9dc423225913c5aace94729fe1fa9763b38939a95226f02d37186"},
+    {file = "decorator-5.1.1.tar.gz", hash = "sha256:637996211036b6385ef91435e4fae22989472f9d571faba8927ba8253acbc330"},
 ]
 
 [[package]]
@@ -3667,10 +3671,9 @@ files = [
 name = "pyarrow"
 version = "19.0.0"
 description = "Python library for Apache Arrow"
-optional = true
+optional = false
 python-versions = ">=3.9"
-groups = ["main"]
-markers = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\""
+groups = ["main", "dev"]
 files = [
     {file = "pyarrow-19.0.0-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:c318eda14f6627966997a7d8c374a87d084a94e4e38e9abbe97395c215830e0c"},
     {file = "pyarrow-19.0.0-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:62ef8360ff256e960f57ce0299090fb86423afed5e46f18f1225f960e05aae3d"},
@@ -3715,6 +3718,7 @@ files = [
     {file = "pyarrow-19.0.0-cp39-cp39-win_amd64.whl", hash = "sha256:597360ffc71fc8cceea1aec1fb60cb510571a744fffc87db33d551d5de919bec"},
     {file = "pyarrow-19.0.0.tar.gz", hash = "sha256:8d47c691765cf497aaeed4954d226568563f1b3b74ff61139f2d77876717084b"},
 ]
+markers = {main = "extra == \"pyarrow\" or extra == \"pandas\" or extra == \"duckdb\" or extra == \"ray\" or extra == \"daft\""}
 
 [package.extras]
 test = ["cffi", "hypothesis", "pandas", "pytest", "pytz"]
@@ -5651,4 +5655,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "f8d052c8ef957bbb66f94093ef9dfa5805073cc938bba282c957a814c605a1f2"
+content-hash = "33d632240f5521ea647ea1e1f6936f48c369f457be139faa7e4351267aa7e86f"
