@@ -1394,9 +1394,8 @@ def _task_to_record_batches(
         next_index = 0
         batches = fragment_scanner.to_batches()
         for batch in batches:
-            current_index = next_index
-            next_index = current_index + len(batch)
-
+            next_index = next_index + len(batch)
+            current_index = next_index - len(batch)
             current_batch = batch
 
             if positional_deletes:
