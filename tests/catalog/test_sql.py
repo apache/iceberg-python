@@ -1624,10 +1624,10 @@ def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with
         lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
-def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema) -> None:
-    namespace = Catalog.namespace_from(table_identifier)
+def test_delete_metadata_multiple(catalog: SqlCatalog, table_schema_nested: Schema, random_table_identifier: str) -> None:
+    namespace = Catalog.namespace_from(random_table_identifier)
     catalog.create_namespace(namespace)
-    table = catalog.create_table(table_identifier, table_schema_nested)
+    table = catalog.create_table(random_table_identifier, table_schema_nested)
 
     original_metadata_location = table.metadata_location
 
