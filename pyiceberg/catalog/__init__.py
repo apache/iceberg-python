@@ -116,6 +116,7 @@ class CatalogType(Enum):
     GLUE = "glue"
     DYNAMODB = "dynamodb"
     SQL = "sql"
+    IN_MEMORY = "in-memory"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -162,12 +163,22 @@ def load_sql(name: str, conf: Properties) -> Catalog:
         ) from exc
 
 
+def load_in_memory(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.memory import InMemoryCatalog
+
+        return InMemoryCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
+
+
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
     CatalogType.GLUE: load_glue,
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
+    CatalogType.IN_MEMORY: load_in_memory,
 }
 
 
@@ -436,6 +447,17 @@ class Catalog(ABC):
 
         Returns:
             bool: True if the table exists, False otherwise.
+        """
+
+    @abstractmethod
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a view exists.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            bool: True if the view exists, False otherwise.
         """
 
     @abstractmethod

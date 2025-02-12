@@ -910,6 +910,10 @@ def test_literal_from_datetime() -> None:
     assert isinstance(literal(datetime.datetime.now()), TimestampLiteral)
 
 
+def test_literal_from_date() -> None:
+    assert isinstance(literal(datetime.date.today()), DateLiteral)
+
+
 #   __  __      ___
 #  |  \/  |_  _| _ \_  _
 #  | |\/| | || |  _/ || |

@@ -1258,6 +1258,19 @@ with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
 ```
 
+## Views
+
+PyIceberg supports view operations.
+
+### Check if a view exists
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+catalog.view_exists("default.bar")
+```
+
 ## Table Statistics Management
 
 Manage table statistics with operations through the `Table` API:
@@ -1483,7 +1496,7 @@ print(ray_dataset.take(2))
 
 ### Daft
 
-PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/latest/user_guide/integrations/iceberg.html)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/stable/integrations/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
 
 <!-- prettier-ignore-start -->
 

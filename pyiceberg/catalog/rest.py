@@ -79,7 +79,7 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -106,6 +106,7 @@ class Endpoints:
     rename_table: str = "tables/rename"
     list_views: str = "namespaces/{namespace}/views"
     drop_view: str = "namespaces/{namespace}/views/{view}"
+    view_exists: str = "namespaces/{namespace}/views/{view}"
 
 
 class IdentifierKind(Enum):
@@ -138,7 +139,6 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 AUTH_URL = "rest.authorization-url"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
-HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -553,15 +553,12 @@ class RestCatalog(Catalog):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
 
     def _config_headers(self, session: Session) -> None:
-        header_properties = self._extract_headers_from_properties()
+        header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
-
-    def _extract_headers_from_properties(self) -> Dict[str, str]:
-        return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
     def _create_table(
         self,
@@ -897,6 +894,31 @@ class RestCatalog(Catalog):
         if response.status_code == 404:
             return False
         elif response.status_code in (200, 204):
+            return True
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            self._handle_non_200_response(exc, {})
+
+        return False
+
+    @retry(**_RETRY_ARGS)
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a view exists.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            bool: True if the view exists, False otherwise.
+        """
+        response = self._session.head(
+            self.url(Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
+        )
+        if response.status_code == 404:
+            return False
+        elif response.status_code in [200, 204]:
             return True
 
         try:
