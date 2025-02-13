@@ -97,6 +97,7 @@ pytest-mock = "3.14.0"
 pyspark = "3.5.3"
 cython = "3.0.12"
 deptry = ">=0.14,<0.24"
+datafusion = "^44.0.0"
 docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/9248#issuecomment-2026240520
 
 [tool.poetry.group.docs.dependencies]
@@ -502,6 +503,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "polars.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "datafusion.*"
 ignore_missing_imports = true
 
 [tool.coverage.run]
