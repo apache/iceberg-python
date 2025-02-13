@@ -22,6 +22,7 @@ import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from concurrent.futures import Future
+from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, Tuple
 
@@ -82,7 +83,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Transaction
+    from pyiceberg.table import Table, Transaction
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -106,12 +107,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _deleted_data_files: Set[DataFile]
 
     def __init__(
-            self,
-            operation: Operation,
-            transaction: Transaction,
-            io: FileIO,
-            commit_uuid: Optional[uuid.UUID] = None,
-            snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        self,
+        operation: Operation,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         super().__init__(transaction)
         self.commit_uuid = commit_uuid or uuid.uuid4()
@@ -136,12 +137,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return self
 
     @abstractmethod
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        ...
+    def _deleted_entries(self) -> List[ManifestEntry]: ...
 
     @abstractmethod
-    def _existing_manifests(self) -> List[ManifestFile]:
-        ...
+    def _existing_manifests(self) -> List[ManifestFile]: ...
 
     def _process_manifests(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
         """To perform any post-processing on the manifests before writing them to the new snapshot."""
@@ -151,11 +150,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         def _write_added_manifest() -> List[ManifestFile]:
             if self._added_data_files:
                 with write_manifest(
-                        format_version=self._transaction.table_metadata.format_version,
-                        spec=self._transaction.table_metadata.spec(),
-                        schema=self._transaction.table_metadata.schema(),
-                        output_file=self.new_manifest_output(),
-                        snapshot_id=self._snapshot_id,
+                    format_version=self._transaction.table_metadata.format_version,
+                    spec=self._transaction.table_metadata.spec(),
+                    schema=self._transaction.table_metadata.schema(),
+                    output_file=self.new_manifest_output(),
+                    snapshot_id=self._snapshot_id,
                 ) as writer:
                     for data_file in self._added_data_files:
                         writer.add(
@@ -181,11 +180,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                     partition_groups[deleted_entry.data_file.spec_id].append(deleted_entry)
                 for spec_id, entries in partition_groups.items():
                     with write_manifest(
-                            format_version=self._transaction.table_metadata.format_version,
-                            spec=self._transaction.table_metadata.specs()[spec_id],
-                            schema=self._transaction.table_metadata.schema(),
-                            output_file=self.new_manifest_output(),
-                            snapshot_id=self._snapshot_id,
+                        format_version=self._transaction.table_metadata.format_version,
+                        spec=self._transaction.table_metadata.specs()[spec_id],
+                        schema=self._transaction.table_metadata.schema(),
+                        output_file=self.new_manifest_output(),
+                        snapshot_id=self._snapshot_id,
                     ) as writer:
                         for entry in entries:
                             writer.add_entry(entry)
@@ -200,8 +199,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         delete_manifests = executor.submit(_write_delete_manifest)
         existing_manifests = executor.submit(self._existing_manifests)
 
-        return self._process_manifests(
-            added_manifests.result() + delete_manifests.result() + existing_manifests.result())
+        return self._process_manifests(added_manifests.result() + delete_manifests.result() + existing_manifests.result())
 
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
@@ -253,11 +251,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
         with write_manifest_list(
-                format_version=self._transaction.table_metadata.format_version,
-                output_file=self._io.new_output(manifest_list_file_path),
-                snapshot_id=self._snapshot_id,
-                parent_snapshot_id=self._parent_snapshot_id,
-                sequence_number=next_sequence_number,
+            format_version=self._transaction.table_metadata.format_version,
+            output_file=self._io.new_output(manifest_list_file_path),
+            snapshot_id=self._snapshot_id,
+            parent_snapshot_id=self._parent_snapshot_id,
+            sequence_number=next_sequence_number,
         ) as writer:
             writer.add_manifests(new_manifests)
 
@@ -274,8 +272,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (
                 AddSnapshotUpdate(snapshot=snapshot),
                 SetSnapshotRefUpdate(
-                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main",
-                    type="branch"
+                    snapshot_id=self._snapshot_id, parent_snapshot_id=self._parent_snapshot_id, ref_name="main", type="branch"
                 ),
             ),
             (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
@@ -321,12 +318,12 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     _case_sensitive: bool
 
     def __init__(
-            self,
-            operation: Operation,
-            transaction: Transaction,
-            io: FileIO,
-            commit_uuid: Optional[uuid.UUID] = None,
-            snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        self,
+        operation: Operation,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ):
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties)
         self._predicate = AlwaysFalse()
@@ -379,8 +376,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
             )
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate,
-                                                           case_sensitive=self._case_sensitive).eval
+        strict_metrics_evaluator = _StrictMetricsEvaluator(schema, self._predicate, case_sensitive=self._case_sensitive).eval
         inclusive_metrics_evaluator = _InclusiveMetricsEvaluator(
             schema, self._predicate, case_sensitive=self._case_sensitive
         ).eval
@@ -416,11 +412,11 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                             # Rewrite the manifest
                             if len(existing_entries) > 0:
                                 with write_manifest(
-                                        format_version=self._transaction.table_metadata.format_version,
-                                        spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                        schema=self._transaction.table_metadata.schema(),
-                                        output_file=self.new_manifest_output(),
-                                        snapshot_id=self._snapshot_id,
+                                    format_version=self._transaction.table_metadata.format_version,
+                                    spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                    schema=self._transaction.table_metadata.schema(),
+                                    output_file=self.new_manifest_output(),
+                                    snapshot_id=self._snapshot_id,
                                 ) as writer:
                                     for existing_entry in existing_entries:
                                         writer.add_entry(existing_entry)
@@ -447,182 +443,6 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     def files_affected(self) -> bool:
         """Indicate if any manifest-entries can be dropped."""
         return len(self._deleted_entries()) > 0
-
-
-class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
-    """Rewrite manifest files based on the predicate."""
-
-    KEPT_MANIFESTS_COUNT = "manifests-kept"
-    CREATED_MANIFESTS_COUNT = "manifests-created"
-    REPLACED_MANIFESTS_COUNT = "manifests-replaced"
-    PROCESSED_ENTRY_COUNT = "entries-processed"
-
-    def __init__(
-            self,
-            transaction: Transaction,
-            io: FileIO,
-            commit_uuid: Optional[uuid.UUID] = None,
-            snapshot_properties: Dict[str, str] = EMPTY_DICT,
-    ):
-        from pyiceberg.table import TableProperties
-
-        super().__init__(Operation.REPLACE, transaction, io, commit_uuid, snapshot_properties)
-
-        self.specs_by_id = self._transaction.table_metadata.spec().spec_id
-        self.manifest_target_size_bytes = property_as_int(
-            self._transaction.table_metadata.properties,
-            TableProperties.MANIFEST_TARGET_SIZE_BYTES,
-            TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
-        )
-        self.deleted_manifests: Set[ManifestFile] = set()
-        self.added_manifests: List[ManifestFile] = []
-        self.rewritten_added_manifests: List[ManifestFile] = []
-        self.kept_manifests: Set[ManifestFile] = set()
-        self.new_manifests: Set[ManifestFile] = set()
-        self.rewritten_manifests: Set[ManifestFile] = set()
-
-    def copy_manifest(self, manifest: ManifestFile) -> ManifestFile:
-        return ManifestFile(
-            manifest_path=manifest.manifest_path,
-            manifest_length=manifest.manifest_length,
-            partition_spec_id=manifest.partition_spec_id,
-            content=manifest.content,
-            sequence_number=manifest.sequence_number,
-            min_sequence_number=manifest.min_sequence_number,
-            added_snapshot_id=manifest.added_snapshot_id,
-            added_files_count=manifest.added_files_count,
-            existing_files_count=manifest.existing_files_count,
-            deleted_files_count=manifest.deleted_files_count,
-            added_rows_count=manifest.added_rows_count,
-            existing_rows_count=manifest.existing_rows_count,
-            deleted_rows_count=manifest.deleted_rows_count,
-            partitions=manifest.partitions,
-            key_metadata=manifest.key_metadata,
-        )
-
-    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
-        summary = {
-            self.CREATED_MANIFESTS_COUNT: str(
-                len(self.new_manifests) + len(self.added_manifests) + len(self.rewritten_added_manifests)
-            ),
-            self.KEPT_MANIFESTS_COUNT: str(len(self.kept_manifests)),
-            self.REPLACED_MANIFESTS_COUNT: str(len(self.rewritten_manifests) + len(self.deleted_manifests)),
-            self.PROCESSED_ENTRY_COUNT: str(self.entry_count),
-        }
-        return super()._summary(summary)
-
-    def delete_manifest(self, manifest):
-        self.deleted_manifests.add(manifest)
-        return self
-
-    def requires_rewrite(self, current_manifests):
-
-        if not self.rewritten_manifests:
-            # nothing yet processed so perform a full rewrite
-            return True
-
-        # if any processed manifest is not in the current manifest list, perform a full rewrite
-        return any(manifest not in current_manifests for manifest in self.rewritten_manifests)
-
-    def keep_active_manifests(self, current_manifests: List[ManifestFile]) -> None:
-        # keep any existing manifests as-is that were not processed
-        self.kept_manifests.clear()
-        for manifest in current_manifests:
-            if manifest not in self.rewritten_manifests and manifest not in self.deleted_manifests:
-                self.kept_manifests.add(manifest)
-
-    def active_files_count(self, manifests):
-        active_files_count = 0
-
-        for manifest in manifests:
-            if manifest.added_files_count is None:
-                raise ValueError("Missing file counts in {}".format(manifest.path()))
-            if manifest.existing_files_count is None:
-                raise ValueError("Missing file counts in {}".format(manifest.path()))
-            active_files_count += manifest.added_files_count
-            active_files_count += manifest.existing_files_count
-
-        return active_files_count
-
-    def validate_files_counts(self):
-        created_manifests = itertools.chain(self.new_manifests, self.added_manifests, self.rewritten_added_manifests)
-        created_manifests_files_count = self.active_files_count(created_manifests)
-
-        replaced_manifests = itertools.chain(self.rewritten_manifests, self.deleted_manifests)
-        replaced_manifests_files_count = self.active_files_count(replaced_manifests)
-
-        if created_manifests_files_count != replaced_manifests_files_count:
-            raise ValueError(
-                "Replaced and created manifests must have the same number of active files: {} (new), {} (old)".format(
-                    created_manifests_files_count, replaced_manifests_files_count
-                )
-            )
-
-    def _existing_manifests(self) -> List[ManifestFile]:
-        """Returns the list of manifests to include in the next snapshot."""
-        return self.apply()
-
-    def _deleted_entries(self) -> List[ManifestEntry]:
-        """No entries are deleted during manifest rewriting."""
-        return []
-    def apply(self) -> List[ManifestFile]:
-        snapshot = self._transaction.table_metadata.current_snapshot()
-        current_manifests = snapshot.manifests(io=self._io)
-        current_manifest_set = set(current_manifests)
-        data_manifest_merge_manager = _ManifestMergeManager(
-            target_size_bytes=self.manifest_target_size_bytes,
-            min_count_to_merge=2,
-            merge_enabled=True,
-            snapshot_producer=self,
-        )
-        # self.validate_deleted_manifests(current_manifest_set, base.current_snapshot().snapshot_id())
-
-        if self.requires_rewrite(current_manifest_set):
-            new_manifests = data_manifest_merge_manager.merge_manifests(manifests=current_manifests)
-            # self.rewritten_manifests.add(new_manifests)
-            self.rewritten_manifests.update(new_manifests)
-        else:
-            self.keep_active_manifests(current_manifests)
-
-        self.validate_files_counts()
-
-        new_manifests_with_metadata = [
-            manifest.copy_with_snapshot_id(self.snapshot_id)
-            for manifest in itertools.chain(self.new_manifests, self.added_manifests, self.rewritten_added_manifests)
-        ]
-
-        # put new manifests at the beginning
-        applyi = list(new_manifests_with_metadata)
-        applyi.extend(self.kept_manifests)
-
-        return applyi
-
-    # def execute(self, manifests: List[ManifestFile]) -> List[ManifestFile]:
-    #     data_manifest_merge_manager = _ManifestMergeManager(
-    #         target_size_bytes=self.manifest_target_size_bytes,
-    #         min_count_to_merge=2,
-    #         merge_enabled=True,
-    #         snapshot_producer=self,
-    #     )
-    #     return data_manifest_merge_manager.merge_manifests(manifests=manifests)
-
-    def add_manifest(self, manifest):
-        if manifest.has_added_files():
-            raise ValueError("Cannot add manifest with added files")
-        if manifest.has_deleted_files():
-            raise ValueError("Cannot add manifest with deleted files")
-        if manifest.snapshot_id() is not None and manifest.snapshot_id() != -1:
-            raise ValueError("Snapshot id must be assigned during commit")
-        if manifest.sequence_number() != -1:
-            raise ValueError("Sequence must be assigned during commit")
-
-        if manifest.snapshot_id() is None:
-            self.added_manifests.append(manifest)
-        else:
-            copied_manifest = self.copy_manifest(manifest)
-            self.rewritten_added_manifests.append(copied_manifest)
-
-        return self
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
@@ -654,18 +474,32 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         return []
 
 
+@dataclass(init=False)
+class RewriteManifestsResult:
+    rewritten_manifests: List[ManifestFile]
+    added_manifests: List[ManifestFile]
+
+    def __init__(
+        self,
+        rewritten_manifests: Optional[List[ManifestFile]],
+        added_manifests: Optional[List[ManifestFile]],
+    ) -> None:
+        self.rewritten_manifests = rewritten_manifests or []
+        self.added_manifests = added_manifests or []
+
+
 class _MergeAppendFiles(_FastAppendFiles):
     _target_size_bytes: int
     _min_count_to_merge: int
     _merge_enabled: bool
 
     def __init__(
-            self,
-            operation: Operation,
-            transaction: Transaction,
-            io: FileIO,
-            commit_uuid: Optional[uuid.UUID] = None,
-            snapshot_properties: Dict[str, str] = EMPTY_DICT,
+        self,
+        operation: Operation,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: Optional[uuid.UUID] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
     ) -> None:
         from pyiceberg.table import TableProperties
 
@@ -705,6 +539,83 @@ class _MergeAppendFiles(_FastAppendFiles):
         return data_manifest_merge_manager.merge_manifests(unmerged_data_manifests) + unmerged_deletes_manifests
 
 
+class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
+    _target_size_bytes: int
+    rewritten_manifests: List[ManifestFile] = []
+    added_manifests: List[ManifestFile] = []
+
+    def __init__(
+        self,
+        table: Table,
+        transaction: Transaction,
+        io: FileIO,
+        spec_id: Optional[int] = None,
+        snapshot_properties: Dict[str, str] = EMPTY_DICT,
+    ):
+        from pyiceberg.table import TableProperties
+
+        _table: Table
+        _spec: PartitionSpec
+
+        super().__init__(Operation.REPLACE, transaction, io, snapshot_properties=snapshot_properties)
+        self._target_size_bytes = property_as_int(
+            self._transaction.table_metadata.properties,
+            TableProperties.MANIFEST_TARGET_SIZE_BYTES,
+            TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
+        )  # type: ignore
+        self._table = table
+        self._spec_id = spec_id
+
+    def rewrite_manifests(self) -> RewriteManifestsResult:
+        data_result = self._find_matching_manifests(ManifestContent.DATA)
+        self.rewritten_manifests.extend(data_result.rewritten_manifests)
+        self.added_manifests.extend(data_result.added_manifests)
+
+        deletes_result = self._find_matching_manifests(ManifestContent.DELETES)
+        self.rewritten_manifests.extend(deletes_result.rewritten_manifests)
+        self.added_manifests.extend(deletes_result.added_manifests)
+
+        if not self.rewritten_manifests:
+            return RewriteManifestsResult(rewritten_manifests=[], added_manifests=[])
+
+        return RewriteManifestsResult(rewritten_manifests=self.rewritten_manifests, added_manifests=self.added_manifests)
+
+    def _find_matching_manifests(self, content: ManifestContent) -> RewriteManifestsResult:
+        snapshot = self._table.current_snapshot()
+        if self._spec_id and self._spec_id not in self._table.specs():
+            raise ValueError(f"Cannot find spec with id: {self._spec_id}")
+
+        if not snapshot:
+            raise ValueError("Cannot rewrite manifests without a current snapshot")
+
+        manifests = [
+            manifest
+            for manifest in snapshot.manifests(io=self._io)
+            if manifest.partition_spec_id == self._spec_id and manifest.content == content
+        ]
+
+        data_manifest_merge_manager = _ManifestMergeManager(
+            target_size_bytes=self._target_size_bytes,
+            min_count_to_merge=2,
+            merge_enabled=True,
+            snapshot_producer=self,
+        )
+        new_manifests = data_manifest_merge_manager.merge_manifests(manifests=manifests)
+
+        return RewriteManifestsResult(rewritten_manifests=manifests, added_manifests=new_manifests)
+
+    def _existing_manifests(self) -> List[ManifestFile]:
+        """Determine if there are any existing manifest files."""
+        return []
+
+    def _deleted_entries(self) -> List[ManifestEntry]:
+        """To determine if we need to record any deleted manifest entries.
+
+        In case of an append, nothing is deleted.
+        """
+        return []
+
+
 class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
     """Overwrites data from the table. This will produce an OVERWRITE snapshot.
 
@@ -718,8 +629,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         if snapshot := self._transaction.table_metadata.current_snapshot():
             for manifest_file in snapshot.manifests(io=self._io):
                 entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
-                found_deleted_data_files = [entry.data_file for entry in entries if
-                                            entry.data_file in self._deleted_data_files]
+                found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
 
                 if len(found_deleted_data_files) == 0:
                     existing_files.append(manifest_file)
@@ -727,11 +637,11 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                     # We have to rewrite the manifest file without the deleted data files
                     if any(entry.data_file not in found_deleted_data_files for entry in entries):
                         with write_manifest(
-                                format_version=self._transaction.table_metadata.format_version,
-                                spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
-                                schema=self._transaction.table_metadata.schema(),
-                                output_file=self.new_manifest_output(),
-                                snapshot_id=self._snapshot_id,
+                            format_version=self._transaction.table_metadata.format_version,
+                            spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                            schema=self._transaction.table_metadata.schema(),
+                            output_file=self.new_manifest_output(),
+                            snapshot_id=self._snapshot_id,
                         ) as writer:
                             [
                                 writer.add_entry(
@@ -795,19 +705,20 @@ class UpdateSnapshot:
 
     def fast_append(self) -> _FastAppendFiles:
         return _FastAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io,
-            snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
         )
 
     def merge_append(self) -> _MergeAppendFiles:
         return _MergeAppendFiles(
-            operation=Operation.APPEND, transaction=self._transaction, io=self._io,
-            snapshot_properties=self._snapshot_properties
+            operation=Operation.APPEND, transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
         )
 
     def rewrite(self) -> _RewriteManifests:
         return _RewriteManifests(
-            transaction=self._transaction, io=self._io, snapshot_properties=self._snapshot_properties
+            table=self._transaction._table,
+            transaction=self._transaction,
+            io=self._io,
+            snapshot_properties=self._snapshot_properties,
         )
 
     def overwrite(self, commit_uuid: Optional[uuid.UUID] = None) -> _OverwriteFiles:
@@ -837,8 +748,7 @@ class _ManifestMergeManager(Generic[U]):
     _snapshot_producer: _SnapshotProducer[U]
 
     def __init__(
-            self, target_size_bytes: int, min_count_to_merge: int, merge_enabled: bool,
-            snapshot_producer: _SnapshotProducer[U]
+        self, target_size_bytes: int, min_count_to_merge: int, merge_enabled: bool, snapshot_producer: _SnapshotProducer[U]
     ) -> None:
         self._target_size_bytes = target_size_bytes
         self._min_count_to_merge = min_count_to_merge
@@ -867,10 +777,8 @@ class _ManifestMergeManager(Generic[U]):
 
         return writer.to_manifest_file()
 
-    def _merge_group(self, first_manifest: ManifestFile, spec_id: int, manifests: List[ManifestFile]) -> List[
-        ManifestFile]:
-        packer: ListPacker[ManifestFile] = ListPacker(target_weight=self._target_size_bytes, lookback=1,
-                                                      largest_bin_first=False)
+    def _merge_group(self, first_manifest: ManifestFile, spec_id: int, manifests: List[ManifestFile]) -> List[ManifestFile]:
+        packer: ListPacker[ManifestFile] = ListPacker(target_weight=self._target_size_bytes, lookback=1, largest_bin_first=False)
         bins: List[List[ManifestFile]] = packer.pack_end(manifests, lambda m: m.manifest_length)
 
         def merge_bin(manifest_bin: List[ManifestFile]) -> List[ManifestFile]:
@@ -892,8 +800,7 @@ class _ManifestMergeManager(Generic[U]):
 
         # for consistent ordering, we need to maintain future order
         futures_index = {f: i for i, f in enumerate(futures)}
-        completed_futures: SortedList[Future[List[ManifestFile]]] = SortedList(iterable=[],
-                                                                               key=lambda f: futures_index[f])
+        completed_futures: SortedList[Future[List[ManifestFile]]] = SortedList(iterable=[], key=lambda f: futures_index[f])
         for future in concurrent.futures.as_completed(futures):
             completed_futures.add(future)
 
@@ -994,12 +901,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
-            self,
-            snapshot_id: int,
-            branch_name: str,
-            max_ref_age_ms: Optional[int] = None,
-            max_snapshot_age_ms: Optional[int] = None,
-            min_snapshots_to_keep: Optional[int] = None,
+        self,
+        snapshot_id: int,
+        branch_name: str,
+        max_ref_age_ms: Optional[int] = None,
+        max_snapshot_age_ms: Optional[int] = None,
+        min_snapshots_to_keep: Optional[int] = None,
     ) -> ManageSnapshots:
         """
         Create a new branch pointing to the given snapshot id.

@@ -353,7 +353,7 @@ def _truncate_table_summary(summary: Summary, previous_summary: Mapping[str, str
 def update_snapshot_summaries(
     summary: Summary, previous_summary: Optional[Mapping[str, str]] = None, truncate_full_table: bool = False
 ) -> Summary:
-    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE}:
+    if summary.operation not in {Operation.APPEND, Operation.OVERWRITE, Operation.DELETE, Operation.REPLACE}:
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
     if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:

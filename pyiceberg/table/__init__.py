@@ -115,12 +115,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import (
-    ManageSnapshots,
-    UpdateSnapshot,
-    _FastAppendFiles,
-    _ManifestMergeManager,
-)
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles, RewriteManifestsResult
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -139,7 +134,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.properties import property_as_bool, property_as_int
+from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
     import daft
@@ -439,9 +434,10 @@ class Transaction:
             A new UpdateSnapshot
         """
         return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
+
     def rewrite_manifests(self) -> None:
         with self.update_snapshot().rewrite() as rewrite:
-            rewrite.commit()
+            rewrite.rewrite_manifests()
 
     def update_statistics(self) -> UpdateStatistics:
         """
@@ -1379,49 +1375,17 @@ class Table:
     def rewrite_manifests(
         self,
         spec_id: Optional[int] = None,
-        rewrite_all: bool = False,
-        max_manifest_size: Optional[int] = None,
-    ) -> "Table":
-
-        with self.transaction() as tx:
-            tx.rewrite_manifests()
-        ...
-        """Rewrite manifests in the table.
+    ) -> RewriteManifestsResult:
+        """
+        Shorthand API for Rewriting manifests for the table.
 
         Args:
-            spec_id: Spec ID to be used for the rewritten manifests
-            rewrite_all: If True, rewrite all manifests. If False, only rewrite small manifests
-            max_manifest_size: Target size for manifests in bytes
+            spec_id: Spec id of the manifests to rewrite (defaults to current spec id)
 
-        Returns:
-            An updated version of the table with rewritten manifests
-        #"""
-        # return RewriteManifests(
-        #     self,
-        #     spec_id=spec_id,
-        #     rewrite_all=rewrite_all,
-        #     max_manifest_size=max_manifest_size,
-        # ).commit()
-
-        # snapshot = self.current_snapshot()
-        # manifests = []
-        # for manifest in snapshot.manifests(self.io):
-        #     if manifest.content == ManifestContent.DATA:
-        #         manifests.append(manifest)
-        #
-        # data_manifest_merge_manager = _ManifestMergeManager(
-        #     target_size_bytes=property_as_int(
-        #         self.properties,
-        #         TableProperties.MANIFEST_TARGET_SIZE_BYTES,
-        #         TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
-        #     ),
-        #     min_count_to_merge=2,
-        #     merge_enabled=True,
-        #     snapshot_producer=self,
-        # )
-        #
-        # data_manifest_merge_manager.merge_manifests(manifests)
-        # entries = self.inspect.entries().filter("status < 2").selectExpr("input_file_name() as manifest")
+        """
+        with self.transaction() as tx:
+           rewrite_results = tx.rewrite_manifests(spec_id=spec_id)
+        return rewrite_results
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
