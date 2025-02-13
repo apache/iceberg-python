@@ -519,24 +519,26 @@ class RestCatalog(Catalog):
         session.mount(self.uri, SigV4Adapter(**self.properties))
 
     def _response_to_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> Table:
+        metadata_location = table_response.metadata_location if table_response.metadata_location else table_response.metadata.location
         return Table(
             identifier=identifier_tuple,
-            metadata_location=table_response.metadata_location,  # type: ignore
+            metadata_location=metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {**table_response.metadata.properties, **table_response.config}, metadata_location
             ),
             catalog=self,
             config=table_response.config,
         )
 
     def _response_to_staged_table(self, identifier_tuple: Tuple[str, ...], table_response: TableResponse) -> StagedTable:
+        metadata_location = table_response.metadata_location if table_response.metadata_location else table_response.metadata.location
         return StagedTable(
             identifier=identifier_tuple,
-            metadata_location=table_response.metadata_location,  # type: ignore
+            metadata_location=metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config}, table_response.metadata_location
+                {**table_response.metadata.properties, **table_response.config}, metadata_location
             ),
             catalog=self,
         )
