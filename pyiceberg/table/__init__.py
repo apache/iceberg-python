@@ -1453,7 +1453,7 @@ class Table:
     def rewrite_manifests(
         self,
         spec_id: Optional[int] = None,
-    ) -> RewriteManifestsResult:
+    ) -> None:
         """
         Shorthand API for Rewriting manifests for the table.
 
@@ -1462,8 +1462,7 @@ class Table:
 
         """
         with self.transaction() as tx:
-           rewrite_results = tx.rewrite_manifests(spec_id=spec_id)
-        return rewrite_results
+            tx.rewrite_manifests(spec_id=spec_id)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
