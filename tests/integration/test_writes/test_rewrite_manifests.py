@@ -110,7 +110,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
     manifests = tbl.inspect.all_manifests().to_pylist()
     assert len(manifests) == 3, "Should have 3 manifests before rewrite"
 
-    result = tbl.rewrite_manifests()
+    tbl.rewrite_manifests()
     tbl.refresh()
     manifests = tbl.inspect.all_manifests().to_pylist()
     assert len(manifests) == 1, "Should have 1 manifests before rewrite"

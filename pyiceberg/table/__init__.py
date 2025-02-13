@@ -115,7 +115,7 @@ from pyiceberg.table.update import (
     update_table_metadata,
 )
 from pyiceberg.table.update.schema import UpdateSchema
-from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles, RewriteManifestsResult
+from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
@@ -1375,7 +1375,7 @@ class Table:
     def rewrite_manifests(
         self,
         spec_id: Optional[int] = None,
-    ) -> RewriteManifestsResult:
+    ) -> None:
         """
         Shorthand API for Rewriting manifests for the table.
 
@@ -1384,8 +1384,7 @@ class Table:
 
         """
         with self.transaction() as tx:
-           rewrite_results = tx.rewrite_manifests(spec_id=spec_id)
-        return rewrite_results
+            tx.rewrite_manifests(spec_id=spec_id)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
