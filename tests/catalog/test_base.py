@@ -314,7 +314,7 @@ def test_rename_table(catalog: InMemoryCatalog) -> None:
     assert table._identifier == Catalog.identifier_to_tuple(new_table)
 
     # And
-    assert ("new", "namespace") in catalog.list_namespaces()
+    assert ("new",) in catalog.list_namespaces()
 
     # And
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
@@ -338,7 +338,7 @@ def test_rename_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
     assert new_table._identifier == Catalog.identifier_to_tuple(new_table_name)
 
     # And
-    assert ("new", "namespace") in catalog.list_namespaces()
+    assert ("new",) in catalog.list_namespaces()
 
     # And
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
@@ -352,7 +352,7 @@ def test_create_namespace(catalog: InMemoryCatalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, TEST_TABLE_PROPERTIES)
 
     # Then
-    assert TEST_TABLE_NAMESPACE in catalog.list_namespaces()
+    assert TEST_TABLE_NAMESPACE[:1] in catalog.list_namespaces()
     assert TEST_TABLE_PROPERTIES == catalog.load_namespace_properties(TEST_TABLE_NAMESPACE)
 
 
@@ -375,7 +375,7 @@ def test_list_namespaces(catalog: InMemoryCatalog) -> None:
     # When
     namespaces = catalog.list_namespaces()
     # Then
-    assert TEST_TABLE_NAMESPACE in namespaces
+    assert TEST_TABLE_NAMESPACE[:1] in namespaces
 
 
 def test_drop_namespace(catalog: InMemoryCatalog) -> None:
@@ -384,7 +384,7 @@ def test_drop_namespace(catalog: InMemoryCatalog) -> None:
     # When
     catalog.drop_namespace(TEST_TABLE_NAMESPACE)
     # Then
-    assert TEST_TABLE_NAMESPACE not in catalog.list_namespaces()
+    assert TEST_TABLE_NAMESPACE[:1] not in catalog.list_namespaces()
 
 
 def test_drop_namespace_raises_error_when_namespace_does_not_exist(catalog: InMemoryCatalog) -> None:
@@ -433,7 +433,7 @@ def test_update_namespace_metadata(catalog: InMemoryCatalog) -> None:
     summary = catalog.update_namespace_properties(TEST_TABLE_NAMESPACE, updates=new_metadata)
 
     # Then
-    assert TEST_TABLE_NAMESPACE in catalog.list_namespaces()
+    assert TEST_TABLE_NAMESPACE[:1] in catalog.list_namespaces()
     assert new_metadata.items() <= catalog.load_namespace_properties(TEST_TABLE_NAMESPACE).items()
     assert summary.removed == []
     assert sorted(summary.updated) == ["key3", "key4"]
@@ -450,7 +450,7 @@ def test_update_namespace_metadata_removals(catalog: InMemoryCatalog) -> None:
     summary = catalog.update_namespace_properties(TEST_TABLE_NAMESPACE, remove_metadata, new_metadata)
 
     # Then
-    assert TEST_TABLE_NAMESPACE in catalog.list_namespaces()
+    assert TEST_TABLE_NAMESPACE[:1] in catalog.list_namespaces()
     assert new_metadata.items() <= catalog.load_namespace_properties(TEST_TABLE_NAMESPACE).items()
     assert remove_metadata.isdisjoint(catalog.load_namespace_properties(TEST_TABLE_NAMESPACE).keys())
     assert summary.removed == ["key1"]
