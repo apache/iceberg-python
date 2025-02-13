@@ -40,9 +40,9 @@ pip install "pyiceberg[s3fs,hive]"
 
 You can mix and match optional dependencies depending on your needs:
 
-| Key           | Description:                                                              |
-|---------------|---------------------------------------------------------------------------|
-| hive          | Support for the Hive metastore                                            |
+| Key          | Description:                                                              |
+| ------------ | ------------------------------------------------------------------------- |
+| hive         | Support for the Hive metastore                                            |
 | hive-kerberos | Support for Hive metastore in Kerberos environment                       |
 | glue          | Support for AWS Glue                                                      |
 | dynamodb      | Support for AWS DynamoDB                                                  |
@@ -53,6 +53,7 @@ You can mix and match optional dependencies depending on your needs:
 | duckdb        | Installs both PyArrow and DuckDB                                          |
 | ray           | Installs PyArrow, Pandas, and Ray                                         |
 | daft          | Installs Daft                                                             |
+| polars       | Installs Polars                                                           |
 | s3fs          | S3FS as a FileIO implementation to interact with the object store         |
 | adlfs         | ADLFS as a FileIO implementation to interact with the object store        |
 | snappy        | Support for snappy Avro compression                                       |

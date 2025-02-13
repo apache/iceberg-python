@@ -142,6 +142,7 @@ from pyiceberg.utils.properties import property_as_bool
 if TYPE_CHECKING:
     import daft
     import pandas as pd
+    import polars as pl
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
@@ -1225,6 +1226,16 @@ class Table:
 
         return daft.read_iceberg(self)
 
+    def to_polars(self) -> pl.LazyFrame:
+        """Lazily read from this Apache Iceberg table.
+
+        Returns:
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+        """
+        import polars as pl
+
+        return pl.scan_iceberg(self)
+
 
 class StaticTable(Table):
     """Load a table directly from a metadata file (i.e., without using a catalog)."""
@@ -1351,6 +1362,9 @@ class TableScan(ABC):
 
     @abstractmethod
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
+
+    @abstractmethod
+    def to_polars(self) -> pl.DataFrame: ...
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
@@ -1673,6 +1687,20 @@ class DataScan(TableScan):
         import ray
 
         return ray.data.from_arrow(self.to_arrow())
+
+    def to_polars(self) -> pl.DataFrame:
+        """Read a Polars DataFrame from this Iceberg table.
+
+        Returns:
+            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table
+        """
+        import polars as pl
+
+        result = pl.from_arrow(self.to_arrow())
+        if isinstance(result, pl.Series):
+            result = result.to_frame()
+
+        return result
 
     def count(self) -> int:
         # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
