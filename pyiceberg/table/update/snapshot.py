@@ -243,14 +243,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
         summary = self._summary(self.snapshot_properties)
-        table_location = self._transaction.table_metadata.location
-        properties = self._transaction.table_metadata.properties
         file_name = _new_manifest_list_file_name(
             snapshot_id=self._snapshot_id,
             attempt=0,
             commit_uuid=self.commit_uuid,
         )
-        manifest_list_file_path = self._transaction._table.new_metadata_location(table_location, file_name, properties)
+        location_provider = self._transaction._table.location_provider()
+        manifest_list_file_path = location_provider.new_metadata_location(file_name)
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -296,10 +295,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
 
     def new_manifest_output(self) -> OutputFile:
-        table_location = self._transaction.table_metadata.location
-        properties = self._transaction.table_metadata.properties
+        location_provider = self._transaction._table.location_provider()
         file_name = _new_manifest_file_name(num=next(self._manifest_num_counter), commit_uuid=self.commit_uuid)
-        file_path = self._transaction._table.new_metadata_location(table_location, file_name, properties)
+        file_path = location_provider.new_metadata_location(file_name)
         return self._io.new_output(file_path)
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> List[ManifestEntry]:

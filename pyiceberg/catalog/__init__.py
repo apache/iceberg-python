@@ -57,6 +57,7 @@ from pyiceberg.table import (
     Table,
     TableProperties,
 )
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -857,7 +858,8 @@ class MetastoreCatalog(Catalog, ABC):
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = Table.new_table_metadata_file_location(table_location=location, properties=properties)
+        provider = load_location_provider(location, properties)
+        metadata_location = provider.new_table_metadata_file_location()
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -888,9 +890,8 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        new_metadata_location = Table.new_table_metadata_file_location(
-            updated_metadata.location, new_metadata_version, updated_metadata.properties
-        )
+        provider = load_location_provider(updated_metadata.location, updated_metadata.properties)
+        new_metadata_location = provider.new_table_metadata_file_location(new_metadata_version)
 
         return StagedTable(
             identifier=table_identifier,

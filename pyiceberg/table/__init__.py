@@ -79,6 +79,7 @@ from pyiceberg.partitioning import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -1001,6 +1002,10 @@ class Table:
         """Return the table's base location."""
         return self.metadata.location
 
+    def location_provider(self) -> LocationProvider:
+        """Return the table's location provider."""
+        return load_location_provider(table_location=self.metadata.location, table_properties=self.metadata.properties)
+
     @property
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
@@ -1236,44 +1241,6 @@ class Table:
         import polars as pl
 
         return pl.scan_iceberg(self)
-
-    @staticmethod
-    def new_table_metadata_file_location(table_location: str, new_version: int = 0, properties: Properties = EMPTY_DICT) -> str:
-        """Return a fully-qualified metadata file location for a new table version.
-
-        Args:
-            table_location (str): the base table location.
-            new_version (int): Version number of the metadata file.
-            properties (Properties): Table properties that may contain a custom metadata path.
-
-        Returns:
-            str: fully-qualified URI for the new table metadata file.
-
-        Raises:
-            ValueError: If the version is negative.
-        """
-        if new_version < 0:
-            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
-
-        file_name = f"{new_version:05d}-{uuid.uuid4()}.metadata.json"
-        return Table.new_metadata_location(table_location, file_name, properties)
-
-    @staticmethod
-    def new_metadata_location(table_location: str, file_name: str, properties: Properties = EMPTY_DICT) -> str:
-        """Return a fully-qualified metadata file location for the given filename.
-
-        Args:
-            table_location (str): The base table location
-            file_name (str): Name of the metadata file
-            properties (Properties): Table properties that may contain a custom metadata path
-
-        Returns:
-            str: A fully-qualified location URI for the metadata file.
-        """
-        if metadata_path := properties.get(TableProperties.WRITE_METADATA_PATH):
-            return f"{metadata_path.rstrip('/')}/{file_name}"
-
-        return f"{table_location}/metadata/{file_name}"
 
 
 class StaticTable(Table):
