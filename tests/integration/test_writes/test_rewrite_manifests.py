@@ -19,6 +19,7 @@ from typing import List
 
 import pyarrow as pa
 import pytest
+from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.manifest import ManifestFile
@@ -100,6 +101,7 @@ def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null
         tx.upgrade_table_version(format_version=2)
 
     tbl.append(arrow_table_with_null)
+
     assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
 
     with tbl.transaction() as tx:  # type: ignore[unreachable]
@@ -171,6 +173,8 @@ def test_rewrite_small_manifests_non_partitioned_table(session_catalog: Catalog,
     assert len(result.added_manifests) == 1, "Action should add 1 manifest"
 
     tbl.refresh()
+    manifests = tbl.inspect.all_manifests().to_pylist()
+    assert len(manifests) == 3, "Should have 3 manifests before rewrite"
 
     current_snapshot = tbl.current_snapshot()
     if not current_snapshot:
