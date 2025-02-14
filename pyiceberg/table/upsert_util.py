@@ -92,27 +92,3 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     rows_to_update_table = rows_to_update_table.select(list(common_columns))
 
     return rows_to_update_table
-
-
-def get_rows_to_insert(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
-    source_filter_expr = pc.scalar(True)
-
-    for col in join_cols:
-        target_values = target_table.column(col).to_pylist()
-        expr = pc.field(col).isin(target_values)
-
-        if source_filter_expr is None:
-            source_filter_expr = expr
-        else:
-            source_filter_expr = source_filter_expr & expr
-
-    non_matching_expr = ~source_filter_expr
-
-    source_columns = set(source_table.column_names)
-    target_columns = set(target_table.column_names)
-
-    common_columns = source_columns.intersection(target_columns)
-
-    non_matching_rows = source_table.filter(non_matching_expr).select(common_columns)
-
-    return non_matching_rows

@@ -62,7 +62,7 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow, schema_to_pyarrow
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -1101,7 +1101,12 @@ class Table:
         return self.metadata.name_mapping()
 
     def upsert(
-        self, df: pa.Table, join_cols: list[str], when_matched_update_all: bool = True, when_not_matched_insert_all: bool = True
+        self,
+        df: pa.Table,
+        join_cols: list[str],
+        when_matched_update_all: bool = True,
+        when_not_matched_insert_all: bool = True,
+        case_sensitive: bool = True,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1111,6 +1116,7 @@ class Table:
             join_cols: The columns to join on. These are essentially analogous to primary keys
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            case_sensitive: Bool indicating if the match should be case-sensitive
 
                 Example Use Cases:
                     Case 1: Both Parameters = True (Full Upsert)
@@ -1144,7 +1150,7 @@ class Table:
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
-        matched_iceberg_table = self.scan(row_filter=matched_predicate).to_arrow()
+        matched_iceberg_table = self.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -1164,7 +1170,10 @@ class Table:
                 tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
-                rows_to_insert = upsert_util.get_rows_to_insert(df, matched_iceberg_table, join_cols)
+                expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
+                expr_match_bound = bind(self.schema(), expr_match, case_sensitive=case_sensitive)
+                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
+                rows_to_insert = df.filter(~expr_match_arrow)
 
                 insert_row_cnt = len(rows_to_insert)
 
