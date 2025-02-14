@@ -232,6 +232,8 @@ SCHEME_TO_FS = {
     "s3n": _s3,
     "abfs": _adls,
     "abfss": _adls,
+    "wasb": _adls,
+    "wasbs": _adls,
     "gs": _gs,
     "gcs": _gs,
     "hf": _hf,
