@@ -208,7 +208,7 @@ Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for
 `LocationProvider` module is designed to be pluggable, allowing customization for specific use cases. The
 `LocationProvider` for a table can be specified through table properties.
 
-Both data file and metadata file locations can be customized by configuring the table properties [write.data.path and write.metadata.path](#write-options), respectively.
+Both data file and metadata file locations can be customized by configuring the table properties [`write.data.path` and `write.metadata.path`](#write-options), respectively.
 
 For more granular control, you can override the `LocationProvider`'s `new_data_location` and `new_metadata_location` methods to define custom logic for generating file paths.
 
