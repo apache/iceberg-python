@@ -1342,7 +1342,6 @@ def _get_column_projection_values(
 def _task_to_record_batches(
     fs: FileSystem,
     task: FileScanTask,
-    schema: Schema,
     projected_schema: Schema,
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
@@ -1620,7 +1619,6 @@ class ArrowScan:
             batches = _task_to_record_batches(
                 _fs_from_file_path(self._io, task.file.file_path),
                 task,
-                self._table_metadata.schema(),
                 self._projected_schema,
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
