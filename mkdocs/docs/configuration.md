@@ -204,8 +204,8 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 ## Location Providers
 
-Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data and metadata files. In PyIceberg, the
-`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases. The
+Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data files. In PyIceberg, the
+`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases, and to additionally determine metadata file locations. The
 `LocationProvider` for a table can be specified through table properties.
 
 Both data file and metadata file locations can be customized by configuring the table properties [`write.data.path` and `write.metadata.path`](#write-options), respectively.
