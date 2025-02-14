@@ -14,14 +14,30 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from pathlib import PosixPath
+
 import pytest
 from datafusion import SessionContext
 from pyarrow import Table as pa_table
 
+from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.table import UpsertResult
 from tests.catalog.test_base import InMemoryCatalog, Table
 
-_TEST_NAMESPACE = "test_ns"
+
+@pytest.fixture
+def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
+    catalog = InMemoryCatalog("test.in_memory.catalog", warehouse=tmp_path.absolute().as_posix())
+    catalog.create_namespace("default")
+    return catalog
+
+
+def _drop_table(catalog: Catalog, identifier: str) -> None:
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
 
 
 def show_iceberg_table(table: Table, ctx: SessionContext) -> None:
@@ -72,7 +88,7 @@ def gen_source_dataset(start_row: int, end_row: int, composite_key: bool, add_du
 
 
 def gen_target_iceberg_table(
-    start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: InMemoryCatalog, namespace: str
+    start_row: int, end_row: int, composite_key: bool, ctx: SessionContext, catalog: InMemoryCatalog, identifier: str
 ) -> Table:
     additional_columns = ", t.order_id + 1000 as order_line_id" if composite_key else ""
 
@@ -83,7 +99,7 @@ def gen_target_iceberg_table(
         from t
     """).to_arrow_table()
 
-    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+    table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
@@ -93,13 +109,6 @@ def gen_target_iceberg_table(
 def assert_upsert_result(res: UpsertResult, expected_updated: int, expected_inserted: int) -> None:
     assert res.rows_updated == expected_updated, f"rows updated should be {expected_updated}, but got {res.rows_updated}"
     assert res.rows_inserted == expected_inserted, f"rows inserted should be {expected_inserted}, but got {res.rows_inserted}"
-
-
-@pytest.fixture(scope="session")
-def catalog_conn() -> InMemoryCatalog:
-    catalog = InMemoryCatalog("test")
-    catalog.create_namespace(namespace=_TEST_NAMESPACE)
-    yield catalog
 
 
 @pytest.mark.parametrize(
@@ -112,7 +121,7 @@ def catalog_conn() -> InMemoryCatalog:
     ],
 )
 def test_merge_rows(
-    catalog_conn: InMemoryCatalog,
+    catalog: Catalog,
     join_cols: list[str],
     src_start_row: int,
     src_end_row: int,
@@ -123,12 +132,13 @@ def test_merge_rows(
     expected_updated: int,
     expected_inserted: int,
 ) -> None:
+    identifier = "default.test_merge_rows"
+    _drop_table(catalog, identifier)
+
     ctx = SessionContext()
 
-    catalog = catalog_conn
-
     source_df = gen_source_dataset(src_start_row, src_end_row, False, False, ctx)
-    ice_table = gen_target_iceberg_table(target_start_row, target_end_row, False, ctx, catalog, _TEST_NAMESPACE)
+    ice_table = gen_target_iceberg_table(target_start_row, target_end_row, False, ctx, catalog, identifier)
     res = ice_table.upsert(
         df=source_df,
         join_cols=join_cols,
@@ -138,13 +148,13 @@ def test_merge_rows(
 
     assert_upsert_result(res, expected_updated, expected_inserted)
 
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-
-def test_merge_scenario_skip_upd_row(catalog_conn: InMemoryCatalog) -> None:
+def test_merge_scenario_skip_upd_row(catalog: Catalog) -> None:
     """
     tests a single insert and update; skips a row that does not need to be updated
     """
+    identifier = "default.test_merge_scenario_skip_upd_row"
+    _drop_table(catalog, identifier)
 
     ctx = SessionContext()
 
@@ -154,8 +164,7 @@ def test_merge_scenario_skip_upd_row(catalog_conn: InMemoryCatalog) -> None:
         select 2 as order_id, date '2021-01-01' as order_date, 'A' as order_type
     """).to_arrow_table()
 
-    catalog = catalog_conn
-    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+    table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
@@ -174,15 +183,16 @@ def test_merge_scenario_skip_upd_row(catalog_conn: InMemoryCatalog) -> None:
 
     assert_upsert_result(res, expected_updated, expected_inserted)
 
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-
-def test_merge_scenario_date_as_key(catalog_conn: InMemoryCatalog) -> None:
+def test_merge_scenario_date_as_key(catalog: Catalog) -> None:
     """
     tests a single insert and update; primary key is a date column
     """
 
     ctx = SessionContext()
+
+    identifier = "default.test_merge_scenario_date_as_key"
+    _drop_table(catalog, identifier)
 
     df = ctx.sql("""
         select date '2021-01-01' as order_date, 'A' as order_type
@@ -190,8 +200,7 @@ def test_merge_scenario_date_as_key(catalog_conn: InMemoryCatalog) -> None:
         select date '2021-01-02' as order_date, 'A' as order_type
     """).to_arrow_table()
 
-    catalog = catalog_conn
-    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+    table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
@@ -210,13 +219,14 @@ def test_merge_scenario_date_as_key(catalog_conn: InMemoryCatalog) -> None:
 
     assert_upsert_result(res, expected_updated, expected_inserted)
 
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-
-def test_merge_scenario_string_as_key(catalog_conn: InMemoryCatalog) -> None:
+def test_merge_scenario_string_as_key(catalog: Catalog) -> None:
     """
     tests a single insert and update; primary key is a string column
     """
+
+    identifier = "default.test_merge_scenario_string_as_key"
+    _drop_table(catalog, identifier)
 
     ctx = SessionContext()
 
@@ -226,8 +236,7 @@ def test_merge_scenario_string_as_key(catalog_conn: InMemoryCatalog) -> None:
         select 'def' as order_id, 'A' as order_type
     """).to_arrow_table()
 
-    catalog = catalog_conn
-    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+    table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
@@ -246,18 +255,18 @@ def test_merge_scenario_string_as_key(catalog_conn: InMemoryCatalog) -> None:
 
     assert_upsert_result(res, expected_updated, expected_inserted)
 
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-
-def test_merge_scenario_composite_key(catalog_conn: InMemoryCatalog) -> None:
+def test_merge_scenario_composite_key(catalog: Catalog) -> None:
     """
     tests merging 200 rows with a composite key
     """
 
+    identifier = "default.test_merge_scenario_composite_key"
+    _drop_table(catalog, identifier)
+
     ctx = SessionContext()
 
-    catalog = catalog_conn
-    table = gen_target_iceberg_table(1, 200, True, ctx, catalog, _TEST_NAMESPACE)
+    table = gen_target_iceberg_table(1, 200, True, ctx, catalog, identifier)
     source_df = gen_source_dataset(101, 300, True, False, ctx)
 
     res = table.upsert(df=source_df, join_cols=["order_id", "order_line_id"])
@@ -267,37 +276,37 @@ def test_merge_scenario_composite_key(catalog_conn: InMemoryCatalog) -> None:
 
     assert_upsert_result(res, expected_updated, expected_inserted)
 
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-
-def test_merge_source_dups(catalog_conn: InMemoryCatalog) -> None:
+def test_merge_source_dups(catalog: Catalog) -> None:
     """
     tests duplicate rows in source
     """
 
+    identifier = "default.test_merge_source_dups"
+    _drop_table(catalog, identifier)
+
     ctx = SessionContext()
 
-    catalog = catalog_conn
-    table = gen_target_iceberg_table(1, 10, False, ctx, catalog, _TEST_NAMESPACE)
+    table = gen_target_iceberg_table(1, 10, False, ctx, catalog, identifier)
     source_df = gen_source_dataset(5, 15, False, True, ctx)
 
     with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
         table.upsert(df=source_df, join_cols=["order_id"])
 
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
 
-
-def test_key_cols_misaligned(catalog_conn: InMemoryCatalog) -> None:
+def test_key_cols_misaligned(catalog: Catalog) -> None:
     """
     tests join columns missing from one of the tables
     """
+
+    identifier = "default.test_key_cols_misaligned"
+    _drop_table(catalog, identifier)
 
     ctx = SessionContext()
 
     df = ctx.sql("select 1 as order_id, date '2021-01-01' as order_date, 'A' as order_type").to_arrow_table()
 
-    catalog = catalog_conn
-    table = catalog.create_table(f"{_TEST_NAMESPACE}.target", df.schema)
+    table = catalog.create_table(identifier, df.schema)
 
     table.append(df)
 
@@ -305,5 +314,3 @@ def test_key_cols_misaligned(catalog_conn: InMemoryCatalog) -> None:
 
     with pytest.raises(Exception, match=r"""Field ".*" does not exist in schema"""):
         table.upsert(df=df_src, join_cols=["order_id"])
-
-    catalog.drop_table(f"{_TEST_NAMESPACE}.target")
