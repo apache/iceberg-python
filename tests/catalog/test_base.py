@@ -35,10 +35,12 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     Table,
+    TableProperties,
 )
 from pyiceberg.table.update import (
     AddSchemaUpdate,
@@ -563,3 +565,60 @@ def test_table_properties_raise_for_none_value(catalog: InMemoryCatalog) -> None
     with pytest.raises(ValidationError) as exc_info:
         _ = given_catalog_has_a_table(catalog, properties=property_with_none)
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+def test_table_writes_metadata_to_custom_location(catalog: InMemoryCatalog) -> None:
+    metadata_path = f"{catalog._warehouse_location}/custom/path"
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties={TableProperties.WRITE_METADATA_PATH: metadata_path},
+    )
+    df = pa.Table.from_pylist([{"x": 123, "y": 456, "z": 789}], schema=schema_to_pyarrow(TEST_TABLE_SCHEMA))
+    table.append(df)
+    manifests = table.current_snapshot().manifests(table.io)  # type: ignore
+    location_provider = table.location_provider()
+
+    assert location_provider.new_metadata_location("").startswith(metadata_path)
+    assert manifests[0].manifest_path.startswith(metadata_path)
+    assert table.location() != metadata_path
+    assert table.metadata_location.startswith(metadata_path)
+
+
+def test_table_writes_metadata_to_default_path(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    metadata_path = f"{table.location()}/metadata"
+    df = pa.Table.from_pylist([{"x": 123, "y": 456, "z": 789}], schema=schema_to_pyarrow(TEST_TABLE_SCHEMA))
+    table.append(df)
+    manifests = table.current_snapshot().manifests(table.io)  # type: ignore
+    location_provider = table.location_provider()
+
+    assert location_provider.new_metadata_location("").startswith(metadata_path)
+    assert manifests[0].manifest_path.startswith(metadata_path)
+    assert table.metadata_location.startswith(metadata_path)
+
+
+def test_table_metadata_writes_reflect_latest_path(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    initial_metadata_path = f"{table.location()}/metadata"
+    assert table.location_provider().new_metadata_location("metadata.json") == f"{initial_metadata_path}/metadata.json"
+
+    # update table with new path for metadata
+    new_metadata_path = f"{table.location()}/custom/path"
+    table.transaction().set_properties({TableProperties.WRITE_METADATA_PATH: new_metadata_path}).commit_transaction()
+
+    assert table.location_provider().new_metadata_location("metadata.json") == f"{new_metadata_path}/metadata.json"

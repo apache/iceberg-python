@@ -62,6 +62,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -207,7 +208,8 @@ class SqlCatalog(MetastoreCatalog):
 
         namespace = Catalog.namespace_to_string(namespace_identifier)
         location = self._resolve_table_location(location, namespace, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        location_provider = load_location_provider(table_location=location, table_properties=properties)
+        metadata_location = location_provider.new_table_metadata_file_location()
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )

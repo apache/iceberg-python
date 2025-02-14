@@ -79,6 +79,7 @@ from pyiceberg.partitioning import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -208,6 +209,7 @@ class TableProperties:
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     WRITE_DATA_PATH = "write.data.path"
+    WRITE_METADATA_PATH = "write.metadata.path"
 
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
@@ -1007,6 +1009,10 @@ class Table:
     def location(self) -> str:
         """Return the table's base location."""
         return self.metadata.location
+
+    def location_provider(self) -> LocationProvider:
+        """Return the table's location provider."""
+        return load_location_provider(table_location=self.metadata.location, table_properties=self.metadata.properties)
 
     @property
     def last_sequence_number(self) -> int:
