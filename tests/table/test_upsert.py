@@ -16,13 +16,16 @@
 # under the License.
 from pathlib import PosixPath
 
+import pyarrow as pa
 import pytest
 from datafusion import SessionContext
 from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
+from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
 
@@ -314,3 +317,52 @@ def test_key_cols_misaligned(catalog: Catalog) -> None:
 
     with pytest.raises(Exception, match=r"""Field ".*" does not exist in schema"""):
         table.upsert(df=df_src, join_cols=["order_id"])
+
+
+def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_identifier_fields"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "inhabitants": 921402},
+            {"city": "San Francisco", "inhabitants": 808988},
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Paris", "inhabitants": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+
+    df = pa.Table.from_pylist(
+        [
+            # Will be updated, the inhabitants has been updated
+            {"city": "Drachten", "inhabitants": 45505},
+            # New row, will be inserted
+            {"city": "Berlin", "inhabitants": 3432000},
+            # Ignored, already exists in the table
+            {"city": "Paris", "inhabitants": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 1
