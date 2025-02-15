@@ -635,8 +635,9 @@ class SqlCatalog(MetastoreCatalog):
 
             if namespace:
                 namespace_tuple = Catalog.identifier_to_tuple(namespace)
+                namespace_level_length = len(namespace_tuple)
                 # exclude fuzzy matches when `namespace` contains `%` or `_`
-                namespaces = [ns for ns in namespaces if ns[: len(namespace_tuple)] == namespace_tuple]
+                namespaces = [ns for ns in namespaces if ns[:namespace_level_length] == namespace_tuple]
 
             return namespaces
 
