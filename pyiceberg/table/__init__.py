@@ -1109,7 +1109,7 @@ class Table:
     def upsert(
         self,
         df: pa.Table,
-        join_cols: list[str],
+        join_cols: Optional[List[str]] = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
         case_sensitive: bool = True,
@@ -1119,10 +1119,12 @@ class Table:
         Args:
 
             df: The input dataframe to upsert with the table's data.
-            join_cols: The columns to join on. These are essentially analogous to primary keys
+            join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
+
+            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
                 Example Use Cases:
                     Case 1: Both Parameters = True (Full Upsert)
@@ -1147,6 +1149,15 @@ class Table:
             An UpsertResult class (contains details of rows updated and inserted)
         """
         from pyiceberg.table import upsert_util
+
+        if join_cols is None:
+            join_cols = []
+            for field_id in self.schema().identifier_field_ids:
+                col = self.schema().find_column_name(field_id)
+                if col is not None:
+                    join_cols.append(col)
+                else:
+                    raise ValueError(f"Field-ID could not be found: {join_cols}")
 
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
