@@ -1194,6 +1194,24 @@ with table.update_spec() as update:
     update.rename_field("bucketed_id", "sharded_id")
 ```
 
+## Sort order updates
+
+Users can update the sort order on existing tables for new data. See [sorting](https://iceberg.apache.org/spec/#sorting) for more details.
+
+The API to use when updating a sort order is the `update_sort_order` API on the table.
+
+Sort orders can only be updated by adding a new sort order. They cannot be deleted or modified.
+
+### Updating a sort order on a table
+
+To create a new sort order, you can use either the `asc` or `desc` API depending on whether you want you data sorted in ascending or descending order. Both take the name of the field, the sort order transform, and a null order that describes the order of null values when sorted.
+
+```python
+with table.update_sort_order() as update:
+    update.desc("event_ts", DayTransform(), NullOrder.NULLS_FIRST)
+    update.asc("some_field", IdentityTransform(), NullOrder.NULLS_LAST)
+```
+
 ## Table properties
 
 Set and remove properties through the `Transaction` API:
