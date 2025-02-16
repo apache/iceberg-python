@@ -1117,7 +1117,7 @@ class Table:
             name_mapping=self.name_mapping(),
         )
 
-    def update_sort_order(self) -> UpdateSortOrder:
+    def update_sort_order(self, case_sensitive: bool = True) -> UpdateSortOrder:
         """Create a new UpdateSortOrder to update the sort order of this table.
 
         Returns:
