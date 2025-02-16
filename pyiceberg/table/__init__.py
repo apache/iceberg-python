@@ -1123,7 +1123,7 @@ class Table:
         Returns:
             A new UpdateSortOrder.
         """
-        return UpdateSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=True)
+        return UpdateSortOrder(transaction=Transaction(self, autocommit=True), case_sensitive=case_sensitive)
 
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
