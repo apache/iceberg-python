@@ -43,13 +43,13 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: 
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "catalog, format_version", 
+    "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"), 
+        (pytest.lazy_fixture("session_catalog"), "1"),
         (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"), 
+        (pytest.lazy_fixture("session_catalog"), "2"),
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
-    ]
+    ],
 )
 def test_map_column_name_to_id(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
@@ -59,13 +59,13 @@ def test_map_column_name_to_id(catalog: Catalog, format_version: str, table_sche
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "catalog, format_version", 
+    "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"), 
+        (pytest.lazy_fixture("session_catalog"), "1"),
         (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"), 
+        (pytest.lazy_fixture("session_catalog"), "2"),
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
-    ]
+    ],
 )
 def test_replace_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
@@ -81,13 +81,13 @@ def test_replace_sort_order(catalog: Catalog, format_version: str, table_schema_
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "catalog, format_version", 
+    "catalog, format_version",
     [
-        (pytest.lazy_fixture("session_catalog"), "1"), 
+        (pytest.lazy_fixture("session_catalog"), "1"),
         (pytest.lazy_fixture("session_catalog_hive"), "1"),
-        (pytest.lazy_fixture("session_catalog"), "2"), 
+        (pytest.lazy_fixture("session_catalog"), "2"),
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
-    ]
+    ],
 )
 def test_replace_existing_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
