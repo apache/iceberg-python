@@ -1119,10 +1119,12 @@ class Table:
         Args:
 
             df: The input dataframe to upsert with the table's data.
-            join_cols: The columns to join on. These are essentially analogous to primary keys
+            join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
             case_sensitive: Bool indicating if the match should be case-sensitive
+
+            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
                 Example Use Cases:
                     Case 1: Both Parameters = True (Full Upsert)
