@@ -806,7 +806,7 @@ def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
+def test_table_scan_keep_types(catalog: Catalog) -> None:
     identifier = "default.test_table_scan_default_to_large_types"
     arrow_table = pa.Table.from_arrays(
         [
@@ -837,10 +837,10 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
 
     expected_schema = pa.schema(
         [
-            pa.field("string", pa.large_string()),
+            pa.field("string", pa.string()),
             pa.field("string-to-binary", pa.large_binary()),
-            pa.field("binary", pa.large_binary()),
-            pa.field("list", pa.large_list(pa.large_string())),
+            pa.field("binary", pa.binary()),
+            pa.field("list", pa.list_(pa.string())),
         ]
     )
     assert result_table.schema.equals(expected_schema)

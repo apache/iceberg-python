@@ -1348,7 +1348,7 @@ def _task_to_record_batches(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
-    use_large_types: bool = True,
+    use_large_types: Optional[bool] = True,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = _parse_location(task.file.file_path)
@@ -1376,15 +1376,21 @@ def _task_to_record_batches(
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
+        fragment_schema = physical_schema
+        if use_large_types is not None:
+            fragment_schema = (
+                _pyarrow_schema_ensure_large_types(physical_schema)
+                if use_large_types
+                else (_pyarrow_schema_ensure_small_types(physical_schema))
+            )
+
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
             # With PyArrow 16.0.0 there is an issue with casting record-batches:
             # https://github.com/apache/arrow/issues/41884
             # https://github.com/apache/arrow/issues/43183
             # Would be good to remove this later on
-            schema=_pyarrow_schema_ensure_large_types(physical_schema)
-            if use_large_types
-            else (_pyarrow_schema_ensure_small_types(physical_schema)),
+            schema=fragment_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
@@ -1505,14 +1511,6 @@ class ArrowScan:
         self._limit = limit
 
     @property
-    def _use_large_types(self) -> bool:
-        """Whether to represent data as large arrow types.
-
-        Defaults to True.
-        """
-        return property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
-
-    @property
     def _projected_field_ids(self) -> Set[int]:
         """Set of field IDs that should be projected from the data files."""
         return {
@@ -1541,8 +1539,12 @@ class ArrowScan:
         deletes_per_file = _read_all_delete_files(self._io, tasks)
         executor = ExecutorFactory.get_or_create()
 
+        use_large_types = None
+        if PYARROW_USE_LARGE_TYPES_ON_READ in self._io.properties:
+            use_large_types = property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
+
         def _table_from_scan_task(task: FileScanTask) -> pa.Table:
-            batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
+            batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, use_large_types))
             if len(batches) > 0:
                 return pa.Table.from_batches(batches)
             else:
@@ -1602,10 +1604,15 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
-        return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
+        # Always use large types, since we cannot infer it in a streaming fashion,
+        # without fetching all the schemas first, which defeats the purpose of streaming
+        return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file, use_large_types=True)
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
+        self,
+        tasks: Iterable[FileScanTask],
+        deletes_per_file: Dict[str, List[ChunkedArray]],
+        use_large_types: Optional[bool] = True,
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -1620,7 +1627,7 @@ class ArrowScan:
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
-                self._use_large_types,
+                use_large_types,
                 self._table_metadata.spec(),
             )
             for batch in batches:
@@ -1639,7 +1646,7 @@ def _to_requested_schema(
     batch: pa.RecordBatch,
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
-    use_large_types: bool = True,
+    use_large_types: Optional[bool] = True,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
@@ -1655,14 +1662,14 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
-    _use_large_types: bool
+    _use_large_types: Optional[bool]
 
     def __init__(
         self,
         file_schema: Schema,
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
-        use_large_types: bool = True,
+        use_large_types: Optional[bool] = True,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
@@ -1677,7 +1684,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                if not self._use_large_types:
+                if self._use_large_types is False:
                     target_schema = _pyarrow_schema_ensure_small_types(target_schema)
                 return values.cast(target_schema)
             elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
