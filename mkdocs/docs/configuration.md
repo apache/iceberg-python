@@ -68,6 +68,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
 | `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
 | `write.data.path`                        | String pointing to location        | `{metadata.location}/data` | Sets the location under which data is written.                                                                                                       |
+| `write.metadata.path`                    | String pointing to location        | `{metadata.location}/metadata` | Sets the location under which metadata is written.                                                                                                                                                                  |
 
 ### Table behavior options
 
@@ -203,12 +204,16 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 ## Location Providers
 
-Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data. In PyIceberg, the
-`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases. The
+Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data files. In PyIceberg, the
+`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases, and to additionally determine metadata file locations. The
 `LocationProvider` for a table can be specified through table properties.
 
-PyIceberg defaults to the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider), which generates
-file paths that are optimized for object storage.
+Both data file and metadata file locations can be customized by configuring the table properties [`write.data.path` and `write.metadata.path`](#write-options), respectively.
+
+For more granular control, you can override the `LocationProvider`'s `new_data_location` and `new_metadata_location` methods to define custom logic for generating file paths. See [`Loading a Custom Location Provider`](configuration.md#loading-a-custom-location-provider).
+
+PyIceberg defaults to the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider), which generates file paths for
+data files that are optimized for object storage.
 
 ### Simple Location Provider
 
@@ -416,6 +421,11 @@ catalog:
     s3.access-key-id: admin
     s3.secret-access-key: password
 ```
+
+| Key                          | Example | Description                       |
+|------------------------------| ------- | --------------------------------- |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 

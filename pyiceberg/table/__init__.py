@@ -62,7 +62,7 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow, schema_to_pyarrow
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -79,6 +79,7 @@ from pyiceberg.partitioning import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -142,6 +143,7 @@ from pyiceberg.utils.properties import property_as_bool
 if TYPE_CHECKING:
     import daft
     import pandas as pd
+    import polars as pl
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
@@ -150,6 +152,14 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
+
+
+@dataclass()
+class UpsertResult:
+    """Summary the upsert operation."""
+
+    rows_updated: int = 0
+    rows_inserted: int = 0
 
 
 class TableProperties:
@@ -199,6 +209,7 @@ class TableProperties:
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     WRITE_DATA_PATH = "write.data.path"
+    WRITE_METADATA_PATH = "write.metadata.path"
 
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
@@ -999,6 +1010,10 @@ class Table:
         """Return the table's base location."""
         return self.metadata.location
 
+    def location_provider(self) -> LocationProvider:
+        """Return the table's location provider."""
+        return load_location_provider(table_location=self.metadata.location, table_properties=self.metadata.properties)
+
     @property
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
@@ -1090,6 +1105,98 @@ class Table:
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
+
+    def upsert(
+        self,
+        df: pa.Table,
+        join_cols: Optional[List[str]] = None,
+        when_matched_update_all: bool = True,
+        when_not_matched_insert_all: bool = True,
+        case_sensitive: bool = True,
+    ) -> UpsertResult:
+        """Shorthand API for performing an upsert to an iceberg table.
+
+        Args:
+
+            df: The input dataframe to upsert with the table's data.
+            join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            case_sensitive: Bool indicating if the match should be case-sensitive
+
+            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+
+                Example Use Cases:
+                    Case 1: Both Parameters = True (Full Upsert)
+                    Existing row found → Update it
+                    New row found → Insert it
+
+                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                    Existing row found → Do nothing (no updates)
+                    New row found → Insert it
+
+                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                    Existing row found → Update it
+                    New row found → Do nothing (no inserts)
+
+                    Case 4: Both Parameters = False (No Merge Effect)
+                    Existing row found → Do nothing
+                    New row found → Do nothing
+                    (Function effectively does nothing)
+
+
+        Returns:
+            An UpsertResult class (contains details of rows updated and inserted)
+        """
+        from pyiceberg.table import upsert_util
+
+        if join_cols is None:
+            join_cols = []
+            for field_id in self.schema().identifier_field_ids:
+                col = self.schema().find_column_name(field_id)
+                if col is not None:
+                    join_cols.append(col)
+                else:
+                    raise ValueError(f"Field-ID could not be found: {join_cols}")
+
+        if not when_matched_update_all and not when_not_matched_insert_all:
+            raise ValueError("no upsert options selected...exiting")
+
+        if upsert_util.has_duplicate_rows(df, join_cols):
+            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
+
+        # get list of rows that exist so we don't have to load the entire target table
+        matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        matched_iceberg_table = self.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
+
+        update_row_cnt = 0
+        insert_row_cnt = 0
+
+        with self.transaction() as tx:
+            if when_matched_update_all:
+                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                # this extra step avoids unnecessary IO and writes
+                rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
+
+                update_row_cnt = len(rows_to_update)
+
+                # build the match predicate filter
+                overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+
+                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+
+            if when_not_matched_insert_all:
+                expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
+                expr_match_bound = bind(self.schema(), expr_match, case_sensitive=case_sensitive)
+                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
+                rows_to_insert = df.filter(~expr_match_arrow)
+
+                insert_row_cnt = len(rows_to_insert)
+
+                tx.append(rows_to_insert)
+
+        return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -1225,6 +1332,16 @@ class Table:
 
         return daft.read_iceberg(self)
 
+    def to_polars(self) -> pl.LazyFrame:
+        """Lazily read from this Apache Iceberg table.
+
+        Returns:
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+        """
+        import polars as pl
+
+        return pl.scan_iceberg(self)
+
 
 class StaticTable(Table):
     """Load a table directly from a metadata file (i.e., without using a catalog)."""
@@ -1351,6 +1468,9 @@ class TableScan(ABC):
 
     @abstractmethod
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
+
+    @abstractmethod
+    def to_polars(self) -> pl.DataFrame: ...
 
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
@@ -1673,6 +1793,20 @@ class DataScan(TableScan):
         import ray
 
         return ray.data.from_arrow(self.to_arrow())
+
+    def to_polars(self) -> pl.DataFrame:
+        """Read a Polars DataFrame from this Iceberg table.
+
+        Returns:
+            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table
+        """
+        import polars as pl
+
+        result = pl.from_arrow(self.to_arrow())
+        if isinstance(result, pl.Series):
+            result = result.to_frame()
+
+        return result
 
     def count(self) -> int:
         # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.

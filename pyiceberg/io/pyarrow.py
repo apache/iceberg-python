@@ -1396,40 +1396,40 @@ def _task_to_record_batches(
         for batch in batches:
             next_index = next_index + len(batch)
             current_index = next_index - len(batch)
-            output_batches = iter([batch])
+            current_batch = batch
+
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
-                batch = batch.take(indices)
-                output_batches = iter([batch])
+                current_batch = current_batch.take(indices)
 
-                # Apply the user filter
-                if pyarrow_filter is not None:
-                    # we need to switch back and forth between RecordBatch and Table
-                    # as Expression filter isn't yet supported in RecordBatch
-                    # https://github.com/apache/arrow/issues/39220
-                    arrow_table = pa.Table.from_batches([batch])
-                    arrow_table = arrow_table.filter(pyarrow_filter)
-                    if len(arrow_table) == 0:
-                        continue
-                    output_batches = arrow_table.to_batches()
-            for output_batch in output_batches:
-                result_batch = _to_requested_schema(
-                    projected_schema,
-                    file_project_schema,
-                    output_batch,
-                    downcast_ns_timestamp_to_us=True,
-                    use_large_types=use_large_types,
-                )
+            # skip empty batches
+            if current_batch.num_rows == 0:
+                continue
 
-                # Inject projected column values if available
-                if should_project_columns:
-                    for name, value in projected_missing_fields.items():
-                        index = result_batch.schema.get_field_index(name)
-                        if index != -1:
-                            result_batch = result_batch.set_column(index, name, [value])
+            # Apply the user filter
+            if pyarrow_filter is not None:
+                current_batch = current_batch.filter(pyarrow_filter)
+                # skip empty batches
+                if current_batch.num_rows == 0:
+                    continue
 
-                yield result_batch
+            result_batch = _to_requested_schema(
+                projected_schema,
+                file_project_schema,
+                current_batch,
+                downcast_ns_timestamp_to_us=True,
+                use_large_types=use_large_types,
+            )
+
+            # Inject projected column values if available
+            if should_project_columns:
+                for name, value in projected_missing_fields.items():
+                    index = result_batch.schema.get_field_index(name)
+                    if index != -1:
+                        result_batch = result_batch.set_column(index, name, [value])
+
+            yield result_batch
 
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> Dict[str, List[ChunkedArray]]:

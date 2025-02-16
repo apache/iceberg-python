@@ -157,3 +157,27 @@ def test_simple_location_provider_write_data_path() -> None:
     )
 
     assert provider.new_data_location("file.parquet") == "s3://table-location/custom/data/path/file.parquet"
+
+
+def test_location_provider_metadata_default_location() -> None:
+    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+
+    assert provider.new_metadata_location("manifest.avro") == "table_location/metadata/manifest.avro"
+
+
+def test_location_provider_metadata_location_with_custom_path() -> None:
+    provider = load_location_provider(
+        table_location="table_location",
+        table_properties={TableProperties.WRITE_METADATA_PATH: "s3://table-location/custom/path"},
+    )
+
+    assert provider.new_metadata_location("metadata.json") == "s3://table-location/custom/path/metadata.json"
+
+
+def test_metadata_location_with_trailing_slash() -> None:
+    provider = load_location_provider(
+        table_location="table_location",
+        table_properties={TableProperties.WRITE_METADATA_PATH: "s3://table-location/custom/path/"},
+    )
+
+    assert provider.new_metadata_location("metadata.json") == "s3://table-location/custom/path/metadata.json"
