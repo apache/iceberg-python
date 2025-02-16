@@ -44,7 +44,7 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
-def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+def get_rows_to_update_old(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
@@ -92,3 +92,21 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     rows_to_update_table = rows_to_update_table.select(list(common_columns))
 
     return rows_to_update_table
+
+def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+    """
+    Return a table with rows that need to be updated in the target table based on the join columns.
+
+    When a row is matched, an additional scan is done to evaluate the non-key columns to detect if an actual change has occurred.
+    Only matched rows that have an actual change to a non-key column value will be returned in the final output.
+    """
+    all_columns = set(source_table.column_names)
+    join_cols_set = set(join_cols)
+    non_key_cols = all_columns - join_cols_set
+
+    expr_for_difference = functools.reduce(operator.or_, [pc.field(f"lhs_{col}") != pc.field(f"rhs_{col}") for col in non_key_cols])
+
+    joined = source_table.join(target_table, keys=list(join_cols_set), join_type='inner', left_suffix='lhs_', right_suffix='rhs_')
+    filtered = joined.filter(expr_for_difference)
+
+    return filtered
