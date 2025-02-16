@@ -21,16 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
-from typing import (
-    Any,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Annotated, Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 from urllib.parse import quote_plus
 
 from pydantic import (
@@ -40,7 +31,6 @@ from pydantic import (
     WithJsonSchema,
     model_validator,
 )
-from typing_extensions import Annotated
 
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
