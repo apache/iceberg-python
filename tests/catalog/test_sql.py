@@ -1136,26 +1136,19 @@ def test_namespace_exists(catalog: SqlCatalog) -> None:
     ],
 )
 def test_list_namespaces(catalog: SqlCatalog) -> None:
-    namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%"]
+    namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%", "db.ns1X.ns3"]
     for namespace in namespace_list:
         catalog.create_namespace(namespace)
 
     ns_list = catalog.list_namespaces()
-    expected_list: list[tuple[str, ...]] = [("db",), ("db2",), ("db%",)]
-    for ns in expected_list:
+    for ns in [("db",), ("db%",), ("db2",)]:
         assert ns in ns_list
 
     ns_list = catalog.list_namespaces("db")
-    expected_list = [("db", "ns1"), ("db", "ns2")]
-    assert len(ns_list) == len(expected_list)
-    for ns in expected_list:
-        assert ns in ns_list
+    assert sorted(ns_list) == [("db", "ns1"), ("db", "ns1X"), ("db", "ns2")]
 
     ns_list = catalog.list_namespaces("db.ns1")
-    expected_list = [("db", "ns1", "ns2")]
-    assert len(ns_list) == len(expected_list)
-    for ns in expected_list:
-        assert ns in ns_list
+    assert sorted(ns_list) == [("db", "ns1", "ns2")]
 
     ns_list = catalog.list_namespaces("db.ns1.ns2")
     assert len(ns_list) == 0

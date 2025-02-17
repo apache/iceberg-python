@@ -627,17 +627,18 @@ class SqlCatalog(MetastoreCatalog):
             namespace_stmt,
         )
         with Session(self.engine) as session:
-            namespaces = [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
-            sub_namespaces_level_length = len(Catalog.identifier_to_tuple(namespace)) + 1 if namespace else 1
+            namespace_tuple = Catalog.identifier_to_tuple(namespace)
+            sub_namespaces_level_length = len(namespace_tuple) + 1
 
-            # only get sub namespaces/children
-            namespaces = list({ns[:sub_namespaces_level_length] for ns in namespaces if len(ns) >= sub_namespaces_level_length})
-
-            if namespace:
-                namespace_tuple = Catalog.identifier_to_tuple(namespace)
-                namespace_level_length = len(namespace_tuple)
-                # exclude fuzzy matches when `namespace` contains `%` or `_`
-                namespaces = [ns for ns in namespaces if ns[:namespace_level_length] == namespace_tuple]
+            namespaces = list(
+                {  # only get distinct namespaces
+                    ns[:sub_namespaces_level_length]  # truncate to the required level
+                    for ns in {Catalog.identifier_to_tuple(ns) for ns in session.execute(stmt).scalars()}
+                    if len(ns) >= sub_namespaces_level_length  # only get sub namespaces/children
+                    and ns[: sub_namespaces_level_length - 1] == namespace_tuple
+                    # exclude fuzzy matches when `namespace` contains `%` or `_`
+                }
+            )
 
             return namespaces
 
