@@ -22,7 +22,17 @@ hide:
   - under the License.
   -->
 
-# Contributing to the Iceberg Python library
+# Contributing
+
+We welcome contributions to Apache Iceberg! To learn more about contributing to Apache Iceberg, please refer to the [official Iceberg contribution guidelines](https://iceberg.apache.org/contribute/). These guidelines are intended as helpful suggestions to make the contribution process as seamless as possible, and are not strict rules.
+
+If you would like to discuss your proposed change before contributing, we encourage you to visit our [Community](https://iceberg.apache.org/community/) page. There, you will find various ways to connect with the community, including Slack and our mailing lists. Alternatively, you can open a [new issue](https://github.com/apache/iceberg-python/issues) directly in the GitHub repository.
+
+For first-time contributors, feel free to check out our [good first issues](https://github.com/apache/iceberg-python/issues/?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) for an easy way to get started.
+
+## Contributing to PyIceberg
+
+The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-python>.
 
 For the development, Poetry is used for packing and dependency management. You can install this using:
 

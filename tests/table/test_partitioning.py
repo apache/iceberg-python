@@ -14,15 +14,40 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+import pytest
+
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import BucketTransform, IdentityTransform, TruncateTransform
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    TruncateTransform,
+    YearTransform,
+)
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
+    BinaryType,
+    DateType,
+    DecimalType,
+    FixedType,
     IntegerType,
+    LongType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
 )
 
 
@@ -151,6 +176,45 @@ def test_partition_type(table_schema_simple: Schema) -> None:
         NestedField(field_id=1000, name="str_truncate", field_type=StringType(), required=False),
         NestedField(field_id=1001, name="int_bucket", field_type=IntegerType(), required=True),
     )
+
+
+@pytest.mark.parametrize(
+    "source_type, value",
+    [
+        (IntegerType(), 22),
+        (LongType(), 22),
+        (DecimalType(5, 9), Decimal(19.25)),
+        (DateType(), datetime.date(1925, 5, 22)),
+        (TimeType(), datetime.time(19, 25, 00)),
+        (TimestampType(), datetime.datetime(19, 5, 1, 22, 1, 1)),
+        (TimestamptzType(), datetime.datetime(19, 5, 1, 22, 1, 1, tzinfo=datetime.timezone.utc)),
+        (StringType(), "abc"),
+        (UUIDType(), UUID("12345678-1234-5678-1234-567812345678").bytes),
+        (FixedType(5), 'b"\x8e\xd1\x87\x01"'),
+        (BinaryType(), b"\x8e\xd1\x87\x01"),
+    ],
+)
+def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType, value: Any) -> None:
+    import pyarrow as pa
+
+    all_transforms = [  # type: ignore
+        IdentityTransform(),
+        BucketTransform(10),
+        TruncateTransform(10),
+        YearTransform(),
+        MonthTransform(),
+        DayTransform(),
+        HourTransform(),
+    ]
+    for t in all_transforms:
+        if t.can_transform(source_type):
+            try:
+                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+            except ValueError as e:
+                # Skipping unsupported feature
+                if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
+                    continue
+                raise
 
 
 def test_deserialize_partition_field_v2() -> None:

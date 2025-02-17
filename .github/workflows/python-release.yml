@@ -17,84 +17,117 @@
 # under the License.
 #
 
-name: "Python Release"
+name: "Python Build Release Candidate"
 
 on:
+  push:
+    tags:
+      # Trigger this workflow when tag follows the versioning format: pyiceberg-<major>.<minor>.<patch>rc<release_candidate>
+      # Example valid tags: pyiceberg-0.8.0rc2, pyiceberg-1.0.0rc1
+      - 'pyiceberg-[0-9]+.[0-9]+.[0-9]+rc[0-9]+'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version'
+        description: 'Version (e.g., 0.8.0)'
         type: string
-        default: 'main'
-
+        required: true
+      rc:
+        description: 'Release Candidate (RC) (e.g., 1)'
+        type: number
+        required: true
 
 jobs:
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ ubuntu-22.04, windows-2022, macos-13, macos-14, macos-15 ]
+  validate-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.validate-inputs.outputs.VERSION }} # e.g. 0.8.0
+      RC: ${{ steps.validate-inputs.outputs.RC }} # e.g. 1
+    steps:
+      - name: Validate and Extract Version and RC
+        id: validate-inputs
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "Workflow triggered by tag push."
+            TAG=${GITHUB_REF#refs/tags/} # Extract the tag name
+            VERSION_AND_RC=${TAG#pyiceberg-} # Remove the 'pyiceberg-' prefix
+            VERSION=${VERSION_AND_RC%rc*} # Extract VERSION by removing everything after 'rc'
+            RC=${VERSION_AND_RC#*rc} # Extract RC by keeping everything after 'rc'
 
+            if [[ -z "$VERSION" || -z "$RC" ]]; then
+              echo "Error: Unable to parse VERSION or RC from tag ($TAG). Ensure the tag format is correct."
+              exit 1
+            fi
+          else
+            echo "Workflow triggered manually via workflow_dispatch."
+            VERSION="${{ github.event.inputs.version }}"
+            RC="${{ github.event.inputs.rc }}"
+
+            # Validate version (e.g., 1.0.0)
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: version ($VERSION) must be in the format: <number>.<number>.<number>"
+              exit 1
+            fi
+
+            # Validate rc (e.g., 1)
+            if [[ ! "$RC" =~ ^[0-9]+$ ]]; then
+              echo "Error: rc ($RC) must be in the format: <number>"
+              exit 1
+            fi
+          fi
+
+          # Export variables for future steps
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "RC=$RC" >> $GITHUB_OUTPUT
+
+      - name: Display Extracted Version and RC
+        run: |
+          echo "Using Version: ${{ steps.validate-inputs.outputs.VERSION }}"
+          echo "Using RC: ${{ steps.validate-inputs.outputs.RC }}"
+
+  validate-library-version:
+    runs-on: ubuntu-latest
+    needs:
+      - validate-inputs
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
-          python-version: |
-            3.9
-            3.10
-            3.11
-            3.12
+          python-version: 3.12
 
-      - name: Install poetry
-        run: pip install poetry
+      - name: Install Poetry
+        run: make install-poetry
 
-      - name: Set version
-        run: python -m poetry version "${{ inputs.version }}"
-        if: "${{ github.event.inputs.version != 'main' }}"
-
-      # Publish the source distribution with the version that's in
-      # the repository, otherwise the tests will fail
-      - name: Compile source distribution
-        run: python3 -m poetry build --format=sdist
-        if: startsWith(matrix.os, 'ubuntu')
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.22.0
-        with:
-          output-dir: wheelhouse
-          config-file: "pyproject.toml"
+      - name: Validate current pyiceberg version
         env:
-          # Ignore 32 bit architectures
-          CIBW_ARCHS: "auto64"
-          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.9,<3.13"
-          CIBW_TEST_REQUIRES: "pytest==7.4.2 moto==5.0.1"
-          CIBW_TEST_EXTRAS: "s3fs,glue"
-          CIBW_TEST_COMMAND: "pytest {project}/tests/avro/test_decoder.py"
-          # There is an upstream issue with installing on MacOSX
-          # https://github.com/pypa/cibuildwheel/issues/1603
-          # Ignore tests for pypy since not all dependencies are compiled for it
-          # and would require a local rust build chain
-          CIBW_TEST_SKIP: "pp* *macosx*"
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
+        run: |
+          # Extract the current version from Poetry
+          current_pyiceberg_version=$(poetry version --short)
+          echo "Detected Poetry version: $current_pyiceberg_version"
 
-      - name: Add source distribution
-        if: startsWith(matrix.os, 'ubuntu')
-        run: ls -lah dist/* && cp dist/* wheelhouse/
+          # Compare the input version with the Poetry version
+          if [[ "$VERSION" != "$current_pyiceberg_version" ]]; then
+            echo "Error: Input version ($VERSION) does not match the Poetry version ($current_pyiceberg_version)"
+            exit 1
+          fi
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: "release-${{ matrix.os }}"
-          path: ./wheelhouse/*
-  merge:
-    runs-on: ubuntu-latest
-    needs: build_wheels
-    steps:
-      - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
-        with:
-          name: "release-${{ github.event.inputs.version }}"
-          pattern: release-*
-          delete-merged: true
+  # SVN
+  svn-build-artifacts:
+    needs:
+      - validate-inputs
+      - validate-library-version
+    uses: ./.github/workflows/svn-build-artifacts.yml
+    with:
+      version: ${{ needs.validate-inputs.outputs.VERSION }}rc${{ needs.validate-inputs.outputs.RC }}
+
+  # PyPi
+  pypi-build-artifacts:
+    needs:
+      - validate-inputs
+      - validate-library-version
+    uses: ./.github/workflows/pypi-build-artifacts.yml
+    with:
+      version: ${{ needs.validate-inputs.outputs.VERSION }}rc${{ needs.validate-inputs.outputs.RC }}
