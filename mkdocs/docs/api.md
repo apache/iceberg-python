@@ -792,8 +792,6 @@ readable_metrics: [
 [6.0989]]
 ```
 
-To show all the table's current manifest entries for both data and delete files, use `table.inspect.all_entries()`.
-
 ### References
 
 To show a table's known snapshot references:
@@ -1048,6 +1046,355 @@ readable_metrics: [
     Content refers to type of content stored by the data file: `0` - `Data`, `1` - `Position Deletes`, `2` - `Equality Deletes`
 
 To show only data files or delete files in the current snapshot, use `table.inspect.data_files()` and `table.inspect.delete_files()` respectively.
+
+### All Metadata Tables
+
+These tables are unions of the metadata tables specific to the current snapshot, and return metadata across all snapshots.
+!!! danger
+    The "all" metadata tables may produce more than one row per data file or manifest file because metadata files may be part of more than one table snapshot.
+
+#### All Entries
+
+To show the table's manifest entries from all the snapshots for both data and delete files:
+
+```python
+table.inspect.all_entries()
+```
+
+```python
+pyarrow.Table
+status: int8 not null
+snapshot_id: int64 not null
+sequence_number: int64 not null
+file_sequence_number: int64 not null
+data_file: struct<content: int8 not null, file_path: string not null, file_format: string not null, spec_id: int32 not null, partition: struct<data: large_string> not null, record_count: int64 not null, file_size_in_bytes: int64 not null, column_sizes: map<int32, int64>, value_counts: map<int32, int64>, null_value_counts: map<int32, int64>, nan_value_counts: map<int32, int64>, lower_bounds: map<int32, binary>, upper_bounds: map<int32, binary>, key_metadata: binary, split_offsets: list<item: int64>, equality_ids: list<item: int32>, sort_order_id: int32> not null
+  child 0, content: int8 not null
+  child 1, file_path: string not null
+  child 2, file_format: string not null
+  child 3, spec_id: int32 not null
+  child 4, partition: struct<data: large_string> not null
+      child 0, data: large_string
+  child 5, record_count: int64 not null
+  child 6, file_size_in_bytes: int64 not null
+  child 7, column_sizes: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 8, value_counts: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 9, null_value_counts: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 10, nan_value_counts: map<int32, int64>
+      child 0, entries: struct<key: int32 not null, value: int64> not null
+          child 0, key: int32 not null
+          child 1, value: int64
+  child 11, lower_bounds: map<int32, binary>
+      child 0, entries: struct<key: int32 not null, value: binary> not null
+          child 0, key: int32 not null
+          child 1, value: binary
+  child 12, upper_bounds: map<int32, binary>
+      child 0, entries: struct<key: int32 not null, value: binary> not null
+          child 0, key: int32 not null
+          child 1, value: binary
+  child 13, key_metadata: binary
+  child 14, split_offsets: list<item: int64>
+      child 0, item: int64
+  child 15, equality_ids: list<item: int32>
+      child 0, item: int32
+  child 16, sort_order_id: int32
+readable_metrics: struct<id: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: int32, upper_bound: int32> not null, data: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null>
+  child 0, id: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: int32, upper_bound: int32> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: int32
+      child 5, upper_bound: int32
+  child 1, data: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null
+      child 0, column_size: int64
+      child 1, value_count: int64
+      child 2, null_value_count: int64
+      child 3, nan_value_count: int64
+      child 4, lower_bound: large_string
+      child 5, upper_bound: large_string
+----
+status: [[1],[1],...,[],[]]
+snapshot_id: [[6449946327458654223],[7507782590078860647],...,[],[]]
+sequence_number: [[1],[2],...,[],[]]
+file_sequence_number: [[1],[2],...,[],[]]
+data_file: [
+  -- is_valid: all not null
+  -- child 0 type: int8
+[0]
+  -- child 1 type: string
+["s3://warehouse/default/table_metadata_all_entries/data/data=a/00000-1-20675924-1844-4414-aa3b-cbb033884013-0-00001.parquet"]
+  -- child 2 type: string
+["PARQUET"]
+  -- child 3 type: int32
+[0]
+  -- child 4 type: struct<data: large_string>
+    -- is_valid: all not null
+    -- child 0 type: large_string
+["a"]
+  -- child 5 type: int64
+[1]
+  -- child 6 type: int64
+[636]
+  -- child 7 type: map<int32, int64>
+[keys:[1,2]values:[39,40]]
+  -- child 8 type: map<int32, int64>
+[keys:[1,2]values:[1,1]]
+  -- child 9 type: map<int32, int64>
+[keys:[1,2]values:[0,0]]
+  -- child 10 type: map<int32, int64>
+[keys:[]values:[]]
+  -- child 11 type: map<int32, binary>
+[keys:[1,2]values:[01000000,61]]
+  -- child 12 type: map<int32, binary>
+[keys:[1,2]values:[01000000,61]]
+  -- child 13 type: binary
+[null]
+  -- child 14 type: list<item: int64>
+[[4]]
+  -- child 15 type: list<item: int32>
+[null]
+  -- child 16 type: int32
+[0],
+  -- is_valid: all not null
+  -- child 0 type: int8
+[0]
+  -- child 1 type: string
+["s3://warehouse/default/table_metadata_all_entries/data/data=b/00000-3-c28af222-7039-435e-b2a9-a4dc698b75e5-0-00001.parquet"]
+  -- child 2 type: string
+["PARQUET"]
+  -- child 3 type: int32
+[0]
+  -- child 4 type: struct<data: large_string>
+    -- is_valid: all not null
+    -- child 0 type: large_string
+["b"]
+  -- child 5 type: int64
+[1]
+  -- child 6 type: int64
+[636]
+  -- child 7 type: map<int32, int64>
+[keys:[1,2]values:[39,40]]
+  -- child 8 type: map<int32, int64>
+[keys:[1,2]values:[1,1]]
+  -- child 9 type: map<int32, int64>
+[keys:[1,2]values:[0,0]]
+  -- child 10 type: map<int32, int64>
+[keys:[]values:[]]
+  -- child 11 type: map<int32, binary>
+[keys:[1,2]values:[02000000,62]]
+  -- child 12 type: map<int32, binary>
+[keys:[1,2]values:[02000000,62]]
+  -- child 13 type: binary
+[null]
+  -- child 14 type: list<item: int64>
+[[4]]
+  -- child 15 type: list<item: int32>
+[null]
+  -- child 16 type: int32
+[0],
+...,
+  -- is_valid: all not null
+  -- child 0 type: int8
+[]
+  -- child 1 type: string
+[]
+  -- child 2 type: string
+[]
+  -- child 3 type: int32
+[]
+  -- child 4 type: struct<data: large_string>
+    -- is_valid: all not null
+    -- child 0 type: large_string
+[]
+  -- child 5 type: int64
+[]
+  -- child 6 type: int64
+[]
+  -- child 7 type: map<int32, int64>
+[]
+  -- child 8 type: map<int32, int64>
+[]
+  -- child 9 type: map<int32, int64>
+[]
+  -- child 10 type: map<int32, int64>
+[]
+  -- child 11 type: map<int32, binary>
+[]
+  -- child 12 type: map<int32, binary>
+[]
+  -- child 13 type: binary
+[]
+  -- child 14 type: list<item: int64>
+[]
+  -- child 15 type: list<item: int32>
+[]
+  -- child 16 type: int32
+[],
+  -- is_valid: all not null
+  -- child 0 type: int8
+[]
+  -- child 1 type: string
+[]
+  -- child 2 type: string
+[]
+  -- child 3 type: int32
+[]
+  -- child 4 type: struct<data: large_string>
+    -- is_valid: all not null
+    -- child 0 type: large_string
+[]
+  -- child 5 type: int64
+[]
+  -- child 6 type: int64
+[]
+  -- child 7 type: map<int32, int64>
+[]
+  -- child 8 type: map<int32, int64>
+[]
+  -- child 9 type: map<int32, int64>
+[]
+  -- child 10 type: map<int32, int64>
+[]
+  -- child 11 type: map<int32, binary>
+[]
+  -- child 12 type: map<int32, binary>
+[]
+  -- child 13 type: binary
+[]
+  -- child 14 type: list<item: int64>
+[]
+  -- child 15 type: list<item: int32>
+[]
+  -- child 16 type: int32
+[]]
+readable_metrics: [
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: int32, upper_bound: int32>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[39]
+    -- child 1 type: int64
+[1]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: int32
+[1]
+    -- child 5 type: int32
+[1]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[40]
+    -- child 1 type: int64
+[1]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: large_string
+["a"]
+    -- child 5 type: large_string
+["a"],
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: int32, upper_bound: int32>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[39]
+    -- child 1 type: int64
+[1]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: int32
+[2]
+    -- child 5 type: int32
+[2]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[40]
+    -- child 1 type: int64
+[1]
+    -- child 2 type: int64
+[0]
+    -- child 3 type: int64
+[null]
+    -- child 4 type: large_string
+["b"]
+    -- child 5 type: large_string
+["b"],
+...,
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: int32, upper_bound: int32>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[]
+    -- child 1 type: int64
+[]
+    -- child 2 type: int64
+[]
+    -- child 3 type: int64
+[]
+    -- child 4 type: int32
+[]
+    -- child 5 type: int32
+[]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[]
+    -- child 1 type: int64
+[]
+    -- child 2 type: int64
+[]
+    -- child 3 type: int64
+[]
+    -- child 4 type: large_string
+[]
+    -- child 5 type: large_string
+[],
+  -- is_valid: all not null
+  -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: int32, upper_bound: int32>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[]
+    -- child 1 type: int64
+[]
+    -- child 2 type: int64
+[]
+    -- child 3 type: int64
+[]
+    -- child 4 type: int32
+[]
+    -- child 5 type: int32
+[]
+  -- child 1 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
+    -- is_valid: all not null
+    -- child 0 type: int64
+[]
+    -- child 1 type: int64
+[]
+    -- child 2 type: int64
+[]
+    -- child 3 type: int64
+[]
+    -- child 4 type: large_string
+[]
+    -- child 5 type: large_string
+[]]
+```
 
 ## Add Files
 

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tupl
 from pyiceberg.conversions import from_bytes
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
 from pyiceberg.types import PrimitiveType
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -94,12 +95,13 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def _get_entries_schema(self) -> "pa.Schema":
+    def _get_entries_schema(self, schema: Optional[Schema] = None) -> "pa.Schema":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-        schema = self.tbl.metadata.schema()
+        if not schema:
+            schema = self.tbl.metadata.schema()
 
         readable_metrics_struct = []
 
@@ -160,10 +162,10 @@ class InspectTable:
         )
         return entries_schema
 
-    def _get_entries(self, schema: "pa.Schema", manifest: ManifestFile, discard_deleted: bool = True) -> "pa.Table":
+    def _get_entries(self, schema: Schema, manifest: ManifestFile, discard_deleted: bool = True) -> "pa.Table":
         import pyarrow as pa
 
-        entries_schema = self._get_entries_schema()
+        entries_schema = self._get_entries_schema(schema=schema)
         entries = []
         for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=discard_deleted):
             column_sizes = entry.data_file.column_sizes or {}
@@ -186,7 +188,7 @@ class InspectTable:
                     if (upper_bound := upper_bounds.get(field.field_id))
                     else None,
                 }
-                for field in self.tbl.metadata.schema().fields
+                for field in schema.fields
             }
 
             partition = entry.data_file.partition
@@ -208,7 +210,7 @@ class InspectTable:
                         "partition": partition_record_dict,
                         "record_count": entry.data_file.record_count,
                         "file_size_in_bytes": entry.data_file.file_size_in_bytes,
-                        "column_sizes": dict(entry.data_file.column_sizes) or None,
+                        "column_sizes": dict(entry.data_file.column_sizes) if entry.data_file.column_sizes is not None else None,
                         "value_counts": dict(entry.data_file.value_counts) if entry.data_file.value_counts is not None else None,
                         "null_value_counts": dict(entry.data_file.null_value_counts)
                         if entry.data_file.null_value_counts is not None
@@ -243,6 +245,8 @@ class InspectTable:
             raise ValueError(f"Cannot find schema_id for snapshot {snapshot.snapshot_id}")
 
         schema = self.tbl.schemas().get(snapshot.schema_id)
+        if not schema:
+            raise ValueError(f"Cannot find schema with ID {snapshot.schema_id}")
         for manifest in snapshot.manifests(self.tbl.io):
             manifest_entries = self._get_entries(schema=schema, manifest=manifest, discard_deleted=True)
             entries.append(manifest_entries)
