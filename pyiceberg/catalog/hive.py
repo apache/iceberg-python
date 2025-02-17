@@ -125,6 +125,9 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
+HIVE_KERBEROS_AUTH = "hive.kerberos-authentication"
+HIVE_KERBEROS_AUTH_DEFAULT = False
+
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
@@ -142,14 +145,26 @@ class _HiveClient:
     _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None):
-        url_parts = urlparse(uri)
-        transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        self._transport = TTransport.TBufferedTransport(transport)
-        protocol = TBinaryProtocol.TBinaryProtocol(transport)
+    def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
+        self._uri = uri
+        self._kerberos_auth = kerberos_auth
+        self._ugi = ugi.split(":") if ugi else None
+
+        self._init_thrift_client()
+
+    def _init_thrift_client(self) -> None:
+        url_parts = urlparse(self._uri)
+
+        socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
+
+        if not self._kerberos_auth:
+            self._transport = TTransport.TBufferedTransport(socket)
+        else:
+            self._transport = TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service="hive")
+
+        protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
 
         self._client = Client(protocol)
-        self._ugi = ugi.split(":") if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
@@ -276,7 +291,11 @@ class HiveCatalog(MetastoreCatalog):
         last_exception = None
         for uri in properties["uri"].split(","):
             try:
-                return _HiveClient(uri, properties.get("ugi"))
+                return _HiveClient(
+                    uri,
+                    properties.get("ugi"),
+                    property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
+                )
             except BaseException as e:
                 last_exception = e
         if last_exception is not None:
@@ -404,9 +423,27 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
-        raise NotImplementedError
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        io = self._load_file_io(location=metadata_location)
+        metadata_file = io.new_input(metadata_location)
+        staged_table = StagedTable(
+            identifier=(database_name, table_name),
+            metadata=FromInputFile.table_metadata(metadata_file),
+            metadata_location=metadata_location,
+            io=io,
+            catalog=self,
+        )
+        tbl = self._convert_iceberg_into_hive(staged_table)
+        with self._client as open_client:
+            self._create_hive_table(open_client, tbl)
+            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+
+        return self._convert_hive_into_iceberg(hive_table)
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:

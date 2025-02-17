@@ -20,10 +20,9 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
 from pydantic import Field, field_validator, model_validator
-from typing_extensions import Annotated
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -465,6 +464,22 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     metadata_updates["refs"] = {**base_metadata.refs, update.ref_name: snapshot_ref}
     context.add_update(update)
     return base_metadata.model_copy(update=metadata_updates)
+
+
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.ref_name not in base_metadata.refs:
+        return base_metadata
+
+    existing_ref = base_metadata.refs[update.ref_name]
+    if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
+        raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
+
+    current_snapshot_id = None if update.ref_name == MAIN_BRANCH else base_metadata.current_snapshot_id
+
+    metadata_refs = {ref_name: ref for ref_name, ref in base_metadata.refs.items() if ref_name != update.ref_name}
+    context.add_update(update)
+    return base_metadata.model_copy(update={"refs": metadata_refs, "current_snapshot_id": current_snapshot_id})
 
 
 @_apply_table_update.register(AddSortOrderUpdate)

@@ -28,11 +28,11 @@ hide:
 
 There are three ways to pass in configuration:
 
-- Using the `~/.pyiceberg.yaml` configuration file
+- Using the `.pyiceberg.yaml` configuration file (Recommended)
 - Through environment variables
 - By passing in credentials through the CLI or the Python API
 
-The configuration file is recommended since that's the easiest way to manage the credentials.
+The configuration file can be stored in either the directory specified by the `PYICEBERG_HOME` environment variable, the home directory, or current working directory (in this order).
 
 To change the path searched for the `.pyiceberg.yaml`, you can overwrite the `PYICEBERG_HOME` environment variable.
 
@@ -54,18 +54,21 @@ Iceberg tables support table properties to configure table behavior.
 
 ### Write options
 
-| Key                                      | Options                           | Default | Description                                                                                                                                                                                                         |
-|------------------------------------------|-----------------------------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}` | zstd    | Sets the Parquet compression coddec.                                                                                                                                                                                |
-| `write.parquet.compression-level`        | Integer                           | null    | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                                                                                                          |
-| `write.parquet.row-group-limit`          | Number of rows                    | 1048576 | The upper bound of the number of entries within a single row group                                                                                                                                                  |
-| `write.parquet.page-size-bytes`          | Size in bytes                     | 1MB     | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                                                                                         |
-| `write.parquet.page-row-limit`           | Number of rows                    | 20000   | Set a target threshold for the maximum number of rows within a column chunk                                                                                                                                         |
-| `write.parquet.dict-size-bytes`          | Size in bytes                     | 2MB     | Set the dictionary page size limit per row group                                                                                                                                                                    |
-| `write.metadata.previous-versions-max`   | Integer                           | 100     | The max number of previous version metadata files to keep before deleting after commit.                                                                                                                             |
-| `write.object-storage.enabled`           | Boolean                           | True    | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. Note: the default value of `True` differs from Iceberg's Java implementation |
-| `write.object-storage.partitioned-paths` | Boolean                           | True    | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                                                                                 |
-| `write.py-location-provider.impl`        | String of form `module.ClassName` | null    | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                                                                                           |
+| Key                                      | Options                            | Default                    | Description                                                                                                                                          |
+|------------------------------------------|------------------------------------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}`  | zstd                       | Sets the Parquet compression coddec.                                                                                                                 |
+| `write.parquet.compression-level`        | Integer                            | null                       | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                                           |
+| `write.parquet.row-group-limit`          | Number of rows                     | 1048576                    | The upper bound of the number of entries within a single row group                                                                                   |
+| `write.parquet.page-size-bytes`          | Size in bytes                      | 1MB                        | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                          |
+| `write.parquet.page-row-limit`           | Number of rows                     | 20000                      | Set a target threshold for the maximum number of rows within a column chunk                                                                          |
+| `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
+| `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
+| `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
+| `write.object-storage.enabled`           | Boolean                            | True                       | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. Note: the default value of `True` differs from Iceberg's Java implementation |
+| `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
+| `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
+| `write.data.path`                        | String pointing to location        | `{metadata.location}/data` | Sets the location under which data is written.                                                                                                       |
+| `write.metadata.path`                    | String pointing to location        | `{metadata.location}/metadata` | Sets the location under which metadata is written.                                                                                                                                                                  |
 
 ### Table behavior options
 
@@ -119,6 +122,7 @@ For the FileIO there are several configuration options available:
 | s3.region            | us-west-2                  | Configure the default region used to initialize an `S3FileSystem`. `PyArrowFileIO` attempts to automatically resolve the region for each S3 bucket, falling back to this value if resolution fails.                                                                                                           |
 | s3.proxy-uri         | <http://my.proxy.com:8080> | Configure the proxy server to be used by the FileIO.                                                                                                                                                                                                                    |
 | s3.connect-timeout   | 60.0                       | Configure socket connection timeout, in seconds.                                                                                                                                                                                                                        |
+| s3.request-timeout   | 60.0                       | Configure socket read timeouts on Windows and macOS, in seconds.                                                                                                                                                                                                        |
 | s3.force-virtual-addressing   | False                       | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 
 <!-- markdown-link-check-enable-->
@@ -200,17 +204,21 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 
 ## Location Providers
 
-Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data. In PyIceberg, the
-`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases. The
+Apache Iceberg uses the concept of a `LocationProvider` to manage file paths for a table's data files. In PyIceberg, the
+`LocationProvider` module is designed to be pluggable, allowing customization for specific use cases, and to additionally determine metadata file locations. The
 `LocationProvider` for a table can be specified through table properties.
 
-PyIceberg defaults to the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider), which generates
-file paths that are optimized for object storage.
+Both data file and metadata file locations can be customized by configuring the table properties [`write.data.path` and `write.metadata.path`](#write-options), respectively.
+
+For more granular control, you can override the `LocationProvider`'s `new_data_location` and `new_metadata_location` methods to define custom logic for generating file paths. See [`Loading a Custom Location Provider`](configuration.md#loading-a-custom-location-provider).
+
+PyIceberg defaults to the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider), which generates file paths for
+data files that are optimized for object storage.
 
 ### Simple Location Provider
 
-The `SimpleLocationProvider` places a table's file names underneath a `data` directory in the table's base storage
-location (this is `table.metadata.location` - see the [Iceberg table specification](https://iceberg.apache.org/spec/#table-metadata)).
+The `SimpleLocationProvider` provides paths prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+
 For example, a non-partitioned table might have a data file with location:
 
 ```txt
@@ -238,9 +246,9 @@ When several files are stored under the same prefix, cloud object stores such as
 resulting in slowdowns. The `ObjectStoreLocationProvider` counteracts this by injecting deterministic hashes, in the form of binary directories,
 into file paths, to distribute files across a larger number of object store prefixes.
 
-Paths still contain partitions just before the file name, in Hive-style, and a `data` directory beneath the table's location,
-in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). For example, a table
-partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
+Paths are prefixed by `{location}/data/`, where `location` comes from the [table metadata](https://iceberg.apache.org/spec/#table-metadata-fields), in a similar manner to the [`SimpleLocationProvider`](configuration.md#simple-location-provider). This can be overridden by setting [`write.data.path` table configuration](#write-options).
+
+For example, a table partitioned over a string column `category` might have a data file with location: (note the additional binary directories)
 
 ```txt
 s3://bucket/ns/table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
@@ -386,6 +394,23 @@ catalog:
 | echo          | true                                                         | false   | SQLAlchemy engine [echo param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.echo) to log all statements to the default log handler                      |
 | pool_pre_ping | true                                                         | false   | SQLAlchemy engine [pool_pre_ping param](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine.params.pool_pre_ping) to test connections for liveness upon each checkout |
 
+### In Memory Catalog
+
+The in-memory catalog is built on top of `SqlCatalog` and uses SQLite in-memory database for its backend.
+
+It is useful for test, demo, and playground but not in production as it does not support concurrent access.
+
+```yaml
+catalog:
+  default:
+    type: in-memory
+    warehouse: /tmp/pyiceberg/warehouse
+```
+
+| Key       | Example                  | Default                       | Description                                                          |
+| --------- |--------------------------|-------------------------------|----------------------------------------------------------------------|
+| warehouse | /tmp/pyiceberg/warehouse | file:///tmp/iceberg/warehouse | The directory where the in-memory catalog will store its data files. |
+
 ### Hive Catalog
 
 ```yaml
@@ -396,6 +421,11 @@ catalog:
     s3.access-key-id: admin
     s3.secret-access-key: password
 ```
+
+| Key                          | Example | Description                       |
+|------------------------------| ------- | --------------------------------- |
+| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode |
+| hive.kerberos-authentication | true    | Using authentication via Kerberos |
 
 When using Hive 2.x, make sure to set the compatibility flag:
 

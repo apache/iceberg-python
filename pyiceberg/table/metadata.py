@@ -19,18 +19,10 @@ from __future__ import annotations
 import datetime
 import uuid
 from copy import copy
-from typing import (
-    Any,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Union,
-)
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field, field_serializer, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
-from typing_extensions import Annotated
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assign_fresh_partition_spec_ids

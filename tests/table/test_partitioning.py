@@ -23,7 +23,15 @@ import pytest
 
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import BucketTransform, IdentityTransform, TruncateTransform
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    TruncateTransform,
+    YearTransform,
+)
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
@@ -186,11 +194,27 @@ def test_partition_type(table_schema_simple: Schema) -> None:
         (BinaryType(), b"\x8e\xd1\x87\x01"),
     ],
 )
-def test_bucketing_function(source_type: PrimitiveType, value: Any) -> None:
-    bucket = BucketTransform(2)  # type: ignore
+def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType, value: Any) -> None:
     import pyarrow as pa
 
-    assert bucket.transform(source_type)(value) == bucket.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+    all_transforms = [  # type: ignore
+        IdentityTransform(),
+        BucketTransform(10),
+        TruncateTransform(10),
+        YearTransform(),
+        MonthTransform(),
+        DayTransform(),
+        HourTransform(),
+    ]
+    for t in all_transforms:
+        if t.can_transform(source_type):
+            try:
+                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+            except ValueError as e:
+                # Skipping unsupported feature
+                if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
+                    continue
+                raise
 
 
 def test_deserialize_partition_field_v2() -> None:
