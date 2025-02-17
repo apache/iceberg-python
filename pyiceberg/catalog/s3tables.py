@@ -36,6 +36,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableResponse, CreateTableTransaction, Table
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import TableRequirement, TableUpdate
@@ -207,7 +208,8 @@ class S3TablesCatalog(MetastoreCatalog):
             )
             warehouse_location = response["warehouseLocation"]
 
-            metadata_location = self._get_metadata_location(location=warehouse_location)
+            provider = load_location_provider(warehouse_location, properties)
+            metadata_location = provider.new_table_metadata_file_location()
             metadata = new_table_metadata(
                 location=warehouse_location,
                 schema=schema,
