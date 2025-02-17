@@ -470,13 +470,17 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
 @_apply_table_update.register(RemoveSnapshotsUpdate)
 def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     for remove_snapshot_id in update.snapshot_ids:
-        if not any(s.snapshot_id == remove_snapshot_id for s in base_metadata.snapshots):
+        if not any(snapshot.snapshot_id == remove_snapshot_id for snapshot in base_metadata.snapshots):
             raise ValueError(f"Snapshot with snapshot id {remove_snapshot_id} does not exist: {base_metadata.snapshots}")
 
     snapshots = [
-        (s.model_copy(update={"parent_snapshot_id": None}) if s.parent_snapshot_id in update.snapshot_ids else s)
-        for s in base_metadata.snapshots
-        if s.snapshot_id not in update.snapshot_ids
+        (
+            snapshot.model_copy(update={"parent_snapshot_id": None})
+            if snapshot.parent_snapshot_id in update.snapshot_ids
+            else snapshot
+        )
+        for snapshot in base_metadata.snapshots
+        if snapshot.snapshot_id not in update.snapshot_ids
     ]
     snapshot_log = [
         snapshot_log_entry
@@ -501,7 +505,6 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
 
     context.add_update(update)
     return new_metadata.model_copy(update={"snapshots": snapshots, "snapshot_log": snapshot_log})
-
 
 
 @_apply_table_update.register(RemoveSnapshotRefUpdate)
