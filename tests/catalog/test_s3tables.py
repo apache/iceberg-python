@@ -88,8 +88,8 @@ def test_load_catalog(table_bucket_arn: str, aws_region: str, moto_endpoint_url:
     assert isinstance(catalog, S3TablesCatalog)
 
 
-def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str) -> None:
-    properties = {"s3tables.warehouse": f"{table_bucket_arn}-modified", "s3tables.region": "us-east-1"}
+def test_creating_catalog_validates_s3_table_bucket_exists(table_bucket_arn: str, aws_region: str) -> None:
+    properties = {"s3tables.warehouse": f"{table_bucket_arn}-modified", "s3tables.region": aws_region}
     with pytest.raises(TableBucketNotFound):
         S3TablesCatalog(name="test_s3tables_catalog", **properties)
 
