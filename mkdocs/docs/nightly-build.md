@@ -26,3 +26,10 @@ To install the nightly build,
 ```shell
 pip install -i https://test.pypi.org/simple/ --pre pyiceberg
 ```
+
+<!-- prettier-ignore-start -->
+
+!!! warning "For Testing Purposes Only"
+    Nightly builds are for testing purposes only and have not been validated. Please use at your own risk, as they may contain untested changes, potential bugs, or incomplete features. Additionally, ensure compliance with any applicable licenses, as these builds may include changes that have not been reviewed for legal or licensing implications.
+
+<!-- prettier-ignore-end -->
