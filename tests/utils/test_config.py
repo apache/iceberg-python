@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import os
+from typing import Any, Dict, Optional
 from unittest import mock
 
 import pytest
@@ -93,3 +94,84 @@ def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempP
 
     assert Config().get_bool("legacy-current-snapshot-id")
     assert Config().get_int("max-workers") == 4
+
+
+@pytest.mark.parametrize(
+    "config_setup, expected_result",
+    [
+        # PYICEBERG_HOME takes precedence
+        (
+            {
+                "pyiceberg_home_content": "https://service.io/pyiceberg_home",
+                "home_content": "https://service.io/user-home",
+                "cwd_content": "https://service.io/cwd",
+            },
+            "https://service.io/pyiceberg_home",
+        ),
+        # Home directory (~) is checked after PYICEBERG_HOME
+        (
+            {
+                "pyiceberg_home_content": None,
+                "home_content": "https://service.io/user-home",
+                "cwd_content": "https://service.io/cwd",
+            },
+            "https://service.io/user-home",
+        ),
+        # Current working directory (.) is the last fallback
+        (
+            {
+                "pyiceberg_home_content": None,
+                "home_content": None,
+                "cwd_content": "https://service.io/cwd",
+            },
+            "https://service.io/cwd",
+        ),
+        # No configuration files found
+        (
+            {
+                "pyiceberg_home_content": None,
+                "home_content": None,
+                "cwd_content": None,
+            },
+            None,
+        ),
+    ],
+)
+def test_config_lookup_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    config_setup: Dict[str, Any],
+    expected_result: Optional[str],
+) -> None:
+    """
+    Test that the configuration lookup prioritizes PYICEBERG_HOME, then home (~), then cwd.
+    """
+
+    def create_config_file(path: str, uri: Optional[str]) -> None:
+        if uri:
+            config_file_path = os.path.join(path, ".pyiceberg.yaml")
+            content = {"catalog": {"default": {"uri": uri}}}
+            with open(config_file_path, "w", encoding="utf-8") as file:
+                yaml_str = as_document(content).as_yaml()
+                file.write(yaml_str)
+
+    # Create temporary directories for PYICEBERG_HOME, home (~), and cwd
+    pyiceberg_home = str(tmp_path_factory.mktemp("pyiceberg_home"))
+    home_dir = str(tmp_path_factory.mktemp("home"))
+    cwd_dir = str(tmp_path_factory.mktemp("cwd"))
+
+    # Create configuration files in the respective directories
+    create_config_file(pyiceberg_home, config_setup.get("pyiceberg_home_content"))
+    create_config_file(home_dir, config_setup.get("home_content"))
+    create_config_file(cwd_dir, config_setup.get("cwd_content"))
+
+    # Mock environment and paths
+    monkeypatch.setenv("PYICEBERG_HOME", pyiceberg_home)
+    monkeypatch.setattr(os.path, "expanduser", lambda _: home_dir)
+    monkeypatch.chdir(cwd_dir)
+
+    # Perform the lookup and validate the result
+    result = Config()._from_configuration_files()
+    assert (
+        result["catalog"]["default"]["uri"] if result else None  # type: ignore
+    ) == expected_result, f"Unexpected configuration result. Expected: {expected_result}, Actual: {result}"

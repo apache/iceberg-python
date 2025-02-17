@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import struct
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
 from math import isnan
@@ -50,6 +50,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils.datetime import (
     date_str_to_days,
+    date_to_days,
     datetime_to_micros,
     micros_to_days,
     time_str_to_micros,
@@ -149,6 +150,8 @@ def literal(value: L) -> Literal[L]:
         return DecimalLiteral(value)
     elif isinstance(value, datetime):
         return TimestampLiteral(datetime_to_micros(value))  # type: ignore
+    elif isinstance(value, date):
+        return DateLiteral(date_to_days(value))  # type: ignore
     else:
         raise TypeError(f"Invalid literal value: {repr(value)}")
 

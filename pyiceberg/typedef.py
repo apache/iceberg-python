@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import (
@@ -94,7 +94,7 @@ RecursiveDict = Dict[str, Union[str, "RecursiveDict"]]
 """A recursive dictionary type for nested structures in PyIceberg."""
 
 # Represents the literal value
-L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, datetime, covariant=True)
+L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, datetime, date, covariant=True)
 
 
 @runtime_checkable

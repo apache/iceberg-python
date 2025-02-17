@@ -1,4 +1,3 @@
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,16 +14,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
 
-version: 2
-updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 50
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "daily"
+from pyiceberg.catalog.sql import SqlCatalog
+
+
+class InMemoryCatalog(SqlCatalog):
+    """
+    An in-memory catalog implementation that uses SqlCatalog with SQLite in-memory database.
+
+    This is useful for test, demo, and playground but not in production as it does not support concurrent access.
+    """
+
+    def __init__(self, name: str, warehouse: str = "file:///tmp/iceberg/warehouse", **kwargs: str) -> None:
+        self._warehouse_location = warehouse
+        if "uri" not in kwargs:
+            kwargs["uri"] = "sqlite:///:memory:"
+        super().__init__(name=name, warehouse=warehouse, **kwargs)
