@@ -20,10 +20,12 @@ help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 POETRY_VERSION = 2.0.1
-install-poetry:  ## Ensure Poetry is installed and the correct version is being used.
+POETRY_SHELL_VERSION = 1.0.1
+install-poetry:  ## Ensure Poetry and shell plugin are installed and the correct version is being used.
 	@if ! command -v poetry &> /dev/null; then \
 		echo "Poetry could not be found. Installing..."; \
 		pip install --user poetry==$(POETRY_VERSION); \
+		pip install --user poetry-plugin-shell==$(POETRY_SHELL_VERSION); \
 	else \
 		INSTALLED_VERSION=$$(pip show poetry | grep Version | awk '{print $$2}'); \
 		if [ "$$INSTALLED_VERSION" != "$(POETRY_VERSION)" ]; then \
@@ -31,7 +33,12 @@ install-poetry:  ## Ensure Poetry is installed and the correct version is being 
 			pip install --user --upgrade poetry==$(POETRY_VERSION); \
 		else \
 			echo "Poetry version $$INSTALLED_VERSION is already installed."; \
-		fi \
+		fi; \
+		INSTALLED_SHELL_VERSION=$$(poetry self show plugins | grep poetry-plugin-shell | awk '{print $$3}' | tr -d '()'); \
+		if [ "$$INSTALLED_SHELL_VERSION" != "$(POETRY_SHELL_VERSION)" ]; then \
+			echo "Installing poetry-plugin-shell version $(POETRY_SHELL_VERSION)"; \
+			pip install --user poetry-plugin-shell==$(POETRY_SHELL_VERSION); \
+		fi; \
 	fi
 
 install-dependencies: ## Install dependencies including dev, docs, and all extras
