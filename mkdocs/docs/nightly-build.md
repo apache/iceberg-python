@@ -21,7 +21,8 @@
 
 A nightly build of PyIceberg is available on testpypi, [https://test.pypi.org/project/pyiceberg/](https://test.pypi.org/project/pyiceberg/).
 
-To install the nightly build, 
-```
+To install the nightly build,
+
+```shell
 pip install -i https://test.pypi.org/simple/ --pre pyiceberg
 ```
