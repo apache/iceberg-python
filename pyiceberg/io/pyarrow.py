@@ -99,6 +99,7 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
+    PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -1560,10 +1561,15 @@ class ArrowScan:
 
         tables = [f.result() for f in completed_futures if f.result()]
 
+        arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
+
         if len(tables) < 1:
-            return pa.Table.from_batches([], schema=schema_to_pyarrow(self._projected_schema, include_field_ids=False))
+            return pa.Table.from_batches([], schema=arrow_schema)
 
         result = pa.concat_tables(tables, promote_options="permissive")
+
+        if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
+            result = result.cast(arrow_schema)
 
         if self._limit is not None:
             return result.slice(0, self._limit)
