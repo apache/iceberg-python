@@ -769,7 +769,7 @@ class InspectTable:
             schema = self._get_positional_deletes_schema()
             return pa.Table.from_pylist([], schema=schema)
 
-        if snapshot.schema_id == None:
+        if snapshot.schema_id is None:
             raise ValueError(f"Snapshot {snapshot.snapshot_id} does not have a schema id")
 
         schemas = self.tbl.schemas()
