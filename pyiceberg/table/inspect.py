@@ -769,10 +769,17 @@ class InspectTable:
             schema = self._get_positional_deletes_schema()
             return pa.Table.from_pylist([], schema=schema)
 
+        if not snapshot.schema_id:
+            raise ValueError(f"Snapshot {snapshot.snapshot_id} does not have a schema id")
+
         schemas = self.tbl.schemas()
+        schema = schemas.get(snapshot.schema_id, None)
+        if not schema:
+            raise ValueError(f"Cannot find schema with id: {snapshot.schema_id}")
+
         executor = ExecutorFactory.get_or_create()
         positional_deletes: Iterator["pa.Table"] = executor.map(
-            lambda manifest: self._generate_positional_delete_table(manifest, schema=schemas[snapshot.schema_id]),
+            lambda manifest: self._generate_positional_delete_table(manifest, schema=schema),
             snapshot.manifests(self.tbl.io),
         )
         return pa.concat_tables(positional_deletes)
