@@ -25,6 +25,7 @@ with the pyarrow library.
 
 from __future__ import annotations
 
+from collections import defaultdict
 import concurrent.futures
 import fnmatch
 import functools
@@ -2413,11 +2414,21 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
 
 
 def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[pa.RecordBatch]]:
-    from pyiceberg.utils.bin_packing import PackingIterator
+    return bin_pack_arrow_tables([tbl], target_file_size)
 
-    avg_row_size_bytes = tbl.nbytes / tbl.num_rows
-    target_rows_per_file = target_file_size // avg_row_size_bytes
-    batches = tbl.to_batches(max_chunksize=target_rows_per_file)
+
+def bin_pack_arrow_tables(tbls: List[pa.Table], target_file_size: int) -> Iterator[List[pa.RecordBatch]]:
+    from pyiceberg.utils.bin_packing import PackingIterator
+    batches = []
+    for tbl in tbls:
+        if tbl.num_rows == 0:
+            continue
+
+        avg_row_size_bytes = tbl.nbytes / tbl.num_rows
+        target_rows_per_file = max(1, target_file_size // avg_row_size_bytes)
+        tbl_batches = tbl.to_batches(max_chunksize=target_rows_per_file)
+        batches.extend(tbl_batches)
+
     bin_packed_record_batches = PackingIterator(
         items=batches,
         target_weight=target_file_size,
@@ -2589,6 +2600,72 @@ def _dataframe_to_data_files(
         )
 
 
+def _dataframes_to_data_files(
+    table_metadata: TableMetadata,
+    dfs: List[pa.Table],
+    io: FileIO,
+    write_uuid: Optional[uuid.UUID] = None,
+    counter: Optional[itertools.count[int]] = None,
+) -> Iterable[DataFile]:
+    """Convert a PyArrow table into a DataFile.
+
+    Returns:
+        An iterable that supplies datafiles that represent the table.
+    """
+    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties, WriteTask
+
+    counter = counter or itertools.count(0)
+    write_uuid = write_uuid or uuid.uuid4()
+    target_file_size: int = property_as_int(  # type: ignore  # The property is set with non-None value.
+        properties=table_metadata.properties,
+        property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
+        default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+    )
+    name_mapping = table_metadata.schema().name_mapping
+    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+
+    task_schema = None
+    for idx, _ in enumerate(dfs):
+        if idx == 0:
+            task_schema = pyarrow_to_schema(dfs[0].schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+        else:
+            assert dfs[idx - 1].schema.equals(dfs[idx].schema), "All dataframes must have the same schema"
+
+    if table_metadata.spec().is_unpartitioned():
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter(
+                [
+                    WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                    for batches in bin_pack_arrow_tables(dfs, target_file_size)
+                ]
+            ),
+        )
+    else:
+        partitions = _determine_partitions_mapping(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=dfs)
+        yield from write_file(
+            io=io,
+            table_metadata=table_metadata,
+            tasks=iter(
+                [
+                    WriteTask(
+                        write_uuid=write_uuid,
+                        task_id=next(counter),
+                        record_batches=batches,
+                        partition_key=partition_key,
+                        schema=task_schema,
+                    )
+                    for partition_key, partition_values in partitions.items()
+                    for batches in bin_pack_arrow_tables(
+                        [partition.arrow_table_partition for partition in partition_values],
+                        target_file_size
+                    )
+                ]
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class _TablePartition:
     partition_key: PartitionKey
@@ -2650,5 +2727,66 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         table_partitions.append(
             _TablePartition(partition_key=partition_key, arrow_table_partition=filtered_table.combine_chunks())
         )
+
+    return table_partitions
+
+
+def _determine_partitions_mapping(spec: PartitionSpec, schema: Schema, arrow_tables: List[pa.Table]) -> dict[PartitionKey, _TablePartition]:
+    """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
+
+    Example:
+    Input:
+    An arrow table with partition key of ['n_legs', 'year'] and with data of
+    {'year': [2020, 2022, 2022, 2021, 2022, 2022, 2022, 2019, 2021],
+     'n_legs': [2, 2, 2, 4, 4, 4, 4, 5, 100],
+     'animal': ["Flamingo", "Parrot", "Parrot", "Dog", "Horse", "Horse", "Horse","Brittle stars", "Centipede"]}.
+    The algorithm:
+    - We determine the set of unique partition keys
+    - Then we produce a set of partitions by filtering on each of the combinations
+    - We combine the chunks to create a copy to avoid GIL congestion on the original table
+    """
+    # Assign unique names to columns where the partition transform has been applied
+    # to avoid conflicts
+    partition_fields = [f"_partition_{field.name}" for field in spec.fields]
+
+    table_partitions = defaultdict(list)
+
+    for idx, arrow_table in enumerate(arrow_tables):
+        for partition, name in zip(spec.fields, partition_fields):
+            source_field = schema.find_field(partition.source_id)
+            arrow_tables[idx] = arrow_table.append_column(
+                name, partition.transform.pyarrow_transform(source_field.field_type)(arrow_table[source_field.name])
+            )
+
+        unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
+
+        # TODO: As a next step, we could also play around with yielding instead of materializing the full list
+        for unique_partition in unique_partition_fields.to_pylist():
+            partition_key = PartitionKey(
+                field_values=[
+                    PartitionFieldValue(field=field, value=unique_partition[name])
+                    for field, name in zip(spec.fields, partition_fields)
+                ],
+                partition_spec=spec,
+                schema=schema,
+            )
+            filtered_table = arrow_table.filter(
+                functools.reduce(
+                    operator.and_,
+                    [
+                        pc.field(partition_field_name) == unique_partition[partition_field_name]
+                        if unique_partition[partition_field_name] is not None
+                        else pc.field(partition_field_name).is_null()
+                        for field, partition_field_name in zip(spec.fields, partition_fields)
+                    ],
+                )
+            )
+            filtered_table = filtered_table.drop_columns(partition_fields)
+
+            # The combine_chunks seems to be counter-intuitive to do, but it actually returns
+            # fresh buffers that don't interfere with each other when it is written out to file
+            table_partitions[partition_key].append(
+                _TablePartition(partition_key=partition_key, arrow_table_partition=filtered_table.combine_chunks())
+            )
 
     return table_partitions
