@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from datetime import date, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import (
@@ -74,11 +75,26 @@ class KeyDefaultDict(Dict[K, V]):
 
 
 Identifier = Tuple[str, ...]
+"""A tuple of strings representing a table identifier.
+
+Each string in the tuple represents a part of the table's unique path. For example,
+a table in a namespace might be identified as:
+
+    ("namespace", "table_name")
+
+Examples:
+    >>> identifier: Identifier = ("namespace", "table_name")
+"""
+
 Properties = Dict[str, Any]
+"""A dictionary type for properties in PyIceberg."""
+
+
 RecursiveDict = Dict[str, Union[str, "RecursiveDict"]]
+"""A recursive dictionary type for nested structures in PyIceberg."""
 
 # Represents the literal value
-L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, covariant=True)
+L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, datetime, date, covariant=True)
 
 
 @runtime_checkable
@@ -206,4 +222,4 @@ class Record(StructProtocol):
         return hash(str(self))
 
 
-TableVersion: TypeAlias = Literal[1, 2]
+TableVersion: TypeAlias = Literal[1, 2, 3]

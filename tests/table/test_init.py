@@ -78,6 +78,8 @@ from pyiceberg.table.update import (
     AssertRefSnapshotId,
     AssertTableUUID,
     RemovePropertiesUpdate,
+    RemoveSnapshotRefUpdate,
+    RemoveSnapshotsUpdate,
     RemoveStatisticsUpdate,
     SetDefaultSortOrderUpdate,
     SetPropertiesUpdate,
@@ -793,6 +795,51 @@ def test_update_metadata_set_snapshot_ref(table_v2: Table) -> None:
     )
 
 
+def test_update_remove_snapshots(table_v2: Table) -> None:
+    REMOVE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+    # assert fixture data to easily understand the test assumptions
+    assert len(table_v2.metadata.snapshots) == 2
+    assert len(table_v2.metadata.snapshot_log) == 2
+    assert len(table_v2.metadata.refs) == 2
+    update = RemoveSnapshotsUpdate(snapshot_ids=[REMOVE_SNAPSHOT])
+    new_metadata = update_table_metadata(table_v2.metadata, (update,))
+    assert len(new_metadata.snapshots) == 1
+    assert new_metadata.snapshots[0].snapshot_id == KEEP_SNAPSHOT
+    assert new_metadata.snapshots[0].parent_snapshot_id is None
+    assert new_metadata.current_snapshot_id == KEEP_SNAPSHOT
+    assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
+    assert len(new_metadata.snapshot_log) == 1
+    assert new_metadata.snapshot_log[0].snapshot_id == KEEP_SNAPSHOT
+    assert len(new_metadata.refs) == 1
+    assert new_metadata.refs["main"].snapshot_id == KEEP_SNAPSHOT
+
+
+def test_update_remove_snapshots_doesnt_exist(table_v2: Table) -> None:
+    update = RemoveSnapshotsUpdate(
+        snapshot_ids=[123],
+    )
+    with pytest.raises(ValueError, match="Snapshot with snapshot id 123 does not exist"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_update_remove_snapshots_remove_current_snapshot_id(table_v2: Table) -> None:
+    update = RemoveSnapshotsUpdate(snapshot_ids=[3055729675574597004])
+    new_metadata = update_table_metadata(table_v2.metadata, (update,))
+    assert len(new_metadata.refs) == 1
+    assert new_metadata.refs["test"].snapshot_id == 3051729675574597004
+    assert new_metadata.current_snapshot_id is None
+
+
+def test_update_remove_snapshot_ref(table_v2: Table) -> None:
+    # assert fixture data to easily understand the test assumptions
+    assert len(table_v2.metadata.refs) == 2
+    update = RemoveSnapshotRefUpdate(ref_name="test")
+    new_metadata = update_table_metadata(table_v2.metadata, (update,))
+    assert len(new_metadata.refs) == 1
+    assert new_metadata.refs["main"].snapshot_id == 3055729675574597004
+
+
 def test_update_metadata_add_update_sort_order(table_v2: Table) -> None:
     new_sort_order = SortOrder(order_id=table_v2.sort_order().order_id + 1)
     new_metadata = update_table_metadata(
@@ -1309,20 +1356,6 @@ def test_set_statistics_update(table_v2_with_statistics: Table) -> None:
 
     assert len(updated_statistics) == 1
     assert json.loads(updated_statistics[0].model_dump_json()) == json.loads(expected)
-
-    update = SetStatisticsUpdate(
-        snapshot_id=123456789,
-        statistics=statistics_file,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="Snapshot id in statistics does not match the snapshot id in the update",
-    ):
-        update_table_metadata(
-            table_v2_with_statistics.metadata,
-            (update,),
-        )
 
 
 def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:

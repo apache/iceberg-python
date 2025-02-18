@@ -43,7 +43,7 @@ class UpdateStatistics(UpdateTableMetadata["UpdateStatistics"]):
     We can also use context managers to make more changes. For example:
 
     with table.update_statistics() as update:
-        update.set_statistics(snapshot_id=1, statistics_file=statistics_file)
+        update.set_statistics(statistics_file=statistics_file)
         update.remove_statistics(snapshot_id=2)
     """
 
@@ -52,10 +52,9 @@ class UpdateStatistics(UpdateTableMetadata["UpdateStatistics"]):
     def __init__(self, transaction: "Transaction") -> None:
         super().__init__(transaction)
 
-    def set_statistics(self, snapshot_id: int, statistics_file: StatisticsFile) -> "UpdateStatistics":
+    def set_statistics(self, statistics_file: StatisticsFile) -> "UpdateStatistics":
         self._updates += (
             SetStatisticsUpdate(
-                snapshot_id=snapshot_id,
                 statistics=statistics_file,
             ),
         )

@@ -16,14 +16,14 @@
 # under the License.
 from __future__ import annotations
 
+import itertools
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union, cast
 
-from pydantic import Field, field_validator
-from typing_extensions import Annotated
+from pydantic import Field, field_validator, model_validator
 
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
@@ -177,8 +177,20 @@ class RemovePropertiesUpdate(IcebergBaseModel):
 
 class SetStatisticsUpdate(IcebergBaseModel):
     action: Literal["set-statistics"] = Field(default="set-statistics")
-    snapshot_id: int = Field(alias="snapshot-id")
     statistics: StatisticsFile
+    snapshot_id: Optional[int] = Field(
+        None,
+        alias="snapshot-id",
+        description="snapshot-id is **DEPRECATED for REMOVAL** since it contains redundant information. Use `statistics.snapshot-id` field instead.",
+    )
+
+    @model_validator(mode="before")
+    def validate_snapshot_id(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        stats = cast(StatisticsFile, data["statistics"])
+
+        data["snapshot_id"] = stats.snapshot_id
+
+        return data
 
 
 class RemoveStatisticsUpdate(IcebergBaseModel):
@@ -455,6 +467,62 @@ def _(update: SetSnapshotRefUpdate, base_metadata: TableMetadata, context: _Tabl
     return base_metadata.model_copy(update=metadata_updates)
 
 
+@_apply_table_update.register(RemoveSnapshotsUpdate)
+def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for remove_snapshot_id in update.snapshot_ids:
+        if not any(snapshot.snapshot_id == remove_snapshot_id for snapshot in base_metadata.snapshots):
+            raise ValueError(f"Snapshot with snapshot id {remove_snapshot_id} does not exist: {base_metadata.snapshots}")
+
+    snapshots = [
+        (
+            snapshot.model_copy(update={"parent_snapshot_id": None})
+            if snapshot.parent_snapshot_id in update.snapshot_ids
+            else snapshot
+        )
+        for snapshot in base_metadata.snapshots
+        if snapshot.snapshot_id not in update.snapshot_ids
+    ]
+    snapshot_log = [
+        snapshot_log_entry
+        for snapshot_log_entry in base_metadata.snapshot_log
+        if snapshot_log_entry.snapshot_id not in update.snapshot_ids
+    ]
+
+    remove_ref_updates = (
+        RemoveSnapshotRefUpdate(ref_name=ref_name)
+        for ref_name, ref in base_metadata.refs.items()
+        if ref.snapshot_id in update.snapshot_ids
+    )
+    remove_statistics_updates = (
+        RemoveStatisticsUpdate(statistics_file.snapshot_id)
+        for statistics_file in base_metadata.statistics
+        if statistics_file.snapshot_id in update.snapshot_ids
+    )
+    updates = itertools.chain(remove_ref_updates, remove_statistics_updates)
+    new_metadata = base_metadata
+    for upd in updates:
+        new_metadata = _apply_table_update(upd, new_metadata, context)
+
+    context.add_update(update)
+    return new_metadata.model_copy(update={"snapshots": snapshots, "snapshot_log": snapshot_log})
+
+
+@_apply_table_update.register(RemoveSnapshotRefUpdate)
+def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if update.ref_name not in base_metadata.refs:
+        return base_metadata
+
+    existing_ref = base_metadata.refs[update.ref_name]
+    if base_metadata.snapshot_by_id(existing_ref.snapshot_id) is None:
+        raise ValueError(f"Cannot remove {update.ref_name} ref with unknown snapshot {existing_ref.snapshot_id}")
+
+    current_snapshot_id = None if update.ref_name == MAIN_BRANCH else base_metadata.current_snapshot_id
+
+    metadata_refs = {ref_name: ref for ref_name, ref in base_metadata.refs.items() if ref_name != update.ref_name}
+    context.add_update(update)
+    return base_metadata.model_copy(update={"refs": metadata_refs, "current_snapshot_id": current_snapshot_id})
+
+
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     context.add_update(update)
@@ -491,10 +559,7 @@ def _(
 
 @_apply_table_update.register(SetStatisticsUpdate)
 def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if update.snapshot_id != update.statistics.snapshot_id:
-        raise ValueError("Snapshot id in statistics does not match the snapshot id in the update")
-
-    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})

@@ -788,6 +788,9 @@ class GlueCatalog(MetastoreCatalog):
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
         raise NotImplementedError
 
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        raise NotImplementedError
+
     @staticmethod
     def __is_iceberg_table(table: TableTypeDef) -> bool:
         return table.get("Parameters", {}).get(TABLE_TYPE, "").lower() == ICEBERG
