@@ -1595,14 +1595,10 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         deletes_per_file = _read_all_delete_files(self._io, tasks)
-        # Always use large types, since we cannot infer it in a streaming fashion,
-        # without fetching all the schemas first, which defeats the purpose of streaming
         return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self,
-        tasks: Iterable[FileScanTask],
-        deletes_per_file: Dict[str, List[ChunkedArray]],
+        self, tasks: Iterable[FileScanTask], deletes_per_file: Dict[str, List[ChunkedArray]]
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -1650,7 +1646,6 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
-    _use_large_types: Optional[bool]
 
     def __init__(
         self,
