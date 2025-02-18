@@ -494,7 +494,7 @@ class InspectTable:
                     positional_deletes_records = []
                     for record in positional_delete_file:
                         row = {
-                            "file_path": record.file_path,
+                            "file_path": record.path,
                             "pos": record.pos,
                             "row": record.row,
                             "partition": entry.data_file.partition.__dict__,
@@ -769,7 +769,7 @@ class InspectTable:
             schema = self._get_positional_deletes_schema()
             return pa.Table.from_pylist([], schema=schema)
 
-        if not snapshot.schema_id:
+        if snapshot.schema_id == None:
             raise ValueError(f"Snapshot {snapshot.snapshot_id} does not have a schema id")
 
         schemas = self.tbl.schemas()

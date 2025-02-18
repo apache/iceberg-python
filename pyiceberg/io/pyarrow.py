@@ -936,12 +936,20 @@ def _read_delete_file(fs: FileSystem, data_file: DataFile) -> Iterator[PositionD
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
+<<<<<<< HEAD
     if data_file.file_format == FileFormat.PARQUET:
         deletes_by_file: Dict[str, List[int]] = {}
         for delete in _read_delete_file(fs, data_file):
             if delete.file_path not in deletes_by_file:
                 deletes_by_file[delete.file_path] = []
             deletes_by_file[delete.file_path].append(delete.pos)
+=======
+    deletes_by_file: Dict[str, List[int]] = {}
+    for delete in _read_delete_file(fs, data_file):
+        if delete.path not in deletes_by_file:
+            deletes_by_file[delete.path] = []
+        deletes_by_file[delete.path].append(delete.pos)
+>>>>>>> e4ed25e (fix if statment)
 
         # Convert lists of positions to ChunkedArrays
         return {
