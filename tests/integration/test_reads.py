@@ -881,7 +881,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     expected_schema = pa.schema(
         [
             pa.field("string", pa.string()),
-            pa.field("string-to-binary", pa.binary()),
+            pa.field("string-to-binary", pa.large_binary()),
             pa.field("binary", pa.binary()),
             pa.field("list", pa.list_(pa.string())),
         ]
