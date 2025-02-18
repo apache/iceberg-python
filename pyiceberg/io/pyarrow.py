@@ -25,7 +25,6 @@ with the pyarrow library.
 
 from __future__ import annotations
 
-from collections import defaultdict
 import concurrent.futures
 import fnmatch
 import functools
@@ -37,6 +36,7 @@ import re
 import uuid
 import warnings
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
@@ -2419,6 +2419,7 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[List[
 
 def bin_pack_arrow_tables(tbls: List[pa.Table], target_file_size: int) -> Iterator[List[pa.RecordBatch]]:
     from pyiceberg.utils.bin_packing import PackingIterator
+
     batches = []
     for tbl in tbls:
         if tbl.num_rows == 0:
@@ -2627,10 +2628,13 @@ def _dataframes_to_data_files(
     task_schema = None
     for idx, _ in enumerate(dfs):
         if idx == 0:
-            task_schema = pyarrow_to_schema(dfs[0].schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us)
+            task_schema = pyarrow_to_schema(
+                dfs[0].schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            )
         else:
             assert dfs[idx - 1].schema.equals(dfs[idx].schema), "All dataframes must have the same schema"
 
+    assert task_schema is not None, "At least one dataframe must be provided"
     if table_metadata.spec().is_unpartitioned():
         yield from write_file(
             io=io,
@@ -2643,7 +2647,7 @@ def _dataframes_to_data_files(
             ),
         )
     else:
-        partitions = _determine_partitions_mapping(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=dfs)
+        partitions = _determine_partitions_mapping(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_tables=dfs)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -2658,8 +2662,7 @@ def _dataframes_to_data_files(
                     )
                     for partition_key, partition_values in partitions.items()
                     for batches in bin_pack_arrow_tables(
-                        [partition.arrow_table_partition for partition in partition_values],
-                        target_file_size
+                        [partition.arrow_table_partition for partition in partition_values], target_file_size
                     )
                 ]
             ),
@@ -2731,7 +2734,9 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     return table_partitions
 
 
-def _determine_partitions_mapping(spec: PartitionSpec, schema: Schema, arrow_tables: List[pa.Table]) -> dict[PartitionKey, _TablePartition]:
+def _determine_partitions_mapping(
+    spec: PartitionSpec, schema: Schema, arrow_tables: List[pa.Table]
+) -> dict[PartitionKey, List[_TablePartition]]:
     """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
     Example:
