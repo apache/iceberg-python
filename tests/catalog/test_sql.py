@@ -1138,7 +1138,8 @@ def test_namespace_exists(catalog: SqlCatalog) -> None:
 def test_list_namespaces(catalog: SqlCatalog) -> None:
     namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%", "db.ns1X.ns3"]
     for namespace in namespace_list:
-        catalog.create_namespace(namespace)
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
 
     ns_list = catalog.list_namespaces()
     for ns in [("db",), ("db%",), ("db2",)]:
@@ -1183,13 +1184,13 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
 def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
-    assert namespace[:1] in catalog.list_namespaces()
+    assert catalog._namespace_exists(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         catalog.drop_namespace(namespace)
     catalog.drop_table(table_identifier)
     catalog.drop_namespace(namespace)
-    assert namespace[:1] not in catalog.list_namespaces()
+    assert not catalog._namespace_exists(namespace)
 
 
 @pytest.mark.parametrize(
