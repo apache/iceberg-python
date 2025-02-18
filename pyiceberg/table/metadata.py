@@ -280,7 +280,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         return StructType(*nested_fields)
 
     def spec_struct(self, spec_id: Optional[int] = None) -> StructType:
-        """Produce for a spec_id a struct of  PartitionSpecs.
+        """Produce for a spec_id a struct of PartitionSpecs.
 
         The partition fields should be optional: Partition fields may be added later,
         in which case not all files would have the result field, and it may be null.
