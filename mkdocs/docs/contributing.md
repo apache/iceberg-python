@@ -52,6 +52,8 @@ To get started, you can run `make install`, which installs Poetry and all the de
 
 If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
 
+> **Note:** If you want to use `poetry shell`, you need to install it using `pip install poetry-plugin-shell`. Alternatively, you can run commands directly with `poetry run`.
+
 To set up IDEA with Poetry:
 
 - Open up the Python project in IntelliJ
