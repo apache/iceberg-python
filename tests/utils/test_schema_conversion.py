@@ -33,6 +33,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    UnknownType,
 )
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
 
