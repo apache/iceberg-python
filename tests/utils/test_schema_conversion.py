@@ -264,10 +264,10 @@ def test_fixed_type() -> None:
 
 
 def test_unknown_primitive() -> None:
-    with pytest.raises(TypeError) as exc_info:
-        avro_type = "UnknownType"
-        AvroSchemaConversion()._convert_schema(avro_type)
-    assert "Unknown type: UnknownType" in str(exc_info.value)
+    avro_type = "null"
+    actual = AvroSchemaConversion()._convert_schema(avro_type)
+    expected = UnknownType()
+    assert actual == expected
 
 
 def test_unknown_complex_type() -> None:
