@@ -104,9 +104,15 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     join_cols_set = set(join_cols)
     non_key_cols = all_columns - join_cols_set
 
-    expr_for_difference = functools.reduce(operator.or_, [pc.field(f"lhs_{col}") != pc.field(f"rhs_{col}") for col in non_key_cols])
+    diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
 
-    joined = source_table.join(target_table, keys=list(join_cols_set), join_type='inner', left_suffix='lhs_', right_suffix='rhs_')
-    filtered = joined.filter(expr_for_difference)
-
-    return filtered
+    return (source_table
+        # We already know that the schema is compatible, this is to fix large_ types
+        .cast(target_table.schema)
+        .join(target_table, keys=list(join_cols_set), join_type='inner', left_suffix='-lhs', right_suffix='-rhs')
+        .filter(diff_expr)
+        .drop_columns([f"{col}-rhs" for col in non_key_cols])
+        .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
+            # Finally cast to the original schema since it doesn't carry nullability:
+            # https://github.com/apache/arrow/issues/45557
+    ).cast(target_table.schema)
