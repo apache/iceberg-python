@@ -211,9 +211,9 @@ class AvroSchemaConversion:
                 elif isinstance(type_identifier, str) and type_identifier in PRIMITIVE_FIELD_TYPE_MAPPING:
                     return PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
                 else:
-                    raise TypeError(f"Unknown type: {avro_type}")
+                    raise TypeError(f"Type not recognized: {avro_type}")
         else:
-            raise TypeError(f"Unknown type: {avro_type}")
+            raise TypeError(f"Type not recognized: {avro_type}")
 
     def _convert_field(self, field: Dict[str, Any]) -> NestedField:
         """Convert an Avro field into an Iceberg equivalent field.

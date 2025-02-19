@@ -156,7 +156,7 @@ class IcebergType(IcebergBaseModel):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
             else:
-                raise ValueError(f"Unknown type: {v}")
+                raise ValueError(f"Type not recognized: {v}")
         if isinstance(v, dict) and cls == IcebergType:
             complex_type = v.get("type")
             if complex_type == "list":

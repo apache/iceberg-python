@@ -535,7 +535,7 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
         elif isinstance(primitive, UnknownType):
             return self.visit_unknown(primitive, primitive_partner)
         else:
-            raise ValueError(f"Unknown type: {primitive}")
+            raise ValueError(f"Type not recognized: {primitive}")
 
     @abstractmethod
     def visit_boolean(self, boolean_type: BooleanType, partner: Optional[P]) -> T:
@@ -717,7 +717,7 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
         elif isinstance(primitive, UnknownType):
             return self.visit_unknown(primitive)
         else:
-            raise ValueError(f"Unknown type: {primitive}")
+            raise ValueError(f"Type not recognized: {primitive}")
 
     @abstractmethod
     def visit_fixed(self, fixed_type: FixedType) -> T:
