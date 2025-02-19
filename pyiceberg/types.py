@@ -148,6 +148,8 @@ class IcebergType(IcebergBaseModel):
                 return UUIDType()
             if v == "binary":
                 return BinaryType()
+            if v == "unknown":
+                return UnknownType()
             if v.startswith("fixed"):
                 return FixedType(_parse_fixed_type(v))
             if v.startswith("decimal"):
@@ -747,3 +749,19 @@ class BinaryType(PrimitiveType):
     """
 
     root: Literal["binary"] = Field(default="binary")
+
+
+class UnknownType(PrimitiveType):
+    """An unknown data type in Iceberg can be represented using an instance of this class.
+
+    Unknowns in Iceberg are used to represent data types that are not known at the time of writing.
+
+    Example:
+        >>> column_foo = UnknownType()
+        >>> isinstance(column_foo, UnknownType)
+        True
+        >>> column_foo
+        UnknownType()
+    """
+
+    root: Literal["unknown"] = Field(default="unknown")

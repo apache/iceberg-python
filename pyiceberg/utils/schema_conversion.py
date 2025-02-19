@@ -47,6 +47,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.decimal import decimal_required_bytes
@@ -62,6 +63,7 @@ PRIMITIVE_FIELD_TYPE_MAPPING: Dict[str, PrimitiveType] = {
     "long": LongType(),
     "string": StringType(),
     "enum": StringType(),
+    "null": UnknownType(),
 }
 
 LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
