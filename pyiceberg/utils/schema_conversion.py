@@ -620,3 +620,6 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"
+
+    def visit_unknown(self, unknown_type: UnknownType) -> AvroType:
+        return "null"

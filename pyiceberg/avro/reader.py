@@ -201,6 +201,15 @@ class UUIDReader(Reader):
         decoder.skip(16)
 
 
+class UnknownReader(Reader):
+    def read(self, decoder: BinaryDecoder) -> None:
+        _ = decoder.read_bytes()
+        return None
+
+    def skip(self, decoder: BinaryDecoder) -> None:
+        decoder.skip_bytes()
+
+
 @dataclass(frozen=True)
 class FixedReader(Reader):
     _len: int = dataclassfield()

@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Any
 from uuid import UUID
 
 from pyiceberg.avro import STRUCT_DOUBLE, STRUCT_FLOAT
@@ -74,3 +75,7 @@ class BinaryEncoder:
         if len(uuid.bytes) != 16:
             raise ValueError(f"Expected UUID to have 16 bytes, got: len({uuid.bytes!r})")
         return self.write(uuid.bytes)
+
+    def write_unknown(self, _: Any) -> None:
+        r"""Write an unknown type as a bytes as null value ('\0')."""
+        self.write_bytes(b"\0")
