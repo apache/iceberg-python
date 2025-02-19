@@ -1117,6 +1117,24 @@ def test_create_namespace_with_empty_identifier(catalog: SqlCatalog, empty_names
         lazy_fixture("catalog_sqlite"),
     ],
 )
+def test_namespace_exists(catalog: SqlCatalog) -> None:
+    for ns in [("db1",), ("db1", "ns1"), ("db2", "ns1"), ("db3", "ns1", "ns2")]:
+        catalog.create_namespace(ns)
+        assert catalog._namespace_exists(ns)
+
+    assert catalog._namespace_exists("db2")  # `db2` exists because `db2.ns1` exists
+    assert catalog._namespace_exists("db3.ns1")  # `db3.ns1` exists because `db3.ns1.ns2` exists
+    assert not catalog._namespace_exists("db_")  # make sure '_' is escaped in the query
+    assert not catalog._namespace_exists("db%")  # make sure '%' is escaped in the query
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
 @pytest.mark.parametrize("namespace_list", [lazy_fixture("database_list"), lazy_fixture("hierarchical_namespace_list")])
 def test_list_namespaces(catalog: SqlCatalog, namespace_list: List[str]) -> None:
     for namespace in namespace_list:
