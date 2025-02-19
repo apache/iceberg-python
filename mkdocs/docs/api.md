@@ -49,7 +49,7 @@ catalog:
 
 and loaded in python by calling `load_catalog(name="hive")` and `load_catalog(name="rest")`.
 
-This information must be placed inside a file called `.pyiceberg.yaml` located either in the `$HOME` or `%USERPROFILE%` directory (depending on whether the operating system is Unix-based or Windows-based, respectively) or in the `$PYICEBERG_HOME` directory (if the corresponding environment variable is set).
+This information must be placed inside a file called `.pyiceberg.yaml` located either in the `$HOME` or `%USERPROFILE%` directory (depending on whether the operating system is Unix-based or Windows-based, respectively), in the current working directory, or in the `$PYICEBERG_HOME` directory (if the corresponding environment variable is set).
 
 For more details on possible configurations refer to the [specific page](https://py.iceberg.apache.org/configuration/).
 
@@ -352,6 +352,192 @@ city: [["Amsterdam","San Francisco","Drachten"],["Groningen"]]
 lat: [[52.371807,37.773972,53.11254],[53.21917]]
 long: [[4.896029,-122.431297,6.0989],[6.56667]]
 ```
+
+### Partial overwrites
+
+When using the `overwrite` API, you can use an `overwrite_filter` to delete data that matches the filter before appending new data into the table.
+
+For example, with an iceberg table created as:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+```
+
+And with initial data populating the table:
+
+```python
+import pyarrow as pa
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+You can overwrite the record of `Paris` with a record of `New York`:
+
+```python
+from pyiceberg.expressions import EqualTo
+df = pa.Table.from_pylist(
+    [
+        {"city": "New York", "lat": 40.7128, "long": 74.0060},
+    ]
+)
+tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
+```
+
+This produces the following result with `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
+lat: [[40.7128],[52.371807,37.773972,53.11254]]
+long: [[74.006],[4.896029,-122.431297,6.0989]]
+```
+
+If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
+For example, with an iceberg table with a partition specified on `"city"` field:
+
+```python
+from pyiceberg.schema import Schema
+from pyiceberg.types import DoubleType, NestedField, StringType
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+)
+
+tbl = catalog.create_table(
+    "default.cities",
+    schema=schema,
+    partition_spec=PartitionSpec(PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="city_identity"))
+)
+```
+
+And we want to overwrite the data for the partition of `"Paris"`:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": -48.864716, "long": -2.349014},
+    ],
+)
+tbl.append(df)
+```
+
+Then we can call `dynamic_partition_overwrite` with this arrow table:
+
+```python
+df_corrected = pa.Table.from_pylist([
+    {"city": "Paris", "lat": 48.864716, "long": 2.349014}
+])
+tbl.dynamic_partition_overwrite(df_corrected)
+```
+
+This produces the following result with `tbl.scan().to_arrow()`:
+
+```python
+pyarrow.Table
+city: large_string
+lat: double
+long: double
+----
+city: [["Paris"],["Amsterdam"],["Drachten"],["San Francisco"]]
+lat: [[48.864716],[52.371807],[53.11254],[37.773972]]
+long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
+```
+
+### Upsert
+
+PyIceberg supports upsert operations, meaning that it is able to merge an Arrow table into an Iceberg table. Rows are considered the same based on the [identifier field](https://iceberg.apache.org/spec/?column-projection#identifier-field-ids). If a row is already in the table, it will update that row. If a row cannot be found, it will insert that new row.
+
+Consider the following table, with some data:
+
+```python
+from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType, NestedField, StringType
+
+import pyarrow as pa
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=True),
+    NestedField(2, "inhabitants", IntegerType(), required=True),
+    # Mark City as the identifier field, also known as the primary-key
+    identifier_field_ids=[1]
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+
+arrow_schema = pa.schema(
+    [
+        pa.field("city", pa.string(), nullable=False),
+        pa.field("inhabitants", pa.int32(), nullable=False),
+    ]
+)
+
+# Write some data
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "inhabitants": 921402},
+        {"city": "San Francisco", "inhabitants": 808988},
+        {"city": "Drachten", "inhabitants": 45019},
+        {"city": "Paris", "inhabitants": 2103000},
+    ],
+    schema=arrow_schema
+)
+tbl.append(df)
+```
+
+Next, we'll upsert a table into the Iceberg table:
+
+```python
+df = pa.Table.from_pylist(
+    [
+        # Will be updated, the inhabitants has been updated
+        {"city": "Drachten", "inhabitants": 45505},
+
+        # New row, will be inserted
+        {"city": "Berlin", "inhabitants": 3432000},
+
+        # Ignored, already exists in the table
+        {"city": "Paris", "inhabitants": 2103000},
+    ],
+    schema=arrow_schema
+)
+upd = tbl.upsert(df)
+
+assert upd.rows_updated == 1
+assert upd.rows_inserted == 1
+```
+
+PyIceberg will automatically detect which rows need to be updated, inserted or can simply be ignored.
 
 ## Inspecting tables
 
@@ -884,7 +1070,7 @@ tbl.add_files(file_paths=file_paths)
 
 ## Schema evolution
 
-PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overriden).
+PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overridden).
 
 In the examples below, the `.update_schema()` is called from the table itself.
 
@@ -951,8 +1137,13 @@ Using `add_column` you can add a column, without having to worry about the field
 with table.update_schema() as update:
     update.add_column("retries", IntegerType(), "Number of retries to place the bid")
     # In a struct
-    update.add_column("details.confirmed_by", StringType(), "Name of the exchange")
+    update.add_column("details", StructType())
+
+with table.update_schema() as update:
+    update.add_column(("details", "confirmed_by"), StringType(), "Name of the exchange")
 ```
+
+A complex type must exist before columns can be added to it. Fields in complex types are added in a tuple.
 
 ### Rename column
 
@@ -961,20 +1152,21 @@ Renaming a field in an Iceberg table is simple:
 ```python
 with table.update_schema() as update:
     update.rename_column("retries", "num_retries")
-    # This will rename `confirmed_by` to `exchange`
-    update.rename_column("properties.confirmed_by", "exchange")
+    # This will rename `confirmed_by` to `processed_by` in the `details` struct
+    update.rename_column(("details", "confirmed_by"), "processed_by")
 ```
 
 ### Move column
 
-Move a field inside of struct:
+Move order of fields:
 
 ```python
 with table.update_schema() as update:
     update.move_first("symbol")
+    # This will move `bid` after `ask`
     update.move_after("bid", "ask")
-    # This will move `confirmed_by` before `exchange`
-    update.move_before("details.created_by", "details.exchange")
+    # This will move `confirmed_by` before `exchange` in the `details` struct
+    update.move_before(("details", "confirmed_by"), ("details", "exchange"))
 ```
 
 ### Update column
@@ -1006,6 +1198,8 @@ Delete a field, careful this is a incompatible change (readers/writers might exp
 ```python
 with table.update_schema(allow_incompatible_changes=True) as update:
     update.delete_column("some_field")
+    # In a struct
+    update.delete_column(("details", "confirmed_by"))
 ```
 
 ## Partition evolution
@@ -1050,7 +1244,7 @@ with table.update_spec() as update:
 Partition fields can also be removed via the `remove_field` API if it no longer makes sense to partition on those fields.
 
 ```python
-with table.update_spec() as update:some_partition_name
+with table.update_spec() as update:
     # Remove the partition field with the name
     update.remove_field("some_partition_name")
 ```
@@ -1127,6 +1321,42 @@ You can also use context managers to make more changes:
 ```python
 with table.manage_snapshots() as ms:
     ms.create_branch(snapshot_id1, "Branch_A").create_tag(snapshot_id2, "tag789")
+```
+
+## Views
+
+PyIceberg supports view operations.
+
+### Check if a view exists
+
+```python
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("default")
+catalog.view_exists("default.bar")
+```
+
+## Table Statistics Management
+
+Manage table statistics with operations through the `Table` API:
+
+```python
+# To run a specific operation
+table.update_statistics().set_statistics(statistics_file=statistics_file).commit()
+# To run multiple operations
+table.update_statistics()
+  .set_statistics(statistics_file1)
+  .remove_statistics(snapshot_id2)
+  .commit()
+# Operations are applied on commit.
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.update_statistics() as update:
+    update.set_statistics(statistics_file)
+    update.remove_statistics(snapshot_id2)
 ```
 
 ## Query the data
@@ -1331,7 +1561,7 @@ print(ray_dataset.take(2))
 
 ### Daft
 
-PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/latest/user_guide/integrations/iceberg.html)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://www.getdaft.io/projects/docs/en/stable/integrations/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
 
 <!-- prettier-ignore-start -->
 
@@ -1380,4 +1610,140 @@ df.show(2)
 ╰──────────┴───────────────────────────────┴───────────────────────────────╯
 
 (Showing first 2 rows)
+```
+
+### Polars
+
+PyIceberg interfaces closely with Polars Dataframes and LazyFrame which provides a full lazily optimized query engine interface on top of PyIceberg tables.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Requirements"
+    This requires [`polars` to be installed](index.md).
+
+```python
+pip install pyiceberg['polars']
+```
+<!-- prettier-ignore-end -->
+
+PyIceberg data can be analyzed and accessed through Polars using either DataFrame or LazyFrame.
+If your code utilizes the Apache Iceberg data scanning and retrieval API and then analyzes the resulting DataFrame in Polars, use the `table.scan().to_polars()` API.
+If the intent is to utilize Polars' high-performance filtering and retrieval functionalities, use LazyFrame exported from the Iceberg table with the `table.to_polars()` API.
+
+```python
+# Get LazyFrame
+iceberg_table.to_polars()
+
+# Get Data Frame
+iceberg_table.scan().to_polars()
+```
+
+#### Working with Polars DataFrame
+
+PyIceberg makes it easy to filter out data from a huge table and pull it into a Polars dataframe locally. This will only fetch the relevant Parquet files for the query and apply the filter. This will reduce IO and therefore improve performance and reduce cost.
+
+```python
+schema = Schema(
+    NestedField(field_id=1, name='ticket_id', field_type=LongType(), required=True),
+    NestedField(field_id=2, name='customer_id', field_type=LongType(), required=True),
+    NestedField(field_id=3, name='issue', field_type=StringType(), required=False),
+    NestedField(field_id=4, name='created_at', field_type=TimestampType(), required=True),
+  required=True
+)
+
+iceberg_table = catalog.create_table(
+    identifier='default.product_support_issues',
+    schema=schema
+)
+
+pa_table_data = pa.Table.from_pylist(
+    [
+        {'ticket_id': 1, 'customer_id': 546, 'issue': 'User Login issue', 'created_at': 1650020000000000},
+        {'ticket_id': 2, 'customer_id': 547, 'issue': 'Payment not going through', 'created_at': 1650028640000000},
+        {'ticket_id': 3, 'customer_id': 548, 'issue': 'Error on checkout', 'created_at': 1650037280000000},
+        {'ticket_id': 4, 'customer_id': 549, 'issue': 'Unable to reset password', 'created_at': 1650045920000000},
+        {'ticket_id': 5, 'customer_id': 550, 'issue': 'Account locked', 'created_at': 1650054560000000},
+        {'ticket_id': 6, 'customer_id': 551, 'issue': 'Order not received', 'created_at': 1650063200000000},
+        {'ticket_id': 7, 'customer_id': 552, 'issue': 'Refund not processed', 'created_at': 1650071840000000},
+        {'ticket_id': 8, 'customer_id': 553, 'issue': 'Shipping address issue', 'created_at': 1650080480000000},
+        {'ticket_id': 9, 'customer_id': 554, 'issue': 'Product damaged', 'created_at': 1650089120000000},
+        {'ticket_id': 10, 'customer_id': 555, 'issue': 'Unable to apply discount code', 'created_at': 1650097760000000},
+        {'ticket_id': 11, 'customer_id': 556, 'issue': 'Website not loading', 'created_at': 1650106400000000},
+        {'ticket_id': 12, 'customer_id': 557, 'issue': 'Incorrect order received', 'created_at': 1650115040000000},
+        {'ticket_id': 13, 'customer_id': 558, 'issue': 'Unable to track order', 'created_at': 1650123680000000},
+        {'ticket_id': 14, 'customer_id': 559, 'issue': 'Order delayed', 'created_at': 1650132320000000},
+        {'ticket_id': 15, 'customer_id': 560, 'issue': 'Product not as described', 'created_at': 1650140960000000},
+        {'ticket_id': 16, 'customer_id': 561, 'issue': 'Unable to contact support', 'created_at': 1650149600000000},
+        {'ticket_id': 17, 'customer_id': 562, 'issue': 'Duplicate charge', 'created_at': 1650158240000000},
+        {'ticket_id': 18, 'customer_id': 563, 'issue': 'Unable to update profile', 'created_at': 1650166880000000},
+        {'ticket_id': 19, 'customer_id': 564, 'issue': 'App crashing', 'created_at': 1650175520000000},
+        {'ticket_id': 20, 'customer_id': 565, 'issue': 'Unable to download invoice', 'created_at': 1650184160000000},
+        {'ticket_id': 21, 'customer_id': 566, 'issue': 'Incorrect billing amount', 'created_at': 1650192800000000},
+    ], schema=iceberg_table.schema().as_arrow()
+)
+
+iceberg_table.append(
+    df=pa_table_data
+)
+
+table.scan(
+    row_filter="ticket_id > 10",
+).to_polars()
+```
+
+This will return a Polars DataFrame:
+
+```python
+shape: (11, 4)
+┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
+│ ticket_id ┆ customer_id ┆ issue                      ┆ created_at          │
+│ ---       ┆ ---         ┆ ---                        ┆ ---                 │
+│ i64       ┆ i64         ┆ str                        ┆ datetime[μs]        │
+╞═══════════╪═════════════╪════════════════════════════╪═════════════════════╡
+│ 11        ┆ 556         ┆ Website not loading        ┆ 2022-04-16 10:53:20 │
+│ 12        ┆ 557         ┆ Incorrect order received   ┆ 2022-04-16 13:17:20 │
+│ 13        ┆ 558         ┆ Unable to track order      ┆ 2022-04-16 15:41:20 │
+│ 14        ┆ 559         ┆ Order delayed              ┆ 2022-04-16 18:05:20 │
+│ 15        ┆ 560         ┆ Product not as described   ┆ 2022-04-16 20:29:20 │
+│ …         ┆ …           ┆ …                          ┆ …                   │
+│ 17        ┆ 562         ┆ Duplicate charge           ┆ 2022-04-17 01:17:20 │
+│ 18        ┆ 563         ┆ Unable to update profile   ┆ 2022-04-17 03:41:20 │
+│ 19        ┆ 564         ┆ App crashing               ┆ 2022-04-17 06:05:20 │
+│ 20        ┆ 565         ┆ Unable to download invoice ┆ 2022-04-17 08:29:20 │
+│ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
+└───────────┴─────────────┴────────────────────────────┴─────────────────────┘
+```
+
+#### Working with Polars LazyFrame
+
+PyIceberg supports creation of a Polars LazyFrame based on an Iceberg Table.
+
+using the above code example:
+
+```python
+lf = iceberg_table.to_polars().filter(pl.col("ticket_id") > 10)
+print(lf.collect())
+```
+
+This above code snippet returns a Polars LazyFrame and defines a filter to be executed by Polars:
+
+```python
+shape: (11, 4)
+┌───────────┬─────────────┬────────────────────────────┬─────────────────────┐
+│ ticket_id ┆ customer_id ┆ issue                      ┆ created_at          │
+│ ---       ┆ ---         ┆ ---                        ┆ ---                 │
+│ i64       ┆ i64         ┆ str                        ┆ datetime[μs]        │
+╞═══════════╪═════════════╪════════════════════════════╪═════════════════════╡
+│ 11        ┆ 556         ┆ Website not loading        ┆ 2022-04-16 10:53:20 │
+│ 12        ┆ 557         ┆ Incorrect order received   ┆ 2022-04-16 13:17:20 │
+│ 13        ┆ 558         ┆ Unable to track order      ┆ 2022-04-16 15:41:20 │
+│ 14        ┆ 559         ┆ Order delayed              ┆ 2022-04-16 18:05:20 │
+│ 15        ┆ 560         ┆ Product not as described   ┆ 2022-04-16 20:29:20 │
+│ …         ┆ …           ┆ …                          ┆ …                   │
+│ 17        ┆ 562         ┆ Duplicate charge           ┆ 2022-04-17 01:17:20 │
+│ 18        ┆ 563         ┆ Unable to update profile   ┆ 2022-04-17 03:41:20 │
+│ 19        ┆ 564         ┆ App crashing               ┆ 2022-04-17 06:05:20 │
+│ 20        ┆ 565         ┆ Unable to download invoice ┆ 2022-04-17 08:29:20 │
+│ 21        ┆ 566         ┆ Incorrect billing amount   ┆ 2022-04-17 10:53:20 │
+└───────────┴─────────────┴────────────────────────────┴─────────────────────┘
 ```

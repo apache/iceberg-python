@@ -18,10 +18,10 @@
 
 import io
 import struct
+from _decimal import Decimal
 from typing import Dict, List
 
 import pytest
-from _decimal import Decimal
 
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.resolver import construct_writer
@@ -178,15 +178,17 @@ def test_write_struct_with_dict() -> None:
 
     construct_writer(schema).write(encoder, my_struct)
 
-    assert output.getbuffer() == b"".join([
-        b"\x18",
-        zigzag_encode(len(my_struct.properties)),
-        zigzag_encode(1),
-        zigzag_encode(2),
-        zigzag_encode(3),
-        zigzag_encode(4),
-        b"\x00",
-    ])
+    assert output.getbuffer() == b"".join(
+        [
+            b"\x18",
+            zigzag_encode(len(my_struct.properties)),
+            zigzag_encode(1),
+            zigzag_encode(2),
+            zigzag_encode(3),
+            zigzag_encode(4),
+            b"\x00",
+        ]
+    )
 
 
 def test_write_struct_with_list() -> None:
@@ -206,15 +208,17 @@ def test_write_struct_with_list() -> None:
 
     construct_writer(schema).write(encoder, my_struct)
 
-    assert output.getbuffer() == b"".join([
-        b"\x18",
-        zigzag_encode(len(my_struct.properties)),
-        zigzag_encode(1),
-        zigzag_encode(2),
-        zigzag_encode(3),
-        zigzag_encode(4),
-        b"\x00",
-    ])
+    assert output.getbuffer() == b"".join(
+        [
+            b"\x18",
+            zigzag_encode(len(my_struct.properties)),
+            zigzag_encode(1),
+            zigzag_encode(2),
+            zigzag_encode(3),
+            zigzag_encode(4),
+            b"\x00",
+        ]
+    )
 
 
 def test_write_decimal() -> None:

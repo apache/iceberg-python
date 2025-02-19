@@ -125,6 +125,9 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
+HIVE_KERBEROS_AUTH = "hive.kerberos-authentication"
+HIVE_KERBEROS_AUTH_DEFAULT = False
+
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
@@ -142,14 +145,26 @@ class _HiveClient:
     _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None):
-        url_parts = urlparse(uri)
-        transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        self._transport = TTransport.TBufferedTransport(transport)
-        protocol = TBinaryProtocol.TBinaryProtocol(transport)
+    def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
+        self._uri = uri
+        self._kerberos_auth = kerberos_auth
+        self._ugi = ugi.split(":") if ugi else None
+
+        self._init_thrift_client()
+
+    def _init_thrift_client(self) -> None:
+        url_parts = urlparse(self._uri)
+
+        socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
+
+        if not self._kerberos_auth:
+            self._transport = TTransport.TBufferedTransport(socket)
+        else:
+            self._transport = TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service="hive")
+
+        protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
 
         self._client = Client(protocol)
-        self._ugi = ugi.split(":") if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
@@ -276,7 +291,11 @@ class HiveCatalog(MetastoreCatalog):
         last_exception = None
         for uri in properties["uri"].split(","):
             try:
-                return _HiveClient(uri, properties.get("ugi"))
+                return _HiveClient(
+                    uri,
+                    properties.get("ugi"),
+                    property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
+                )
             except BaseException as e:
                 last_exception = e
         if last_exception is not None:
@@ -314,7 +333,7 @@ class HiveCatalog(MetastoreCatalog):
         )
 
     def _convert_iceberg_into_hive(self, table: Table) -> HiveTable:
-        identifier_tuple = self._identifier_to_tuple_without_catalog(table.identifier)
+        identifier_tuple = table.name()
         database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
         current_time_millis = int(time.time() * 1000)
 
@@ -404,9 +423,27 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             TableAlreadyExistsError: If the table already exists
         """
-        raise NotImplementedError
+        database_name, table_name = self.identifier_to_database_and_table(identifier)
+        io = self._load_file_io(location=metadata_location)
+        metadata_file = io.new_input(metadata_location)
+        staged_table = StagedTable(
+            identifier=(database_name, table_name),
+            metadata=FromInputFile.table_metadata(metadata_file),
+            metadata_location=metadata_location,
+            io=io,
+            catalog=self,
+        )
+        tbl = self._convert_iceberg_into_hive(staged_table)
+        with self._client as open_client:
+            self._create_hive_table(open_client, tbl)
+            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+
+        return self._convert_hive_into_iceberg(hive_table)
 
     def list_views(self, namespace: Union[str, Identifier]) -> List[Identifier]:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
@@ -455,7 +492,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: If a table with the given identifier does not exist.
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
         """
-        table_identifier = self._identifier_to_tuple_without_catalog(table.identifier)
+        table_identifier = table.name()
         database_name, table_name = self.identifier_to_database_and_table(table_identifier, NoSuchTableError)
         # commit to hive
         # https://github.com/apache/hive/blob/master/standalone-metastore/metastore-common/src/main/thrift/hive_metastore.thrift#L1232
@@ -531,8 +568,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
 
         with self._client as open_client:
             hive_table = self._get_hive_table(open_client, database_name, table_name)
@@ -548,8 +584,7 @@ class HiveCatalog(MetastoreCatalog):
         Raises:
             NoSuchTableError: If a table with the name does not exist, or the identifier is invalid.
         """
-        identifier_tuple = self._identifier_to_tuple_without_catalog(identifier)
-        database_name, table_name = self.identifier_to_database_and_table(identifier_tuple, NoSuchTableError)
+        database_name, table_name = self.identifier_to_database_and_table(identifier, NoSuchTableError)
         try:
             with self._client as open_client:
                 open_client.drop_table(dbname=database_name, name=table_name, deleteData=False)
@@ -576,8 +611,7 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchTableError: When a table with the name does not exist.
             NoSuchNamespaceError: When the destination namespace doesn't exist.
         """
-        from_identifier_tuple = self._identifier_to_tuple_without_catalog(from_identifier)
-        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier_tuple, NoSuchTableError)
+        from_database_name, from_table_name = self.identifier_to_database_and_table(from_identifier, NoSuchTableError)
         to_database_name, to_table_name = self.identifier_to_database_and_table(to_identifier)
         try:
             with self._client as open_client:
@@ -651,7 +685,7 @@ class HiveCatalog(MetastoreCatalog):
                 for table in open_client.get_table_objects_by_name(
                     dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
                 )
-                if table.parameters[TABLE_TYPE].lower() == ICEBERG
+                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:

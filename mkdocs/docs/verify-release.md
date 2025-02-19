@@ -40,7 +40,7 @@ After downloading the source tarball, signature, checksum, and KEYS file, here a
 First, import the keys.
 
 ```sh
-curl https://dist.apache.org/repos/dist/dev/iceberg/KEYS -o KEYS
+curl https://downloads.apache.org/iceberg/KEYS -o KEYS
 gpg --import KEYS
 ```
 
@@ -111,7 +111,7 @@ To run the full test coverage, with both unit tests and integration tests:
 make test-coverage
 ```
 
-This will spin up Docker containers to faciliate running test coverage.
+This will spin up Docker containers to facilitate running test coverage.
 
 # Cast the vote
 

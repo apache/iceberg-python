@@ -1707,12 +1707,14 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
         return self._is_field_compatible(list_type.element_field) and element_result()
 
     def map(self, map_type: MapType, key_result: Callable[[], bool], value_result: Callable[[], bool]) -> bool:
-        return all([
-            self._is_field_compatible(map_type.key_field),
-            self._is_field_compatible(map_type.value_field),
-            key_result(),
-            value_result(),
-        ])
+        return all(
+            [
+                self._is_field_compatible(map_type.key_field),
+                self._is_field_compatible(map_type.value_field),
+                key_result(),
+                value_result(),
+            ]
+        )
 
     def primitive(self, primitive: PrimitiveType) -> bool:
         return True

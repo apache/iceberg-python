@@ -421,17 +421,17 @@ def test_build_position_accessors_with_struct(table_schema_nested: Schema) -> No
     assert inner_accessor.get(container) == "name"
 
 
-def test_serialize_schema(table_schema_simple: Schema) -> None:
-    actual = table_schema_simple.model_dump_json()
-    expected = """{"type":"struct","fields":[{"id":1,"name":"foo","type":"string","required":false},{"id":2,"name":"bar","type":"int","required":true},{"id":3,"name":"baz","type":"boolean","required":false}],"schema-id":1,"identifier-field-ids":[2]}"""
+def test_serialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
+    actual = table_schema_with_full_nested_fields.model_dump_json()
+    expected = """{"type":"struct","fields":[{"id":1,"name":"foo","type":"string","required":false,"doc":"foo doc","initial-default":"foo initial","write-default":"foo write"},{"id":2,"name":"bar","type":"int","required":true,"doc":"bar doc","initial-default":42,"write-default":43},{"id":3,"name":"baz","type":"boolean","required":false,"doc":"baz doc","initial-default":true,"write-default":false}],"schema-id":1,"identifier-field-ids":[2]}"""
     assert actual == expected
 
 
-def test_deserialize_schema(table_schema_simple: Schema) -> None:
+def test_deserialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
     actual = Schema.model_validate_json(
-        """{"type": "struct", "fields": [{"id": 1, "name": "foo", "type": "string", "required": false}, {"id": 2, "name": "bar", "type": "int", "required": true}, {"id": 3, "name": "baz", "type": "boolean", "required": false}], "schema-id": 1, "identifier-field-ids": [2]}"""
+        """{"type": "struct", "fields": [{"id": 1, "name": "foo", "type": "string", "required": false, "doc": "foo doc", "initial-default": "foo initial", "write-default": "foo write"}, {"id": 2, "name": "bar", "type": "int", "required": true, "doc": "bar doc", "initial-default": 42, "write-default": 43}, {"id": 3, "name": "baz", "type": "boolean", "required": false, "doc": "baz doc", "initial-default": true, "write-default": false}], "schema-id": 1, "identifier-field-ids": [2]}"""
     )
-    expected = table_schema_simple
+    expected = table_schema_with_full_nested_fields
     assert actual == expected
 
 
@@ -1189,6 +1189,17 @@ def test_detect_invalid_top_level_maps() -> None:
         _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
 
 
+def test_allow_double_to_float() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
+
+    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+
+    assert applied.as_struct() == current_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, DoubleType)
+
+
 def test_promote_float_to_double() -> None:
     current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
@@ -1200,11 +1211,33 @@ def test_promote_float_to_double() -> None:
     assert isinstance(applied.fields[0].field_type, DoubleType)
 
 
-def test_detect_invalid_promotion_double_to_float() -> None:
-    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=DoubleType(), required=False))
+def test_allow_long_to_int() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=LongType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
+
+    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+
+    assert applied.as_struct() == current_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, LongType)
+
+
+def test_promote_int_to_long() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=IntegerType(), required=False))
+    new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=LongType(), required=False))
+
+    applied = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
+
+    assert applied.as_struct() == new_schema.as_struct()
+    assert len(applied.fields) == 1
+    assert isinstance(applied.fields[0].field_type, LongType)
+
+
+def test_detect_invalid_promotion_string_to_float() -> None:
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=StringType(), required=False))
     new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FloatType(), required=False))
 
-    with pytest.raises(ValidationError, match="Cannot change column type: aCol: double -> float"):
+    with pytest.raises(ValidationError, match="Cannot change column type: aCol: string -> float"):
         _ = UpdateSchema(transaction=None, schema=current_schema).union_by_name(new_schema)._apply()  # type: ignore
 
 
@@ -1585,11 +1618,13 @@ def test_append_nested_lists() -> None:
 def test_union_with_pa_schema(primitive_fields: NestedField) -> None:
     base_schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True))
 
-    pa_schema = pa.schema([
-        pa.field("foo", pa.string(), nullable=False),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ])
+    pa_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
 
     new_schema = UpdateSchema(transaction=None, schema=base_schema).union_by_name(pa_schema)._apply()  # type: ignore
 
@@ -1609,10 +1644,12 @@ def test_arrow_schema() -> None:
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
     )
 
-    expected_schema = pa.schema([
-        pa.field("foo", pa.large_string(), nullable=False),
-        pa.field("bar", pa.int32(), nullable=True),
-        pa.field("baz", pa.bool_(), nullable=True),
-    ])
+    expected_schema = pa.schema(
+        [
+            pa.field("foo", pa.large_string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
 
     assert base_schema.as_arrow() == expected_schema

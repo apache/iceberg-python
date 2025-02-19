@@ -24,6 +24,8 @@ from typing import (
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
 
+HEADER_PREFIX = "header."
+
 
 def property_as_int(
     properties: Dict[str, str],
@@ -74,3 +76,10 @@ def get_first_property_value(
         if property_value := properties.get(property_name):
             return property_value
     return None
+
+
+def get_header_properties(
+    properties: Properties,
+) -> Properties:
+    header_prefix_len = len(HEADER_PREFIX)
+    return {key[header_prefix_len:]: value for key, value in properties.items() if key.startswith(HEADER_PREFIX)}

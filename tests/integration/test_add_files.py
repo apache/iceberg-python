@@ -30,7 +30,7 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io import FileIO
-from pyiceberg.io.pyarrow import _pyarrow_schema_ensure_large_types
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _pyarrow_schema_ensure_large_types
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -52,12 +52,14 @@ TABLE_SCHEMA = Schema(
     NestedField(field_id=10, name="qux", field_type=DateType(), required=False),
 )
 
-ARROW_SCHEMA = pa.schema([
-    ("foo", pa.bool_()),
-    ("bar", pa.string()),
-    ("baz", pa.int32()),
-    ("qux", pa.date32()),
-])
+ARROW_SCHEMA = pa.schema(
+    [
+        ("foo", pa.bool_()),
+        ("bar", pa.string()),
+        ("baz", pa.int32()),
+        ("qux", pa.date32()),
+    ]
+)
 
 ARROW_TABLE = pa.Table.from_pylist(
     [
@@ -71,12 +73,14 @@ ARROW_TABLE = pa.Table.from_pylist(
     schema=ARROW_SCHEMA,
 )
 
-ARROW_SCHEMA_WITH_IDS = pa.schema([
-    pa.field("foo", pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
-    pa.field("bar", pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
-    pa.field("baz", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
-    pa.field("qux", pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
-])
+ARROW_SCHEMA_WITH_IDS = pa.schema(
+    [
+        pa.field("foo", pa.bool_(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+        pa.field("bar", pa.string(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+        pa.field("baz", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "3"}),
+        pa.field("qux", pa.date32(), nullable=False, metadata={"PARQUET:field_id": "4"}),
+    ]
+)
 
 
 ARROW_TABLE_WITH_IDS = pa.Table.from_pylist(
@@ -91,12 +95,14 @@ ARROW_TABLE_WITH_IDS = pa.Table.from_pylist(
     schema=ARROW_SCHEMA_WITH_IDS,
 )
 
-ARROW_SCHEMA_UPDATED = pa.schema([
-    ("foo", pa.bool_()),
-    ("baz", pa.int32()),
-    ("qux", pa.date32()),
-    ("quux", pa.int32()),
-])
+ARROW_SCHEMA_UPDATED = pa.schema(
+    [
+        ("foo", pa.bool_()),
+        ("baz", pa.int32()),
+        ("qux", pa.date32()),
+        ("quux", pa.int32()),
+    ]
+)
 
 ARROW_TABLE_UPDATED = pa.Table.from_pylist(
     [
@@ -471,12 +477,14 @@ def test_add_files_fails_on_schema_mismatch(spark: SparkSession, session_catalog
     identifier = f"default.table_schema_mismatch_fails_v{format_version}"
 
     tbl = _create_table(session_catalog, identifier, format_version)
-    WRONG_SCHEMA = pa.schema([
-        ("foo", pa.bool_()),
-        ("bar", pa.string()),
-        ("baz", pa.string()),  # should be integer
-        ("qux", pa.date32()),
-    ])
+    WRONG_SCHEMA = pa.schema(
+        [
+            ("foo", pa.bool_()),
+            ("bar", pa.string()),
+            ("baz", pa.string()),  # should be integer
+            ("qux", pa.date32()),
+        ]
+    )
     file_path = f"s3://warehouse/default/table_schema_mismatch_fails/v{format_version}/test.parquet"
     # write parquet files
     fo = tbl.io.new_output(file_path)
@@ -522,12 +530,16 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     identifier = f"default.unpartitioned_with_large_types{format_version}"
 
     iceberg_schema = Schema(NestedField(1, "foo", StringType(), required=True))
-    arrow_schema = pa.schema([
-        pa.field("foo", pa.string(), nullable=False),
-    ])
-    arrow_schema_large = pa.schema([
-        pa.field("foo", pa.large_string(), nullable=False),
-    ])
+    arrow_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False),
+        ]
+    )
+    arrow_schema_large = pa.schema(
+        [
+            pa.field("foo", pa.large_string(), nullable=False),
+        ]
+    )
 
     tbl = _create_table(session_catalog, identifier, format_version, schema=iceberg_schema)
 
@@ -576,9 +588,11 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
 def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 
-    nanoseconds_schema = pa.schema([
-        ("quux", pa.timestamp("ns", tz="UTC")),
-    ])
+    nanoseconds_schema = pa.schema(
+        [
+            ("quux", pa.timestamp("ns", tz="UTC")),
+        ]
+    )
 
     arrow_table = pa.Table.from_pylist(
         [
@@ -602,12 +616,17 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
 
     # add the parquet files as data files
     with pytest.raises(
-        TypeError,
-        match=re.escape(
-            "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
-        ),
-    ):
+        UnsupportedPyArrowTypeException,
+        match=re.escape("Column 'quux' has an unsupported type: timestamp[ns, tz=UTC]"),
+    ) as exc_info:
         tbl.add_files(file_paths=[file_path])
+
+    exception_cause = exc_info.value.__cause__
+    assert isinstance(exception_cause, TypeError)
+    assert (
+        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically downcast 'ns' to 'us' on write."
+        in exception_cause.args[0]
+    )
 
 
 @pytest.mark.integration
@@ -617,9 +636,11 @@ def test_add_file_with_valid_nullability_diff(spark: SparkSession, session_catal
     table_schema = Schema(
         NestedField(field_id=1, name="long", field_type=LongType(), required=False),
     )
-    other_schema = pa.schema((
-        pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
-    ))
+    other_schema = pa.schema(
+        (
+            pa.field("long", pa.int64(), nullable=False),  # can support writing required pyarrow field to optional Iceberg field
+        )
+    )
     arrow_table = pa.Table.from_pydict(
         {
             "long": [1, 9],
@@ -671,13 +692,15 @@ def test_add_files_with_valid_upcast(
     # table's long field should cast to long on read
     written_arrow_table = tbl.scan().to_arrow()
     assert written_arrow_table == pyarrow_table_with_promoted_types.cast(
-        pa.schema((
-            pa.field("long", pa.int64(), nullable=True),
-            pa.field("list", pa.large_list(pa.int64()), nullable=False),
-            pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
-            pa.field("double", pa.float64(), nullable=True),
-            pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
-        ))
+        pa.schema(
+            (
+                pa.field("long", pa.int64(), nullable=True),
+                pa.field("list", pa.large_list(pa.int64()), nullable=False),
+                pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+                pa.field("double", pa.float64(), nullable=True),
+                pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
+            )
+        )
     )
     lhs = spark.table(f"{identifier}").toPandas()
     rhs = written_arrow_table.to_pandas()
