@@ -25,6 +25,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
+from pyiceberg.table.upsert_util import create_match_filter, get_rows_to_update
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
@@ -366,3 +367,40 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
 
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+
+def test_create_match_filter_single_condition() -> None:
+    """
+    Test create_match_filter with a composite key where the source yields exactly one unique key.
+    Expected: The function returns the single And condition directly.
+    """
+
+    data = [
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},  # duplicate
+    ]
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
+    table = pa.Table.from_pylist(data, schema=schema)
+    expr = create_match_filter(table, ["order_id", "order_line_id"])
+    expr_str = str(expr)
+
+    assert "And(" in expr_str, f"Expected And condition but got: {expr_str}"
+    assert "Or(" not in expr_str, "Did not expect an Or condition when only one unique key exists"
+
+
+def test_get_rows_to_update_empty_source() -> None:
+    """
+    Test get_rows_to_update when there are no rows to update.
+    Expected: It returns an empty table that matches the source schema.
+    """
+
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
+    source_table = pa.Table.from_pydict({"order_id": [101], "order_line_id": [1], "extra": ["x"]}, schema=schema)
+
+    target_table = pa.Table.from_pydict({"order_id": [102], "order_line_id": [2], "extra": ["y"]}, schema=schema)
+
+    updated_table = get_rows_to_update(source_table, target_table, ["order_id", "order_line_id"])
+
+    assert updated_table.num_rows == 0, "Expected empty table when there are no rows to update."
+
+    assert updated_table.schema == source_table.schema, "Schema mismatch on empty table creation."
