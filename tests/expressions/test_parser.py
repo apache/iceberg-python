@@ -222,5 +222,17 @@ def test_with_function() -> None:
 
 
 def test_nested_fields() -> None:
-    assert EqualTo("foo.bar", "value") == parser.parse("foo.bar = 'value'")
+    assert EqualTo("foo.bar", "data") == parser.parse("foo.bar = 'data'")
     assert LessThan("location.x", DecimalLiteral(Decimal(52.00))) == parser.parse("location.x < 52.00")
+
+
+def test_quoted_column_with_dots() -> None:
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("\"foo.bar\".baz = 'data'")
+
+    assert "Expected '\"', found '.'" in str(exc_info.value)
+
+    with pytest.raises(ParseException) as exc_info:
+        parser.parse("'foo.bar'.baz = 'data'")
+
+    assert "Expected <= | <> | < | >= | > | == | = | !=, found '.'" in str(exc_info.value)
