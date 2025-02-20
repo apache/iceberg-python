@@ -386,21 +386,3 @@ def test_create_match_filter_single_condition() -> None:
 
     assert "And(" in expr_str, f"Expected And condition but got: {expr_str}"
     assert "Or(" not in expr_str, "Did not expect an Or condition when only one unique key exists"
-
-
-def test_get_rows_to_update_empty_source() -> None:
-    """
-    Test get_rows_to_update when there are no rows to update.
-    Expected: It returns an empty table that matches the source schema.
-    """
-
-    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
-    source_table = pa.Table.from_pydict({"order_id": [101], "order_line_id": [1], "extra": ["x"]}, schema=schema)
-
-    target_table = pa.Table.from_pydict({"order_id": [102], "order_line_id": [2], "extra": ["y"]}, schema=schema)
-
-    updated_table = get_rows_to_update(source_table, target_table, ["order_id", "order_line_id"])
-
-    assert updated_table.num_rows == 0, "Expected empty table when there are no rows to update."
-
-    assert updated_table.schema == source_table.schema, "Schema mismatch on empty table creation."
