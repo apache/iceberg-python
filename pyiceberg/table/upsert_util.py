@@ -16,6 +16,8 @@
 # under the License.
 import functools
 import operator
+from functools import reduce
+from typing import List, cast
 
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
@@ -30,25 +32,25 @@ from pyiceberg.expressions import (
 )
 
 
-def combine_or(a: BooleanExpression, b: BooleanExpression) -> BooleanExpression:
-    return Or(a, b)
-
-
-def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
+def create_match_filter(df: pa.Table, join_cols: list[str]) -> BooleanExpression:
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
 
     if len(join_cols) == 1:
+        # Single join column: Use the In expression
         return In(join_cols[0], unique_keys[0].to_pylist())
     else:
-        filters = [And(*[EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()]
-
+        # Build a list of AND expressions for each unique key, cast to BooleanExpression.
+        filters: List[BooleanExpression] = [
+            cast(BooleanExpression, And(*[EqualTo(col, row[col]) for col in join_cols])) for row in unique_keys.to_pylist()
+        ]
+        # If no filters were produced, return an expression that always evaluates to False.
         if not filters:
             return In(join_cols[0], [])
-
+        # If there's exactly one condition, return it directly.
         if len(filters) == 1:
             return filters[0]
-
-        return functools.reduce(combine_or, filters)
+        # Otherwise, combine conditions pairwise using reduce.
+        return reduce(lambda a, b: Or(a, b), filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
@@ -100,6 +102,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     else:
         empty_arrays = [pa.array([], type=field.type) for field in source_table.schema]
         rows_to_update_table = pa.Table.from_arrays(empty_arrays, schema=source_table.schema)
+
     common_columns = set(source_table.column_names).intersection(set(target_table.column_names))
     rows_to_update_table = rows_to_update_table.select(list(common_columns))
 
