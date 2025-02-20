@@ -88,9 +88,7 @@ like_regex = r"(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)"
 
 @column.set_parse_action
 def _(result: ParseResults) -> Reference:
-    if len(result.column) > 1:
-        raise ValueError(f"Cannot parse expressions with table names or nested fields, got: {".".join(result.column)}")
-    return Reference(result.column[-1])
+    return Reference(".".join(result.column))
 
 
 boolean = one_of(["true", "false"], caseless=True).set_results_name("boolean")

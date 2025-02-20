@@ -14,6 +14,8 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from decimal import Decimal
+
 import pytest
 from pyparsing import ParseException
 
@@ -39,6 +41,7 @@ from pyiceberg.expressions import (
     Or,
     StartsWith,
 )
+from pyiceberg.expressions.literals import DecimalLiteral
 
 
 def test_always_true() -> None:
@@ -218,13 +221,6 @@ def test_with_function() -> None:
     assert "Expected end of text, found 'and'" in str(exc_info)
 
 
-def test_table_and_nested_fields_in_expression() -> None:
-    message = "Cannot parse expressions with table names or nested fields"
-
-    with pytest.raises(ValueError) as exc_info:
-        parser.parse("table.foo = 'bar'")
-    assert message in str(exc_info)
-
-    with pytest.raises(ValueError) as exc_info:
-        parser.parse("foo.bar.baz = 'qux'")
-    assert message in str(exc_info)
+def test_nested_fields() -> None:
+    assert EqualTo("foo.bar", "value") == parser.parse("foo.bar = 'value'")
+    assert LessThan("location.x", DecimalLiteral(Decimal(52.00))) == parser.parse("location.x < 52.00")
