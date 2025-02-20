@@ -80,7 +80,7 @@ identifier = "default.test_table"
 @pytest.mark.parametrize(
     "partition_fields, partition_values, expected_partition_record, expected_hive_partition_path_slice, spark_create_table_sql_for_justification, spark_data_insert_sql_for_justification",
     [
-        # # Identity Transform
+        # Identity Transform
         (
             [PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="boolean_field")],
             [False],
@@ -755,11 +755,14 @@ def test_partition_key(
     spark_create_table_sql_for_justification: str,
     spark_data_insert_sql_for_justification: str,
 ) -> None:
-    partition_field_values = [PartitionFieldValue(field, value) for field, value in zip(partition_fields, partition_values)]
+    field_values = [
+        PartitionFieldValue(field, field.transform.transform(TABLE_SCHEMA.find_field(field.source_id).field_type)(value))
+        for field, value in zip(partition_fields, partition_values)
+    ]
     spec = PartitionSpec(*partition_fields)
 
     key = PartitionKey(
-        raw_partition_field_values=partition_field_values,
+        field_values=field_values,
         partition_spec=spec,
         schema=TABLE_SCHEMA,
     )
