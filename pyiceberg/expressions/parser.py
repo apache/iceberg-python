@@ -90,13 +90,7 @@ like_regex = r"(?P<valid_wildcard>(?<!\\)%$)|(?P<invalid_wildcard>(?<!\\)%)"
 @column.set_parse_action
 def _(result: ParseResults) -> Reference:
     if len(result.column) > 1:
-        deprecation_message(
-            deprecated_in="0.8.0",
-            removed_in="0.9.0",
-            help_message="Parsing expressions with table name is deprecated. Only provide field names in the row_filter.",
-        )
-    # TODO: Once this is removed, we will no longer take just the last index of parsed column result
-    # And introduce support for parsing filter expressions with nested fields.
+        raise ValueError(f"Cannot parse expressions with table names or nested fields, got: {".".join(result.column)}")
     return Reference(result.column[-1])
 
 

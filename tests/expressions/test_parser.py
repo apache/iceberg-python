@@ -216,3 +216,15 @@ def test_with_function() -> None:
         parser.parse("foo = 1 and lower(bar) = '2'")
 
     assert "Expected end of text, found 'and'" in str(exc_info)
+
+
+def test_table_and_nested_fields_in_expression() -> None:
+    message = "Cannot parse expressions with table names or nested fields"
+
+    with pytest.raises(ValueError) as exc_info:
+        parser.parse("table.foo = 'bar'")
+    assert message in str(exc_info)
+
+    with pytest.raises(ValueError) as exc_info:
+        parser.parse("foo.bar.baz = 'qux'")
+    assert message in str(exc_info)
