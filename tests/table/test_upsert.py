@@ -366,3 +366,26 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
 
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+
+def test_merge_scenario_composite_key_with_duplicate(catalog: Catalog) -> None:
+    """
+    Tests merging 200 rows with a composite key when the source contains duplicate rows.
+    This verifies that the upsert logic correctly handles the case where grouping by
+    the composite key yields only one unique condition, thereby avoiding a TypeError.
+    """
+    identifier = "default.test_merge_scenario_composite_key_with_duplicate"
+    _drop_table(catalog, identifier)
+
+    ctx = SessionContext()
+
+    table = gen_target_iceberg_table(1, 200, True, ctx, catalog, identifier)
+
+    source_df = gen_source_dataset(101, 300, True, True, ctx)
+
+    res = table.upsert(df=source_df, join_cols=["order_id", "order_line_id"])
+
+    expected_updated = 100
+    expected_inserted = 100
+
+    assert_upsert_result(res, expected_updated, expected_inserted)
