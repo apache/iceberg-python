@@ -30,6 +30,10 @@ from pyiceberg.expressions import (
 )
 
 
+def combine_or(a: BooleanExpression, b: BooleanExpression) -> BooleanExpression:
+    return Or(a, b)
+
+
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
 
@@ -37,9 +41,14 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
         return In(join_cols[0], unique_keys[0].to_pylist())
     else:
         filters = [And(*[EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()]
+
+        if not filters:
+            return In(join_cols[0], [])
+
         if len(filters) == 1:
             return filters[0]
-        return Or(*filters)
+
+        return functools.reduce(combine_or, filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
@@ -89,8 +98,8 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     if rows_to_update:
         rows_to_update_table = pa.concat_tables(rows_to_update)
     else:
-        rows_to_update_table = pa.Table.from_arrays([], names=source_table.column_names)
-
+        empty_arrays = [pa.array([], type=field.type) for field in source_table.schema]
+        rows_to_update_table = pa.Table.from_arrays(empty_arrays, schema=source_table.schema)
     common_columns = set(source_table.column_names).intersection(set(target_table.column_names))
     rows_to_update_table = rows_to_update_table.select(list(common_columns))
 
