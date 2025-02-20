@@ -25,19 +25,19 @@ tests = ["arrow", "dask[dataframe]", "docker", "pytest", "pytest-mock"]
 
 [[package]]
 name = "aiobotocore"
-version = "2.19.0"
+version = "2.20.0"
 description = "Async client for aws services using botocore and aiohttp"
 optional = true
 python-versions = ">=3.8"
 files = [
-    {file = "aiobotocore-2.19.0-py3-none-any.whl", hash = "sha256:12c2960a21472b8eb3452cde5eb31d541ca1464d236f4221556320fa8aed2ee8"},
-    {file = "aiobotocore-2.19.0.tar.gz", hash = "sha256:552d5756989621b5274f1b4a4840cd76ae83dd930d0b1839af6443743a893faf"},
+    {file = "aiobotocore-2.20.0-py3-none-any.whl", hash = "sha256:02d9d727355a03f83ee1a4fc91f2fd14966862144b4d2cc3434181e82dfafd83"},
+    {file = "aiobotocore-2.20.0.tar.gz", hash = "sha256:8902d8a96e3a389c99a68d23e2ca07c8d5059439c2a55acf28a8af19e65fe293"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.9.2,<4.0.0"
 aioitertools = ">=0.5.1,<1.0.0"
-botocore = ">=1.36.0,<1.36.4"
+botocore = ">=1.36.20,<1.36.24"
 jmespath = ">=0.7.1,<2.0.0"
 multidict = ">=6.0.0,<7.0.0"
 python-dateutil = ">=2.1,<3.0.0"
@@ -48,8 +48,8 @@ urllib3 = [
 wrapt = ">=1.10.10,<2.0.0"
 
 [package.extras]
-awscli = ["awscli (>=1.37.0,<1.37.4)"]
-boto3 = ["boto3 (>=1.36.0,<1.36.4)"]
+awscli = ["awscli (>=1.37.20,<1.37.24)"]
+boto3 = ["boto3 (>=1.36.20,<1.36.24)"]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -410,17 +410,17 @@ files = [
 
 [[package]]
 name = "boto3"
-version = "1.36.3"
+version = "1.36.23"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "boto3-1.36.3-py3-none-any.whl", hash = "sha256:f9843a5d06f501d66ada06f5a5417f671823af2cf319e36ceefa1bafaaaaa953"},
-    {file = "boto3-1.36.3.tar.gz", hash = "sha256:53a5307f6a3526ee2f8590e3c45efa504a3ea4532c1bfe4926c0c19bf188d141"},
+    {file = "boto3-1.36.23-py3-none-any.whl", hash = "sha256:d59642672b1f35f55f47b317693241ce53333816f47c9e72fcc8fd0e9adc6a87"},
+    {file = "boto3-1.36.23.tar.gz", hash = "sha256:006800604c34382873521b20890b758eea7109d699696ece932131259d0a4658"},
 ]
 
 [package.dependencies]
-botocore = ">=1.36.3,<1.37.0"
+botocore = ">=1.36.23,<1.37.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.11.0,<0.12.0"
 
@@ -429,13 +429,13 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.36.3"
+version = "1.36.23"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "botocore-1.36.3-py3-none-any.whl", hash = "sha256:536ab828e6f90dbb000e3702ac45fd76642113ae2db1b7b1373ad24104e89255"},
-    {file = "botocore-1.36.3.tar.gz", hash = "sha256:775b835e979da5c96548ed1a0b798101a145aec3cd46541d62e27dda5a94d7f8"},
+    {file = "botocore-1.36.23-py3-none-any.whl", hash = "sha256:886730e79495a2e153842725ebdf85185c8277cdf255b3b5879cd097ddc7fcc3"},
+    {file = "botocore-1.36.23.tar.gz", hash = "sha256:9feaa2d876f487e718a5fd80a35fa401042b518c0c75117d3e1ea39a567439e7"},
 ]
 
 [package.dependencies]
@@ -447,7 +447,7 @@ urllib3 = [
 ]
 
 [package.extras]
-crt = ["awscrt (==0.23.4)"]
+crt = ["awscrt (==0.23.8)"]
 
 [[package]]
 name = "build"
