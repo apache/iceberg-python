@@ -66,7 +66,6 @@ from pyiceberg.expressions.literals import (
 )
 from pyiceberg.typedef import L
 from pyiceberg.types import strtobool
-from pyiceberg.utils.deprecated import deprecation_message
 
 ParserElement.enablePackrat()
 
