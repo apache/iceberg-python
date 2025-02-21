@@ -67,6 +67,10 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
 
     non_key_cols = list(all_columns - join_cols_set)
 
+    if len(target_table) == 0:
+        # When the target table is empty, there is nothing to update :)
+        return source_table.schema.empty_table()
+
     match_expr = functools.reduce(operator.and_, [pc.field(col).isin(target_table.column(col).to_pylist()) for col in join_cols])
 
     matching_source_rows = source_table.filter(match_expr)

@@ -372,6 +372,42 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     assert upd.rows_inserted == 1
 
 
+def test_upsert_into_empty_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_into_empty_table"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "inhabitants": 921402},
+            {"city": "San Francisco", "inhabitants": 808988},
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Paris", "inhabitants": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 4
+
+
 def test_create_match_filter_single_condition() -> None:
     """
     Test create_match_filter with a composite key where the source yields exactly one unique key.
