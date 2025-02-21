@@ -97,8 +97,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     if rows_to_update:
         rows_to_update_table = pa.concat_tables(rows_to_update)
     else:
-        empty_arrays = [pa.array([], type=field.type) for field in source_table.schema]
-        rows_to_update_table = pa.Table.from_arrays(empty_arrays, schema=source_table.schema)
+        rows_to_update_table = source_table.schema.empty_table()
 
     common_columns = set(source_table.column_names).intersection(set(target_table.column_names))
     rows_to_update_table = rows_to_update_table.select(list(common_columns))
