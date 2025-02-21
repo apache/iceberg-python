@@ -1150,7 +1150,7 @@ class Table:
             An UpsertResult class (contains details of rows updated and inserted)
         """
         try:
-            import pyarrow as pa
+            import pyarrow as pa  # noqa: F401
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
