@@ -471,7 +471,6 @@ def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
 
 def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
     identifier = "default.test_upsert_without_identifier_fields"
-
     _drop_table(catalog, identifier)
 
     schema = Schema(
