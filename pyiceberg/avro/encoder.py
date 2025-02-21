@@ -77,5 +77,5 @@ class BinaryEncoder:
         return self.write(uuid.bytes)
 
     def write_unknown(self, _: Any) -> None:
-        r"""Write an unknown type as a bytes as null value ('\0')."""
-        self.write_bytes(b"\0")
+        """Nulls are written as 0 bytes in avro, so we do nothing."""
+        pass
