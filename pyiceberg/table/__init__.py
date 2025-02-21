@@ -579,7 +579,9 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
+        if overwrite_filter != AlwaysFalse():
+            # Only delete when the filter is != AlwaysFalse
+            self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
