@@ -432,7 +432,6 @@ def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
 
     _drop_table(catalog, identifier)
     schema = Schema(
-
         NestedField(1, "city", StringType(), required=True),
         NestedField(2, "inhabitants", IntegerType(), required=True),
         # Mark City as the identifier field, also known as the primary-key
@@ -470,10 +469,6 @@ def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
         _ = tbl.upsert(df)
 
 
-
-
-
-
 def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
     identifier = "default.test_upsert_without_identifier_fields"
 
@@ -481,7 +476,6 @@ def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
 
     schema = Schema(
         NestedField(1, "city", StringType(), required=True),
-
         NestedField(2, "population", IntegerType(), required=True),
         # No identifier field :o
         identifier_field_ids=[],
