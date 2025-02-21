@@ -26,6 +26,8 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
 from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.expressions import Reference, EqualTo
+from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
