@@ -69,6 +69,10 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
 
+    if len(target_table) == 0:
+        # When the target table is empty, there is nothing to update :)
+        return source_table.schema.empty_table()
+
     diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
 
     return (

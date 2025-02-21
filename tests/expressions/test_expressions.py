@@ -698,20 +698,34 @@ def test_and() -> None:
     null = IsNull(Reference("a"))
     nan = IsNaN(Reference("b"))
     and_ = And(null, nan)
+
+    # Some syntactic sugar
+    assert and_ == null & nan
+
     assert str(and_) == f"And(left={str(null)}, right={str(nan)})"
     assert repr(and_) == f"And(left={repr(null)}, right={repr(nan)})"
     assert and_ == eval(repr(and_))
     assert and_ == pickle.loads(pickle.dumps(and_))
+
+    with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
+        null & "abc"  # type: ignore
 
 
 def test_or() -> None:
     null = IsNull(Reference("a"))
     nan = IsNaN(Reference("b"))
     or_ = Or(null, nan)
+
+    # Some syntactic sugar
+    assert or_ == null | nan
+
     assert str(or_) == f"Or(left={str(null)}, right={str(nan)})"
     assert repr(or_) == f"Or(left={repr(null)}, right={repr(nan)})"
     assert or_ == eval(repr(or_))
     assert or_ == pickle.loads(pickle.dumps(or_))
+
+    with pytest.raises(ValueError, match="Expected BooleanExpression, got: abc"):
+        null | "abc"  # type: ignore
 
 
 def test_not() -> None:
