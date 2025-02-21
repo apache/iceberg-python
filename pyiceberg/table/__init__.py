@@ -62,7 +62,6 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow, schema_to_pyarrow
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -1150,6 +1149,12 @@ class Table:
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
         """
+        try:
+            import pyarrow as pa  # noqa: F401
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -1770,7 +1775,7 @@ class DataScan(TableScan):
         """
         import pyarrow as pa
 
-        from pyiceberg.io.pyarrow import ArrowScan
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
@@ -1828,6 +1833,8 @@ class DataScan(TableScan):
         return result
 
     def count(self) -> int:
+        from pyiceberg.io.pyarrow import ArrowScan
+
         # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
         res = 0
         # every task is a FileScanTask
