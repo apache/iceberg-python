@@ -384,7 +384,7 @@ def test_create_match_filter_single_condition() -> None:
     schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
     table = pa.Table.from_pylist(data, schema=schema)
     expr = create_match_filter(table, ["order_id", "order_line_id"])
-    expr_str = str(expr)
-
-    assert "And(" in expr_str, f"Expected And condition but got: {expr_str}"
-    assert "Or(" not in expr_str, "Did not expect an Or condition when only one unique key exists"
+    assert expr == And(
+        EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
+        EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
+    )
