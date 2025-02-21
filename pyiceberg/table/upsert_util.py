@@ -41,13 +41,12 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
             cast(BooleanExpression, And(*[EqualTo(col, row[col]) for col in join_cols])) for row in unique_keys.to_pylist()
         ]
 
-        if not filters:
-            return In(join_cols[0], [])
-
-        if len(filters) == 1:
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
             return filters[0]
-
-        return functools.reduce(lambda a, b: Or(a, b), filters)
+        else:
+            return functools.reduce(lambda a, b: Or(a, b), filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
