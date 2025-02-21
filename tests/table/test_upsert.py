@@ -427,6 +427,48 @@ def test_create_match_filter_single_condition() -> None:
     )
 
 
+def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_duplicate_rows_in_table"
+
+    _drop_table(catalog, identifier)
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Drachten", "inhabitants": 45019},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+
+    df = pa.Table.from_pylist(
+        [
+            # Will be updated, the inhabitants has been updated
+            {"city": "Drachten", "inhabitants": 45505},
+        ],
+        schema=arrow_schema,
+    )
+
+    with pytest.raises(ValueError, match="Target table has duplicate rows, aborting upsert"):
+        _ = tbl.upsert(df)
+
+
 def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
     identifier = "default.test_upsert_without_identifier_fields"
     _drop_table(catalog, identifier)
