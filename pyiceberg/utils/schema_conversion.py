@@ -603,12 +603,16 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         return {"type": "long", "logicalType": "time-micros"}
 
     def visit_timestamp(self, timestamp_type: TimestampType) -> AvroType:
-        # Iceberg only supports micro's
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": False}
 
+    def visit_timestamp_ns(self, timestamp_type: TimestampType) -> AvroType:
+        return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": False}
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> AvroType:
-        # Iceberg only supports micro's
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": True}
+
+    def visit_timestamptz_ns(self, timestamptz_type: TimestamptzType) -> AvroType:
+        return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": True}
 
     def visit_string(self, string_type: StringType) -> AvroType:
         return "string"
