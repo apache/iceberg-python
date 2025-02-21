@@ -1159,6 +1159,9 @@ class Table:
                 else:
                     raise ValueError(f"Field-ID could not be found: {join_cols}")
 
+        if len(join_cols) == 0:
+            raise ValueError("Join columns could not be found, please set identifier-field-ids or pass in explicitly.")
+
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
 
