@@ -23,11 +23,11 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
 from pyiceberg.table.upsert_util import create_match_filter
-from pyiceberg.expressions import And, Reference, EqualTo
-from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
