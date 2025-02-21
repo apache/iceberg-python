@@ -16,12 +16,14 @@
 # under the License.
 import functools
 import operator
+from typing import List, cast
 
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
 from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
+    AlwaysFalse,
     And,
     BooleanExpression,
     EqualTo,
@@ -36,7 +38,16 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
     if len(join_cols) == 1:
         return In(join_cols[0], unique_keys[0].to_pylist())
     else:
-        return Or(*[And(*[EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()])
+        filters: List[BooleanExpression] = [
+            cast(BooleanExpression, And(*[EqualTo(col, row[col]) for col in join_cols])) for row in unique_keys.to_pylist()
+        ]
+
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return functools.reduce(lambda a, b: Or(a, b), filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
@@ -55,6 +66,9 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     join_cols_set = set(join_cols)
     non_key_cols = all_columns - join_cols_set
 
+    if has_duplicate_rows(target_table, join_cols):
+        raise ValueError("Target table has duplicate rows, aborting upsert")
+
     diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
 
     return (
@@ -68,3 +82,4 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # Finally cast to the original schema since it doesn't carry nullability:
         # https://github.com/apache/arrow/issues/45557
     ).cast(target_table.schema)
+

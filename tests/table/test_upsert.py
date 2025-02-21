@@ -23,8 +23,11 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
+from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
@@ -366,3 +369,22 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
 
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+
+def test_create_match_filter_single_condition() -> None:
+    """
+    Test create_match_filter with a composite key where the source yields exactly one unique key.
+    Expected: The function returns the single And condition directly.
+    """
+
+    data = [
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},  # duplicate
+    ]
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
+    table = pa.Table.from_pylist(data, schema=schema)
+    expr = create_match_filter(table, ["order_id", "order_line_id"])
+    assert expr == And(
+        EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
+        EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
+    )
