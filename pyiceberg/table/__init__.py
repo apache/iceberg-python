@@ -1149,6 +1149,11 @@ class Table:
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
         """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
         from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
