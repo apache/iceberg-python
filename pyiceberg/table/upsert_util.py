@@ -59,8 +59,8 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
-    When a row is matched, an additional scan is done to evaluate the non-key columns to detect if an actual change has occurred.
-    Only matched rows that have an actual change to a non-key column value will be returned in the final output.
+    The table is joined on the identifier columns, and then checked if there are any updated rows.
+    Those are selected and everything is renamed correctly.
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
