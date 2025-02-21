@@ -23,6 +23,7 @@ from pyarrow import Table as pyarrow_table
 from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
+    AlwaysFalse,
     And,
     BooleanExpression,
     EqualTo,
