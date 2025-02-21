@@ -82,4 +82,3 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # Finally cast to the original schema since it doesn't carry nullability:
         # https://github.com/apache/arrow/issues/45557
     ).cast(target_table.schema)
-

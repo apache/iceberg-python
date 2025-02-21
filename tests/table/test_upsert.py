@@ -389,6 +389,7 @@ def test_create_match_filter_single_condition() -> None:
         EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
     )
 
+
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
     identifier = "default.test_upsert_with_duplicate_rows_in_table"
     _drop_table(catalog, identifier)
@@ -429,4 +430,3 @@ def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
 
     with pytest.raises(ValueError, match="Target table has duplicate rows, aborting upsert"):
         _ = tbl.upsert(df)
-
