@@ -114,6 +114,12 @@ class UUIDWriter(Writer):
 
 
 @dataclass(frozen=True)
+class UnknownWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: Any) -> None:
+        encoder.write_unknown(val)
+
+
+@dataclass(frozen=True)
 class FixedWriter(Writer):
     _len: int = dataclassfield()
 
