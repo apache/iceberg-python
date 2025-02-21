@@ -29,6 +29,7 @@ from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFile, write_manifest
 from pyiceberg.table import Table
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.utils.lazydict import LazyDict
 
 
@@ -81,7 +82,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     test_schema = table_test_all_types.schema()
     test_spec = table_test_all_types.spec()
     wrapped_data_file_v2_debug = DataFile(
-        format_version=2,
+        format_version=FormatVersion.V2,
         content=entry.data_file.content,
         file_path=entry.data_file.file_path,
         file_format=entry.data_file.file_format,
@@ -110,7 +111,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
         output = PyArrowFileIO().new_output(tmp_avro_file)
         with write_manifest(
-            format_version=2,
+            format_version=FormatVersion.V2,
             spec=test_spec,
             schema=test_schema,
             output_file=output,

@@ -33,6 +33,7 @@ from pyiceberg.transforms import (
     VoidTransform,
     YearTransform,
 )
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.types import (
     LongType,
     NestedField,
@@ -42,7 +43,7 @@ from pyiceberg.types import (
 
 
 def _simple_table(catalog: Catalog, table_schema_simple: Schema) -> Table:
-    return _create_table_with_schema(catalog, table_schema_simple, "1")
+    return _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
 
 
 def _table(catalog: Catalog) -> Table:
@@ -51,7 +52,7 @@ def _table(catalog: Catalog) -> Table:
         NestedField(2, "event_ts", TimestampType(), required=False),
         NestedField(3, "str", StringType(), required=False),
     )
-    return _create_table_with_schema(catalog, schema_with_timestamp, "1")
+    return _create_table_with_schema(catalog, schema_with_timestamp, FormatVersion.V1)
 
 
 def _table_v2(catalog: Catalog) -> Table:
@@ -60,16 +61,16 @@ def _table_v2(catalog: Catalog) -> Table:
         NestedField(2, "event_ts", TimestampType(), required=False),
         NestedField(3, "str", StringType(), required=False),
     )
-    return _create_table_with_schema(catalog, schema_with_timestamp, "2")
+    return _create_table_with_schema(catalog, schema_with_timestamp, FormatVersion.V2)
 
 
-def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: str) -> Table:
+def _create_table_with_schema(catalog: Catalog, schema: Schema, format_version: FormatVersion) -> Table:
     tbl_name = "default.test_schema_evolution"
     try:
         catalog.drop_table(tbl_name)
     except NoSuchTableError:
         pass
-    return catalog.create_table(identifier=tbl_name, schema=schema, properties={"format-version": format_version})
+    return catalog.create_table(identifier=tbl_name, schema=schema, properties={"format-version": str(format_version)})
 
 
 @pytest.mark.integration
@@ -151,7 +152,7 @@ def test_add_hour_generates_default_name(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_bucket(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
     simple_table.update_spec().add_field("foo", BucketTransform(12), "bucket_transform").commit()
     _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, BucketTransform(12), "bucket_transform"))
 
@@ -159,7 +160,7 @@ def test_add_bucket(catalog: Catalog, table_schema_simple: Schema) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_bucket_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
     simple_table.update_spec().add_field("foo", BucketTransform(12)).commit()
     _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, BucketTransform(12), "foo_bucket_12"))
 
@@ -167,7 +168,7 @@ def test_add_bucket_generates_default_name(catalog: Catalog, table_schema_simple
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_truncate(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
     simple_table.update_spec().add_field("foo", TruncateTransform(1), "truncate_transform").commit()
     _validate_new_partition_fields(
         simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "truncate_transform")
@@ -177,7 +178,7 @@ def test_add_truncate(catalog: Catalog, table_schema_simple: Schema) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_truncate_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
     simple_table.update_spec().add_field("foo", TruncateTransform(1)).commit()
     _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, TruncateTransform(1), "foo_trunc_1"))
 
@@ -203,7 +204,7 @@ def test_multiple_adds(catalog: Catalog) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_void(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
     simple_table.update_spec().add_field("foo", VoidTransform(), "void_transform").commit()
     _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, VoidTransform(), "void_transform"))
 
@@ -211,7 +212,7 @@ def test_add_void(catalog: Catalog, table_schema_simple: Schema) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_add_void_generates_default_name(catalog: Catalog, table_schema_simple: Schema) -> None:
-    simple_table = _create_table_with_schema(catalog, table_schema_simple, "1")
+    simple_table = _create_table_with_schema(catalog, table_schema_simple, FormatVersion.V1)
     simple_table.update_spec().add_field("foo", VoidTransform()).commit()
     _validate_new_partition_fields(simple_table, 1000, 1, 1000, PartitionField(1, 1000, VoidTransform(), "foo_null"))
 
