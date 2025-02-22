@@ -23,8 +23,12 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions.literals import LongLiteral
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
+from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
@@ -325,6 +329,55 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
 
     schema = Schema(
         NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 921402},
+            {"city": "San Francisco", "population": 808988},
+            {"city": "Drachten", "population": 45019},
+            {"city": "Paris", "population": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+
+    df = pa.Table.from_pylist(
+        [
+            # Will be updated, the population has been updated
+            {"city": "Drachten", "population": 45505},
+            # New row, will be inserted
+            {"city": "Berlin", "population": 3432000},
+            # Ignored, already exists in the table
+            {"city": "Paris", "population": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 1
+
+
+def test_upsert_into_empty_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_into_empty_table"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
         NestedField(2, "inhabitants", IntegerType(), required=True),
         # Mark City as the identifier field, also known as the primary-key
         identifier_field_ids=[1],
@@ -349,20 +402,97 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
         ],
         schema=arrow_schema,
     )
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 4
+
+
+def test_create_match_filter_single_condition() -> None:
+    """
+    Test create_match_filter with a composite key where the source yields exactly one unique key.
+    Expected: The function returns the single And condition directly.
+    """
+
+    data = [
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},  # duplicate
+    ]
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
+    table = pa.Table.from_pylist(data, schema=schema)
+    expr = create_match_filter(table, ["order_id", "order_line_id"])
+    assert expr == And(
+        EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
+        EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
+    )
+
+
+def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_duplicate_rows_in_table"
+
+    _drop_table(catalog, identifier)
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Drachten", "inhabitants": 45019},
+        ],
+        schema=arrow_schema,
+    )
     tbl.append(df)
 
     df = pa.Table.from_pylist(
         [
             # Will be updated, the inhabitants has been updated
             {"city": "Drachten", "inhabitants": 45505},
-            # New row, will be inserted
-            {"city": "Berlin", "inhabitants": 3432000},
-            # Ignored, already exists in the table
-            {"city": "Paris", "inhabitants": 2103000},
         ],
         schema=arrow_schema,
     )
-    upd = tbl.upsert(df)
 
-    assert upd.rows_updated == 1
-    assert upd.rows_inserted == 1
+    with pytest.raises(ValueError, match="Target table has duplicate rows, aborting upsert"):
+        _ = tbl.upsert(df)
+
+
+def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_without_identifier_fields"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        # No identifier field :o
+        identifier_field_ids=[],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 921402},
+            {"city": "San Francisco", "population": 808988},
+            {"city": "Drachten", "population": 45019},
+            {"city": "Paris", "population": 2103000},
+        ],
+        schema=schema_to_pyarrow(schema),
+    )
+
+    with pytest.raises(
+        ValueError, match="Join columns could not be found, please set identifier-field-ids or pass in explicitly."
+    ):
+        tbl.upsert(df)
