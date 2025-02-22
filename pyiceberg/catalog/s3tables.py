@@ -80,7 +80,7 @@ class S3TablesCatalog(MetastoreCatalog):
         try:
             self.s3tables = session.client("s3tables", endpoint_url=properties.get(S3TABLES_ENDPOINT))
         except boto3.session.UnknownServiceError as e:
-            raise S3TablesError("'s3tables' requires boto3>=1.35.74. Current version: {boto3.__version__}.") from e
+            raise S3TablesError(f"'s3tables' requires boto3>=1.35.74. Current version: {boto3.__version__}.") from e
 
         try:
             self.s3tables.get_table_bucket(tableBucketARN=self.table_bucket_arn)
