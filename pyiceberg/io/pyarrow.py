@@ -613,8 +613,8 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.large_list(value_type=element_field)
 
     def map(self, map_type: MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
-        key_field = self.field(map_type.key_field, key_result)
-        value_field = self.field(map_type.value_field, value_result)
+        key_field = pa.field("key", key_result, nullable=map_type.key_field.optional)
+        value_field = pa.field("value", value_result, nullable=map_type.value_field.optional)
         return pa.map_(key_type=key_field, item_type=value_field)
 
     def visit_fixed(self, fixed_type: FixedType) -> pa.DataType:
