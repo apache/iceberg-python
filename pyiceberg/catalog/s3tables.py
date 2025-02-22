@@ -67,6 +67,8 @@ class S3TablesCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
+        if S3TABLES_TABLE_BUCKET_ARN not in self.properties:
+            raise S3TablesError(f"No table bucket arn specified. Set it via the {S3TABLES_TABLE_BUCKET_ARN} property.")
         self.table_bucket_arn = self.properties[S3TABLES_TABLE_BUCKET_ARN]
 
         session = boto3.Session(
