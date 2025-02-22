@@ -418,26 +418,26 @@ class PyArrowFileIO(FileIO):
 
         # Resolve region from netloc(bucket), fallback to user-provided region
         provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+        auto_resolve = self.properties.get("auto_resolve_s3_region", True)
 
-        try:
-            bucket_region = resolve_s3_region(bucket=netloc)
-        except (OSError, TypeError):
-            bucket_region = None
-            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
+        if auto_resolve:
+            try:
+                bucket_region = resolve_s3_region(bucket=netloc)
+            except (OSError, TypeError):
+                bucket_region = None
+                logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
 
-        bucket_region = bucket_region or provided_region
-        if bucket_region != provided_region:
-            # Change: downgrade log level from WARNING to DEBUG
-            # Rationale: The override is expected behavior in case of a mismatch, and exposing
-            # internal bucket region details (e.g. the actual region and netloc) is not desirable
-            # for end users. Logging at DEBUG allows developers to diagnose issues without leaking
-            # sensitive configuration details in production.
-            logger.debug(
-                "PyArrow FileIO overriding S3 bucket region for bucket %s: provided region %s, actual region %s",
-                netloc,
-                provided_region,
-                bucket_region,
-            )
+            bucket_region = bucket_region or provided_region
+            if bucket_region != provided_region:
+                # Downgraded log level from WARNING to DEBUG to avoid exposing internal details.
+                logger.debug(
+                    "PyArrow FileIO overriding S3 bucket region for bucket %s: provided region %s, actual region %s",
+                    netloc,
+                    provided_region,
+                    bucket_region,
+                )
+        else:
+            bucket_region = provided_region
 
         client_kwargs: Dict[str, Any] = {
             "endpoint_override": self.properties.get(S3_ENDPOINT),
