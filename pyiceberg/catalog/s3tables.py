@@ -284,13 +284,19 @@ class S3TablesCatalog(MetastoreCatalog):
         namespace = self._validate_namespace_identifier(namespace)
         paginator = self.s3tables.get_paginator("list_tables")
         tables: List[Identifier] = []
-        for page in paginator.paginate(tableBucketARN=self.table_bucket_arn, namespace=namespace):
-            tables.extend((namespace, table["name"]) for table in page["tables"])
+        try:
+            for page in paginator.paginate(tableBucketARN=self.table_bucket_arn, namespace=namespace):
+                tables.extend((namespace, table["name"]) for table in page["tables"])
+        except self.s3tables.exceptions.NotFoundException as e:
+            raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
         return tables
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         namespace = self._validate_namespace_identifier(namespace)
-        response = self.s3tables.get_namespace(tableBucketARN=self.table_bucket_arn, namespace=namespace)
+        try:
+            response = self.s3tables.get_namespace(tableBucketARN=self.table_bucket_arn, namespace=namespace)
+        except self.s3tables.exceptions.NotFoundException as e:
+            raise NoSuchNamespaceError(f"Namespace {namespace} does not exist.") from e
         return {
             "namespace": response["namespace"],
             "createdAt": response["createdAt"],

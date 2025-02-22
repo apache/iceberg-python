@@ -105,6 +105,11 @@ def test_load_namespace_properties(catalog: S3TablesCatalog, database_name: str)
     assert database_name in catalog.load_namespace_properties(database_name)["namespace"]
 
 
+def test_load_namespace_properties_for_invalid_namespace_raises_exception(catalog: S3TablesCatalog, database_name: str) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.load_namespace_properties(database_name)
+
+
 def test_drop_namespace(catalog: S3TablesCatalog, database_name: str) -> None:
     catalog.create_namespace(namespace=database_name)
     assert (database_name,) in catalog.list_namespaces()
@@ -162,6 +167,11 @@ def test_list_tables(catalog: S3TablesCatalog, database_name: str, table_name: s
     assert not catalog.list_tables(namespace=database_name)
     catalog.create_table(identifier=identifier, schema=table_schema_nested)
     assert catalog.list_tables(namespace=database_name)
+
+
+def test_list_tables_for_invalid_namespace_raises_exception(catalog: S3TablesCatalog, database_name: str) -> None:
+    with pytest.raises(NoSuchNamespaceError):
+        catalog.list_tables(namespace=database_name)
 
 
 def test_drop_table(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
