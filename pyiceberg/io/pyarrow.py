@@ -427,9 +427,16 @@ class PyArrowFileIO(FileIO):
 
         bucket_region = bucket_region or provided_region
         if bucket_region != provided_region:
-            logger.warning(
-                f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
-                f"provided region {provided_region}, actual region {bucket_region}"
+            # Change: downgrade log level from WARNING to DEBUG
+            # Rationale: The override is expected behavior in case of a mismatch, and exposing
+            # internal bucket region details (e.g. the actual region and netloc) is not desirable
+            # for end users. Logging at DEBUG allows developers to diagnose issues without leaking
+            # sensitive configuration details in production.
+            logger.debug(
+                "PyArrow FileIO overriding S3 bucket region for bucket %s: provided region %s, actual region %s",
+                netloc,
+                provided_region,
+                bucket_region,
             )
 
         client_kwargs: Dict[str, Any] = {
