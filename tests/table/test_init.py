@@ -49,7 +49,7 @@ from pyiceberg.table import (
     _match_deletes_to_data_file,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
-from pyiceberg.table.refs import SnapshotRef
+from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
     Operation,
@@ -1012,6 +1012,10 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
         AssertRefSnapshotId(ref="not_exist_tag", snapshot_id=1).validate(base_metadata)
 
     # existing Tag in metadata: test
+    ref_tag = table_v2.refs().get("test")
+    assert ref_tag is not None
+    assert ref_tag.snapshot_ref_type == SnapshotRefType.TAG, "TAG test should be present in table to be tested"
+
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: TAG test can't be updated once created",
