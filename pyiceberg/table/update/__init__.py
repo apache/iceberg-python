@@ -609,14 +609,16 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
 
     type: Literal["assert-ref-snapshot-id"] = Field(default="assert-ref-snapshot-id")
     ref: str = Field(...)
-    ref_type: SnapshotRefType = Field(...)
+    # ref_type: SnapshotRefType = Field(...)
     snapshot_id: Optional[int] = Field(default=None, alias="snapshot-id")
 
     def validate(self, base_metadata: Optional[TableMetadata]) -> None:
         if base_metadata is None:
             raise CommitFailedException("Requirement failed: current table metadata is missing")
         elif len(base_metadata.snapshots) == 0 and self.ref != MAIN_BRANCH:
-            raise CommitFailedException(f"Requirement failed: No snapshot available in table for ref: {self.ref}")
+            raise CommitFailedException(
+                f"Requirement failed: Table has no snapshots and can only be written to the {MAIN_BRANCH} BRANCH."
+            )
         elif snapshot_ref := base_metadata.refs.get(self.ref):
             ref_type = snapshot_ref.snapshot_ref_type
             if self.snapshot_id is None:
@@ -625,8 +627,8 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
                 raise CommitFailedException(
                     f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
                 )
-            elif ref_type != self.ref_type:
-                raise CommitFailedException(f"Requirement failed: {ref_type} {self.ref} can't be changed to type {self.ref_type}")
+            elif ref_type == SnapshotRefType.TAG:
+                raise CommitFailedException(f"Requirement failed: TAG {self.ref} can't be updated once created")
         elif self.snapshot_id is not None:
             raise CommitFailedException(f"Requirement failed: branch or tag {self.ref} is missing, expected {self.snapshot_id}")
 

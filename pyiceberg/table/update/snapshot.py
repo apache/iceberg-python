@@ -287,7 +287,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                     if self._branch in self._transaction.table_metadata.refs
                     else self._transaction.table_metadata.current_snapshot_id,
                     ref=self._branch,
-                    ref_type=SnapshotRefType.BRANCH,
                 ),
             ),
         )

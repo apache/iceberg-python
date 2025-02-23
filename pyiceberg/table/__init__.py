@@ -341,7 +341,6 @@ class Transaction:
             AssertRefSnapshotId(
                 snapshot_id=self.table_metadata.refs[ref_name].snapshot_id if ref_name in self.table_metadata.refs else None,
                 ref=ref_name,
-                ref_type=type,
             ),
         )
 

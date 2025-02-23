@@ -44,7 +44,7 @@ from pyiceberg.expressions import And, EqualTo, GreaterThanOrEqual, In, LessThan
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
+from pyiceberg.table import TableProperties, MAIN_BRANCH
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
@@ -1578,7 +1578,7 @@ def test_abort_table_transaction_on_exception(
 def test_append_to_non_existing_branch(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.test_non_existing_branch"
     tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [])
-    with pytest.raises(CommitFailedException, match="No snapshot available in table for ref:"):
+    with pytest.raises(CommitFailedException, match=f"Table has no snapshots and can only be written to the {MAIN_BRANCH} BRANCH."):
         tbl.append(arrow_table_with_null, branch="non_existing_branch")
 
 

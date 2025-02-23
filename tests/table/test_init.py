@@ -49,7 +49,7 @@ from pyiceberg.table import (
     _match_deletes_to_data_file,
 )
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadataUtil, TableMetadataV2, _generate_snapshot_id
-from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
     Operation,
@@ -982,43 +982,41 @@ def test_assert_table_uuid(table_v2: Table) -> None:
 
 def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
-    AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id, ref_type=SnapshotRefType.BRANCH).validate(
-        base_metadata
-    )
+    AssertRefSnapshotId(ref="main", snapshot_id=base_metadata.current_snapshot_id).validate(base_metadata)
 
     with pytest.raises(CommitFailedException, match="Requirement failed: current table metadata is missing"):
-        AssertRefSnapshotId(ref="main", snapshot_id=1, ref_type=SnapshotRefType.BRANCH).validate(None)
+        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(None)
 
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: branch main was created concurrently",
     ):
-        AssertRefSnapshotId(ref="main", snapshot_id=None, ref_type=SnapshotRefType.BRANCH).validate(base_metadata)
+        AssertRefSnapshotId(ref="main", snapshot_id=None).validate(base_metadata)
 
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: branch main has changed: expected id 1, found 3055729675574597004",
     ):
-        AssertRefSnapshotId(ref="main", snapshot_id=1, ref_type=SnapshotRefType.BRANCH).validate(base_metadata)
+        AssertRefSnapshotId(ref="main", snapshot_id=1).validate(base_metadata)
 
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: branch or tag not_exist_branch is missing, expected 1",
     ):
-        AssertRefSnapshotId(ref="not_exist_branch", snapshot_id=1, ref_type=SnapshotRefType.BRANCH).validate(base_metadata)
+        AssertRefSnapshotId(ref="not_exist_branch", snapshot_id=1).validate(base_metadata)
 
     with pytest.raises(
         CommitFailedException,
         match="Requirement failed: branch or tag not_exist_tag is missing, expected 1",
     ):
-        AssertRefSnapshotId(ref="not_exist_tag", snapshot_id=1, ref_type=SnapshotRefType.TAG).validate(base_metadata)
+        AssertRefSnapshotId(ref="not_exist_tag", snapshot_id=1).validate(base_metadata)
 
     # existing Tag in metadata: test
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: tag test can't be changed to type branch",
+        match="Requirement failed: TAG test can't be updated once created",
     ):
-        AssertRefSnapshotId(ref="test", snapshot_id=3051729675574597004, ref_type=SnapshotRefType.BRANCH).validate(base_metadata)
+        AssertRefSnapshotId(ref="test", snapshot_id=3051729675574597004).validate(base_metadata)
 
 
 def test_assert_last_assigned_field_id(table_v2: Table) -> None:
