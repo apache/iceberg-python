@@ -251,24 +251,9 @@ class S3TablesCatalog(MetastoreCatalog):
             raise NamespaceNotEmptyError(f"Namespace {namespace} is not empty.") from e
 
     def drop_table(self, identifier: Union[str, Identifier]) -> None:
-        namespace, table_name = self._validate_database_and_table_identifier(identifier)
-        try:
-            response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
-        except self.s3tables.exceptions.NotFoundException as e:
-            raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
-
-        version_token = response["versionToken"]
-        try:
-            self.s3tables.delete_table(
-                tableBucketARN=self.table_bucket_arn,
-                namespace=namespace,
-                name=table_name,
-                versionToken=version_token,
-            )
-        except self.s3tables.exceptions.ConflictException as e:
-            raise CommitFailedException(
-                f"Cannot delete {namespace}.{table_name} because of a concurrent update to the table version {version_token}."
-            ) from e
+        raise NotImplementedError(
+            "S3 Tables does not support the delete_table operation. You can retry with the purge_table operation."
+        )
 
     def list_namespaces(self, namespace: Union[str, Identifier] = ()) -> List[Identifier]:
         if namespace:
@@ -371,9 +356,24 @@ class S3TablesCatalog(MetastoreCatalog):
         raise NotImplementedError("Namespace properties are read only.")
 
     def purge_table(self, identifier: Union[str, Identifier]) -> None:
-        # purge is not supported as s3tables doesn't support delete operations
-        # table maintenance is automated
-        raise NotImplementedError
+        namespace, table_name = self._validate_database_and_table_identifier(identifier)
+        try:
+            response = self.s3tables.get_table(tableBucketARN=self.table_bucket_arn, namespace=namespace, name=table_name)
+        except self.s3tables.exceptions.NotFoundException as e:
+            raise NoSuchTableError(f"No table with identifier {identifier} exists.") from e
+
+        version_token = response["versionToken"]
+        try:
+            self.s3tables.delete_table(
+                tableBucketARN=self.table_bucket_arn,
+                namespace=namespace,
+                name=table_name,
+                versionToken=version_token,
+            )
+        except self.s3tables.exceptions.ConflictException as e:
+            raise CommitFailedException(
+                f"Cannot delete {namespace}.{table_name} because of a concurrent update to the table version {version_token}."
+            ) from e
 
     def register_table(self, identifier: Union[str, Identifier], metadata_location: str) -> Table:
         raise NotImplementedError

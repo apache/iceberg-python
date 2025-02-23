@@ -174,13 +174,26 @@ def test_list_tables_for_invalid_namespace_raises_exception(catalog: S3TablesCat
         catalog.list_tables(namespace=database_name)
 
 
-def test_drop_table(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+def test_delete_table_raises_not_implemented(
+    catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema
+) -> None:
     identifier = (database_name, table_name)
 
     catalog.create_namespace(namespace=database_name)
     catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
-    catalog.drop_table(identifier=identifier)
+    with pytest.raises(NotImplementedError) as exc:
+        catalog.drop_table(identifier=identifier)
+    exc.match("S3 Tables does not support the delete_table operation. You can retry with the purge_table operation.")
+
+
+def test_purge_table(catalog: S3TablesCatalog, database_name: str, table_name: str, table_schema_nested: Schema) -> None:
+    identifier = (database_name, table_name)
+
+    catalog.create_namespace(namespace=database_name)
+    catalog.create_table(identifier=identifier, schema=table_schema_nested)
+
+    catalog.purge_table(identifier=identifier)
 
     with pytest.raises(NoSuchTableError):
         catalog.load_table(identifier=identifier)
