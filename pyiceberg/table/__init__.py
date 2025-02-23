@@ -441,9 +441,12 @@ class Transaction:
             branch = MAIN_BRANCH
 
         return UpdateSnapshot(self, io=self._table.io, branch=branch, snapshot_properties=snapshot_properties)
-    def rewrite_manifests(self) -> None:
+    def rewrite_manifests(self) -> RewriteManifestsResult:
+        if self._table.current_snapshot() is None:
+            return RewriteManifestsResult(rewritten_manifests=[], added_manifests=[])
         with self.update_snapshot().rewrite() as rewrite:
-            rewrite.rewrite_manifests()
+            rewritten = rewrite.rewrite_manifests()
+            return rewritten
 
     def rewrite_manifests(self) -> RewriteManifestsResult:
         if self._table.current_snapshot() is None:
@@ -1453,7 +1456,7 @@ class Table:
     def rewrite_manifests(
         self,
         spec_id: Optional[int] = None,
-    ) -> None:
+    ) -> RewriteManifestsResult:
         """
         Shorthand API for Rewriting manifests for the table.
 
@@ -1462,7 +1465,7 @@ class Table:
 
         """
         with self.transaction() as tx:
-            tx.rewrite_manifests(spec_id=spec_id)
+            return tx.rewrite_manifests(spec_id=spec_id)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)

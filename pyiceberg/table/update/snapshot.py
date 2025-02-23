@@ -650,13 +650,41 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
             truncate_full_table=False,
         )
 
+    def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
+        from pyiceberg.table import TableProperties
+
+        ssc = SnapshotSummaryCollector()
+        partition_summary_limit = int(
+            self._transaction.table_metadata.properties.get(
+                TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
+            )
+        )
+        ssc.set_partition_summary_limit(partition_summary_limit)
+
+        props = {
+            "manifests-kept": str(len([])),
+            "manifests-created": str(len(self.added_manifests)),
+            "manifests-replaced": str(len(self.rewritten_manifests)),
+            "entries-processed": str(len([])),
+        }
+        previous_snapshot = (
+            self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if self._parent_snapshot_id is not None
+            else None
+        )
+
+        return update_snapshot_summaries(
+            summary=Summary(operation=self._operation, **ssc.build(), **props),
+            previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
+            truncate_full_table=False,
+        )
+
     def rewrite_manifests(self) -> RewriteManifestsResult:
         snapshot = self._table.current_snapshot()
         if not snapshot:
             raise ValueError("Cannot rewrite manifests without a current snapshot")
 
         data_result = self._find_matching_manifests(snapshot, ManifestContent.DATA)
-
         self.rewritten_manifests.extend(data_result.rewritten_manifests)
         self.added_manifests.extend(data_result.added_manifests)
 

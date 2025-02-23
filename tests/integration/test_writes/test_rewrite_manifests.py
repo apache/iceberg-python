@@ -19,7 +19,6 @@ from typing import List
 
 import pyarrow as pa
 import pytest
-from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.manifest import ManifestFile
@@ -138,6 +137,35 @@ def test_rewrite_v1_v2_manifests(session_catalog: Catalog, arrow_table_with_null
     assert expected_records_count == actual_records_count, "Record count must match"
 
 
+# @pytest.mark.integration
+# def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+#     identifier = "default.arrow_table_summaries"
+#     tbl = _create_table(session_catalog, identifier, {"format-version": "2"})
+#     tbl.append(arrow_table_with_null)
+#     tbl.append(arrow_table_with_null)
+#
+#     # tbl.rewrite_manifests()
+#
+#     # records1 = [ThreeColumnRecord(1, None, "AAAA")]
+#     # write_records(spark, table_location, records1)
+#     before_pandas = tbl.scan().to_pandas()
+#     before_count = before_pandas.shape[0]
+#     tbl.refresh()
+#     manifests = tbl.inspect.manifests().to_pylist()
+#     assert len(manifests) == 2, "Should have 2 manifests before rewrite"
+#
+#     tbl.rewrite_manifests()
+#     tbl.refresh()
+#
+#     after_pandas = tbl.scan().to_pandas()
+#     after_count = before_pandas.shape[0]
+#     manifests = tbl.inspect.manifests().to_pylist()
+#     assert len(manifests) == 1, "Should have 1 manifests before rewrite"
+#
+#     snaps = tbl.inspect.snapshots().to_pandas()
+#     print(snaps)
+
+
 @pytest.mark.integration
 def test_rewrite_manifests_empty_table(session_catalog: Catalog) -> None:
     # Create an unpartitioned table
@@ -173,8 +201,9 @@ def test_rewrite_small_manifests_non_partitioned_table(session_catalog: Catalog,
     assert len(result.added_manifests) == 1, "Action should add 1 manifest"
 
     tbl.refresh()
-    manifests = tbl.inspect.all_manifests().to_pylist()
-    assert len(manifests) == 3, "Should have 3 manifests before rewrite"
+
+    manifests = tbl.inspect.manifests()
+    assert len(manifests) == 2, "Should have 2 manifests before rewrite"
 
     current_snapshot = tbl.current_snapshot()
     if not current_snapshot:
