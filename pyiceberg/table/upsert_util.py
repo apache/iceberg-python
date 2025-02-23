@@ -16,12 +16,14 @@
 # under the License.
 import functools
 import operator
+from typing import List, cast
 
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
 from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
+    AlwaysFalse,
     And,
     BooleanExpression,
     EqualTo,
@@ -36,7 +38,16 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
     if len(join_cols) == 1:
         return In(join_cols[0], unique_keys[0].to_pylist())
     else:
-        return Or(*[And(*[EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()])
+        filters: List[BooleanExpression] = [
+            cast(BooleanExpression, And(*[EqualTo(col, row[col]) for col in join_cols])) for row in unique_keys.to_pylist()
+        ]
+
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return functools.reduce(lambda a, b: Or(a, b), filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
@@ -48,47 +59,30 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
-    When a row is matched, an additional scan is done to evaluate the non-key columns to detect if an actual change has occurred.
-    Only matched rows that have an actual change to a non-key column value will be returned in the final output.
+    The table is joined on the identifier columns, and then checked if there are any updated rows.
+    Those are selected and everything is renamed correctly.
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
+    non_key_cols = all_columns - join_cols_set
 
-    non_key_cols = list(all_columns - join_cols_set)
+    if has_duplicate_rows(target_table, join_cols):
+        raise ValueError("Target table has duplicate rows, aborting upsert")
 
-    match_expr = functools.reduce(operator.and_, [pc.field(col).isin(target_table.column(col).to_pylist()) for col in join_cols])
+    if len(target_table) == 0:
+        # When the target table is empty, there is nothing to update :)
+        return source_table.schema.empty_table()
 
-    matching_source_rows = source_table.filter(match_expr)
+    diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
 
-    rows_to_update = []
-
-    for index in range(matching_source_rows.num_rows):
-        source_row = matching_source_rows.slice(index, 1)
-
-        target_filter = functools.reduce(operator.and_, [pc.field(col) == source_row.column(col)[0].as_py() for col in join_cols])
-
-        matching_target_row = target_table.filter(target_filter)
-
-        if matching_target_row.num_rows > 0:
-            needs_update = False
-
-            for non_key_col in non_key_cols:
-                source_value = source_row.column(non_key_col)[0].as_py()
-                target_value = matching_target_row.column(non_key_col)[0].as_py()
-
-                if source_value != target_value:
-                    needs_update = True
-                    break
-
-            if needs_update:
-                rows_to_update.append(source_row)
-
-    if rows_to_update:
-        rows_to_update_table = pa.concat_tables(rows_to_update)
-    else:
-        rows_to_update_table = pa.Table.from_arrays([], names=source_table.column_names)
-
-    common_columns = set(source_table.column_names).intersection(set(target_table.column_names))
-    rows_to_update_table = rows_to_update_table.select(list(common_columns))
-
-    return rows_to_update_table
+    return (
+        source_table
+        # We already know that the schema is compatible, this is to fix large_ types
+        .cast(target_table.schema)
+        .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
+        .filter(diff_expr)
+        .drop_columns([f"{col}-rhs" for col in non_key_cols])
+        .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
+        # Finally cast to the original schema since it doesn't carry nullability:
+        # https://github.com/apache/arrow/issues/45557
+    ).cast(target_table.schema)

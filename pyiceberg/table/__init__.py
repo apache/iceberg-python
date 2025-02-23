@@ -62,7 +62,6 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow, schema_to_pyarrow
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -579,7 +578,9 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
+        if overwrite_filter != AlwaysFalse():
+            # Only delete when the filter is != AlwaysFalse
+            self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
@@ -1148,6 +1149,12 @@ class Table:
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
         """
+        try:
+            import pyarrow as pa  # noqa: F401
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -1159,11 +1166,21 @@ class Table:
                 else:
                     raise ValueError(f"Field-ID could not be found: {join_cols}")
 
+        if len(join_cols) == 0:
+            raise ValueError("Join columns could not be found, please set identifier-field-ids or pass in explicitly.")
+
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
 
         if upsert_util.has_duplicate_rows(df, join_cols):
             raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
@@ -1608,6 +1625,20 @@ class DataScan(TableScan):
         # shared instance across multiple threads.
         return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
+    def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
+        schema = self.table_metadata.schema()
+        include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _InclusiveMetricsEvaluator methods bound to a single
+        # shared instance across multiple threads.
+        return lambda data_file: _InclusiveMetricsEvaluator(
+            schema,
+            self.row_filter,
+            self.case_sensitive,
+            include_empty_files,
+        ).eval(data_file)
+
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
 
@@ -1671,13 +1702,6 @@ class DataScan(TableScan):
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
 
-        metrics_evaluator = _InclusiveMetricsEvaluator(
-            self.table_metadata.schema(),
-            self.row_filter,
-            self.case_sensitive,
-            strtobool(self.options.get("include_empty_files", "false")),
-        ).eval
-
         min_sequence_number = _min_sequence_number(manifests)
 
         data_entries: List[ManifestEntry] = []
@@ -1693,7 +1717,7 @@ class DataScan(TableScan):
                         manifest,
                         partition_evaluators[manifest.partition_spec_id],
                         residual_evaluators[manifest.partition_spec_id],
-                        metrics_evaluator,
+                        self._build_metrics_evaluator(),
                     )
                     for manifest in manifests
                     if self._check_sequence_number(min_sequence_number, manifest)
@@ -1751,7 +1775,7 @@ class DataScan(TableScan):
         """
         import pyarrow as pa
 
-        from pyiceberg.io.pyarrow import ArrowScan
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
@@ -1809,6 +1833,8 @@ class DataScan(TableScan):
         return result
 
     def count(self) -> int:
+        from pyiceberg.io.pyarrow import ArrowScan
+
         # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
         res = 0
         # every task is a FileScanTask

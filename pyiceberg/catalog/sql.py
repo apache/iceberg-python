@@ -497,10 +497,16 @@ class SqlCatalog(MetastoreCatalog):
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
+        namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"
+
         with Session(self.engine) as session:
             stmt = (
                 select(IcebergTables)
-                .where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
+                .where(
+                    IcebergTables.catalog_name == self.name,
+                    (IcebergTables.table_namespace == namespace)
+                    | (IcebergTables.table_namespace.like(namespace_starts_with, escape="!")),
+                )
                 .limit(1)
             )
             result = session.execute(stmt).all()
@@ -510,7 +516,8 @@ class SqlCatalog(MetastoreCatalog):
                 select(IcebergNamespaceProperties)
                 .where(
                     IcebergNamespaceProperties.catalog_name == self.name,
-                    IcebergNamespaceProperties.namespace == namespace,
+                    (IcebergNamespaceProperties.namespace == namespace)
+                    | (IcebergNamespaceProperties.namespace.like(namespace_starts_with, escape="!")),
                 )
                 .limit(1)
             )

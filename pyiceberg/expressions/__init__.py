@@ -64,6 +64,20 @@ class BooleanExpression(ABC):
     def __invert__(self) -> BooleanExpression:
         """Transform the Expression into its negated version."""
 
+    def __and__(self, other: BooleanExpression) -> BooleanExpression:
+        """Perform and operation on another expression."""
+        if not isinstance(other, BooleanExpression):
+            raise ValueError(f"Expected BooleanExpression, got: {other}")
+
+        return And(self, other)
+
+    def __or__(self, other: BooleanExpression) -> BooleanExpression:
+        """Perform or operation on another expression."""
+        if not isinstance(other, BooleanExpression):
+            raise ValueError(f"Expected BooleanExpression, got: {other}")
+
+        return Or(self, other)
+
 
 class Term(Generic[L], ABC):
     """A simple expression that evaluates to a value."""
