@@ -195,10 +195,14 @@ T = TypeVar("T")
 
 
 @lru_cache
-def _cached_resolve_s3_region(bucket: str) -> str:
+def _cached_resolve_s3_region(bucket: str) -> Optional[str]:
     from pyarrow.fs import resolve_s3_region
 
-    return resolve_s3_region(bucket=bucket)
+    try:
+        return resolve_s3_region(bucket=bucket)
+    except (OSError, TypeError):
+        logger.warning(f"Unable to resolve region for bucket {bucket}")
+        return None
 
 
 class UnsupportedPyArrowTypeException(Exception):
@@ -425,14 +429,8 @@ class PyArrowFileIO(FileIO):
 
         # Resolve region from netloc(bucket), fallback to user-provided region
         provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+        bucket_region = _cached_resolve_s3_region(bucket=netloc) or provided_region
 
-        try:
-            bucket_region = _cached_resolve_s3_region(bucket=netloc)
-        except (OSError, TypeError):
-            bucket_region = None
-            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
-
-        bucket_region = bucket_region or provided_region
         if provided_region is not None and bucket_region != provided_region:
             logger.warning(
                 f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "

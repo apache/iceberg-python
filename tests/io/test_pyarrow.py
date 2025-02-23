@@ -2292,7 +2292,7 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
         # The region is set to provided region if bucket region cannot be resolved
         with caplog.at_level(logging.WARNING):
             assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
-        assert f"Unable to resolve region for bucket non-exist-bucket, using default region {user_provided_region}" in caplog.text
+        assert "Unable to resolve region for bucket non-exist-bucket" in caplog.text
 
         for bucket_region in bucket_regions:
             # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region
