@@ -988,7 +988,7 @@ class Table:
         Args:
             df: The Arrow dataframe that will be appended to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
-            branch: Branch Reference to run the delete operation
+            branch: Branch Reference to run the append operation
         """
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
@@ -1014,7 +1014,7 @@ class Table:
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
-            branch: Branch Reference to run the delete operation
+            branch: Branch Reference to run the overwrite operation
         """
         with self.transaction() as tx:
             tx.overwrite(df=df, overwrite_filter=overwrite_filter, snapshot_properties=snapshot_properties, branch=branch)
