@@ -14,12 +14,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from datetime import datetime, timezone, tzinfo
+from datetime import datetime, time, timezone, tzinfo
 
 import pytest
 import pytz
 
-from pyiceberg.utils.datetime import datetime_to_millis, millis_to_datetime
+from pyiceberg.utils.datetime import (
+    datetime_to_millis,
+    datetime_to_nanos,
+    millis_to_datetime,
+    time_str_to_nanos,
+    time_to_nanos,
+    timestamp_to_nanos,
+)
 
 timezones = [
     pytz.timezone("Etc/GMT"),
@@ -71,3 +78,31 @@ def test_datetime_tz_to_millis(tz: tzinfo) -> None:
 
 def test_millis_to_datetime() -> None:
     assert millis_to_datetime(1690971805918) == datetime(2023, 8, 2, 10, 23, 25, 918000)
+
+
+@pytest.mark.parametrize("time_str, nanos", [("00:00:00Z", 0), ("20:21:44.375612-0500", 73304375612000)])
+def test_time_str_to_nanos(time_str: str, nanos: int) -> None:
+    assert nanos == time_str_to_nanos(time_str)
+
+
+@pytest.mark.parametrize(
+    "time_, nanos", [(time(0, 0, 0), 0), (time(20, 21, 44, 375612, tzinfo=pytz.timezone("Etc/GMT-5")), 73304375612000)]
+)
+def test_time_to_nanos(time_: time, nanos: int) -> None:
+    assert nanos == time_to_nanos(time_)
+
+
+@pytest.mark.parametrize(
+    "datetime_, nanos",
+    [
+        (datetime(1970, 1, 1, 0, 0, 0), 0),
+        (datetime(2025, 2, 23, 20, 21, 44, 375612, tzinfo=pytz.timezone("Etc/GMT-5")), 1740324104375612000),
+    ],
+)
+def test_datetime_to_nanos(datetime_: datetime, nanos: int) -> None:
+    assert nanos == datetime_to_nanos(datetime_)
+
+
+@pytest.mark.parametrize("timestamp, nanos", [("1970-01-01T00:00:00", 0), ("2025-02-23T20:21:44.375612", 1740342104375612000)])
+def test_timestamp_to_nanos(timestamp: str, nanos: int) -> None:
+    assert nanos == timestamp_to_nanos(timestamp)

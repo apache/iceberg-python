@@ -98,16 +98,20 @@ def time_str_to_nanos(time_str: str) -> int:
 
 def time_to_nanos(t: time) -> int:
     """Convert a datetime.time object to nanoseconds from midnight."""
-    return (((t.hour * 60 + t.minute) * 60) + t.second) * 1_000_000 + t.microsecond + t.nanosecond
+    # python datetime and time doesn't have nanoseconds support yet
+    # https://github.com/python/cpython/issues/59648
+    return ((((t.hour * 60 + t.minute) * 60) + t.second) * 1_000_000 + t.microsecond) * 1_000
 
 
 def datetime_to_nanos(dt: datetime) -> int:
     """Convert a datetime to nanoseconds from 1970-01-01T00:00:00.000000000."""
+    # python datetime and time doesn't have nanoseconds support yet
+    # https://github.com/python/cpython/issues/59648
     if dt.tzinfo:
         delta = dt - EPOCH_TIMESTAMPTZ
     else:
         delta = dt - EPOCH_TIMESTAMP
-    return (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds + delta.nanoseconds
+    return ((delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds) * 1_000
 
 
 def timestamp_to_nanos(timestamp_str: str) -> int:
