@@ -1017,7 +1017,7 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
         CommitFailedException,
         match="Requirement failed: TAG test can't be updated once created",
     ):
-        AssertRefSnapshotId(ref="test", snapshot_id=3051729675574597004).validate(base_metadata)
+        AssertRefSnapshotId(ref="test", snapshot_id=3055729675574597004).validate(base_metadata)
 
 
 def test_assert_last_assigned_field_id(table_v2: Table) -> None:
