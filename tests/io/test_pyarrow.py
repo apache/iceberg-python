@@ -1840,6 +1840,17 @@ def test_parse_location() -> None:
 
     check_results("/root/foo.txt", "file", "", "/root/foo.txt")
     check_results("/root/tmp/foo.txt", "file", "", "/root/tmp/foo.txt")
+    with patch("pyiceberg.io.pyarrow.platform") as mock_platform:
+        with patch("pyiceberg.io.pyarrow.os") as mock_os:
+            with patch("pyiceberg.io.pyarrow.url2pathname") as mock_url2pathname:
+                windows_paths = [r"\\nfs_server\root\tmp\foo.txt", r"C:\root\tmp\foo.txt"]
+                mock_platform.system.return_value = "Windows"
+                mock_os.path.abspath.side_effect = windows_paths
+                mock_url2pathname.side_effect = windows_paths
+                check_results(r"\\nfs_server\root\tmp\foo.txt", "file", "", r"\\nfs_server\root\tmp\foo.txt")
+                check_results(r"file://nfs_server/root/tmp/foo.txt", "file", "nfs_server", r"\\nfs_server\root\tmp\foo.txt")
+                check_results(r"C:\root\tmp\foo.txt", "file", "", r"C:\root\tmp\foo.txt")
+                check_results(r"file:///C:/root/tmp/foo.txt", "file", "", r"C:\root\tmp\foo.txt")
 
 
 def test_make_compatible_name() -> None:

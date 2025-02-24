@@ -32,6 +32,7 @@ import itertools
 import logging
 import operator
 import os
+import platform
 import re
 import uuid
 import warnings
@@ -58,6 +59,7 @@ from typing import (
     cast,
 )
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -359,6 +361,12 @@ class PyArrowFileIO(FileIO):
             return "file", uri.netloc, os.path.abspath(location)
         elif uri.scheme in ("hdfs", "viewfs"):
             return uri.scheme, uri.netloc, uri.path
+        elif uri.scheme and uri.scheme.lower() in "abcdefghijklmnopqrstuvwxyz" and platform.system() == "Windows":
+            return "file", "", os.path.abspath(location)
+        elif uri.scheme == "file" and platform.system() == "Windows":
+            netloc = rf"\\{uri.netloc}" if uri.netloc else uri.netloc
+            path = url2pathname(f"{netloc}{uri.path}")
+            return uri.scheme, uri.netloc, path
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
