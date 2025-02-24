@@ -49,7 +49,7 @@ from pyiceberg.exceptions import ResolveError
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import FormatVersion, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -321,7 +321,7 @@ def test_resolver_initial_value() -> None:
 
 
 def test_resolve_writer() -> None:
-    actual = resolve_writer(record_schema=MANIFEST_ENTRY_SCHEMAS[2], file_schema=MANIFEST_ENTRY_SCHEMAS[1])
+    actual = resolve_writer(record_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2], file_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V1])
     expected = StructWriter(
         (
             (0, IntegerWriter()),

@@ -35,6 +35,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField,
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.transforms import BucketTransform, IdentityTransform, MonthTransform
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -127,7 +128,7 @@ def _write_parquet(io: FileIO, file_path: str, arrow_schema: pa.Schema, arrow_ta
 def _create_table(
     session_catalog: Catalog,
     identifier: str,
-    format_version: int,
+    format_version: FormatVersion,
     partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
     schema: Schema = TABLE_SCHEMA,
 ) -> Table:
@@ -144,14 +145,17 @@ def _create_table(
     )
 
 
-@pytest.fixture(name="format_version", params=[pytest.param(1, id="format_version=1"), pytest.param(2, id="format_version=2")])
-def format_version_fixure(request: pytest.FixtureRequest) -> Iterator[int]:
+@pytest.fixture(
+    name="format_version",
+    params=[pytest.param(FormatVersion.V1, id="format_version=1"), pytest.param(FormatVersion.V2, id="format_version=2")],
+)
+def format_version_fixure(request: pytest.FixtureRequest) -> Iterator[FormatVersion]:
     """Fixture to run tests with different table format versions."""
     yield request.param
 
 
 @pytest.mark.integration
-def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = f"default.unpartitioned_table_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
 
@@ -191,7 +195,7 @@ def test_add_files_to_unpartitioned_table(spark: SparkSession, session_catalog: 
 
 @pytest.mark.integration
 def test_add_files_to_unpartitioned_table_raises_file_not_found(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.unpartitioned_raises_not_found_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -211,7 +215,7 @@ def test_add_files_to_unpartitioned_table_raises_file_not_found(
 
 @pytest.mark.integration
 def test_add_files_to_unpartitioned_table_raises_has_field_ids(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.unpartitioned_raises_field_ids_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -231,7 +235,7 @@ def test_add_files_to_unpartitioned_table_raises_has_field_ids(
 
 @pytest.mark.integration
 def test_add_files_to_unpartitioned_table_with_schema_updates(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.unpartitioned_table_schema_updates_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -287,7 +291,7 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(
 
 
 @pytest.mark.integration
-def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = f"default.partitioned_table_v{format_version}"
 
     partition_spec = PartitionSpec(
@@ -358,7 +362,9 @@ def test_add_files_to_partitioned_table(spark: SparkSession, session_catalog: Ca
 
 
 @pytest.mark.integration
-def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_add_files_to_bucket_partitioned_table_fails(
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
+) -> None:
     identifier = f"default.partitioned_table_bucket_fails_v{format_version}"
 
     partition_spec = PartitionSpec(
@@ -401,7 +407,7 @@ def test_add_files_to_bucket_partitioned_table_fails(spark: SparkSession, sessio
 
 @pytest.mark.integration
 def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.partitioned_table_mismatch_fails_v{format_version}"
 
@@ -448,7 +454,7 @@ def test_add_files_to_partitioned_table_fails_with_lower_and_upper_mismatch(
 
 
 @pytest.mark.integration
-def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = f"default.unpartitioned_table_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
 
@@ -473,7 +479,7 @@ def test_add_files_snapshot_properties(spark: SparkSession, session_catalog: Cat
 
 
 @pytest.mark.integration
-def test_add_files_fails_on_schema_mismatch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_add_files_fails_on_schema_mismatch(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = f"default.table_schema_mismatch_fails_v{format_version}"
 
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -526,7 +532,9 @@ def test_add_files_fails_on_schema_mismatch(spark: SparkSession, session_catalog
 
 
 @pytest.mark.integration
-def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_add_files_with_large_and_regular_schema(
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
+) -> None:
     identifier = f"default.unpartitioned_with_large_types{format_version}"
 
     iceberg_schema = Schema(NestedField(1, "foo", StringType(), required=True))
@@ -585,7 +593,9 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
 
 
 @pytest.mark.integration
-def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_version: int, mocker: MockerFixture) -> None:
+def test_add_files_with_timestamp_tz_ns_fails(
+    session_catalog: Catalog, format_version: FormatVersion, mocker: MockerFixture
+) -> None:
     nanoseconds_schema_iceberg = Schema(NestedField(1, "quux", TimestamptzType()))
 
     nanoseconds_schema = pa.schema(
@@ -630,8 +640,10 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_add_file_with_valid_nullability_diff(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_add_file_with_valid_nullability_diff(
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
+) -> None:
     identifier = f"default.test_table_with_valid_nullability_diff{format_version}"
     table_schema = Schema(
         NestedField(field_id=1, name="long", field_type=LongType(), required=False),
@@ -669,11 +681,11 @@ def test_add_file_with_valid_nullability_diff(spark: SparkSession, session_catal
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_add_files_with_valid_upcast(
     spark: SparkSession,
     session_catalog: Catalog,
-    format_version: int,
+    format_version: FormatVersion,
     table_schema_with_promoted_types: Schema,
     pyarrow_schema_with_promoted_types: pa.Schema,
     pyarrow_table_with_promoted_types: pa.Table,
@@ -721,8 +733,8 @@ def test_add_files_with_valid_upcast(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = f"default.test_table_subset_of_schema{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
 
@@ -758,8 +770,10 @@ def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalo
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_add_files_with_duplicate_files_in_file_paths(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_add_files_with_duplicate_files_in_file_paths(
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
+) -> None:
     identifier = f"default.test_table_duplicate_add_files_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
     file_path = "s3://warehouse/default/unpartitioned/v{format_version}/test-1.parquet"
@@ -772,9 +786,9 @@ def test_add_files_with_duplicate_files_in_file_paths(spark: SparkSession, sessi
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_add_files_that_referenced_by_current_snapshot(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.test_table_add_referenced_file_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -798,9 +812,9 @@ def test_add_files_that_referenced_by_current_snapshot(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_files_false(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.test_table_add_referenced_file_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)
@@ -829,9 +843,9 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_files_true(
-    spark: SparkSession, session_catalog: Catalog, format_version: int
+    spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion
 ) -> None:
     identifier = f"default.test_table_add_referenced_file_v{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version)

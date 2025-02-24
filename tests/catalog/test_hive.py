@@ -69,7 +69,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import BucketTransform, IdentityTransform
-from pyiceberg.typedef import UTF8
+from pyiceberg.typedef import UTF8, FormatVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -368,7 +368,7 @@ def test_create_table(
         sort_orders=[SortOrder(order_id=0)],
         default_sort_order_id=0,
         refs={},
-        format_version=2,
+        format_version=FormatVersion.V2,
         last_sequence_number=0,
     )
 
@@ -543,7 +543,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
         sort_orders=[SortOrder(order_id=0)],
         default_sort_order_id=0,
         refs={},
-        format_version=2,
+        format_version=FormatVersion.V2,
         last_sequence_number=0,
     )
 
@@ -597,7 +597,7 @@ def test_create_v1_table(table_schema_simple: Schema, hive_database: HiveDatabas
         sort_orders=[SortOrder(order_id=0)],
         default_sort_order_id=0,
         refs={},
-        format_version=1,
+        format_version=FormatVersion.V2,
     )
 
     assert actual_v1_metadata.model_dump() == expected_v1_metadata.model_dump()
@@ -695,7 +695,7 @@ def test_load_table(hive_table: HiveTable) -> None:
                 max_ref_age_ms=None,
             ),
         },
-        format_version=2,
+        format_version=FormatVersion.V2,
         last_sequence_number=34,
     )
 
@@ -796,7 +796,7 @@ def test_load_table_from_self_identifier(hive_table: HiveTable) -> None:
                 max_ref_age_ms=None,
             ),
         },
-        format_version=2,
+        format_version=FormatVersion.V2,
         last_sequence_number=34,
     )
 

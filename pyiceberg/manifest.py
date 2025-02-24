@@ -26,7 +26,6 @@ from typing import (
     Dict,
     Iterator,
     List,
-    Literal,
     Optional,
     Tuple,
     Type,
@@ -43,7 +42,7 @@ from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record, TableVersion
+from pyiceberg.typedef import FormatVersion, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -59,7 +58,7 @@ from pyiceberg.types import (
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
-DEFAULT_READ_VERSION: Literal[2] = 2
+DEFAULT_READ_VERSION = FormatVersion.V2
 
 INITIAL_SEQUENCE_NUMBER = 0
 
@@ -110,8 +109,8 @@ class FileFormat(str, Enum):
         return f"FileFormat.{self.name}"
 
 
-DATA_FILE_TYPE: Dict[int, StructType] = {
-    1: StructType(
+DATA_FILE_TYPE: Dict[FormatVersion, StructType] = {
+    FormatVersion.V1: StructType(
         NestedField(field_id=100, name="file_path", field_type=StringType(), required=True, doc="Location URI with FS scheme"),
         NestedField(
             field_id=101,
@@ -193,7 +192,7 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
         ),
         NestedField(field_id=140, name="sort_order_id", field_type=IntegerType(), required=False, doc="Sort order ID"),
     ),
-    2: StructType(
+    FormatVersion.V2: StructType(
         NestedField(
             field_id=134,
             name="content",
@@ -291,7 +290,7 @@ DATA_FILE_TYPE: Dict[int, StructType] = {
 }
 
 
-def data_file_with_partition(partition_type: StructType, format_version: TableVersion) -> StructType:
+def data_file_with_partition(partition_type: StructType, format_version: FormatVersion) -> StructType:
     data_file_partition_type = StructType(
         *[
             NestedField(
@@ -365,7 +364,7 @@ class DataFile(Record):
             value = FileFormat[value]
         super().__setattr__(name, value)
 
-    def __init__(self, format_version: TableVersion = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
+    def __init__(self, format_version: FormatVersion = DEFAULT_READ_VERSION, *data: Any, **named_data: Any) -> None:
         super().__init__(
             *data,
             **{"struct": DATA_FILE_TYPE[format_version], **named_data},
@@ -384,12 +383,12 @@ class DataFile(Record):
 
 
 MANIFEST_ENTRY_SCHEMAS = {
-    1: Schema(
+    FormatVersion.V1: Schema(
         NestedField(0, "status", IntegerType(), required=True),
         NestedField(1, "snapshot_id", LongType(), required=True),
         NestedField(2, "data_file", DATA_FILE_TYPE[1], required=True),
     ),
-    2: Schema(
+    FormatVersion.V2: Schema(
         NestedField(0, "status", IntegerType(), required=True),
         NestedField(1, "snapshot_id", LongType(), required=False),
         NestedField(3, "sequence_number", LongType(), required=False),
@@ -401,7 +400,7 @@ MANIFEST_ENTRY_SCHEMAS = {
 MANIFEST_ENTRY_SCHEMAS_STRUCT = {format_version: schema.as_struct() for format_version, schema in MANIFEST_ENTRY_SCHEMAS.items()}
 
 
-def manifest_entry_schema_with_data_file(format_version: TableVersion, data_file: StructType) -> Schema:
+def manifest_entry_schema_with_data_file(format_version: FormatVersion, data_file: StructType) -> Schema:
     return Schema(
         *[
             NestedField(2, "data_file", data_file, required=True) if field.field_id == 2 else field
@@ -527,8 +526,8 @@ def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partition
     return [field.to_summary() for field in field_stats]
 
 
-MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
-    1: Schema(
+MANIFEST_LIST_FILE_SCHEMAS: Dict[FormatVersion, Schema] = {
+    FormatVersion.V1: Schema(
         NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
         NestedField(501, "manifest_length", LongType(), required=True),
         NestedField(502, "partition_spec_id", IntegerType(), required=True),
@@ -542,7 +541,7 @@ MANIFEST_LIST_FILE_SCHEMAS: Dict[int, Schema] = {
         NestedField(507, "partitions", ListType(508, PARTITION_FIELD_SUMMARY_TYPE, element_required=True), required=False),
         NestedField(519, "key_metadata", BinaryType(), required=False),
     ),
-    2: Schema(
+    FormatVersion.V2: Schema(
         NestedField(500, "manifest_path", StringType(), required=True, doc="Location URI with FS scheme"),
         NestedField(501, "manifest_length", LongType(), required=True),
         NestedField(502, "partition_spec_id", IntegerType(), required=True),
@@ -761,7 +760,7 @@ class ManifestWriter(ABC):
 
     @property
     @abstractmethod
-    def version(self) -> TableVersion: ...
+    def version(self) -> FormatVersion: ...
 
     @property
     def _meta(self) -> Dict[str, str]:
@@ -772,7 +771,7 @@ class ManifestWriter(ABC):
             "format-version": str(self.version),
         }
 
-    def _with_partition(self, format_version: TableVersion) -> Schema:
+    def _with_partition(self, format_version: FormatVersion) -> Schema:
         data_file_type = data_file_with_partition(
             format_version=format_version, partition_type=self._spec.partition_type(self._schema)
         )
@@ -877,8 +876,8 @@ class ManifestWriterV1(ManifestWriter):
         return ManifestContent.DATA
 
     @property
-    def version(self) -> TableVersion:
-        return 1
+    def version(self) -> FormatVersion:
+        return FormatVersion.V1
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
         return entry
@@ -892,8 +891,8 @@ class ManifestWriterV2(ManifestWriter):
         return ManifestContent.DATA
 
     @property
-    def version(self) -> TableVersion:
-        return 2
+    def version(self) -> FormatVersion:
+        return FormatVersion.V2
 
     @property
     def _meta(self) -> Dict[str, str]:
@@ -912,25 +911,25 @@ class ManifestWriterV2(ManifestWriter):
 
 
 def write_manifest(
-    format_version: TableVersion, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
+    format_version: FormatVersion, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
 ) -> ManifestWriter:
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id)
     elif format_version == 2:
         return ManifestWriterV2(spec, schema, output_file, snapshot_id)
     else:
-        raise ValueError(f"Cannot write manifest for table version: {format_version}")
+        raise ValueError(f"Cannot write manifest for table format version: {format_version}")
 
 
 class ManifestListWriter(ABC):
-    _format_version: TableVersion
+    _format_version: FormatVersion
     _output_file: OutputFile
     _meta: Dict[str, str]
     _manifest_files: List[ManifestFile]
     _commit_snapshot_id: int
     _writer: AvroOutputFile[ManifestFile]
 
-    def __init__(self, format_version: TableVersion, output_file: OutputFile, meta: Dict[str, Any]):
+    def __init__(self, format_version: FormatVersion, output_file: OutputFile, meta: Dict[str, Any]):
         self._format_version = format_version
         self._output_file = output_file
         self._meta = meta
@@ -1026,7 +1025,7 @@ class ManifestListWriterV2(ManifestListWriter):
 
 
 def write_manifest_list(
-    format_version: TableVersion,
+    format_version: FormatVersion,
     output_file: OutputFile,
     snapshot_id: int,
     parent_snapshot_id: Optional[int],
@@ -1039,4 +1038,4 @@ def write_manifest_list(
             raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
         return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number)
     else:
-        raise ValueError(f"Cannot write manifest list for table version: {format_version}")
+        raise ValueError(f"Cannot write manifest list for table format version: {format_version}")
