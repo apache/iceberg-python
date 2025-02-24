@@ -1885,12 +1885,26 @@ class AddFileTask:
     partition_field_value: Record
 
 
+# NEW
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
     Returns:
         An iterable that supplies DataFiles that describe the parquet files.
     """
-    from pyiceberg.io.pyarrow import parquet_files_to_data_files
+    from pyiceberg.io.pyarrow import parquet_file_to_data_file
 
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
+    executor = ExecutorFactory.get_or_create()
+    futures = [
+        executor.submit(
+            parquet_file_to_data_file,
+            io,
+            table_metadata,
+            file_path
+        )
+        for file_path in file_paths
+    ]
+
+    return [f.result() for f in futures if f.result()]
+
+

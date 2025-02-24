@@ -230,6 +230,33 @@ def test_add_files_to_unpartitioned_table_raises_has_field_ids(
 
 
 @pytest.mark.integration
+def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.unpartitioned_table_schema_updates_v{format_version}"
+    tbl = _create_table(session_catalog, identifier, format_version)
+
+    file_paths = [f"s3://warehouse/default/add_files_parallel/v{format_version}/test-{i}.parquet" for i in range(10)]
+    # write parquet files
+    for file_path in file_paths:
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(ARROW_TABLE)
+
+    # add the parquet files as data files
+    tbl.add_files(file_paths=file_paths[0:5])
+    tbl.add_files(file_paths=file_paths[5:])
+
+    rows = spark.sql(
+        f"""
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        FROM {identifier}.all_manifests
+    """
+    ).collect()
+
+    print(rows)
+
+
+@pytest.mark.integration
 def test_add_files_to_unpartitioned_table_with_schema_updates(
     spark: SparkSession, session_catalog: Catalog, format_version: int
 ) -> None:
@@ -265,7 +292,7 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(
     tbl.add_files(file_paths=[file_path])
     rows = spark.sql(
         f"""
-        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
+        SELECT *
         FROM {identifier}.all_manifests
     """
     ).collect()
