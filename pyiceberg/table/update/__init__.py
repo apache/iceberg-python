@@ -623,8 +623,6 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
             if self.snapshot_id is None:
                 raise CommitFailedException(f"Requirement failed: {ref_type} {self.ref} was created concurrently")
             elif self.snapshot_id != snapshot_ref.snapshot_id:
-                if ref_type == SnapshotRefType.TAG:
-                    raise CommitFailedException(f"Requirement failed: TAG {self.ref} can't be updated once created")
                 raise CommitFailedException(
                     f"Requirement failed: {ref_type} {self.ref} has changed: expected id {self.snapshot_id}, found {snapshot_ref.snapshot_id}"
                 )

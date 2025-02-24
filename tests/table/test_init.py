@@ -1015,7 +1015,7 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
 
     with pytest.raises(
         CommitFailedException,
-        match="Requirement failed: TAG test can't be updated once created",
+        match="Requirement failed: tag test has changed: expected id 3055729675574597004, found 3051729675574597004",
     ):
         AssertRefSnapshotId(ref="test", snapshot_id=3055729675574597004).validate(base_metadata)
 
