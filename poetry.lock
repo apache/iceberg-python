@@ -1047,17 +1047,17 @@ files = [
 
 [[package]]
 name = "datafusion"
-version = "44.0.0"
+version = "45.2.0"
 description = "Build and run queries against data"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "datafusion-44.0.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:4786f0a09c6b422ac18c6ea095650c14454be5af3df880b5c169688f610ab41a"},
-    {file = "datafusion-44.0.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:bbad11b33c424a658edbc52db39dfe4ddc30339ffac7c43cdc1aa128c260ae76"},
-    {file = "datafusion-44.0.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4ca3b47fd34e1c96cf6d40a877245afd36f3ccf8b39dda1e5b6f811f273af781"},
-    {file = "datafusion-44.0.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:22d2e3ecf5d0b1b75c8ad48c8d9af14a0ac4de1633e86d3b397614f68aa8123c"},
-    {file = "datafusion-44.0.0-cp38-abi3-win_amd64.whl", hash = "sha256:b36774dca54a0e1c88c8080b8c72cc2df5e95f4340a0cdbdd18a0473401551c5"},
-    {file = "datafusion-44.0.0.tar.gz", hash = "sha256:5fc3740406ff531527aa8baa5954fe0bf1f02ea72170e172746b38cffc0d8d50"},
+    {file = "datafusion-45.2.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:1d0e601167be4f3275af6de1287ae7ec96acfcc4a6e60f1b5fc1e517bc1f5162"},
+    {file = "datafusion-45.2.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:e70d5697b32326a99ab291afe93c268362ccb644eb71639ae48fe1ebeb0cb7b3"},
+    {file = "datafusion-45.2.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cb104bb0742c0310aa6f7e17b83a0cd4018734e70e68b18b32926565df4a4dab"},
+    {file = "datafusion-45.2.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:49572a5e9a38beb1bd6640be976f87adaed8ef694fed1618cee62c4d915eca35"},
+    {file = "datafusion-45.2.0-cp38-abi3-win_amd64.whl", hash = "sha256:fe0a96fd32c8c63d29c6f227e687d5acecc2ca081c579d78f0eebaac0ab4a716"},
+    {file = "datafusion-45.2.0.tar.gz", hash = "sha256:85bd37814299b989907c956f6e716e9a487b20f5e6b7a83b19f16f336bbaf387"},
 ]
 
 [package.dependencies]
@@ -5533,4 +5533,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "fd70e0dda983943ded487ceac2768279f516cc7f5bcca03d0f602fa73f180fe2"
+content-hash = "17a13aaf7f6cb57a621fe4de51c78ce680d1aee6de1367179dc80e19acfaaeb8"
