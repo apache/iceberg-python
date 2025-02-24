@@ -2285,7 +2285,7 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
         raise OSError("Unknown bucket")
 
     # For a pyarrow io instance with configured default s3 region
-    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region})
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region, "s3.resolve-region": "true"})
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         mock_s3_region_resolver.side_effect = _s3_region_map
 
