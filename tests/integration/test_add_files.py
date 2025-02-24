@@ -243,8 +243,8 @@ def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, f
                 writer.write_table(ARROW_TABLE)
 
     # add the parquet files as data files
-    tbl.add_files(file_paths=file_paths[0:5])
-    tbl.add_files(file_paths=file_paths[5:])
+    tbl.add_files(file_paths=file_paths[0:2])
+    tbl.add_files(file_paths=file_paths[2:])
 
     rows = spark.sql(
         f"""
