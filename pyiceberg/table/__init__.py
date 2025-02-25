@@ -1885,7 +1885,6 @@ class AddFileTask:
     partition_field_value: Record
 
 
-# NEW
 def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
