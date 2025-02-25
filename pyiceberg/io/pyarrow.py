@@ -2580,7 +2580,7 @@ def _dataframe_to_data_files(
                         write_uuid=write_uuid,
                         counter_id=next(counter),
                         record_batches=batches,
-                        schema=task_schema
+                        schema=task_schema,
                     )
                     for batches in bin_pack_arrow_table(df, target_file_size)
                 ]
