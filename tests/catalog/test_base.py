@@ -88,6 +88,10 @@ def given_catalog_has_a_table(
     )
 
 
+def test_load_catalog_in_memory() -> None:
+    assert load_catalog("catalog", **{"type": "in-memory"})
+
+
 def test_load_catalog_impl_not_full_path() -> None:
     with pytest.raises(ValueError) as exc_info:
         load_catalog("catalog", **{"py-catalog-impl": "CustomCatalog"})

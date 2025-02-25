@@ -252,7 +252,7 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
 
     catalog_type = None
     if provided_catalog_type and isinstance(provided_catalog_type, str):
-        catalog_type = CatalogType[provided_catalog_type.upper()]
+        catalog_type = CatalogType(provided_catalog_type.lower())
     elif not provided_catalog_type:
         catalog_type = infer_catalog_type(name, conf)
 
