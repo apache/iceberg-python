@@ -253,7 +253,9 @@ def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, f
     """
     ).collect()
 
-    print(rows)
+    assert [row.added_data_files_count for row in rows] == [2, 8, 2]
+    assert [row.existing_data_files_count for row in rows] == [0, 0, 0]
+    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0]
 
 
 @pytest.mark.integration
@@ -292,7 +294,7 @@ def test_add_files_to_unpartitioned_table_with_schema_updates(
     tbl.add_files(file_paths=[file_path])
     rows = spark.sql(
         f"""
-        SELECT *
+        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
         FROM {identifier}.all_manifests
     """
     ).collect()
