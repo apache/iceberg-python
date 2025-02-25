@@ -2455,13 +2455,13 @@ mkdocs = ">=1.2"
 
 [[package]]
 name = "mkdocstrings"
-version = "0.28.1"
+version = "0.28.2"
 description = "Automatic documentation from sources, for MkDocs."
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "mkdocstrings-0.28.1-py3-none-any.whl", hash = "sha256:a5878ae5cd1e26f491ff084c1f9ab995687d52d39a5c558e9b7023d0e4e0b740"},
-    {file = "mkdocstrings-0.28.1.tar.gz", hash = "sha256:fb64576906771b7701e8e962fd90073650ff689e95eb86e86751a66d65ab4489"},
+    {file = "mkdocstrings-0.28.2-py3-none-any.whl", hash = "sha256:57f79c557e2718d217d6f6a81bf75a0de097f10e922e7e5e00f085c3f0ff6895"},
+    {file = "mkdocstrings-0.28.2.tar.gz", hash = "sha256:9b847266d7a588ea76a8385eaebe1538278b4361c0d1ce48ed005be59f053569"},
 ]
 
 [package.dependencies]
@@ -2470,7 +2470,7 @@ Jinja2 = ">=2.11.1"
 Markdown = ">=3.6"
 MarkupSafe = ">=1.1"
 mkdocs = ">=1.4"
-mkdocs-autorefs = ">=1.3"
+mkdocs-autorefs = ">=1.4"
 mkdocs-get-deps = ">=0.2"
 pymdown-extensions = ">=6.3"
 typing-extensions = {version = ">=4.1", markers = "python_version < \"3.10\""}
@@ -5533,4 +5533,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "17a13aaf7f6cb57a621fe4de51c78ce680d1aee6de1367179dc80e19acfaaeb8"
+content-hash = "34a1d844d42ab8091203615d4adc50f3ba8c6595f56567269cfcbc0e62d1bc56"
