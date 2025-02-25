@@ -1864,8 +1864,9 @@ class DataScan(TableScan):
 class WriteTask:
     """Task with the parameters for writing a DataFile."""
 
-    write_uuid: uuid.UUID
     task_id: int
+    write_uuid: uuid.UUID
+    counter_id: int
     schema: Schema
     record_batches: List[pa.RecordBatch]
     sort_order_id: Optional[int] = None
@@ -1874,7 +1875,7 @@ class WriteTask:
     def generate_data_file_filename(self, extension: str) -> str:
         # Mimics the behavior in the Java API:
         # https://github.com/apache/iceberg/blob/a582968975dd30ff4917fbbe999f1be903efac02/core/src/main/java/org/apache/iceberg/io/OutputFileFactory.java#L92-L101
-        return f"00000-{self.task_id}-{self.write_uuid}.{extension}"
+        return f"00000-{self.task_id}-{self.write_uuid}-{self.counter_id:05d}.{extension}"
 
 
 @dataclass(frozen=True)
