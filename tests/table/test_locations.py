@@ -74,7 +74,7 @@ def test_custom_location_provider_not_found(caplog: Any) -> None:
 
 
 def test_object_storage_no_partition() -> None:
-    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
 
     location = provider.new_data_location("test.parquet")
     parts = location.split("/")
@@ -111,6 +111,7 @@ def test_object_storage_partitioned_paths_disabled(partition_key: Optional[Parti
     provider = load_location_provider(
         table_location="table_location",
         table_properties={
+            "write.object-storage.enabled": "true",
             "write.object-storage.partitioned-paths": "false",
         },
     )
@@ -131,7 +132,7 @@ def test_object_storage_partitioned_paths_disabled(partition_key: Optional[Parti
     ],
 )
 def test_hash_injection(data_file_name: str, expected_hash: str) -> None:
-    provider = load_location_provider(table_location="table_location", table_properties=EMPTY_DICT)
+    provider = load_location_provider(table_location="table_location", table_properties={"write.object-storage.enabled": "true"})
 
     assert provider.new_data_location(data_file_name) == f"table_location/data/{expected_hash}/{data_file_name}"
 
@@ -139,7 +140,10 @@ def test_hash_injection(data_file_name: str, expected_hash: str) -> None:
 def test_object_location_provider_write_data_path() -> None:
     provider = load_location_provider(
         table_location="s3://table-location/table",
-        table_properties={TableProperties.WRITE_DATA_PATH: "s3://table-location/custom/data/path"},
+        table_properties={
+            "write.object-storage.enabled": "true",
+            TableProperties.WRITE_DATA_PATH: "s3://table-location/custom/data/path",
+        },
     )
 
     assert (
