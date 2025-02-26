@@ -64,7 +64,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
 | `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
 | `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
-| `write.object-storage.enabled`           | Boolean                            | True                       | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. Note: the default value of `True` differs from Iceberg's Java implementation |
+| `write.object-storage.enabled`           | Boolean                            | False                      | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. |
 | `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
 | `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
 | `write.data.path`                        | String pointing to location        | `{metadata.location}/data` | Sets the location under which data is written.                                                                                                       |
@@ -213,8 +213,7 @@ Both data file and metadata file locations can be customized by configuring the 
 
 For more granular control, you can override the `LocationProvider`'s `new_data_location` and `new_metadata_location` methods to define custom logic for generating file paths. See [`Loading a Custom Location Provider`](configuration.md#loading-a-custom-location-provider).
 
-PyIceberg defaults to the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider), which generates file paths for
-data files that are optimized for object storage.
+PyIceberg defaults to the [`SimpleLocationProvider`](configuration.md#simple-location-provider) for managing file paths.
 
 ### Simple Location Provider
 
@@ -234,9 +233,6 @@ partitioned over a string column `category` might have a data file with location
 s3://bucket/ns/table/data/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
-The `SimpleLocationProvider` is enabled for a table by explicitly setting its `write.object-storage.enabled` table
-property to `False`.
-
 ### Object Store Location Provider
 
 PyIceberg offers the `ObjectStoreLocationProvider`, and an optional [partition-exclusion](configuration.md#partition-exclusion)
@@ -255,8 +251,8 @@ For example, a table partitioned over a string column `category` might have a da
 s3://bucket/ns/table/data/0101/0110/1001/10110010/category=orders/0000-0-5affc076-96a4-48f2-9cd2-d5efbc9f0c94-00001.parquet
 ```
 
-The `write.object-storage.enabled` table property determines whether the `ObjectStoreLocationProvider` is enabled for a
-table. It is used by default.
+The `ObjectStoreLocationProvider` is enabled for a table by explicitly setting its `write.object-storage.enabled` table
+property to `True`.
 
 #### Partition Exclusion
 
