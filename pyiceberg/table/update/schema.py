@@ -140,6 +140,28 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         self._case_sensitive = case_sensitive
         return self
 
+    def overwrite(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
+        """Overwrite the schema with a new schema.
+
+        Args:
+            new_schema: The new schema to overwrite with.
+
+        Returns:
+            This for method chaining.
+        """
+        from pyiceberg.catalog import Catalog
+
+        new_schema = Catalog._convert_schema_if_needed(new_schema)
+
+        for field in self._schema.fields:
+            self.delete_column(field.name)
+
+        new_schema = Catalog._convert_schema_if_needed(new_schema)
+        for field in new_schema.fields:
+            self.add_column(field.name, field.field_type, field.doc, field.required)
+
+        return self
+
     def union_by_name(self, new_schema: Union[Schema, "pa.Schema"]) -> UpdateSchema:
         from pyiceberg.catalog import Catalog
 

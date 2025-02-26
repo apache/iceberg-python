@@ -1653,3 +1653,45 @@ def test_arrow_schema() -> None:
     )
 
     assert base_schema.as_arrow() == expected_schema
+
+
+def test_overwrite_schema() -> None:
+    base_schema = Schema(NestedField(field_id=1, name="old", field_type=StringType(), required=True))
+
+    schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+    )
+
+    new_schema = UpdateSchema(transaction=None, schema=base_schema).overwrite(schema)._apply()  # type: ignore
+
+    expected_schema = Schema(
+        NestedField(field_id=2, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=3, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=4, name="baz", field_type=BooleanType(), required=False),
+    )
+
+    assert new_schema == expected_schema
+
+
+def test_overwrite_with_pa_schema() -> None:
+    base_schema = Schema(NestedField(field_id=1, name="old", field_type=StringType(), required=True))
+
+    pa_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False),
+            pa.field("bar", pa.int32(), nullable=True),
+            pa.field("baz", pa.bool_(), nullable=True),
+        ]
+    )
+
+    new_schema = UpdateSchema(transaction=None, schema=base_schema).overwrite(pa_schema)._apply()  # type: ignore
+
+    expected_schema = Schema(
+        NestedField(field_id=2, name="foo", field_type=StringType(), required=True),
+        NestedField(field_id=3, name="bar", field_type=IntegerType(), required=False),
+        NestedField(field_id=4, name="baz", field_type=BooleanType(), required=False),
+    )
+
+    assert new_schema == expected_schema
