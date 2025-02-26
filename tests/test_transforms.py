@@ -1559,7 +1559,7 @@ def test_ymd_pyarrow_transforms(
         ]
     else:
         with pytest.raises(ValueError):
-            transform.pyarrow_transform(DateType())(arrow_table_date_timestamps[source_col])
+            transform.pyarrow_transform(source_type)(arrow_table_date_timestamps[source_col])
 
 
 @pytest.mark.parametrize(

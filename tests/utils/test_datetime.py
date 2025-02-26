@@ -80,7 +80,7 @@ def test_millis_to_datetime() -> None:
     assert millis_to_datetime(1690971805918) == datetime(2023, 8, 2, 10, 23, 25, 918000)
 
 
-@pytest.mark.parametrize("time_str, nanos", [("00:00:00Z", 0), ("20:21:44.375612-0500", 73304375612000)])
+@pytest.mark.parametrize("time_str, nanos", [("00:00:00Z", 0), ("20:21:44.375612-05:00", 73304375612000)])
 def test_time_str_to_nanos(time_str: str, nanos: int) -> None:
     assert nanos == time_str_to_nanos(time_str)
 

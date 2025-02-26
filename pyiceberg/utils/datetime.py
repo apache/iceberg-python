@@ -217,3 +217,38 @@ def days_to_years(days: int) -> int:
 
 def micros_to_years(micros: int) -> int:
     return micros_to_timestamp(micros).year - EPOCH_TIMESTAMP.year
+
+
+def nanos_to_timestamp(nanos: int) -> datetime:
+    """Convert nanoseconds from epoch to a microsecond timestamp."""
+    dt = timedelta(microseconds=nanos // 1000)
+    return EPOCH_TIMESTAMP + dt
+
+
+def nanos_to_years(nanos: int) -> int:
+    return nanos_to_timestamp(nanos).year - EPOCH_TIMESTAMP.year
+
+
+def nanos_to_months(nanos: int) -> int:
+    dt = nanos_to_timestamp(nanos)
+    return (dt.year - EPOCH_TIMESTAMP.year) * 12 + (dt.month - EPOCH_TIMESTAMP.month)
+
+
+def nanos_to_days(nanos: int) -> int:
+    """Convert a timestamp in nanoseconds to a date in days."""
+    return timedelta(microseconds=nanos // 1000).days
+
+
+def nanos_to_time(nanos: int) -> time:
+    """Convert a timestamp in nanoseconds to a microsecond precision time."""
+    micros = nanos // 1000
+    micros, microseconds = divmod(micros, 1000000)
+    micros, seconds = divmod(micros, 60)
+    micros, minutes = divmod(micros, 60)
+    hours = micros
+    return time(hour=hours, minute=minutes, second=seconds, microsecond=microseconds)
+
+
+def nanos_to_hours(nanos: int) -> int:
+    """Convert a timestamp in nanoseconds to hours from 1970-01-01T00:00."""
+    return nanos // 3_600_000_000_0000
