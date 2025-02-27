@@ -1101,18 +1101,18 @@ files = [
 
 [[package]]
 name = "datafusion"
-version = "44.0.0"
+version = "45.2.0"
 description = "Build and run queries against data"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
-    {file = "datafusion-44.0.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:4786f0a09c6b422ac18c6ea095650c14454be5af3df880b5c169688f610ab41a"},
-    {file = "datafusion-44.0.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:bbad11b33c424a658edbc52db39dfe4ddc30339ffac7c43cdc1aa128c260ae76"},
-    {file = "datafusion-44.0.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4ca3b47fd34e1c96cf6d40a877245afd36f3ccf8b39dda1e5b6f811f273af781"},
-    {file = "datafusion-44.0.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:22d2e3ecf5d0b1b75c8ad48c8d9af14a0ac4de1633e86d3b397614f68aa8123c"},
-    {file = "datafusion-44.0.0-cp38-abi3-win_amd64.whl", hash = "sha256:b36774dca54a0e1c88c8080b8c72cc2df5e95f4340a0cdbdd18a0473401551c5"},
-    {file = "datafusion-44.0.0.tar.gz", hash = "sha256:5fc3740406ff531527aa8baa5954fe0bf1f02ea72170e172746b38cffc0d8d50"},
+    {file = "datafusion-45.2.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:1d0e601167be4f3275af6de1287ae7ec96acfcc4a6e60f1b5fc1e517bc1f5162"},
+    {file = "datafusion-45.2.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:e70d5697b32326a99ab291afe93c268362ccb644eb71639ae48fe1ebeb0cb7b3"},
+    {file = "datafusion-45.2.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cb104bb0742c0310aa6f7e17b83a0cd4018734e70e68b18b32926565df4a4dab"},
+    {file = "datafusion-45.2.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:49572a5e9a38beb1bd6640be976f87adaed8ef694fed1618cee62c4d915eca35"},
+    {file = "datafusion-45.2.0-cp38-abi3-win_amd64.whl", hash = "sha256:fe0a96fd32c8c63d29c6f227e687d5acecc2ca081c579d78f0eebaac0ab4a716"},
+    {file = "datafusion-45.2.0.tar.gz", hash = "sha256:85bd37814299b989907c956f6e716e9a487b20f5e6b7a83b19f16f336bbaf387"},
 ]
 
 [package.dependencies]
@@ -2469,14 +2469,14 @@ min-versions = ["babel (==2.9.0)", "click (==7.0)", "colorama (==0.4)", "ghp-imp
 
 [[package]]
 name = "mkdocs-autorefs"
-version = "1.3.1"
+version = "1.4.0"
 description = "Automatically link across pages in MkDocs."
 optional = false
 python-versions = ">=3.9"
 groups = ["docs"]
 files = [
-    {file = "mkdocs_autorefs-1.3.1-py3-none-any.whl", hash = "sha256:18c504ae4d3ee7f344369bb26cb31d4105569ee252aab7d75ec2734c2c8b0474"},
-    {file = "mkdocs_autorefs-1.3.1.tar.gz", hash = "sha256:a6d30cbcccae336d622a66c2418a3c92a8196b69782774529ad441abb23c0902"},
+    {file = "mkdocs_autorefs-1.4.0-py3-none-any.whl", hash = "sha256:bad19f69655878d20194acd0162e29a89c3f7e6365ffe54e72aa3fd1072f240d"},
+    {file = "mkdocs_autorefs-1.4.0.tar.gz", hash = "sha256:a9c0aa9c90edbce302c09d050a3c4cb7c76f8b7b2c98f84a7a05f53d00392156"},
 ]
 
 [package.dependencies]
@@ -2591,14 +2591,14 @@ mkdocs = ">=1.2"
 
 [[package]]
 name = "mkdocstrings"
-version = "0.28.1"
+version = "0.28.2"
 description = "Automatic documentation from sources, for MkDocs."
 optional = false
 python-versions = ">=3.9"
 groups = ["docs"]
 files = [
-    {file = "mkdocstrings-0.28.1-py3-none-any.whl", hash = "sha256:a5878ae5cd1e26f491ff084c1f9ab995687d52d39a5c558e9b7023d0e4e0b740"},
-    {file = "mkdocstrings-0.28.1.tar.gz", hash = "sha256:fb64576906771b7701e8e962fd90073650ff689e95eb86e86751a66d65ab4489"},
+    {file = "mkdocstrings-0.28.2-py3-none-any.whl", hash = "sha256:57f79c557e2718d217d6f6a81bf75a0de097f10e922e7e5e00f085c3f0ff6895"},
+    {file = "mkdocstrings-0.28.2.tar.gz", hash = "sha256:9b847266d7a588ea76a8385eaebe1538278b4361c0d1ce48ed005be59f053569"},
 ]
 
 [package.dependencies]
@@ -2607,7 +2607,7 @@ Jinja2 = ">=2.11.1"
 Markdown = ">=3.6"
 MarkupSafe = ">=1.1"
 mkdocs = ">=1.4"
-mkdocs-autorefs = ">=1.3"
+mkdocs-autorefs = ">=1.4"
 mkdocs-get-deps = ">=0.2"
 pymdown-extensions = ">=6.3"
 typing-extensions = {version = ">=4.1", markers = "python_version < \"3.10\""}
@@ -2736,14 +2736,14 @@ type = ["mypy (==1.14.1)"]
 
 [[package]]
 name = "moto"
-version = "5.0.28"
+version = "5.1.0"
 description = "A library that allows you to easily mock out tests based on AWS infrastructure"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "moto-5.0.28-py3-none-any.whl", hash = "sha256:2dfbea1afe3b593e13192059a1a7fc4b3cf7fdf92e432070c22346efa45aa0f0"},
-    {file = "moto-5.0.28.tar.gz", hash = "sha256:4d3437693411ec943c13c77de5b0b520c4b0a9ac850fead4ba2a54709e086e8b"},
+    {file = "moto-5.1.0-py3-none-any.whl", hash = "sha256:4fada00cedfba661aa58fe0b33b3ba9a0ef96d0e9937c9bed5163053898b4a27"},
+    {file = "moto-5.1.0.tar.gz", hash = "sha256:879274a9d2213ca49706e3c8ea380d90953ec1ec642976f6315255394d36edc0"},
 ]
 
 [package.dependencies]
@@ -2759,7 +2759,7 @@ flask-cors = {version = "*", optional = true, markers = "extra == \"server\""}
 graphql-core = {version = "*", optional = true, markers = "extra == \"server\""}
 Jinja2 = ">=2.10.1"
 joserfc = {version = ">=0.9.0", optional = true, markers = "extra == \"server\""}
-jsonpath-ng = {version = "*", optional = true, markers = "extra == \"server\""}
+jsonpath_ng = {version = "*", optional = true, markers = "extra == \"server\""}
 openapi-spec-validator = {version = ">=0.5.0", optional = true, markers = "extra == \"server\""}
 py-partiql-parser = {version = "0.6.1", optional = true, markers = "extra == \"server\""}
 pyparsing = {version = ">=3.0.7", optional = true, markers = "extra == \"server\""}
@@ -2772,7 +2772,7 @@ werkzeug = ">=0.5,<2.2.0 || >2.2.0,<2.2.1 || >2.2.1"
 xmltodict = "*"
 
 [package.extras]
-all = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "graphql-core", "joserfc (>=0.9.0)", "jsonpath-ng", "jsonschema", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)", "setuptools"]
+all = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "graphql-core", "joserfc (>=0.9.0)", "jsonpath_ng", "jsonschema", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)", "setuptools"]
 apigateway = ["PyYAML (>=5.1)", "joserfc (>=0.9.0)", "openapi-spec-validator (>=0.5.0)"]
 apigatewayv2 = ["PyYAML (>=5.1)", "openapi-spec-validator (>=0.5.0)"]
 appsync = ["graphql-core"]
@@ -2782,16 +2782,16 @@ cloudformation = ["PyYAML (>=5.1)", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>
 cognitoidp = ["joserfc (>=0.9.0)"]
 dynamodb = ["docker (>=3.0.0)", "py-partiql-parser (==0.6.1)"]
 dynamodbstreams = ["docker (>=3.0.0)", "py-partiql-parser (==0.6.1)"]
-events = ["jsonpath-ng"]
+events = ["jsonpath_ng"]
 glue = ["pyparsing (>=3.0.7)"]
-proxy = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=2.5.1)", "graphql-core", "joserfc (>=0.9.0)", "jsonpath-ng", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)", "setuptools"]
+proxy = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=2.5.1)", "graphql-core", "joserfc (>=0.9.0)", "jsonpath_ng", "multipart", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)", "setuptools"]
 quicksight = ["jsonschema"]
 resourcegroupstaggingapi = ["PyYAML (>=5.1)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "graphql-core", "joserfc (>=0.9.0)", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)"]
 s3 = ["PyYAML (>=5.1)", "py-partiql-parser (==0.6.1)"]
 s3crc32c = ["PyYAML (>=5.1)", "crc32c", "py-partiql-parser (==0.6.1)"]
-server = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "flask (!=2.2.0,!=2.2.1)", "flask-cors", "graphql-core", "joserfc (>=0.9.0)", "jsonpath-ng", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)", "setuptools"]
+server = ["PyYAML (>=5.1)", "antlr4-python3-runtime", "aws-xray-sdk (>=0.93,!=0.96)", "cfn-lint (>=0.40.0)", "docker (>=3.0.0)", "flask (!=2.2.0,!=2.2.1)", "flask-cors", "graphql-core", "joserfc (>=0.9.0)", "jsonpath_ng", "openapi-spec-validator (>=0.5.0)", "py-partiql-parser (==0.6.1)", "pyparsing (>=3.0.7)", "setuptools"]
 ssm = ["PyYAML (>=5.1)"]
-stepfunctions = ["antlr4-python3-runtime", "jsonpath-ng"]
+stepfunctions = ["antlr4-python3-runtime", "jsonpath_ng"]
 xray = ["aws-xray-sdk (>=0.93,!=0.96)", "setuptools"]
 
 [[package]]
@@ -3033,15 +3033,15 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.36.4"
-description = "Type annotations for boto3 Glue 1.36.4 service generated with mypy-boto3-builder 8.8.0"
+version = "1.37.0"
+description = "Type annotations for boto3 Glue 1.37.0 service generated with mypy-boto3-builder 8.9.2"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "extra == \"glue\""
 files = [
-    {file = "mypy_boto3_glue-1.36.4-py3-none-any.whl", hash = "sha256:ae420af4301fbe84a6e38b244901cfa98c9162c646fb621d0f9f39a918e34cef"},
-    {file = "mypy_boto3_glue-1.36.4.tar.gz", hash = "sha256:6f8630ccde28bcd346ca0fc60c33a394aa3a6a7c878dd0eb22e255cb464ed5f4"},
+    {file = "mypy_boto3_glue-1.37.0-py3-none-any.whl", hash = "sha256:8373c17cf11b9b9490f99f970daaccee02ad6271b46d82b19559d4153727f1cd"},
+    {file = "mypy_boto3_glue-1.37.0.tar.gz", hash = "sha256:5e2d2a03472af7c61e380a09086b97524e5c204024921391dca0da403eea6e27"},
 ]
 
 [package.dependencies]
@@ -3457,20 +3457,20 @@ files = [
 
 [[package]]
 name = "polars"
-version = "1.22.0"
+version = "1.23.0"
 description = "Blazingly fast DataFrame library"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"polars\""
 files = [
-    {file = "polars-1.22.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:6250f838b916fab23ccafe90928d7952afc328d316c956b42d152b20c86ffd9c"},
-    {file = "polars-1.22.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:5ee3cf3783205709ce31f070f2b4ee4296fec08f2c744a9c37acc7d360121022"},
-    {file = "polars-1.22.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:94f25b4ef131da046d05b8235c5f29997630ee2125ebc0553b92258e88f7a8fa"},
-    {file = "polars-1.22.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:729e6be8a884812a206518195a2fb407b61962323886095ede1a2a934cdb1410"},
-    {file = "polars-1.22.0-cp39-abi3-win_amd64.whl", hash = "sha256:78b8bcd1735e9376815d117aeae49391441b2199b5a70a300669d692b34ec713"},
-    {file = "polars-1.22.0-cp39-abi3-win_arm64.whl", hash = "sha256:cde8f56c408151ab9790c43485b90f690d5c198ce26ab38a845045c73c999325"},
-    {file = "polars-1.22.0.tar.gz", hash = "sha256:8d94ae25085d92de10d93ab6a06c94f8c911bd5d9c1ff17cd1073a9dca766029"},
+    {file = "polars-1.23.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:d9d344958cb9bfe1bd42c1af910cb000c0dfa2892b849f2cd35649e0bcd10fab"},
+    {file = "polars-1.23.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:37ca01c31909ead40f32eb275b578c576bdd2e93730a07f3a38688b1c84f6ca8"},
+    {file = "polars-1.23.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3cb0b944ddfc13eefa3b8c244cba39790226fd11c861cbba9db2a1cbe033387a"},
+    {file = "polars-1.23.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:655d296078c99cd3f5cefc3ec1f1447676a64f0d7dcd2f89d919f19bf84fa53f"},
+    {file = "polars-1.23.0-cp39-abi3-win_amd64.whl", hash = "sha256:b774f04d77ed4153d9539e546db5ad6ff4757c79dfe981e22400eb59299c5493"},
+    {file = "polars-1.23.0-cp39-abi3-win_arm64.whl", hash = "sha256:701df6381665c56da18704305119ce73983b1bead3378fbc8fac7ffd24817e93"},
+    {file = "polars-1.23.0.tar.gz", hash = "sha256:4305e87e4c48bc4ae8401a055fb5431c4c0c4e88855e648927269f31e6d338f0"},
 ]
 
 [package.extras]
@@ -3491,6 +3491,7 @@ numpy = ["numpy (>=1.16.0)"]
 openpyxl = ["openpyxl (>=3.0.0)"]
 pandas = ["pandas", "polars[pyarrow]"]
 plot = ["altair (>=5.4.0)"]
+polars-cloud = ["polars-cloud (>=0.0.1a1)"]
 pyarrow = ["pyarrow (>=7.0.0)"]
 pydantic = ["pydantic"]
 sqlalchemy = ["polars[pandas]", "sqlalchemy"]
@@ -5820,4 +5821,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "52d341efa03e93f6bb10fc814c491b97b48539c697612d39ef152126037667b3"
+content-hash = "4c8165d3b790c39102fa12702e17b14ee54047384b815b5591c8912d291b83ea"

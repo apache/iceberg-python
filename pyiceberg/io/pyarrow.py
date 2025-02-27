@@ -107,6 +107,7 @@ from pyiceberg.io import (
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
+    S3_RESOLVE_REGION,
     S3_ROLE_ARN,
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
@@ -192,6 +193,17 @@ DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
+
+
+@lru_cache
+def _cached_resolve_s3_region(bucket: str) -> Optional[str]:
+    from pyarrow.fs import resolve_s3_region
+
+    try:
+        return resolve_s3_region(bucket=bucket)
+    except (OSError, TypeError):
+        logger.warning(f"Unable to resolve region for bucket {bucket}")
+        return None
 
 
 class UnsupportedPyArrowTypeException(Exception):
@@ -414,23 +426,22 @@ class PyArrowFileIO(FileIO):
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
-        from pyarrow.fs import S3FileSystem, resolve_s3_region
+        from pyarrow.fs import S3FileSystem
 
-        # Resolve region from netloc(bucket), fallback to user-provided region
         provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
 
-        try:
-            bucket_region = resolve_s3_region(bucket=netloc)
-        except (OSError, TypeError):
-            bucket_region = None
-            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
-
-        bucket_region = bucket_region or provided_region
-        if bucket_region != provided_region:
-            logger.warning(
-                f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
-                f"provided region {provided_region}, actual region {bucket_region}"
-            )
+        # Do this when we don't provide the region at all, or when we explicitly enable it
+        if provided_region is None or property_as_bool(self.properties, S3_RESOLVE_REGION, False) is True:
+            # Resolve region from netloc(bucket), fallback to user-provided region
+            # Only supported by buckets hosted by S3
+            bucket_region = _cached_resolve_s3_region(bucket=netloc) or provided_region
+            if provided_region is not None and bucket_region != provided_region:
+                logger.warning(
+                    f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
+                    f"provided region {provided_region}, actual region {bucket_region}"
+                )
+        else:
+            bucket_region = provided_region
 
         client_kwargs: Dict[str, Any] = {
             "endpoint_override": self.properties.get(S3_ENDPOINT),
