@@ -155,12 +155,14 @@ def to_human_time(micros_from_midnight: int) -> str:
 
 def to_human_timestamptz(timestamp_micros: int) -> str:
     """Convert a TimestamptzType value to human string."""
-    return (EPOCH_TIMESTAMPTZ + timedelta(microseconds=timestamp_micros)).isoformat()
+    dt = micros_to_timestamptz(timestamp_micros)
+    return _to_java_offsetdatetime_str(dt)
 
 
 def to_human_timestamp(timestamp_micros: int) -> str:
     """Convert a TimestampType value to human string."""
-    return (EPOCH_TIMESTAMP + timedelta(microseconds=timestamp_micros)).isoformat()
+    dt = micros_to_timestamp(timestamp_micros)
+    return _to_java_localdatetime_str(dt)
 
 
 def micros_to_hours(micros: int) -> int:
@@ -184,3 +186,25 @@ def days_to_years(days: int) -> int:
 
 def micros_to_years(micros: int) -> int:
     return micros_to_timestamp(micros).year - EPOCH_TIMESTAMP.year
+
+
+def _to_java_localdatetime_str(dt: datetime) -> str:
+    if dt.microsecond == 0:
+        if dt.second == 0:
+            return dt.strftime("%Y-%m-%dT%H:%M")
+        else:
+            return dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f").rstrip("0")
+
+
+def _to_java_offsetdatetime_str(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        raise ValueError(f"Missing zone offset: {dt}")
+
+    tz = dt.strftime("%z")
+    if tz == "+0000":
+        tz = "Z"
+    else:
+        tz = tz[:3] + ":" + tz[3:]
+
+    return _to_java_localdatetime_str(dt) + tz
