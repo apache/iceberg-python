@@ -2466,21 +2466,23 @@ def _check_pyarrow_schema_compatible(
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
     for file_path in file_paths:
-        schema = table_metadata.schema()
-        data_file = parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path, schema=schema)
+        data_file = parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
         yield data_file
 
 
-def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str, schema: Schema) -> DataFile:
+def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
     input_file = io.new_input(file_path)
     with input_file.open() as input_stream:
         parquet_metadata = pq.read_metadata(input_stream)
 
-    if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
+    arrow_schema = parquet_metadata.schema.to_arrow_schema()
+    if visit_pyarrow(arrow_schema, _HasIds()):
         raise NotImplementedError(
             f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
         )
-    _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+
+    schema = table_metadata.schema()
+    _check_pyarrow_schema_compatible(schema, arrow_schema)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=parquet_metadata,

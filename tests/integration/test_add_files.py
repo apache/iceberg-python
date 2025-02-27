@@ -16,6 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+import multiprocessing
 import os
 import re
 import threading
@@ -241,24 +242,27 @@ def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, f
 
     lock = threading.Lock()
     unique_threads_seen = set()
+    cpu_count = multiprocessing.cpu_count()
 
     # patch the function _parquet_file_to_data_file to we can track how many unique thread IDs
     # it was executed from
     with mock.patch("pyiceberg.io.pyarrow.parquet_file_to_data_file") as patch_func:
 
-        def mock_parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str, schema: Schema) -> DataFile:
+        def mock_parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
             lock.acquire()
             thread_id = threading.get_ident()  # the current thread ID
             unique_threads_seen.add(thread_id)
             lock.release()
-            return real_parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path, schema=schema)
+            return real_parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
 
         patch_func.side_effect = mock_parquet_file_to_data_file
 
         identifier = f"default.unpartitioned_table_schema_updates_v{format_version}"
         tbl = _create_table(session_catalog, identifier, format_version)
 
-        file_paths = [f"s3://warehouse/default/add_files_parallel/v{format_version}/test-{i}.parquet" for i in range(10)]
+        file_paths = [
+            f"s3://warehouse/default/add_files_parallel/v{format_version}/test-{i}.parquet" for i in range(cpu_count * 2)
+        ]
         # write parquet files
         for file_path in file_paths:
             fo = tbl.io.new_output(file_path)
@@ -268,7 +272,14 @@ def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, f
 
         tbl.add_files(file_paths=file_paths)
 
-    assert len(unique_threads_seen) == 10
+    # duration creation of threadpool processor, when max_workers is not
+    # specified, python will add cpu_count + 4 as the number of threads in the
+    # pool in this case
+    # https://github.com/python/cpython/blob/e06bebb87e1b33f7251196e1ddb566f528c3fc98/Lib/concurrent/futures/thread.py#L173-L181
+    # we check that we have at least seen the number of threads. we don't
+    # specify the workers in the thread pool and we can't check without
+    # accessing private attributes of ThreadPoolExecutor
+    assert len(unique_threads_seen) >= cpu_count
 
 
 @pytest.mark.integration
