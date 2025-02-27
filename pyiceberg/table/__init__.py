@@ -1226,6 +1226,50 @@ class Table:
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties)
 
+    def write_parquet(self, df: pa.Table) -> List[str]:
+        """
+        Shorthand API for writing a PyArrow table as Parquet files for the table.
+        Writes data files but does not commit them to the table.
+
+        Args:
+            df: The Arrow table that will be written as Parquet files
+
+        Returns:
+            List of file paths to the written Parquet files
+        """
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+
+        if not isinstance(df, pa.Table):
+            raise ValueError(f"Expected PyArrow table, got: {df}")
+
+        if unsupported_partitions := [
+            field for field in self.metadata.spec().fields if not field.transform.supports_pyarrow_transform
+        ]:
+            raise ValueError(
+                f"Not all partition types are supported for writes. Following partitions cannot be written using pyarrow: {unsupported_partitions}."
+            )
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.metadata.schema(), provided_schema=df.schema,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
+
+        if df.shape[0] > 0:
+            data_files = list(
+                _dataframe_to_data_files(
+                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df,
+                    io=self.io
+                )
+            )
+
+            return [data_file.file_path for data_file in data_files]
+
+
     def dynamic_partition_overwrite(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """Shorthand for dynamic overwriting the table with a PyArrow table.
 

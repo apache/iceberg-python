@@ -2353,7 +2353,8 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
-def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask], include_field_ids: bool = True
+               ) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
@@ -2380,7 +2381,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 file_schema=task.schema,
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-                include_field_ids=True,
+                include_field_ids=include_field_ids,
             )
             for batch in task.record_batches
         ]
@@ -2549,6 +2550,7 @@ def _dataframe_to_data_files(
     io: FileIO,
     write_uuid: Optional[uuid.UUID] = None,
     counter: Optional[itertools.count[int]] = None,
+    include_field_ids: bool = True
 ) -> Iterable[DataFile]:
     """Convert a PyArrow table into a DataFile.
 
@@ -2578,6 +2580,7 @@ def _dataframe_to_data_files(
                     for batches in bin_pack_arrow_table(df, target_file_size)
                 ]
             ),
+            include_field_ids=include_field_ids
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
@@ -2597,6 +2600,7 @@ def _dataframe_to_data_files(
                     for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
                 ]
             ),
+            include_field_ids=include_field_ids
         )
 
 
