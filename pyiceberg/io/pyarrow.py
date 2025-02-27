@@ -2205,24 +2205,25 @@ class DataFileStatistics:
                 f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
             )
 
-        lower_value = partition_record_value(
+        source_field = schema.find_field(partition_field.source_id)
+        transform = partition_field.transform.transform(source_field.field_type)
+
+        lower_value = transform(partition_record_value(
             partition_field=partition_field,
             value=self.column_aggregates[partition_field.source_id].current_min,
             schema=schema,
-        )
-        upper_value = partition_record_value(
+        ))
+        upper_value = transform(partition_record_value(
             partition_field=partition_field,
             value=self.column_aggregates[partition_field.source_id].current_max,
             schema=schema,
-        )
+        ))
         if lower_value != upper_value:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
 
-        source_field = schema.find_field(partition_field.source_id)
-        transform = partition_field.transform.transform(source_field.field_type)
-        return transform(lower_value)
+        return lower_value
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
         return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
