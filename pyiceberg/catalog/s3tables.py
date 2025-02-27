@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 import boto3
 
-from pyiceberg.catalog import DEPRECATED_BOTOCORE_SESSION, MetastoreCatalog, PropertiesUpdateSummary
+from pyiceberg.catalog import MetastoreCatalog, PropertiesUpdateSummary
 from pyiceberg.exceptions import (
     CommitFailedException,
     InvalidNamespaceName,
@@ -74,7 +74,6 @@ class S3TablesCatalog(MetastoreCatalog):
         session = boto3.Session(
             profile_name=properties.get(S3TABLES_PROFILE_NAME),
             region_name=get_first_property_value(properties, S3TABLES_REGION, AWS_REGION),
-            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
             aws_access_key_id=get_first_property_value(properties, S3TABLES_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
             aws_secret_access_key=get_first_property_value(properties, S3TABLES_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             aws_session_token=get_first_property_value(properties, S3TABLES_SESSION_TOKEN, AWS_SESSION_TOKEN),
