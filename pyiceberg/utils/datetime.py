@@ -115,13 +115,31 @@ def datetime_to_nanos(dt: datetime) -> int:
 
 
 def timestamp_to_nanos(timestamp_str: str) -> int:
-    """Convert an ISO-9601 formatted timestamp without zone to microseconds from 1970-01-01T00:00:00.000000000."""
+    """Convert an ISO-9601 formatted timestamp without zone to microseconds from 1970-01-01T00:00:00.000000.
+
+    Currently only microsecond precision timestamp_str is supported as python datetime does not have
+    nanoseconds support.
+    """
     if ISO_TIMESTAMP.fullmatch(timestamp_str):
         return datetime_to_nanos(datetime.fromisoformat(timestamp_str))
     if ISO_TIMESTAMPTZ.fullmatch(timestamp_str):
         # When we can match a timestamp without a zone, we can give a more specific error
         raise ValueError(f"Zone offset provided, but not expected: {timestamp_str}")
     raise ValueError(f"Invalid timestamp without zone: {timestamp_str} (must be ISO-8601)")
+
+
+def timestamptz_to_nanos(timestamptz_str: str) -> int:
+    """Convert an ISO-8601 formatted timestamp with zone to microseconds from 1970-01-01T00:00:00.000000+00:00.
+
+    Currently only microsecond precision timestamp_str is supported as python datetime does not have
+    nanoseconds support.
+    """
+    if ISO_TIMESTAMPTZ.fullmatch(timestamptz_str):
+        return datetime_to_nanos(datetime.fromisoformat(timestamptz_str))
+    if ISO_TIMESTAMP.fullmatch(timestamptz_str):
+        # When we can match a timestamp without a zone, we can give a more specific error
+        raise ValueError(f"Missing zone offset: {timestamptz_str} (must be ISO-8601)")
+    raise ValueError(f"Invalid timestamp with zone: {timestamptz_str} (must be ISO-8601)")
 
 
 def datetime_to_millis(dt: datetime) -> int:
@@ -221,7 +239,7 @@ def micros_to_years(micros: int) -> int:
 
 def nanos_to_timestamp(nanos: int) -> datetime:
     """Convert nanoseconds from epoch to a microsecond timestamp."""
-    dt = timedelta(microseconds=nanos // 1000)
+    dt = timedelta(microseconds=nanos_to_micros(nanos))
     return EPOCH_TIMESTAMP + dt
 
 
@@ -241,7 +259,7 @@ def nanos_to_days(nanos: int) -> int:
 
 def nanos_to_time(nanos: int) -> time:
     """Convert a timestamp in nanoseconds to a microsecond precision time."""
-    micros = nanos // 1000
+    micros = nanos_to_micros(nanos)
     micros, microseconds = divmod(micros, 1000000)
     micros, seconds = divmod(micros, 60)
     micros, minutes = divmod(micros, 60)
@@ -252,3 +270,8 @@ def nanos_to_time(nanos: int) -> time:
 def nanos_to_hours(nanos: int) -> int:
     """Convert a timestamp in nanoseconds to hours from 1970-01-01T00:00."""
     return nanos // 3_600_000_000_0000
+
+
+def nanos_to_micros(nanos: int) -> int:
+    """Convert a nanoseconds timestamp to microsecond timestamp by dropping precision."""
+    return nanos // 1000

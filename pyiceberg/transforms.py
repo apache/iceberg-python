@@ -292,6 +292,8 @@ class BucketTransform(Transform[S, int]):
                 TimeType,
                 TimestampType,
                 TimestamptzType,
+                TimestampNanoType,
+                TimestamptzNanoType,
                 DecimalType,
                 StringType,
                 FixedType,
@@ -322,6 +324,16 @@ class BucketTransform(Transform[S, int]):
             def hash_func(v: Any) -> int:
                 if isinstance(v, py_datetime.datetime):
                     v = datetime.datetime_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def hash_func(v: Any) -> int:
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+                else:
+                    v = datetime.nanos_to_micros(v)
 
                 return mmh3.hash(struct.pack("<q", v))
 

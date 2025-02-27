@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Callable, Optional, Union
 from uuid import UUID
@@ -24,6 +24,7 @@ from uuid import UUID
 import mmh3 as mmh3
 import pyarrow as pa
 import pytest
+import pytz
 from pydantic import (
     BeforeValidator,
     PlainSerializer,
@@ -103,7 +104,9 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -113,7 +116,9 @@ from pyiceberg.utils.datetime import (
     date_to_days,
     time_str_to_micros,
     timestamp_to_micros,
+    timestamp_to_nanos,
     timestamptz_to_micros,
+    timestamptz_to_nanos,
 )
 
 
@@ -141,6 +146,16 @@ from pyiceberg.utils.datetime import (
         ("iceberg", StringType(), 1210000089),
         (UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7"), UUIDType(), 1488055340),
         (b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7", UUIDType(), 1488055340),
+        (
+            timestamp_to_nanos("2017-11-16T22:31:08.000001"),
+            TimestampNanoType(),
+            -1207196810,
+        ),
+        (
+            timestamptz_to_nanos("2017-11-16T14:31:08.000001-08:00"),
+            TimestamptzNanoType(),
+            -1207196810,
+        ),
     ],
 )
 def test_bucket_hash_values(test_input: Any, test_type: PrimitiveType, expected: Any) -> None:
@@ -1583,6 +1598,36 @@ def test_bucket_pyarrow_transforms(
 ) -> None:
     transform: Transform[Any, Any] = BucketTransform(num_buckets=num_buckets)
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
+
+
+@pytest.mark.parametrize(
+    "source_type, input_arr, num_buckets",
+    [
+        (
+            TimestampNanoType(),
+            pa.array([datetime(1970, 1, 1, 0, 0, 0), datetime(2025, 2, 26, 1, 2, 3)], type=pa.timestamp(unit="ns")),
+            10,
+        ),
+        (
+            TimestamptzNanoType(),
+            pa.array(
+                [datetime(1970, 1, 1, 0, 0, 0), datetime(2025, 2, 26, 1, 2, 3)],
+                type=pa.timestamp(unit="ns", tz=pytz.timezone("Etc/GMT+10")),
+            ),
+            10,
+        ),
+    ],
+)
+def test_unsupported_bucket_pyarrow_transform(
+    source_type: PrimitiveType,
+    input_arr: Union[pa.Array, pa.ChunkedArray],
+    num_buckets: int,
+) -> None:
+    transform: Transform[Any, Any] = BucketTransform(num_buckets=num_buckets)
+    with pytest.raises(ValueError) as exc_info:
+        transform.pyarrow_transform(source_type)(input_arr)
+
+    assert "FeatureUnsupported => Unsupported data type for bucket transform" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
