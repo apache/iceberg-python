@@ -3923,12 +3923,12 @@ files = [
 
 [[package]]
 name = "pyspark"
-version = "3.5.3"
+version = "3.5.5"
 description = "Apache Spark Python API"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "pyspark-3.5.3.tar.gz", hash = "sha256:68b7cc0c0c570a7d8644f49f40d2da8709b01d30c9126cc8cf93b4f84f3d9747"},
+    {file = "pyspark-3.5.5.tar.gz", hash = "sha256:6effc9ce98edf231f4d683fd14f7270629bf8458c628d6a2620ded4bb34f3cb9"},
 ]
 
 [package.dependencies]
@@ -5533,4 +5533,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "94da2ace530cea0847ce5d649e0c825cc6da98cbc50aa2209fb2cfd1e870b475"
+content-hash = "b207272d61f2c34b805a2163bfcc14f49e5f398e158737ffbcbbae4445a8420d"
