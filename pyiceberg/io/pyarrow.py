@@ -2464,7 +2464,14 @@ def _check_pyarrow_schema_compatible(
     _check_schema_compatible(requested_schema, provided_schema)
 
 
-def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
+def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
+    for file_path in file_paths:
+        schema = table_metadata.schema()
+        data_file = parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path, schema=schema)
+        yield data_file
+
+
+def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str, schema: Schema) -> DataFile:
     input_file = io.new_input(file_path)
     with input_file.open() as input_stream:
         parquet_metadata = pq.read_metadata(input_stream)

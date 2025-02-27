@@ -18,8 +18,10 @@
 
 import os
 import re
+import threading
 from datetime import date
 from typing import Iterator
+from unittest import mock
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -31,9 +33,11 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io import FileIO
 from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _pyarrow_schema_ensure_large_types
+from pyiceberg.manifest import DataFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.transforms import BucketTransform, IdentityTransform, MonthTransform
 from pyiceberg.types import (
     BooleanType,
@@ -231,31 +235,40 @@ def test_add_files_to_unpartitioned_table_raises_has_field_ids(
 
 @pytest.mark.integration
 def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
-    identifier = f"default.unpartitioned_table_schema_updates_v{format_version}"
-    tbl = _create_table(session_catalog, identifier, format_version)
+    from pyiceberg.io.pyarrow import parquet_file_to_data_file
 
-    file_paths = [f"s3://warehouse/default/add_files_parallel/v{format_version}/test-{i}.parquet" for i in range(10)]
-    # write parquet files
-    for file_path in file_paths:
-        fo = tbl.io.new_output(file_path)
-        with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
-                writer.write_table(ARROW_TABLE)
+    real_parquet_file_to_data_file = parquet_file_to_data_file
 
-    # add the parquet files as data files
-    tbl.add_files(file_paths=file_paths[0:2])
-    tbl.add_files(file_paths=file_paths[2:])
+    lock = threading.Lock()
+    unique_threads_seen = set()
 
-    rows = spark.sql(
-        f"""
-        SELECT added_data_files_count, existing_data_files_count, deleted_data_files_count
-        FROM {identifier}.all_manifests
-    """
-    ).collect()
+    # patch the function _parquet_file_to_data_file to we can track how many unique thread IDs
+    # it was executed from
+    with mock.patch("pyiceberg.io.pyarrow.parquet_file_to_data_file") as patch_func:
 
-    assert [row.added_data_files_count for row in rows] == [2, 8, 2]
-    assert [row.existing_data_files_count for row in rows] == [0, 0, 0]
-    assert [row.deleted_data_files_count for row in rows] == [0, 0, 0]
+        def mock_parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str, schema: Schema) -> DataFile:
+            lock.acquire()
+            thread_id = threading.get_ident()  # the current thread ID
+            unique_threads_seen.add(thread_id)
+            lock.release()
+            return real_parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path, schema=schema)
+
+        patch_func.side_effect = mock_parquet_file_to_data_file
+
+        identifier = f"default.unpartitioned_table_schema_updates_v{format_version}"
+        tbl = _create_table(session_catalog, identifier, format_version)
+
+        file_paths = [f"s3://warehouse/default/add_files_parallel/v{format_version}/test-{i}.parquet" for i in range(10)]
+        # write parquet files
+        for file_path in file_paths:
+            fo = tbl.io.new_output(file_path)
+            with fo.create(overwrite=True) as fos:
+                with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                    writer.write_table(ARROW_TABLE)
+
+        tbl.add_files(file_paths=file_paths)
+
+    assert len(unique_threads_seen) == 10
 
 
 @pytest.mark.integration

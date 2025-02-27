@@ -1893,17 +1893,8 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_file_to_data_file
 
+    schema = table_metadata.schema()
     executor = ExecutorFactory.get_or_create()
-    futures = [
-        executor.submit(
-            parquet_file_to_data_file,
-            io,
-            table_metadata,
-            file_path
-        )
-        for file_path in file_paths
-    ]
+    futures = [executor.submit(parquet_file_to_data_file, io, table_metadata, file_path, schema) for file_path in file_paths]
 
     return [f.result() for f in futures if f.result()]
-
-
