@@ -1262,7 +1262,7 @@ class Table:
         if df.shape[0] > 0:
             data_files = list(
                 _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df,
+                    table_metadata=self.metadata, write_uuid=append_files.commit_uuid, df=df,
                     io=self.io
                 )
             )
