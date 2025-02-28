@@ -44,7 +44,9 @@ from pyiceberg.avro.reader import (
     StringReader,
     StructReader,
     TimeReader,
+    TimestampNanoReader,
     TimestampReader,
+    TimestamptzNanoReader,
     TimestamptzReader,
     UUIDReader,
 )
@@ -63,6 +65,8 @@ from pyiceberg.avro.writer import (
     OptionWriter,
     StringWriter,
     StructWriter,
+    TimestampNanoWriter,
+    TimestamptzNanoWriter,
     TimestamptzWriter,
     TimestampWriter,
     TimeWriter,
@@ -97,7 +101,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -181,8 +187,14 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
     def visit_timestamp(self, timestamp_type: TimestampType) -> Writer:
         return TimestampWriter()
 
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType) -> Writer:
+        return TimestampNanoWriter()
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> Writer:
         return TimestamptzWriter()
+
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType) -> Writer:
+        return TimestamptzNanoWriter()
 
     def visit_string(self, string_type: StringType) -> Writer:
         return StringWriter()
@@ -326,8 +338,14 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
     def visit_timestamp(self, timestamp_type: TimestampType, partner: Optional[IcebergType]) -> Writer:
         return TimestampWriter()
 
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: Optional[IcebergType]) -> Writer:
+        return TimestampNanoWriter()
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: Optional[IcebergType]) -> Writer:
         return TimestamptzWriter()
+
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: Optional[IcebergType]) -> Writer:
+        return TimestamptzNanoWriter()
 
     def visit_string(self, string_type: StringType, partner: Optional[IcebergType]) -> Writer:
         return StringWriter()
@@ -456,8 +474,14 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     def visit_timestamp(self, timestamp_type: TimestampType, partner: Optional[IcebergType]) -> Reader:
         return TimestampReader()
 
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: Optional[IcebergType]) -> Reader:
+        return TimestampNanoReader()
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: Optional[IcebergType]) -> Reader:
         return TimestamptzReader()
+
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: Optional[IcebergType]) -> Reader:
+        return TimestamptzNanoReader()
 
     def visit_string(self, string_type: StringType, partner: Optional[IcebergType]) -> Reader:
         return StringReader()
