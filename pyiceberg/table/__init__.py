@@ -1890,4 +1890,4 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths), check_schema=check_schema, partition_deductor=parquet_files_to_data_files())
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths), check_schema=check_schema, partition_deductor=partition_deductor)
