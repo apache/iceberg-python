@@ -1283,7 +1283,7 @@ class Table:
             tx.delete(delete_filter=delete_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
     def add_files(
-        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True, check_schema: bool = True, partition_deductor: Callable[[str], Record] | None = None,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table.
@@ -1296,8 +1296,7 @@ class Table:
         """
         with self.transaction() as tx:
             tx.add_files(
-                file_paths=file_paths, snapshot_properties=snapshot_properties, check_duplicate_files=check_duplicate_files
-            )
+                file_paths=file_paths, snapshot_properties=snapshot_properties, check_duplicate_files=check_duplicate_files, check_schema=check_schema, partition_deductor=partition_deductor)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
