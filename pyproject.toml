@@ -94,7 +94,7 @@ requests-mock = "1.12.1"
 moto = { version = "^5.0.2", extras = ["server"] }
 typing-extensions = "4.12.2"
 pytest-mock = "3.14.0"
-pyspark = "3.5.3"
+pyspark = "3.5.5"
 cython = "3.0.12"
 deptry = ">=0.14,<0.24"
 datafusion = ">=44,<46"
