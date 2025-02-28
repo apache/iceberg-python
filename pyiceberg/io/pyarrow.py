@@ -2205,24 +2205,25 @@ class DataFileStatistics:
                 f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
             )
 
-        lower_value = partition_record_value(
+        source_field = schema.find_field(partition_field.source_id)
+        transform = partition_field.transform.transform(source_field.field_type)
+
+        lower_value = transform(partition_record_value(
             partition_field=partition_field,
             value=self.column_aggregates[partition_field.source_id].current_min,
             schema=schema,
-        )
-        upper_value = partition_record_value(
+        ))
+        upper_value = transform(partition_record_value(
             partition_field=partition_field,
             value=self.column_aggregates[partition_field.source_id].current_max,
             schema=schema,
-        )
+        ))
         if lower_value != upper_value:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
 
-        source_field = schema.find_field(partition_field.source_id)
-        transform = partition_field.transform.transform(source_field.field_type)
-        return transform(lower_value)
+        return lower_value
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
         return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
@@ -2353,7 +2354,8 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
-def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask], include_field_ids: bool = True
+               ) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     parquet_writer_kwargs = _get_parquet_writer_kwargs(table_metadata.properties)
@@ -2380,7 +2382,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 file_schema=task.schema,
                 batch=batch,
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-                include_field_ids=True,
+                include_field_ids=include_field_ids,
             )
             for batch in task.record_batches
         ]
@@ -2549,6 +2551,7 @@ def _dataframe_to_data_files(
     io: FileIO,
     write_uuid: Optional[uuid.UUID] = None,
     counter: Optional[itertools.count[int]] = None,
+    include_field_ids: bool = True
 ) -> Iterable[DataFile]:
     """Convert a PyArrow table into a DataFile.
 
@@ -2578,6 +2581,7 @@ def _dataframe_to_data_files(
                     for batches in bin_pack_arrow_table(df, target_file_size)
                 ]
             ),
+            include_field_ids=include_field_ids
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
@@ -2597,6 +2601,7 @@ def _dataframe_to_data_files(
                     for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
                 ]
             ),
+            include_field_ids=include_field_ids
         )
 
 

@@ -261,6 +261,8 @@ schema = Schema(
 tbl = catalog.create_table("default.cities", schema=schema)
 ```
 
+### Append and Overwrite
+
 Now write the data to the table:
 
 <!-- prettier-ignore-start -->
@@ -332,6 +334,49 @@ df = pa.Table.from_pylist(
 
 table.append(df)
 ```
+
+### Write Parquet Files
+
+PyIceberg provides a low-level API to write Parquet files in Iceberg-compatible format without committing them to the table metadata. This is useful when you need more control over the commit process:
+
+```python
+file_paths = tbl.write_parquet(df)
+```
+
+The `write_parquet()` method takes a PyArrow table and writes it to Parquet files following the table's schema and partitioning, returning the paths of the written files:
+
+```python
+import pyarrow as pa
+
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "lat": 52.371807, "long": 4.896029},
+        {"city": "San Francisco", "lat": 37.773972, "long": -122.431297},
+        {"city": "Drachten", "lat": 53.11254, "long": 6.0989},
+        {"city": "Paris", "lat": 48.864716, "long": 2.349014},
+    ],
+)
+
+# Write files but don't commit them
+file_paths = tbl.write_parquet(df)
+print(file_paths)
+# ['s3a://warehouse/default/cities/data/00000-0-8e056d57-7ffa-4c22-9f99-52a0e5ea4b19.parquet']
+
+# Files written but not committed - won't appear in queries until committed
+```
+
+To make these files visible when querying the table, you need to commit them using the [`add_files`](#add-files) API:
+
+
+```python
+# Commit the files to the table metadata
+tbl.add_files(file_paths=file_paths)
+
+# Now the data is visible when querying the table
+```
+
+### Delete
+
 
 You can delete some of the data from the table by calling `tbl.delete()` with a desired `delete_filter`.
 
@@ -1054,6 +1099,19 @@ tbl.add_files(file_paths=file_paths)
 
 # A new snapshot is committed to the table with manifests pointing to the existing parquet files
 ```
+
+The `write_parquet()` method provides an easy way to write files in Iceberg-compatible format that can then be committed using `add_files`:
+
+```python
+# Write data to parquet files without committing
+file_paths = tbl.write_parquet(df)
+
+# Commit the files to make them visible in queries
+tbl.add_files(file_paths=file_paths)
+```
+
+This is very useful for detaching the commit process when ingesting data into an Iceberg table with high concurrency, such as using serverless functions. By separating the write and commit phases, you can implement a queue or orchestration system to handle the concurrency lock only during the commit process, which is typically much faster than the data writing phase.
+
 
 <!-- prettier-ignore-start -->
 
