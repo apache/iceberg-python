@@ -148,7 +148,7 @@ def _retry_hook(retry_state: RetryCallState) -> None:
 
 
 _RETRY_ARGS = {
-    "retry": retry_if_exception_type(AuthorizationExpiredError),
+    "retry": retry_if_exception_type((AuthorizationExpiredError, UnauthorizedError)),
     "stop": stop_after_attempt(2),
     "before_sleep": _retry_hook,
     "reraise": True,

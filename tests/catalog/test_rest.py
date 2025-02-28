@@ -558,7 +558,8 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
-def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
+@pytest.mark.parametrize("status_code", [401, 419])
+def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, status_code: int) -> None:
     new_token = "new_jwt_token"
     new_header = dict(TEST_HEADERS)
     new_header["Authorization"] = f"Bearer {new_token}"
@@ -568,12 +569,12 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
         f"{TEST_URI}v1/namespaces",
         [
             {
-                "status_code": 419,
+                "status_code": status_code,
                 "json": {
                     "error": {
                         "message": "Authorization expired.",
                         "type": "AuthorizationExpiredError",
-                        "code": 419,
+                        "code": status_code,
                     }
                 },
                 "headers": TEST_HEADERS,
