@@ -2254,6 +2254,7 @@ def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: Dict[int, StatisticsCollector],
     parquet_column_mapping: Dict[str, int],
+    check_schema: bool = True,
 ) -> DataFileStatistics:
     """
     Compute and return DataFileStatistics that includes the following.
@@ -2299,7 +2300,15 @@ def data_file_statistics_from_parquet_metadata(
 
         for pos in range(parquet_metadata.num_columns):
             column = row_group.column(pos)
-            field_id = parquet_column_mapping[column.path_in_schema]
+            try:
+                field_id = parquet_column_mapping[column.path_in_schema]
+            except KeyError:
+                if check_schema:
+                    raise
+                else:
+                    logger.warning("PyArrow column %d missing in current schema", pos)
+                    continue
+
 
             stats_col = stats_columns[field_id]
 
@@ -2464,7 +2473,7 @@ def _check_pyarrow_schema_compatible(
     _check_schema_compatible(requested_schema, provided_schema)
 
 
-def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
+def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str], check_schema: bool = True, partition_deductor: Callable[[str], Record] | None = None) -> Iterator[DataFile]:
     for file_path in file_paths:
         input_file = io.new_input(file_path)
         with input_file.open() as input_stream:
@@ -2475,18 +2484,25 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
                 f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
             )
         schema = table_metadata.schema()
-        _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+        if check_schema:
+            _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
 
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=parquet_metadata,
             stats_columns=compute_statistics_plan(schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(schema),
+            check_schema=check_schema,
         )
+        if partition_deductor is None:
+            partition = statistics.partition(table_metadata.spec(), table_metadata.schema())
+        else:
+            partition = partition_deductor(file_path)
+
         data_file = DataFile(
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
-            partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
+            partition=partition,
             file_size_in_bytes=len(input_file),
             sort_order_id=None,
             spec_id=table_metadata.default_spec_id,

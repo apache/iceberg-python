@@ -686,7 +686,7 @@ class Transaction:
             warnings.warn("Delete operation did not match any records")
 
     def add_files(
-        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True
+        self, file_paths: List[str], snapshot_properties: Dict[str, str] = EMPTY_DICT, check_duplicate_files: bool = True, check_schema: bool = True, partition_deductor: Callable[[str], Record] | None = None,
     ) -> None:
         """
         Shorthand API for adding files as data files to the table transaction.
@@ -717,7 +717,7 @@ class Transaction:
             )
         with self.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as update_snapshot:
             data_files = _parquet_files_to_data_files(
-                table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
+                table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io, check_schema = check_schema, partition_deductor = partition_deductor
             )
             for data_file in data_files:
                 update_snapshot.append_data_file(data_file)
@@ -1883,7 +1883,7 @@ class AddFileTask:
     partition_field_value: Record
 
 
-def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO) -> Iterable[DataFile]:
+def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List[str], io: FileIO, check_schema: bool = True, partition_deductor: Callable[[str], Record] | None = None) -> Iterable[DataFile]:
     """Convert a list files into DataFiles.
 
     Returns:
@@ -1891,4 +1891,4 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     """
     from pyiceberg.io.pyarrow import parquet_files_to_data_files
 
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
+    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths), check_schema=check_schema, partition_deductor=parquet_files_to_data_files())
