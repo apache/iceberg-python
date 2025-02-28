@@ -161,7 +161,7 @@ class InspectTable:
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
         for manifest in snapshot.manifests(self.tbl.io):
-            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=False):
                 column_sizes = entry.data_file.column_sizes or {}
                 value_counts = entry.data_file.value_counts or {}
                 null_value_counts = entry.data_file.null_value_counts or {}
