@@ -168,6 +168,10 @@ class _HiveClient:
         self._client = Client(protocol)
 
     def __enter__(self) -> Client:
+        # If the transport is closed, reinitialize it
+        if not self._transport.isOpen():
+            self._init_thrift_client()
+
         self._transport.open()
         if self._ugi:
             self._client.set_ugi(*self._ugi)
