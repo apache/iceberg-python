@@ -46,6 +46,7 @@ from pyiceberg.avro.reader import (
     TimeReader,
     TimestampReader,
     TimestamptzReader,
+    UnknownReader,
     UUIDReader,
 )
 from pyiceberg.avro.writer import (
@@ -66,6 +67,7 @@ from pyiceberg.avro.writer import (
     TimestamptzWriter,
     TimestampWriter,
     TimeWriter,
+    UnknownWriter,
     UUIDWriter,
     Writer,
 )
@@ -100,6 +102,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -192,6 +195,9 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
 
     def visit_binary(self, binary_type: BinaryType) -> Writer:
         return BinaryWriter()
+
+    def visit_unknown(self, unknown_type: UnknownType) -> Writer:
+        return UnknownWriter()
 
 
 CONSTRUCT_WRITER_VISITOR = ConstructWriter()
@@ -341,6 +347,9 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
     def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Writer:
         return BinaryWriter()
 
+    def visit_unknown(self, unknown_type: UnknownType, partner: Optional[IcebergType]) -> Writer:
+        return UnknownWriter()
+
 
 class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
     __slots__ = ("read_types", "read_enums", "context")
@@ -470,6 +479,9 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
     def visit_binary(self, binary_type: BinaryType, partner: Optional[IcebergType]) -> Reader:
         return BinaryReader()
+
+    def visit_unknown(self, unknown_type: UnknownType, partner: Optional[IcebergType]) -> Reader:
+        return UnknownReader()
 
 
 class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
