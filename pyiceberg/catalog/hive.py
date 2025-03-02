@@ -168,19 +168,26 @@ class _HiveClient:
         self._client = Client(protocol)
 
     def __enter__(self) -> Client:
-        # If the transport is closed, reinitialize it
-        if not self._transport.isOpen():
-            self._init_thrift_client()
+        """Ensure transport is open before returning the client."""
+        if self._transport is None or not self._transport.isOpen():
+            self._init_thrift_client()  # Reinitialize transport if closed
 
-        self._transport.open()
+        if not self._transport.isOpen():
+            self._transport.open()
+
         if self._ugi:
             self._client.set_ugi(*self._ugi)
+
         return self._client
 
     def __exit__(
         self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
     ) -> None:
-        self._transport.close()
+        """Close transport if it was opened."""
+        if self._transport:
+            self._transport.close()
+            self._transport = None  # Reset transport so a new one is created next time
+            self._client = None
 
 
 def _construct_hive_storage_descriptor(
