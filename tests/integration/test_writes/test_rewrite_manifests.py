@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from typing import List
 
 import pyarrow as pa
 import pytest
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.manifest import ManifestFile
+from pyiceberg.table import TableProperties
 from utils import _create_table
 
 
@@ -171,49 +174,76 @@ def test_rewrite_small_manifests_non_partitioned_table(session_catalog: Catalog,
     assert expected_records_count == actual_records_count, "Rows must match"
 
 
-def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
-    # Create and append data files
-    # records1 = [ThreeColumnRecord(1, None, "AAAA"), ThreeColumnRecord(1, "BBBBBBBBBB", "BBBB")]
-    # records2 = [ThreeColumnRecord(2, "CCCCCCCCCC", "CCCC"), ThreeColumnRecord(2, "DDDDDDDDDD", "DDDD")]
-    # records3 = [ThreeColumnRecord(3, "EEEEEEEEEE", "EEEE"), ThreeColumnRecord(3, "FFFFFFFFFF", "FFFF")]
-    # records4 = [ThreeColumnRecord(4, "GGGGGGGGGG", "GGGG"), ThreeColumnRecord(4, "HHHHHHHHHH", "HHHH")]
-    # self.table.newFastAppend().appendFile(DataFile.from_records(records1)).commit()
-    # self.table.newFastAppend().appendFile(DataFile.from_records(records2)).commit()
-    # self.table.newFastAppend().appendFile(DataFile.from_records(records3)).commit()
-    # self.table.newFastAppend().appendFile(DataFile.from_records(records4)).commit()
+def compute_manifest_entry_size_bytes(manifests: List[ManifestFile]) -> float:
+    total_size = 0
+    num_entries = 0
+
+    for manifest in manifests:
+        total_size += manifest.manifest_length
+        num_entries += manifest.added_files_count + manifest.existing_files_count + manifest.deleted_files_count
+
+    return total_size / num_entries if num_entries > 0 else 0
+
+
+def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog) -> None:
+    records1 = pa.Table.from_pydict({"c1": [1, 1], "c2": [None, "BBBBBBBBBB"], "c3": ["AAAA", "BBBB"]})
+
+    records2 = records2 = pa.Table.from_pydict({"c1": [2, 2], "c2": ["CCCCCCCCCC", "DDDDDDDDDD"], "c3": ["CCCC", "DDDD"]})
+
+    records3 = records3 = pa.Table.from_pydict({"c1": [3, 3], "c2": ["EEEEEEEEEE", "FFFFFFFFFF"], "c3": ["EEEE", "FFFF"]})
+
+    records4 = records4 = pa.Table.from_pydict({"c1": [4, 4], "c2": ["GGGGGGGGGG", "HHHHHHHHHG"], "c3": ["GGGG", "HHHH"]})
+
+    schema = pa.schema(
+        [
+            ("c1", pa.int64()),
+            ("c2", pa.string()),
+            ("c3", pa.string()),
+        ]
+    )
 
     identifier = "default.test_rewrite_small_manifests_non_partitioned_table"
-    tbl = _create_table(session_catalog, identifier, {"format-version": "2"})
-    tbl.append(arrow_table_with_null)
-    tbl.append(arrow_table_with_null)
-    tbl.append(arrow_table_with_null)
-    tbl.append(arrow_table_with_null)
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, schema=schema)
+
+    tbl.append(records1)
+    tbl.append(records2)
+    tbl.append(records3)
+    tbl.append(records4)
+    tbl.refresh()
 
     tbl.refresh()
     manifests = tbl.current_snapshot().manifests(tbl.io)
     assert len(manifests) == 4, "Should have 4 manifests before rewrite"
 
-    # Perform the rewrite manifests action
-    # actions = SparkActions.get()
+    # manifest_entry_size_bytes = compute_manifest_entry_size_bytes(manifests)
+    target_manifest_size_bytes = 5200 * 2 + 100
+    tbl = (
+        tbl.transaction()
+        .set_properties({TableProperties.MANIFEST_TARGET_SIZE_BYTES: str(target_manifest_size_bytes)})
+        .commit_transaction()
+    )
+
     result = tbl.rewrite_manifests()
 
+    tbl.refresh()
     assert len(result.rewritten_manifests) == 4, "Action should rewrite 4 manifests"
     assert len(result.added_manifests) == 2, "Action should add 2 manifests"
 
-    tbl.refresh()
     new_manifests = tbl.current_snapshot().manifests(tbl.io)
     assert len(new_manifests) == 2, "Should have 2 manifests after rewrite"
 
     assert new_manifests[0].existing_files_count == 4
     assert new_manifests[0].added_files_count == 0
     assert new_manifests[0].deleted_files_count == 0
-    #
-    # assertnew_manifests[1].existingFilesCount(), 4)
-    # self.assertFalse(new_manifests[1].hasAddedFiles())
-    # self.assertFalse(new_manifests[1].hasDeletedFiles())
-    #
-    # # Validate the records
-    # expected_records = records1 + records2 + records3 + records4
-    # result_df = tbl.read()
-    # actual_records = result_df.collect()
-    # self.assertEqual(actual_records, expected_records, "Rows must match")
+
+    assert new_manifests[1].existing_files_count == 4
+    assert new_manifests[1].added_files_count == 0
+    assert new_manifests[1].deleted_files_count == 0
+
+    sorted_df = tbl.scan().to_pandas().sort_values(["c1", "c2"], ascending=[False, False])
+    expectedRecords = (
+        pa.concat_tables([records1, records2, records3, records4]).to_pandas().sort_values(["c1", "c2"], ascending=[False, False])
+    )
+    from pandas.testing import assert_frame_equal
+
+    assert_frame_equal(sorted_df.reset_index(drop=True), expectedRecords.reset_index(drop=True))

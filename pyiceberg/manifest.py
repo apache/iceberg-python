@@ -865,6 +865,7 @@ class ManifestWriter(ABC):
                 entry.snapshot_id, entry.sequence_number, entry.file_sequence_number, entry.data_file
             )
         )
+        self._existing_files += 1
         return self
 
 
