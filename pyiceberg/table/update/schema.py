@@ -153,10 +153,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         new_schema = Catalog._convert_schema_if_needed(new_schema)
 
+        if self._schema == new_schema:
+            return self
+
         for field in self._schema.fields:
             self.delete_column(field.name)
 
-        new_schema = Catalog._convert_schema_if_needed(new_schema)
         for field in new_schema.fields:
             self.add_column(field.name, field.field_type, field.doc, field.required)
 
