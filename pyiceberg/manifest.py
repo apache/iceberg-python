@@ -961,6 +961,7 @@ class ManifestWriter(ABC):
                 data_file=entry.data_file,
             )
         )
+        self._existing_files += 1
         return self
 
 
