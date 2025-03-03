@@ -103,7 +103,7 @@ docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/924
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
-griffe = "1.5.7"
+griffe = "1.6.0"
 jinja2 = "3.1.5"
 mkdocstrings = "0.28.2"
 mkdocstrings-python = "1.16.2"
