@@ -27,33 +27,29 @@ tests = ["arrow", "dask[dataframe]", "docker", "pytest", "pytest-mock"]
 
 [[package]]
 name = "aiobotocore"
-version = "2.20.0"
+version = "2.21.0"
 description = "Async client for aws services using botocore and aiohttp"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "extra == \"s3fs\""
 files = [
-    {file = "aiobotocore-2.20.0-py3-none-any.whl", hash = "sha256:02d9d727355a03f83ee1a4fc91f2fd14966862144b4d2cc3434181e82dfafd83"},
-    {file = "aiobotocore-2.20.0.tar.gz", hash = "sha256:8902d8a96e3a389c99a68d23e2ca07c8d5059439c2a55acf28a8af19e65fe293"},
+    {file = "aiobotocore-2.21.0-py3-none-any.whl", hash = "sha256:05b4e29690a07913297686d819dc8dac341a5361f14fedf444bdd77ae1e36554"},
+    {file = "aiobotocore-2.21.0.tar.gz", hash = "sha256:03d64a41e313ebce76fd7c3e4c854e560032ac5cf71f4d5072616ca6fb9701b5"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.9.2,<4.0.0"
 aioitertools = ">=0.5.1,<1.0.0"
-botocore = ">=1.36.20,<1.36.24"
+botocore = ">=1.37.0,<1.37.2"
 jmespath = ">=0.7.1,<2.0.0"
 multidict = ">=6.0.0,<7.0.0"
 python-dateutil = ">=2.1,<3.0.0"
-urllib3 = [
-    {version = ">=1.25.4,<1.27", markers = "python_version < \"3.10\""},
-    {version = ">=1.25.4,<2.2.0 || >2.2.0,<3", markers = "python_version >= \"3.10\""},
-]
 wrapt = ">=1.10.10,<2.0.0"
 
 [package.extras]
-awscli = ["awscli (>=1.37.20,<1.37.24)"]
-boto3 = ["boto3 (>=1.36.20,<1.36.24)"]
+awscli = ["awscli (>=1.38.0,<1.38.2)"]
+boto3 = ["boto3 (>=1.37.0,<1.37.2)"]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -443,19 +439,19 @@ files = [
 
 [[package]]
 name = "boto3"
-version = "1.36.23"
+version = "1.37.1"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
 files = [
-    {file = "boto3-1.36.23-py3-none-any.whl", hash = "sha256:d59642672b1f35f55f47b317693241ce53333816f47c9e72fcc8fd0e9adc6a87"},
-    {file = "boto3-1.36.23.tar.gz", hash = "sha256:006800604c34382873521b20890b758eea7109d699696ece932131259d0a4658"},
+    {file = "boto3-1.37.1-py3-none-any.whl", hash = "sha256:4320441f904435a1b85e6ecb81793192e522c737cc9ed6566014e29f0a11cb22"},
+    {file = "boto3-1.37.1.tar.gz", hash = "sha256:96d18f7feb0c1fcb95f8837b74b6c8880e1b4e35ce5f8a8f8cb243a090c278ed"},
 ]
 markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\""}
 
 [package.dependencies]
-botocore = ">=1.36.23,<1.37.0"
+botocore = ">=1.37.1,<1.38.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.11.0,<0.12.0"
 
@@ -464,14 +460,14 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.36.23"
+version = "1.37.1"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
 files = [
-    {file = "botocore-1.36.23-py3-none-any.whl", hash = "sha256:886730e79495a2e153842725ebdf85185c8277cdf255b3b5879cd097ddc7fcc3"},
-    {file = "botocore-1.36.23.tar.gz", hash = "sha256:9feaa2d876f487e718a5fd80a35fa401042b518c0c75117d3e1ea39a567439e7"},
+    {file = "botocore-1.37.1-py3-none-any.whl", hash = "sha256:c1db1bfc5d8c6b3b6d1ca6794f605294b4264e82a7e727b88e0fef9c2b9fbb9c"},
+    {file = "botocore-1.37.1.tar.gz", hash = "sha256:b194db8fb2a0ffba53568c364ae26166e7eec0445496b2ac86a6e142f3dd982f"},
 ]
 markers = {main = "extra == \"dynamodb\" or extra == \"glue\" or extra == \"rest-sigv4\" or extra == \"s3fs\""}
 
