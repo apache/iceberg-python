@@ -48,11 +48,11 @@ RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_V
 
 # Download iceberg spark runtime
 
-RUN curl --retry 5 -s https://repository.apache.org/content/repositories/orgapacheiceberg-1185/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.2/iceberg-spark-runtime-3.5_2.12-1.7.2.jar -Lo iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
+RUN curl --retry 5 -s https://repository.apache.org/content/repositories/orgapacheiceberg-1186/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.2/iceberg-spark-runtime-3.5_2.12-1.7.2.jar -Lo iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
  && mv iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar /opt/spark/jars
 
 # Download AWS bundle
-RUN curl --retry 5 -s https://repository.apache.org/content/repositories/orgapacheiceberg-1185/org/apache/iceberg/iceberg-aws-bundle/1.7.2/iceberg-aws-bundle-1.7.2.jar -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
+RUN curl --retry 5 -s https://repository.apache.org/content/repositories/orgapacheiceberg-1186/org/apache/iceberg/iceberg-aws-bundle/1.7.2/iceberg-aws-bundle-1.7.2.jar -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
 
 COPY spark-defaults.conf /opt/spark/conf
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
