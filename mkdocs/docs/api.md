@@ -474,6 +474,71 @@ lat: [[48.864716],[52.371807],[53.11254],[37.773972]]
 long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
 ```
 
+### Upsert
+
+PyIceberg supports upsert operations, meaning that it is able to merge an Arrow table into an Iceberg table. Rows are considered the same based on the [identifier field](https://iceberg.apache.org/spec/?column-projection#identifier-field-ids). If a row is already in the table, it will update that row. If a row cannot be found, it will insert that new row.
+
+Consider the following table, with some data:
+
+```python
+from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType, NestedField, StringType
+
+import pyarrow as pa
+
+schema = Schema(
+    NestedField(1, "city", StringType(), required=True),
+    NestedField(2, "inhabitants", IntegerType(), required=True),
+    # Mark City as the identifier field, also known as the primary-key
+    identifier_field_ids=[1]
+)
+
+tbl = catalog.create_table("default.cities", schema=schema)
+
+arrow_schema = pa.schema(
+    [
+        pa.field("city", pa.string(), nullable=False),
+        pa.field("inhabitants", pa.int32(), nullable=False),
+    ]
+)
+
+# Write some data
+df = pa.Table.from_pylist(
+    [
+        {"city": "Amsterdam", "inhabitants": 921402},
+        {"city": "San Francisco", "inhabitants": 808988},
+        {"city": "Drachten", "inhabitants": 45019},
+        {"city": "Paris", "inhabitants": 2103000},
+    ],
+    schema=arrow_schema
+)
+tbl.append(df)
+```
+
+Next, we'll upsert a table into the Iceberg table:
+
+```python
+df = pa.Table.from_pylist(
+    [
+        # Will be updated, the inhabitants has been updated
+        {"city": "Drachten", "inhabitants": 45505},
+
+        # New row, will be inserted
+        {"city": "Berlin", "inhabitants": 3432000},
+
+        # Ignored, already exists in the table
+        {"city": "Paris", "inhabitants": 2103000},
+    ],
+    schema=arrow_schema
+)
+upd = tbl.upsert(df)
+
+assert upd.rows_updated == 1
+assert upd.rows_inserted == 1
+```
+
+PyIceberg will automatically detect which rows need to be updated, inserted or can simply be ignored.
+
 ## Inspecting tables
 
 To explore the table metadata, tables can be inspected.

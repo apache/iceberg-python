@@ -107,6 +107,7 @@ from pyiceberg.io import (
     S3_PROXY_URI,
     S3_REGION,
     S3_REQUEST_TIMEOUT,
+    S3_RESOLVE_REGION,
     S3_ROLE_ARN,
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
@@ -192,6 +193,17 @@ DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 
 T = TypeVar("T")
+
+
+@lru_cache
+def _cached_resolve_s3_region(bucket: str) -> Optional[str]:
+    from pyarrow.fs import resolve_s3_region
+
+    try:
+        return resolve_s3_region(bucket=bucket)
+    except (OSError, TypeError):
+        logger.warning(f"Unable to resolve region for bucket {bucket}")
+        return None
 
 
 class UnsupportedPyArrowTypeException(Exception):
@@ -414,23 +426,22 @@ class PyArrowFileIO(FileIO):
         return S3FileSystem(**client_kwargs)
 
     def _initialize_s3_fs(self, netloc: Optional[str]) -> FileSystem:
-        from pyarrow.fs import S3FileSystem, resolve_s3_region
+        from pyarrow.fs import S3FileSystem
 
-        # Resolve region from netloc(bucket), fallback to user-provided region
         provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
 
-        try:
-            bucket_region = resolve_s3_region(bucket=netloc)
-        except (OSError, TypeError):
-            bucket_region = None
-            logger.warning(f"Unable to resolve region for bucket {netloc}, using default region {provided_region}")
-
-        bucket_region = bucket_region or provided_region
-        if bucket_region != provided_region:
-            logger.warning(
-                f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
-                f"provided region {provided_region}, actual region {bucket_region}"
-            )
+        # Do this when we don't provide the region at all, or when we explicitly enable it
+        if provided_region is None or property_as_bool(self.properties, S3_RESOLVE_REGION, False) is True:
+            # Resolve region from netloc(bucket), fallback to user-provided region
+            # Only supported by buckets hosted by S3
+            bucket_region = _cached_resolve_s3_region(bucket=netloc) or provided_region
+            if provided_region is not None and bucket_region != provided_region:
+                logger.warning(
+                    f"PyArrow FileIO overriding S3 bucket region for bucket {netloc}: "
+                    f"provided region {provided_region}, actual region {bucket_region}"
+                )
+        else:
+            bucket_region = provided_region
 
         client_kwargs: Dict[str, Any] = {
             "endpoint_override": self.properties.get(S3_ENDPOINT),
@@ -1178,7 +1189,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif isinstance(primitive, pa.Decimal128Type):
             primitive = cast(pa.Decimal128Type, primitive)
             return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive) or pa.types.is_large_string(primitive):
+        elif pa.types.is_string(primitive) or pa.types.is_large_string(primitive) or pa.types.is_string_view(primitive):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
@@ -1204,7 +1215,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             elif primitive.tz is None:
                 return TimestampType()
 
-        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
+        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive) or pa.types.is_binary_view(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
@@ -2441,36 +2452,43 @@ def _check_pyarrow_schema_compatible(
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
     for file_path in file_paths:
-        input_file = io.new_input(file_path)
-        with input_file.open() as input_stream:
-            parquet_metadata = pq.read_metadata(input_stream)
-
-        if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
-            raise NotImplementedError(
-                f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
-            )
-        schema = table_metadata.schema()
-        _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
-
-        statistics = data_file_statistics_from_parquet_metadata(
-            parquet_metadata=parquet_metadata,
-            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
-        )
-        data_file = DataFile(
-            content=DataFileContent.DATA,
-            file_path=file_path,
-            file_format=FileFormat.PARQUET,
-            partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
-            file_size_in_bytes=len(input_file),
-            sort_order_id=None,
-            spec_id=table_metadata.default_spec_id,
-            equality_ids=None,
-            key_metadata=None,
-            **statistics.to_serialized_dict(),
-        )
-
+        data_file = parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
         yield data_file
+
+
+def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
+    input_file = io.new_input(file_path)
+    with input_file.open() as input_stream:
+        parquet_metadata = pq.read_metadata(input_stream)
+
+    arrow_schema = parquet_metadata.schema.to_arrow_schema()
+    if visit_pyarrow(arrow_schema, _HasIds()):
+        raise NotImplementedError(
+            f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
+        )
+
+    schema = table_metadata.schema()
+    _check_pyarrow_schema_compatible(schema, arrow_schema)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=parquet_metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
+        file_size_in_bytes=len(input_file),
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    return data_file
 
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
