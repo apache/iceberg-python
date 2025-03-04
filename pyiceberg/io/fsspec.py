@@ -23,6 +23,7 @@ import os
 from copy import copy
 from functools import lru_cache, partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -31,8 +32,6 @@ from typing import (
 from urllib.parse import urlparse
 
 import requests
-from botocore import UNSIGNED
-from botocore.awsrequest import AWSRequest
 from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
@@ -65,6 +64,7 @@ from pyiceberg.io import (
     S3_ENDPOINT,
     S3_PROXY_URI,
     S3_REGION,
+    S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
     S3_SIGNER_ENDPOINT,
@@ -78,18 +78,22 @@ from pyiceberg.io import (
     OutputStream,
 )
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from botocore.awsrequest import AWSRequest
 
-def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> AWSRequest:
+
+def s3v4_rest_signer(properties: Properties, request: "AWSRequest", **_: Any) -> "AWSRequest":
     signer_url = properties.get(S3_SIGNER_URI, properties["uri"]).rstrip("/")
     signer_endpoint = properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
     signer_headers = {}
     if token := properties.get(TOKEN):
         signer_headers = {"Authorization": f"Bearer {token}"}
+    signer_headers.update(get_header_properties(properties))
 
     signer_body = {
         "method": request.method,
@@ -113,7 +117,7 @@ def s3v4_rest_signer(properties: Properties, request: AWSRequest, **_: Any) -> A
     return request
 
 
-SIGNERS: Dict[str, Callable[[Properties, AWSRequest], AWSRequest]] = {"S3V4RestSigner": s3v4_rest_signer}
+SIGNERS: Dict[str, Callable[[Properties, "AWSRequest"], "AWSRequest"]] = {"S3V4RestSigner": s3v4_rest_signer}
 
 
 def _file(_: Properties) -> LocalFileSystem:
@@ -140,6 +144,8 @@ def _s3(properties: Properties) -> AbstractFileSystem:
             register_events["before-sign.s3"] = signer_func_with_properties
 
             # Disable the AWS Signer
+            from botocore import UNSIGNED
+
             config_kwargs["signature_version"] = UNSIGNED
         else:
             raise ValueError(f"Signer not available: {signer}")
@@ -149,6 +155,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
         config_kwargs["connect_timeout"] = float(connect_timeout)
+
+    if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
+        config_kwargs["read_timeout"] = float(request_timeout)
 
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
@@ -180,9 +189,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
     for key, sas_token in {
-        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value
-        for key, value in properties.items()
-        if key.startswith(ADLS_SAS_TOKEN) and key.endswith(".windows.net")
+        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(ADLS_SAS_TOKEN)
     }.items():
         if ADLS_ACCOUNT_NAME not in properties:
             properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]

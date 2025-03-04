@@ -41,7 +41,7 @@ from mypy_boto3_glue.type_defs import (
 )
 
 from pyiceberg.catalog import (
-    DEPRECATED_BOTOCORE_SESSION,
+    BOTOCORE_SESSION,
     EXTERNAL_TABLE,
     ICEBERG,
     LOCATION,
@@ -311,7 +311,7 @@ class GlueCatalog(MetastoreCatalog):
         session = boto3.Session(
             profile_name=properties.get(GLUE_PROFILE_NAME),
             region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
-            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
+            botocore_session=properties.get(BOTOCORE_SESSION),
             aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
             aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
@@ -786,6 +786,9 @@ class GlueCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     @staticmethod

@@ -69,7 +69,10 @@ from pyiceberg.io.pyarrow import (
     _read_deletes,
     _to_requested_schema,
     bin_pack_arrow_table,
+    compute_statistics_plan,
+    data_file_statistics_from_parquet_metadata,
     expression_to_pyarrow,
+    parquet_path_to_id_mapping,
     schema_to_pyarrow,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -77,6 +80,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties
 from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record
 from pyiceberg.types import (
@@ -99,6 +103,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
 )
+from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
 
 
@@ -1127,6 +1132,135 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
+def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    # Test by adding a non-partitioned data file to a partitioned table, verifying partition value projection from manifest metadata.
+    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
+    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
+
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, IdentityTransform(), "partition_id"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_projection_partition",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_data = pa.array(["foo"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        # projected value
+        partition=Record(partition_id=1),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
+
+    assert (
+        str(table.scan().to_arrow())
+        == """pyarrow.Table
+other_field: large_string
+partition_id: int64
+----
+other_field: [["foo"]]
+partition_id: [[1]]"""
+    )
+
+
+def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value projection from manifest metadata.
+    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
+    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
+    schema = Schema(
+        NestedField(1, "field_1", StringType(), required=False),
+        NestedField(2, "field_2", IntegerType(), required=False),
+        NestedField(3, "field_3", IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(2, 1000, IdentityTransform(), "field_2"),
+        PartitionField(3, 1001, IdentityTransform(), "field_3"),
+    )
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_projection_partitions",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_data = pa.array(["foo"], type=pa.string())
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([file_data], names=["field_1"]), file_loc)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+
+    unpartitioned_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        # projected value
+        partition=Record(field_2=2, field_3=3),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(unpartitioned_file)
+
+    assert (
+        str(table.scan().to_arrow())
+        == """pyarrow.Table
+field_1: large_string
+field_2: int64
+field_3: int64
+----
+field_1: [["foo"]]
+field_2: [[2]]
+field_3: [[3]]"""
+    )
+
+
+@pytest.fixture
+def catalog() -> InMemoryCatalog:
+    return InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
+
+
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:
     result_table = project(schema_int, [file_int], GreaterThan("id", 4))
     assert len(result_table.columns[0]) == 0
@@ -2151,14 +2285,14 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
         raise OSError("Unknown bucket")
 
     # For a pyarrow io instance with configured default s3 region
-    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region})
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region, "s3.resolve-region": "true"})
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         mock_s3_region_resolver.side_effect = _s3_region_map
 
         # The region is set to provided region if bucket region cannot be resolved
         with caplog.at_level(logging.WARNING):
             assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
-        assert f"Unable to resolve region for bucket non-exist-bucket, using default region {user_provided_region}" in caplog.text
+        assert "Unable to resolve region for bucket non-exist-bucket" in caplog.text
 
         for bucket_region in bucket_regions:
             # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region

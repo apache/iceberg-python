@@ -207,7 +207,7 @@ class InspectTable:
                             "column_sizes": dict(entry.data_file.column_sizes),
                             "value_counts": dict(entry.data_file.value_counts),
                             "null_value_counts": dict(entry.data_file.null_value_counts),
-                            "nan_value_counts": entry.data_file.nan_value_counts,
+                            "nan_value_counts": dict(entry.data_file.nan_value_counts),
                             "lower_bounds": entry.data_file.lower_bounds,
                             "upper_bounds": entry.data_file.upper_bounds,
                             "key_metadata": entry.data_file.key_metadata,

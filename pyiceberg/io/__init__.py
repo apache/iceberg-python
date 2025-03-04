@@ -59,8 +59,10 @@ S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
+S3_RESOLVE_REGION = "s3.resolve-region"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
+S3_REQUEST_TIMEOUT = "s3.request-timeout"
 S3_SIGNER_URI = "s3.signer.uri"
 S3_SIGNER_ENDPOINT = "s3.signer.endpoint"
 S3_SIGNER_ENDPOINT_DEFAULT = "v1/aws/s3/sign"
@@ -315,8 +317,8 @@ def _import_file_io(io_impl: str, properties: Properties) -> Optional[FileIO]:
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize FileIO: %s", io_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize FileIO: {io_impl}", exc_info=exc)
         return None
 
 

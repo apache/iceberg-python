@@ -55,7 +55,9 @@ from pyiceberg.table import (
     CreateTableTransaction,
     StagedTable,
     Table,
+    TableProperties,
 )
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -70,8 +72,7 @@ from pyiceberg.typedef import (
     RecursiveDict,
 )
 from pyiceberg.utils.config import Config, merge_config
-from pyiceberg.utils.deprecated import deprecated as deprecated
-from pyiceberg.utils.deprecated import deprecation_message
+from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -95,6 +96,7 @@ METADATA = "metadata"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
+BOTOCORE_SESSION = "botocore_session"
 
 TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     r"""
@@ -107,8 +109,6 @@ TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     re.X,
 )
 
-DEPRECATED_BOTOCORE_SESSION = "botocore_session"
-
 
 class CatalogType(Enum):
     REST = "rest"
@@ -116,6 +116,7 @@ class CatalogType(Enum):
     GLUE = "glue"
     DYNAMODB = "dynamodb"
     SQL = "sql"
+    IN_MEMORY = "in-memory"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -162,12 +163,22 @@ def load_sql(name: str, conf: Properties) -> Catalog:
         ) from exc
 
 
+def load_in_memory(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.memory import InMemoryCatalog
+
+        return InMemoryCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
+
+
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
     CatalogType.GLUE: load_glue,
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
+    CatalogType.IN_MEMORY: load_in_memory,
 }
 
 
@@ -241,7 +252,7 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
 
     catalog_type = None
     if provided_catalog_type and isinstance(provided_catalog_type, str):
-        catalog_type = CatalogType[provided_catalog_type.upper()]
+        catalog_type = CatalogType(provided_catalog_type.lower())
     elif not provided_catalog_type:
         catalog_type = infer_catalog_type(name, conf)
 
@@ -298,8 +309,8 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Opt
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
         return class_(name, **properties)
-    except ModuleNotFoundError:
-        logger.warning("Could not initialize Catalog: %s", catalog_impl)
+    except ModuleNotFoundError as exc:
+        logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=exc)
         return None
 
 
@@ -436,6 +447,17 @@ class Catalog(ABC):
 
         Returns:
             bool: True if the table exists, False otherwise.
+        """
+
+    @abstractmethod
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
+        """Check if a view exists.
+
+        Args:
+            identifier (str | Identifier): View identifier.
+
+        Returns:
+            bool: True if the view exists, False otherwise.
         """
 
     @abstractmethod
@@ -735,6 +757,21 @@ class Catalog(ABC):
             pass
         raise ValueError(f"{type(schema)=}, but it must be pyiceberg.schema.Schema or pyarrow.Schema")
 
+    @staticmethod
+    def _delete_old_metadata(io: FileIO, base: TableMetadata, metadata: TableMetadata) -> None:
+        """Delete oldest metadata if config is set to true."""
+        delete_after_commit: bool = property_as_bool(
+            metadata.properties,
+            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED,
+            TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT,
+        )
+
+        if delete_after_commit:
+            removed_previous_metadata_files: set[str] = {log.metadata_file for log in base.metadata_log}
+            current_metadata_files: set[str] = {log.metadata_file for log in metadata.metadata_log}
+            removed_previous_metadata_files.difference_update(current_metadata_files)
+            delete_files(io, removed_previous_metadata_files, METADATA)
+
     def __repr__(self) -> str:
         """Return the string representation of the Catalog class."""
         return f"{self.name} ({self.__class__})"
@@ -743,13 +780,6 @@ class Catalog(ABC):
 class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
-
-        if self.properties.get(DEPRECATED_BOTOCORE_SESSION):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {DEPRECATED_BOTOCORE_SESSION} is deprecated and will be removed.",
-            )
 
     def create_table_transaction(
         self,
@@ -818,7 +848,8 @@ class MetastoreCatalog(Catalog, ABC):
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        provider = load_location_provider(location, properties)
+        metadata_location = provider.new_table_metadata_file_location()
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -849,7 +880,8 @@ class MetastoreCatalog(Catalog, ABC):
         )
 
         new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        new_metadata_location = self._get_metadata_location(updated_metadata.location, new_metadata_version)
+        provider = load_location_provider(updated_metadata.location, updated_metadata.properties)
+        new_metadata_location = provider.new_table_metadata_file_location(new_metadata_version)
 
         return StagedTable(
             identifier=table_identifier,
@@ -905,13 +937,6 @@ class MetastoreCatalog(Catalog, ABC):
     @staticmethod
     def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
         ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
-
-    @staticmethod
-    def _get_metadata_location(location: str, new_version: int = 0) -> str:
-        if new_version < 0:
-            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
-        version_str = f"{new_version:05d}"
-        return f"{location}/metadata/{version_str}-{uuid.uuid4()}.metadata.json"
 
     @staticmethod
     def _parse_metadata_version(metadata_location: str) -> int:

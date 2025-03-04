@@ -30,7 +30,7 @@ from typing import (
 import boto3
 
 from pyiceberg.catalog import (
-    DEPRECATED_BOTOCORE_SESSION,
+    BOTOCORE_SESSION,
     ICEBERG,
     METADATA_LOCATION,
     PREVIOUS_METADATA_LOCATION,
@@ -54,6 +54,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -99,7 +100,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         session = boto3.Session(
             profile_name=properties.get(DYNAMODB_PROFILE_NAME),
             region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
-            botocore_session=properties.get(DEPRECATED_BOTOCORE_SESSION),
+            botocore_session=properties.get(BOTOCORE_SESSION),
             aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
             aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
@@ -173,7 +174,9 @@ class DynamoDbCatalog(MetastoreCatalog):
         database_name, table_name = self.identifier_to_database_and_table(identifier)
 
         location = self._resolve_table_location(location, database_name, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        provider = load_location_provider(table_location=location, table_properties=properties)
+        metadata_location = provider.new_table_metadata_file_location()
+
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -527,6 +530,9 @@ class DynamoDbCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def drop_view(self, identifier: Union[str, Identifier]) -> None:
+        raise NotImplementedError
+
+    def view_exists(self, identifier: Union[str, Identifier]) -> bool:
         raise NotImplementedError
 
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> Dict[str, Any]:

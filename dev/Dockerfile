@@ -39,7 +39,7 @@ WORKDIR ${SPARK_HOME}
 # Remember to also update `tests/conftest`'s spark setting
 ENV SPARK_VERSION=3.5.4
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
-ENV ICEBERG_VERSION=1.6.0
+ENV ICEBERG_VERSION=1.8.0
 ENV PYICEBERG_VERSION=0.8.1
 
 RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
@@ -47,6 +47,7 @@ RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_V
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
 # Download iceberg spark runtime
+
 RUN curl --retry 5 -s https://repository.apache.org/content/repositories/orgapacheiceberg-1185/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.2/iceberg-spark-runtime-3.5_2.12-1.7.2.jar -Lo iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
  && mv iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar /opt/spark/jars
 
