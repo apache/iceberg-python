@@ -1581,6 +1581,11 @@ class ArrowScan:
         result = pa.concat_tables(tables, promote_options="permissive")
 
         if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
+            )
             result = result.cast(arrow_schema)
 
         if self._limit is not None:
