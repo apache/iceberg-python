@@ -1438,7 +1438,8 @@ def _task_to_record_batches(
                 for name, value in projected_missing_fields.items():
                     index = result_batch.schema.get_field_index(name)
                     if index != -1:
-                        result_batch = result_batch.set_column(index, name, [value])
+                        arr = pa.repeat(value, result_batch.num_rows)
+                        result_batch = result_batch.set_column(index, name, arr)
 
             yield result_batch
 
