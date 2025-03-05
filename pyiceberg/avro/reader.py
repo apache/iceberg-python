@@ -203,11 +203,10 @@ class UUIDReader(Reader):
 
 class UnknownReader(Reader):
     def read(self, decoder: BinaryDecoder) -> None:
-        _ = decoder.read_bytes()
         return None
 
     def skip(self, decoder: BinaryDecoder) -> None:
-        decoder.skip_bytes()
+        pass
 
 
 @dataclass(frozen=True)
