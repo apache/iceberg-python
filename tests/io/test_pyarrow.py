@@ -977,7 +977,7 @@ def project(
     ).to_table(
         tasks=[
             FileScanTask(
-                DataFile(
+                DataFile.from_args(
                     content=DataFileContent.DATA,
                     file_path=file,
                     file_format=FileFormat.PARQUET,
@@ -1163,12 +1163,12 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
 
-    unpartitioned_file = DataFile(
+    unpartitioned_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_loc,
         file_format=FileFormat.PARQUET,
         # projected value
-        partition=Record(partition_id=1),
+        partition=Record(1),
         file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
         spec_id=table.metadata.default_spec_id,
@@ -1225,12 +1225,12 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
     )
 
-    unpartitioned_file = DataFile(
+    unpartitioned_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_loc,
         file_format=FileFormat.PARQUET,
         # projected value
-        partition=Record(field_2=2, field_3=3),
+        partition=Record(2, 3),
         file_size_in_bytes=os.path.getsize(file_loc),
         sort_order_id=None,
         spec_id=table.metadata.default_spec_id,
@@ -1540,7 +1540,7 @@ def deletes_file(tmp_path: str, example_task: FileScanTask) -> str:
 
 
 def test_read_deletes(deletes_file: str, example_task: FileScanTask) -> None:
-    deletes = _read_deletes(LocalFileSystem(), DataFile(file_path=deletes_file, file_format=FileFormat.PARQUET))
+    deletes = _read_deletes(LocalFileSystem(), DataFile.from_args(file_path=deletes_file, file_format=FileFormat.PARQUET))
     assert set(deletes.keys()) == {example_task.file.file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
@@ -1549,7 +1549,9 @@ def test_delete(deletes_file: str, example_task: FileScanTask, table_schema_simp
     metadata_location = "file://a/b/c.json"
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
-        delete_files={DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)},
+        delete_files={
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET)
+        },
     )
     with_deletes = ArrowScan(
         table_metadata=TableMetadataV2(
@@ -1583,8 +1585,8 @@ def test_delete_duplicates(deletes_file: str, example_task: FileScanTask, table_
     example_task_with_delete = FileScanTask(
         data_file=example_task.file,
         delete_files={
-            DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
-            DataFile(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
+            DataFile.from_args(content=DataFileContent.POSITION_DELETES, file_path=deletes_file, file_format=FileFormat.PARQUET),
         },
     )
 
@@ -2143,12 +2145,12 @@ def test_partition_for_demo() -> None:
     )
     result = _determine_partitions(partition_spec, test_schema, arrow_table)
     assert {table_partition.partition_key.partition for table_partition in result} == {
-        Record(n_legs_identity=2, year_identity=2020),
-        Record(n_legs_identity=100, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2021),
-        Record(n_legs_identity=4, year_identity=2022),
-        Record(n_legs_identity=2, year_identity=2022),
-        Record(n_legs_identity=5, year_identity=2019),
+        Record(2, 2020),
+        Record(100, 2021),
+        Record(4, 2021),
+        Record(4, 2022),
+        Record(2, 2022),
+        Record(5, 2019),
     }
     assert (
         pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
@@ -2172,7 +2174,7 @@ def test_identity_partition_on_multi_columns() -> None:
         (None, 4, "Kirin"),
         (2021, None, "Fish"),
     ] * 2
-    expected = {Record(n_legs_identity=test_rows[i][1], year_identity=test_rows[i][0]) for i in range(len(test_rows))}
+    expected = {Record(test_rows[i][1], test_rows[i][0]) for i in range(len(test_rows))}
     partition_spec = PartitionSpec(
         PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="n_legs_identity"),
         PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="year_identity"),

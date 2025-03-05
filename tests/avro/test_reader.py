@@ -343,7 +343,7 @@ def test_read_struct(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
     decoder = decoder_class(b"\x18")
     struct = StructType(NestedField(1, "id", IntegerType(), required=True))
     result = StructReader(((0, IntegerReader()),), Record, struct).read(decoder)
-    assert repr(result) == "Record[id=12]"
+    assert repr(result) == "Record[12]"
 
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
@@ -354,10 +354,10 @@ def test_read_struct_lambda(decoder_class: Callable[[bytes], BinaryDecoder]) -> 
     # You can also pass in an arbitrary function that returns a struct
     result = StructReader(
         ((0, IntegerReader()),),
-        lambda struct: Record(struct=struct),
+        Record,
         struct,  # pylint: disable=unnecessary-lambda
     ).read(decoder)
-    assert repr(result) == "Record[id=12]"
+    assert repr(result) == "Record[12]"
 
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
@@ -369,19 +369,3 @@ def test_read_not_struct_type(decoder_class: Callable[[bytes], BinaryDecoder]) -
         _ = StructReader(((0, IntegerReader()),), str, struct).read(decoder)  # type: ignore
 
     assert "Incompatible with StructProtocol: <class 'str'>" in str(exc_info.value)
-
-
-@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
-def test_read_struct_exception_handling(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
-    decoder = decoder_class(b"\x18")
-
-    def raise_err(struct: StructType) -> None:
-        raise TypeError("boom")
-
-    struct = StructType(NestedField(1, "id", IntegerType(), required=True))
-    # You can also pass in an arbitrary function that returns a struct
-
-    with pytest.raises(ValueError) as exc_info:
-        _ = StructReader(((0, IntegerReader()),), raise_err, struct).read(decoder)  # type: ignore
-
-    assert "Unable to initialize struct:" in str(exc_info.value)

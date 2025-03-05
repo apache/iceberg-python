@@ -16,14 +16,7 @@
 # under the License.
 import pytest
 
-from pyiceberg.schema import Schema
 from pyiceberg.typedef import FrozenDict, KeyDefaultDict, Record
-from pyiceberg.types import (
-    IntegerType,
-    NestedField,
-    StringType,
-    StructType,
-)
 
 
 def test_setitem_frozendict() -> None:
@@ -46,44 +39,36 @@ def test_keydefaultdict() -> None:
     assert defaultdict[22] == 1
 
 
-def test_record_repr(table_schema_simple: Schema) -> None:
-    r = Record("vo", 1, True, struct=table_schema_simple.as_struct())
-    assert repr(r) == "Record[foo='vo', bar=1, baz=True]"
-
-
-def test_named_record() -> None:
-    r = Record(struct=StructType(NestedField(0, "id", IntegerType()), NestedField(1, "name", StringType())))
-
-    with pytest.raises(AttributeError):
-        assert r.id is None  # type: ignore
-
-    with pytest.raises(AttributeError):
-        assert r.name is None  # type: ignore
-
-    r[0] = 123
-    r[1] = "abc"
-
-    assert r[0] == 123
-    assert r[1] == "abc"
-
-    assert r.id == 123  # type: ignore
-    assert r.name == "abc"  # type: ignore
-
-
-def test_record_positional_args() -> None:
-    r = Record(1, "a", True)
-    assert repr(r) == "Record[field1=1, field2='a', field3=True]"
-
-
 def test_record_named_args() -> None:
-    r = Record(foo=1, bar="a", baz=True)
-
-    assert r.foo == 1  # type: ignore
-    assert r.bar == "a"  # type: ignore
-    assert r.baz is True  # type: ignore
+    r = Record(1, "a", True)
 
     assert r[0] == 1
     assert r[1] == "a"
     assert r[2] is True
 
-    assert repr(r) == "Record[foo=1, bar='a', baz=True]"
+    assert repr(r) == "Record[1, a, True]"
+
+
+#
+# def test_bind_record_nested(table_schema_nested: Schema) -> None:
+#     struct = table_schema_nested.as_struct()
+#     data = {
+#         "foo": "str",
+#         "bar": 123,
+#         "baz": True,
+#         "qux": ["a", "b", "c"],
+#         "quux": {"a": 1, "b": 2},
+#         "location": [{"latitude": 52.377956, "longitude": 4.897070}, {"latitude": 4.897070, "longitude": -122.431297}],
+#         "person": {"name": "Fokko", "age": 35},  # Possible data quality issue
+#     }
+#     res = _bind_to_struct(struct, data)
+#
+#     assert res == Record(
+#         "str",
+#         123,
+#         True,
+#         ["a", "b", "c"],
+#         {"a": 1, "b": 2},
+#         [Record(52.377956, 4.89707), Record(4.89707, -122.431297)],
+#         Record("Fokko", 35),
+#     )

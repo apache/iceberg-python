@@ -389,10 +389,10 @@ def test_static_table_io_does_not_exist(metadata_location: str) -> None:
 
 
 def test_match_deletes_to_datafile() -> None:
-    data_entry = ManifestEntry(
+    data_entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=1,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.DATA,
             file_path="s3://bucket/0000.parquet",
             file_format=FileFormat.PARQUET,
@@ -401,10 +401,10 @@ def test_match_deletes_to_datafile() -> None:
             file_size_in_bytes=3,
         ),
     )
-    delete_entry_1 = ManifestEntry(
+    delete_entry_1 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=0,  # Older than the data
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0001-delete.parquet",
             file_format=FileFormat.PARQUET,
@@ -413,10 +413,10 @@ def test_match_deletes_to_datafile() -> None:
             file_size_in_bytes=3,
         ),
     )
-    delete_entry_2 = ManifestEntry(
+    delete_entry_2 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=3,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0002-delete.parquet",
             file_format=FileFormat.PARQUET,
@@ -440,10 +440,10 @@ def test_match_deletes_to_datafile() -> None:
 
 
 def test_match_deletes_to_datafile_duplicate_number() -> None:
-    data_entry = ManifestEntry(
+    data_entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=1,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.DATA,
             file_path="s3://bucket/0000.parquet",
             file_format=FileFormat.PARQUET,
@@ -452,10 +452,10 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
             file_size_in_bytes=3,
         ),
     )
-    delete_entry_1 = ManifestEntry(
+    delete_entry_1 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=3,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0001-delete.parquet",
             file_format=FileFormat.PARQUET,
@@ -470,10 +470,10 @@ def test_match_deletes_to_datafile_duplicate_number() -> None:
             upper_bounds={},
         ),
     )
-    delete_entry_2 = ManifestEntry(
+    delete_entry_2 = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         sequence_number=3,
-        data_file=DataFile(
+        data_file=DataFile.from_args(
             content=DataFileContent.POSITION_DELETES,
             file_path="s3://bucket/0002-delete.parquet",
             file_format=FileFormat.PARQUET,
