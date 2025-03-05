@@ -164,6 +164,8 @@ def test_inspect_entries(
 
     # Write some data
     tbl.append(arrow_table_with_null)
+    # Generate a DELETE entry
+    tbl.overwrite(arrow_table_with_null)
 
     def check_pyiceberg_df_equals_spark_df(df: pa.Table, spark_df: DataFrame) -> None:
         assert df.column_names == [
@@ -185,6 +187,8 @@ def test_inspect_entries(
 
         lhs = df.to_pandas()
         rhs = spark_df.toPandas()
+        assert len(lhs) == len(rhs)
+
         for column in df.column_names:
             for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
                 if column == "data_file":
