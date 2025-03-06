@@ -27,6 +27,7 @@ from pyiceberg.table.name_mapping import MappedField, NameMapping, create_mappin
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import EMPTY_DICT, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -69,7 +70,7 @@ def simple_table(catalog: Catalog, table_schema_simple: Schema) -> Table:
     return _create_table_with_schema(catalog, table_schema_simple)
 
 
-def _create_table_with_schema(catalog: Catalog, schema: Schema) -> Table:
+def _create_table_with_schema(catalog: Catalog, schema: Schema, properties: Properties = EMPTY_DICT) -> Table:
     tbl_name = "default.test_schema_evolution"
     try:
         catalog.drop_table(tbl_name)
@@ -78,7 +79,7 @@ def _create_table_with_schema(catalog: Catalog, schema: Schema) -> Table:
     return catalog.create_table(
         identifier=tbl_name,
         schema=schema,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json(), **properties},
     )
 
 
@@ -1076,9 +1077,8 @@ def test_add_required_column(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
     update = table.update_schema()
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="Incompatible change: cannot add required column: data"):
         update.add_column(path="data", field_type=IntegerType(), required=True)
-    assert "Incompatible change: cannot add required column: data" in str(exc_info.value)
 
     new_schema = (
         UpdateSchema(transaction=table.transaction(), allow_incompatible_changes=True)
@@ -1092,15 +1092,39 @@ def test_add_required_column(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+def test_add_required_column_initial_default(catalog: Catalog) -> None:
+    schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
+    table = _create_table_with_schema(catalog, schema_)
+    new_schema = (
+        UpdateSchema(transaction=table.transaction())
+        .add_column(path="data", field_type=IntegerType(), required=True, default_value=22)
+        ._apply()
+    )
+    assert new_schema == Schema(
+        NestedField(field_id=1, name="a", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="data", field_type=IntegerType(), required=True, initial_default=22, write_default=22),
+        schema_id=1,
+    )
+
+
+@pytest.mark.integration
+def test_add_required_column_initial_default_invalid_value(catalog: Catalog) -> None:
+    schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
+    table = _create_table_with_schema(catalog, schema_)
+    update = table.update_schema()
+    with pytest.raises(ValueError, match="Invalid default value: Could not convert abc into a int"):
+        update.add_column(path="data", field_type=IntegerType(), required=True, default_value="abc")
+
+
+@pytest.mark.integration
 def test_add_required_column_case_insensitive(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="id", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="already exists: ID"):
         with table.transaction() as txn:
             with txn.update_schema(allow_incompatible_changes=True) as update:
                 update.case_sensitive(False).add_column(path="ID", field_type=IntegerType(), required=True)
-    assert "already exists: ID" in str(exc_info.value)
 
     new_schema = (
         UpdateSchema(transaction=table.transaction(), allow_incompatible_changes=True)
