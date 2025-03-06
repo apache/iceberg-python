@@ -1214,7 +1214,7 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False)
         assert client is not None
 
 
@@ -1226,7 +1226,9 @@ def test_create_hive_client_multiple_uris() -> None:
 
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
-        mock_hive_client.assert_has_calls([call("thrift://localhost:10000", "user"), call("thrift://localhost:10001", "user")])
+        mock_hive_client.assert_has_calls(
+            [call("thrift://localhost:10000", "user", False), call("thrift://localhost:10001", "user", False)]
+        )
         assert client is not None
 
 

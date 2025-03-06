@@ -65,6 +65,7 @@ from pyiceberg.table.snapshots import (
 from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
+    RemoveSnapshotRefUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
     TableUpdate,
@@ -84,14 +85,14 @@ if TYPE_CHECKING:
     from pyiceberg.table import Transaction
 
 
-def _new_manifest_path(location: str, num: int, commit_uuid: uuid.UUID) -> str:
-    return f"{location}/metadata/{commit_uuid}-m{num}.avro"
+def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
+    return f"{commit_uuid}-m{num}.avro"
 
 
-def _generate_manifest_list_path(location: str, snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
+def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uuid.UUID) -> str:
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
-    return f"{location}/metadata/snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
+    return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
@@ -243,13 +244,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
         summary = self._summary(self.snapshot_properties)
-
-        manifest_list_file_path = _generate_manifest_list_path(
-            location=self._transaction.table_metadata.location,
+        file_name = _new_manifest_list_file_name(
             snapshot_id=self._snapshot_id,
             attempt=0,
             commit_uuid=self.commit_uuid,
         )
+        location_provider = self._transaction._table.location_provider()
+        manifest_list_file_path = location_provider.new_metadata_location(file_name)
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -295,13 +296,10 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
 
     def new_manifest_output(self) -> OutputFile:
-        return self._io.new_output(
-            _new_manifest_path(
-                location=self._transaction.table_metadata.location,
-                num=next(self._manifest_num_counter),
-                commit_uuid=self.commit_uuid,
-            )
-        )
+        location_provider = self._transaction._table.location_provider()
+        file_name = _new_manifest_file_name(num=next(self._manifest_num_counter), commit_uuid=self.commit_uuid)
+        file_path = location_provider.new_metadata_location(file_name)
+        return self._io.new_output(file_path)
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> List[ManifestEntry]:
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
@@ -749,6 +747,28 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
+    def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
+        """Remove a snapshot ref.
+
+        Args:
+            ref_name: branch / tag name to remove
+        Stages the updates and requirements for the remove-snapshot-ref.
+        Returns
+            This method for chaining
+        """
+        updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
+        requirements = (
+            AssertRefSnapshotId(
+                snapshot_id=self._transaction.table_metadata.refs[ref_name].snapshot_id
+                if ref_name in self._transaction.table_metadata.refs
+                else None,
+                ref=ref_name,
+            ),
+        )
+        self._updates += updates
+        self._requirements += requirements
+        return self
+
     def create_tag(self, snapshot_id: int, tag_name: str, max_ref_age_ms: Optional[int] = None) -> ManageSnapshots:
         """
         Create a new tag pointing to the given snapshot id.
@@ -771,6 +791,17 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._requirements += requirement
         return self
 
+    def remove_tag(self, tag_name: str) -> ManageSnapshots:
+        """
+        Remove a tag.
+
+        Args:
+            tag_name (str): name of tag to remove
+        Returns:
+            This for method chaining
+        """
+        return self._remove_ref_snapshot(ref_name=tag_name)
+
     def create_branch(
         self,
         snapshot_id: int,
@@ -787,7 +818,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             branch_name (str): name of the new branch
             max_ref_age_ms (Optional[int]): max ref age in milliseconds
             max_snapshot_age_ms (Optional[int]): max age of snapshots to keep in milliseconds
-            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep in milliseconds
+            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep for the branch
         Returns:
             This for method chaining
         """
@@ -802,3 +833,14 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates += update
         self._requirements += requirement
         return self
+
+    def remove_branch(self, branch_name: str) -> ManageSnapshots:
+        """
+        Remove a branch.
+
+        Args:
+            branch_name (str): name of branch to remove
+        Returns:
+            This for method chaining
+        """
+        return self._remove_ref_snapshot(ref_name=branch_name)

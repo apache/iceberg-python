@@ -1153,7 +1153,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
-    file_data = pa.array(["foo"], type=pa.string())
+    file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
     file_loc = f"{tmp_path}/test.parquet"
     pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
 
@@ -1181,14 +1181,13 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         with transaction.update_snapshot().overwrite() as update:
             update.append_data_file(unpartitioned_file)
 
-    assert (
-        str(table.scan().to_arrow())
-        == """pyarrow.Table
-other_field: large_string
-partition_id: int64
-----
-other_field: [["foo"]]
-partition_id: [[1]]"""
+    schema = pa.schema([("other_field", pa.large_string()), ("partition_id", pa.int64())])
+    assert table.scan().to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
     )
 
 
@@ -2296,14 +2295,14 @@ def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
         raise OSError("Unknown bucket")
 
     # For a pyarrow io instance with configured default s3 region
-    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region})
+    pyarrow_file_io = PyArrowFileIO({"s3.region": user_provided_region, "s3.resolve-region": "true"})
     with patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
         mock_s3_region_resolver.side_effect = _s3_region_map
 
         # The region is set to provided region if bucket region cannot be resolved
         with caplog.at_level(logging.WARNING):
             assert pyarrow_file_io.new_input("s3://non-exist-bucket/path/to/file")._filesystem.region == user_provided_region
-        assert f"Unable to resolve region for bucket non-exist-bucket, using default region {user_provided_region}" in caplog.text
+        assert "Unable to resolve region for bucket non-exist-bucket" in caplog.text
 
         for bucket_region in bucket_regions:
             # For s3 scheme, region is overwritten by resolved bucket region if different from user provided region

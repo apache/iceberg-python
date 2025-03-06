@@ -2420,7 +2420,7 @@ def spark() -> "SparkSession":
     # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
-    iceberg_version = "1.6.0"
+    iceberg_version = "1.8.0"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
@@ -2433,6 +2433,8 @@ def spark() -> "SparkSession":
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")

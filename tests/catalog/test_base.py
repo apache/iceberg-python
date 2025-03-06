@@ -35,10 +35,12 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io import WAREHOUSE
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
     Table,
+    TableProperties,
 )
 from pyiceberg.table.update import (
     AddSchemaUpdate,
@@ -84,6 +86,10 @@ def given_catalog_has_a_table(
         partition_spec=TEST_TABLE_PARTITION_SPEC,
         properties=properties or TEST_TABLE_PROPERTIES,
     )
+
+
+def test_load_catalog_in_memory() -> None:
+    assert load_catalog("catalog", type="in-memory")
 
 
 def test_load_catalog_impl_not_full_path() -> None:
@@ -312,7 +318,7 @@ def test_rename_table(catalog: InMemoryCatalog) -> None:
     assert table._identifier == Catalog.identifier_to_tuple(new_table)
 
     # And
-    assert ("new", "namespace") in catalog.list_namespaces()
+    assert catalog._namespace_exists(table._identifier[:-1])
 
     # And
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
@@ -336,7 +342,7 @@ def test_rename_table_from_self_identifier(catalog: InMemoryCatalog) -> None:
     assert new_table._identifier == Catalog.identifier_to_tuple(new_table_name)
 
     # And
-    assert ("new", "namespace") in catalog.list_namespaces()
+    assert catalog._namespace_exists(new_table._identifier[:-1])
 
     # And
     with pytest.raises(NoSuchTableError, match=NO_SUCH_TABLE_ERROR):
@@ -350,7 +356,7 @@ def test_create_namespace(catalog: InMemoryCatalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, TEST_TABLE_PROPERTIES)
 
     # Then
-    assert TEST_TABLE_NAMESPACE in catalog.list_namespaces()
+    assert catalog._namespace_exists(TEST_TABLE_NAMESPACE)
     assert TEST_TABLE_PROPERTIES == catalog.load_namespace_properties(TEST_TABLE_NAMESPACE)
 
 
@@ -373,7 +379,12 @@ def test_list_namespaces(catalog: InMemoryCatalog) -> None:
     # When
     namespaces = catalog.list_namespaces()
     # Then
-    assert TEST_TABLE_NAMESPACE in namespaces
+    assert TEST_TABLE_NAMESPACE[:1] in namespaces
+
+    # When
+    namespaces = catalog.list_namespaces(TEST_TABLE_NAMESPACE)
+    # Then
+    assert not namespaces
 
 
 def test_drop_namespace(catalog: InMemoryCatalog) -> None:
@@ -382,7 +393,7 @@ def test_drop_namespace(catalog: InMemoryCatalog) -> None:
     # When
     catalog.drop_namespace(TEST_TABLE_NAMESPACE)
     # Then
-    assert TEST_TABLE_NAMESPACE not in catalog.list_namespaces()
+    assert not catalog._namespace_exists(TEST_TABLE_NAMESPACE)
 
 
 def test_drop_namespace_raises_error_when_namespace_does_not_exist(catalog: InMemoryCatalog) -> None:
@@ -431,7 +442,7 @@ def test_update_namespace_metadata(catalog: InMemoryCatalog) -> None:
     summary = catalog.update_namespace_properties(TEST_TABLE_NAMESPACE, updates=new_metadata)
 
     # Then
-    assert TEST_TABLE_NAMESPACE in catalog.list_namespaces()
+    assert catalog._namespace_exists(TEST_TABLE_NAMESPACE)
     assert new_metadata.items() <= catalog.load_namespace_properties(TEST_TABLE_NAMESPACE).items()
     assert summary.removed == []
     assert sorted(summary.updated) == ["key3", "key4"]
@@ -448,7 +459,7 @@ def test_update_namespace_metadata_removals(catalog: InMemoryCatalog) -> None:
     summary = catalog.update_namespace_properties(TEST_TABLE_NAMESPACE, remove_metadata, new_metadata)
 
     # Then
-    assert TEST_TABLE_NAMESPACE in catalog.list_namespaces()
+    assert catalog._namespace_exists(TEST_TABLE_NAMESPACE)
     assert new_metadata.items() <= catalog.load_namespace_properties(TEST_TABLE_NAMESPACE).items()
     assert remove_metadata.isdisjoint(catalog.load_namespace_properties(TEST_TABLE_NAMESPACE).keys())
     assert summary.removed == ["key1"]
@@ -563,3 +574,60 @@ def test_table_properties_raise_for_none_value(catalog: InMemoryCatalog) -> None
     with pytest.raises(ValidationError) as exc_info:
         _ = given_catalog_has_a_table(catalog, properties=property_with_none)
     assert "None type is not a supported value in properties: property_name" in str(exc_info.value)
+
+
+def test_table_writes_metadata_to_custom_location(catalog: InMemoryCatalog) -> None:
+    metadata_path = f"{catalog._warehouse_location}/custom/path"
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties={TableProperties.WRITE_METADATA_PATH: metadata_path},
+    )
+    df = pa.Table.from_pylist([{"x": 123, "y": 456, "z": 789}], schema=schema_to_pyarrow(TEST_TABLE_SCHEMA))
+    table.append(df)
+    manifests = table.current_snapshot().manifests(table.io)  # type: ignore
+    location_provider = table.location_provider()
+
+    assert location_provider.new_metadata_location("").startswith(metadata_path)
+    assert manifests[0].manifest_path.startswith(metadata_path)
+    assert table.location() != metadata_path
+    assert table.metadata_location.startswith(metadata_path)
+
+
+def test_table_writes_metadata_to_default_path(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties=TEST_TABLE_PROPERTIES,
+    )
+    metadata_path = f"{table.location()}/metadata"
+    df = pa.Table.from_pylist([{"x": 123, "y": 456, "z": 789}], schema=schema_to_pyarrow(TEST_TABLE_SCHEMA))
+    table.append(df)
+    manifests = table.current_snapshot().manifests(table.io)  # type: ignore
+    location_provider = table.location_provider()
+
+    assert location_provider.new_metadata_location("").startswith(metadata_path)
+    assert manifests[0].manifest_path.startswith(metadata_path)
+    assert table.metadata_location.startswith(metadata_path)
+
+
+def test_table_metadata_writes_reflect_latest_path(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    table = catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    initial_metadata_path = f"{table.location()}/metadata"
+    assert table.location_provider().new_metadata_location("metadata.json") == f"{initial_metadata_path}/metadata.json"
+
+    # update table with new path for metadata
+    new_metadata_path = f"{table.location()}/custom/path"
+    table.transaction().set_properties({TableProperties.WRITE_METADATA_PATH: new_metadata_path}).commit_transaction()
+
+    assert table.location_provider().new_metadata_location("metadata.json") == f"{new_metadata_path}/metadata.json"
