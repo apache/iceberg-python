@@ -35,6 +35,7 @@ from typing import (
     Union,
     runtime_checkable,
 )
+from enum import IntEnum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
@@ -222,4 +223,7 @@ class Record(StructProtocol):
         return hash(str(self))
 
 
-TableVersion: TypeAlias = Literal[1, 2, 3]
+class FormatVersion(IntEnum):
+    V1 = 1
+    V2 = 2
+    V3 = 3

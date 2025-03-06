@@ -31,6 +31,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
 
 
@@ -58,8 +59,10 @@ def test_table(session_catalog: RestCatalog) -> Generator[Table, None, None]:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_partitioned_table_delete_full_file(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_partitioned_table_delete_full_file(
+    spark: SparkSession, session_catalog: RestCatalog, format_version: FormatVersion
+) -> None:
     identifier = "default.table_partitioned_delete"
 
     run_spark_commands(
@@ -93,8 +96,8 @@ def test_partitioned_table_delete_full_file(spark: SparkSession, session_catalog
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCatalog, format_version: FormatVersion) -> None:
     identifier = "default.table_partitioned_delete"
 
     run_spark_commands(
@@ -128,8 +131,10 @@ def test_partitioned_table_rewrite(spark: SparkSession, session_catalog: RestCat
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_rewrite_partitioned_table_with_null(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_rewrite_partitioned_table_with_null(
+    spark: SparkSession, session_catalog: RestCatalog, format_version: FormatVersion
+) -> None:
     identifier = "default.table_partitioned_delete"
 
     run_spark_commands(
@@ -163,9 +168,9 @@ def test_rewrite_partitioned_table_with_null(spark: SparkSession, session_catalo
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 @pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
-def test_partitioned_table_no_match(spark: SparkSession, session_catalog: RestCatalog, format_version: int) -> None:
+def test_partitioned_table_no_match(spark: SparkSession, session_catalog: RestCatalog, format_version: FormatVersion) -> None:
     identifier = "default.table_partitioned_delete"
 
     run_spark_commands(
