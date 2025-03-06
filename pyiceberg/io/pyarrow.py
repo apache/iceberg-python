@@ -166,6 +166,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -669,6 +670,9 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
         return pa.binary(16)
+
+    def visit_unknown(self, _: UnknownType) -> pa.DataType:
+        return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
         return pa.large_binary()
@@ -1220,6 +1224,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
+        elif pa.types.is_null(primitive):
+            return UnknownType()
 
         raise TypeError(f"Unsupported type: {primitive}")
 
@@ -1899,6 +1905,9 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
 
     def visit_binary(self, binary_type: BinaryType) -> str:
         return "BYTE_ARRAY"
+
+    def visit_unknown(self, unknown_type: UnknownType) -> str:
+        return "UNKNOWN"
 
 
 _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()

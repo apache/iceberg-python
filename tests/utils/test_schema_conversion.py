@@ -33,6 +33,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    UnknownType,
 )
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
 
@@ -263,19 +264,19 @@ def test_fixed_type() -> None:
 
 
 def test_unknown_primitive() -> None:
-    with pytest.raises(TypeError) as exc_info:
-        avro_type = "UnknownType"
-        AvroSchemaConversion()._convert_schema(avro_type)
-    assert "Unknown type: UnknownType" in str(exc_info.value)
+    avro_type = "null"
+    actual = AvroSchemaConversion()._convert_schema(avro_type)
+    expected = UnknownType()
+    assert actual == expected
 
 
-def test_unknown_complex_type() -> None:
+def test_unrecognized_complex_type() -> None:
     with pytest.raises(TypeError) as exc_info:
         avro_type = {
-            "type": "UnknownType",
+            "type": "UnrecognizedType",
         }
         AvroSchemaConversion()._convert_schema(avro_type)
-    assert "Unknown type: {'type': 'UnknownType'}" in str(exc_info.value)
+    assert "Type not recognized: {'type': 'UnrecognizedType'}" in str(exc_info.value)
 
 
 def test_convert_field_without_field_id() -> None:
