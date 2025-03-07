@@ -80,6 +80,7 @@ from pyiceberg.typedef import (
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
+from pyiceberg.utils.snapshot import ancestors_between
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -251,6 +252,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
+
+        # get current snapshot id and starting snapshot id, and validate that there are no conflicts
+        starting_snapshot_id = self._parent_snapshot_id
+        current_snapshot_id = self._transaction._table.refresh().metadata.current_snapshot_id
+        self._validate(starting_snapshot_id, current_snapshot_id)
+
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -278,6 +285,27 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             ),
             (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
         )
+
+    def _validate(self, starting_snapshot_id: Optional[int], current_snapshot_id: Optional[int]) -> None:
+        # get all the snapshots between the current snapshot id and the parent id
+        snapshots = ancestors_between(starting_snapshot_id, current_snapshot_id, self._transaction._table.metadata.snapshot_by_id)
+
+        # Define allowed operations for each type of operation
+        allowed_operations = {
+            Operation.APPEND: {Operation.APPEND, Operation.REPLACE, Operation.OVERWRITE, Operation.DELETE},
+            Operation.REPLACE: {Operation.APPEND},
+            Operation.OVERWRITE: set(),
+            Operation.DELETE: set(),
+        }
+
+        for snapshot in snapshots:
+            snapshot_operation = snapshot.summary.operation
+
+            if snapshot_operation not in allowed_operations[self._operation]:
+                raise ValueError(
+                    f"Operation {snapshot_operation} is not allowed when performing {self._operation}. "
+                    "Check for overlaps or conflicts."
+                )
 
     @property
     def snapshot_id(self) -> int:
