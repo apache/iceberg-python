@@ -1718,3 +1718,60 @@ class _SchemaCompatibilityVisitor(PreOrderSchemaVisitor[bool]):
 
     def primitive(self, primitive: PrimitiveType) -> bool:
         return True
+
+
+# def _bind_to_struct(
+#     struct: StructType,
+#     data: Dict[str, Any],
+# ) -> Record:
+#     return visit_with_partner(
+#         struct,
+#         data,
+#         _BindDictToRecord(),
+#         ArrowAccessor(),
+#     )
+#
+#
+# class _BindDictToRecord(SchemaWithPartnerVisitor[Any, Any]):
+#     def schema(self, schema: Schema, schema_partner: Any, struct_result: Any) -> Any:
+#         return struct_result
+#
+#     def struct(self, struct: StructType, struct_partner: Any, field_results: List[Any]) -> Any:
+#         if isinstance(struct_partner, list):
+#             return [Record(*result) for result in field_results]
+#         else:
+#             return Record(*field_results)
+#
+#     def field(self, field: NestedField, partner_struct: Optional[Any], field_result: Any) -> Optional[pa.Array]:
+#         return field_result
+#
+#     def list(self, list_type: ListType, list_array: Optional[Any], element_result: Any) -> Any:
+#         return element_result
+#
+#     def map(self, map_type: MapType, map_array: Optional[Any], key_result: Optional[Any], value_result: Optional[Any]) -> Any:
+#         return value_result
+#
+#     def primitive(self, _: PrimitiveType, primitive_partner: Any) -> Any:
+#         return primitive_partner
+#
+#
+# class ArrowAccessor(PartnerAccessor[Any]):
+#     def schema_partner(self, partner: Any) -> Any:
+#         return partner
+#
+#     def field_partner(self, partner_struct: Any, field_id: int, name: str) -> Any:
+#         if isinstance(partner_struct, dict):
+#             return partner_struct.get(name)
+#         if isinstance(partner_struct, list):
+#             return [e.get(name) for e in partner_struct]
+#         else:
+#             return partner_struct
+#
+#     def list_element_partner(self, partner_list: Optional[Any]) -> Optional[Any]:
+#         return partner_list
+#
+#     def map_key_partner(self, partner_map: Optional[Any]) -> Optional[Any]:
+#         return partner_map
+#
+#     def map_value_partner(self, partner_map: Optional[Any]) -> Optional[Any]:
+#         return partner_map
