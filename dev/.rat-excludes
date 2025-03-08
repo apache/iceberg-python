@@ -3,3 +3,4 @@ build
 .git
 .gitignore
 poetry.lock
+.github/pull_request_template.md
