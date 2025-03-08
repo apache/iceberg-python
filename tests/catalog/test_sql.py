@@ -17,7 +17,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Generator, List, cast
+from typing import Any, Generator, cast
 
 import pyarrow as pa
 import pytest
@@ -1027,7 +1027,7 @@ def test_create_namespace_if_not_exists(catalog: SqlCatalog, database_name: str)
 @pytest.mark.parametrize("namespace", [lazy_fixture("database_name"), lazy_fixture("hierarchical_namespace_name")])
 def test_create_namespace(catalog: SqlCatalog, namespace: str) -> None:
     catalog.create_namespace(namespace)
-    assert (Catalog.identifier_to_tuple(namespace)) in catalog.list_namespaces()
+    assert (Catalog.identifier_to_tuple(namespace)[:1]) in catalog.list_namespaces()
 
 
 @pytest.mark.parametrize(
@@ -1074,7 +1074,7 @@ def test_create_namespace_with_comment_and_location(catalog: SqlCatalog, namespa
     }
     catalog.create_namespace(namespace=namespace, properties=test_properties)
     loaded_database_list = catalog.list_namespaces()
-    assert Catalog.identifier_to_tuple(namespace) in loaded_database_list
+    assert Catalog.identifier_to_tuple(namespace)[:1] in loaded_database_list
     properties = catalog.load_namespace_properties(namespace)
     assert properties["comment"] == "this is a test description"
     assert properties["location"] == test_location
@@ -1135,17 +1135,42 @@ def test_namespace_exists(catalog: SqlCatalog) -> None:
         lazy_fixture("catalog_sqlite"),
     ],
 )
-@pytest.mark.parametrize("namespace_list", [lazy_fixture("database_list"), lazy_fixture("hierarchical_namespace_list")])
-def test_list_namespaces(catalog: SqlCatalog, namespace_list: List[str]) -> None:
+def test_list_namespaces(catalog: SqlCatalog) -> None:
+    namespace_list = ["db", "db.ns1", "db.ns1.ns2", "db.ns2", "db2", "db2.ns1", "db%"]
     for namespace in namespace_list:
-        catalog.create_namespace(namespace)
-    # Test global list
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
     ns_list = catalog.list_namespaces()
+    for ns in [("db",), ("db%",), ("db2",)]:
+        assert ns in ns_list
+
+    ns_list = catalog.list_namespaces("db")
+    assert sorted(ns_list) == [("db", "ns1"), ("db", "ns2")]
+
+    ns_list = catalog.list_namespaces("db.ns1")
+    assert sorted(ns_list) == [("db", "ns1", "ns2")]
+
+    ns_list = catalog.list_namespaces("db.ns1.ns2")
+    assert len(ns_list) == 0
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        lazy_fixture("catalog_memory"),
+        lazy_fixture("catalog_sqlite"),
+    ],
+)
+def test_list_namespaces_fuzzy_match(catalog: SqlCatalog) -> None:
+    namespace_list = ["db.ns1", "db.ns1.ns2", "db.ns2", "db.ns1X.ns3", "db_.ns1.ns2", "db2.ns1.ns2"]
     for namespace in namespace_list:
-        assert Catalog.identifier_to_tuple(namespace) in ns_list
-        # Test individual namespace list
-        assert len(one_namespace := catalog.list_namespaces(namespace)) == 1
-        assert Catalog.identifier_to_tuple(namespace) == one_namespace[0]
+        if not catalog._namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
+    assert catalog.list_namespaces("db.ns1") == [("db", "ns1", "ns2")]
+
+    assert catalog.list_namespaces("db_.ns1") == [("db_", "ns1", "ns2")]
 
 
 @pytest.mark.parametrize(
@@ -1177,13 +1202,13 @@ def test_list_non_existing_namespaces(catalog: SqlCatalog) -> None:
 def test_drop_namespace(catalog: SqlCatalog, table_schema_nested: Schema, table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(table_identifier)
     catalog.create_namespace(namespace)
-    assert namespace in catalog.list_namespaces()
+    assert catalog._namespace_exists(namespace)
     catalog.create_table(table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError):
         catalog.drop_namespace(namespace)
     catalog.drop_table(table_identifier)
     catalog.drop_namespace(namespace)
-    assert namespace not in catalog.list_namespaces()
+    assert not catalog._namespace_exists(namespace)
 
 
 @pytest.mark.parametrize(

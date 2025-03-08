@@ -1189,7 +1189,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif isinstance(primitive, pa.Decimal128Type):
             primitive = cast(pa.Decimal128Type, primitive)
             return DecimalType(primitive.precision, primitive.scale)
-        elif pa.types.is_string(primitive) or pa.types.is_large_string(primitive):
+        elif pa.types.is_string(primitive) or pa.types.is_large_string(primitive) or pa.types.is_string_view(primitive):
             return StringType()
         elif pa.types.is_date32(primitive):
             return DateType()
@@ -1215,7 +1215,7 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
             elif primitive.tz is None:
                 return TimestampType()
 
-        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive):
+        elif pa.types.is_binary(primitive) or pa.types.is_large_binary(primitive) or pa.types.is_binary_view(primitive):
             return BinaryType()
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
@@ -1438,7 +1438,8 @@ def _task_to_record_batches(
                 for name, value in projected_missing_fields.items():
                     index = result_batch.schema.get_field_index(name)
                     if index != -1:
-                        result_batch = result_batch.set_column(index, name, [value])
+                        arr = pa.repeat(value, result_batch.num_rows)
+                        result_batch = result_batch.set_column(index, name, arr)
 
             yield result_batch
 
@@ -2466,36 +2467,43 @@ def _check_pyarrow_schema_compatible(
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
     for file_path in file_paths:
-        input_file = io.new_input(file_path)
-        with input_file.open() as input_stream:
-            parquet_metadata = pq.read_metadata(input_stream)
-
-        if visit_pyarrow(parquet_metadata.schema.to_arrow_schema(), _HasIds()):
-            raise NotImplementedError(
-                f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
-            )
-        schema = table_metadata.schema()
-        _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
-
-        statistics = data_file_statistics_from_parquet_metadata(
-            parquet_metadata=parquet_metadata,
-            stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-            parquet_column_mapping=parquet_path_to_id_mapping(schema),
-        )
-        data_file = DataFile(
-            content=DataFileContent.DATA,
-            file_path=file_path,
-            file_format=FileFormat.PARQUET,
-            partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
-            file_size_in_bytes=len(input_file),
-            sort_order_id=None,
-            spec_id=table_metadata.default_spec_id,
-            equality_ids=None,
-            key_metadata=None,
-            **statistics.to_serialized_dict(),
-        )
-
+        data_file = parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
         yield data_file
+
+
+def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
+    input_file = io.new_input(file_path)
+    with input_file.open() as input_stream:
+        parquet_metadata = pq.read_metadata(input_stream)
+
+    arrow_schema = parquet_metadata.schema.to_arrow_schema()
+    if visit_pyarrow(arrow_schema, _HasIds()):
+        raise NotImplementedError(
+            f"Cannot add file {file_path} because it has field IDs. `add_files` only supports addition of files without field_ids"
+        )
+
+    schema = table_metadata.schema()
+    _check_pyarrow_schema_compatible(schema, arrow_schema)
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=parquet_metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    data_file = DataFile(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
+        file_size_in_bytes=len(input_file),
+        sort_order_id=None,
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+
+    return data_file
 
 
 ICEBERG_UNCOMPRESSED_CODEC = "uncompressed"
