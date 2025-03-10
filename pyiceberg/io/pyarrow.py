@@ -76,10 +76,10 @@ from sortedcontainers import SortedList
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
+from pyiceberg.expressions.iterative_visitors import bind_iterative
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
-    bind,
     extract_field_ids,
     translate_column_names,
 )
@@ -1376,7 +1376,7 @@ def _task_to_record_batches(
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(bound_row_filter, file_schema, case_sensitive=case_sensitive)
-            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
+            bound_file_filter = bind_iterative(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter)
 
         # Apply column projection rules
@@ -1512,7 +1512,7 @@ class ArrowScan:
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
-        self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+        self._bound_row_filter = bind_iterative(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
 
