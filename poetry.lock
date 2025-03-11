@@ -1600,23 +1600,24 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.4.4"
+version = "0.4.7"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "getdaft-0.4.4-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:1b8d4bcb28360cbc2a1a68fa2190b879eae6413938136f89d8e96810d38b0958"},
-    {file = "getdaft-0.4.4-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:5f51a0406425398992b9d5203978a248e80c0b65027459c4e852bc92df9e1676"},
-    {file = "getdaft-0.4.4-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e84fd7168daf1e8c9a0fb012b7b91cd6bed5259a69207a0a0a3367345f7b78e6"},
-    {file = "getdaft-0.4.4-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c6ac26a29c6a732f56898731b982da1949fb0106bd9d33348421b5d9b253fcc1"},
-    {file = "getdaft-0.4.4-cp39-abi3-win_amd64.whl", hash = "sha256:576ccfc762d30a4c5003f98994e36b14d7afb1b4bea59d36d61efd277d863d11"},
-    {file = "getdaft-0.4.4.tar.gz", hash = "sha256:53d15b38ab6ac0a516200dfd60e1f517437d9b973f6dd06ebccdff9f8b293fe1"},
+    {file = "getdaft-0.4.7-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ccb0977201a0a80c3725f912a65765b897cf58abd6cd3066c54eb48b0ffcb518"},
+    {file = "getdaft-0.4.7-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:f3baae28b6c94301f61b01a18926963b3d7e4c6c59698915f8aaa5369713a0a9"},
+    {file = "getdaft-0.4.7-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:646790c32986ab7a115201461c336bc7eded560ba21eccd86e002c1e79a3098d"},
+    {file = "getdaft-0.4.7-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:0646bb6dfa00681ecfb572656bebf1583584b6b9ace79193891ff86ea120a081"},
+    {file = "getdaft-0.4.7-cp39-abi3-win_amd64.whl", hash = "sha256:71857899b6fd6d7bf103c3cc3e9665532663a01661757195a645843513e53839"},
+    {file = "getdaft-0.4.7.tar.gz", hash = "sha256:2adcee423172abbcd45af1765082a379aa61af0dbb1692f582d771d96f5086b6"},
 ]
 
 [package.dependencies]
 fsspec = "*"
+importlib-metadata = {version = "*", markers = "python_full_version < \"3.10.0\""}
 pyarrow = ">=8.0.0"
 tqdm = "*"
 typing-extensions = {version = ">=4.0.0", markers = "python_full_version < \"3.10.0\""}
@@ -1626,7 +1627,7 @@ all = ["getdaft[aws,azure,deltalake,gcp,iceberg,numpy,pandas,ray,sql,unity]"]
 aws = ["boto3"]
 deltalake = ["deltalake"]
 hudi = ["pyarrow (>=8.0.0)"]
-iceberg = ["packaging", "pyiceberg (>=0.4.0)"]
+iceberg = ["packaging", "pyiceberg (>=0.7.0)"]
 lance = ["lancedb"]
 numpy = ["numpy"]
 pandas = ["pandas"]
@@ -2018,12 +2019,12 @@ version = "8.6.1"
 description = "Read metadata from Python packages"
 optional = false
 python-versions = ">=3.9"
-groups = ["dev", "docs"]
+groups = ["main", "dev", "docs"]
 files = [
     {file = "importlib_metadata-8.6.1-py3-none-any.whl", hash = "sha256:02a89390c1e15fdfdc0d7c6b25cb3e62650d0494005c97d6f148bf5b9787525e"},
     {file = "importlib_metadata-8.6.1.tar.gz", hash = "sha256:310b41d755445d74569f993ccfc22838295d9fe005425094fad953d7f15c8580"},
 ]
-markers = {dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
+markers = {main = "extra == \"daft\" and python_version < \"3.10\"", dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
 
 [package.dependencies]
 zipp = ">=3.20"
@@ -5682,12 +5683,12 @@ version = "3.21.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
 optional = false
 python-versions = ">=3.9"
-groups = ["dev", "docs"]
+groups = ["main", "dev", "docs"]
 files = [
     {file = "zipp-3.21.0-py3-none-any.whl", hash = "sha256:ac1bbe05fd2991f160ebce24ffbac5f6d11d83dc90891255885223d42b3cd931"},
     {file = "zipp-3.21.0.tar.gz", hash = "sha256:2c9958f6430a2040341a52eb608ed6dd93ef4392e02ffe219417c1b28b5dd1f4"},
 ]
-markers = {dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
+markers = {main = "extra == \"daft\" and python_version < \"3.10\"", dev = "python_full_version < \"3.10.2\"", docs = "python_version < \"3.10\""}
 
 [package.extras]
 check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\""]
