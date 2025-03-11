@@ -355,6 +355,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=updated.doc,
                 required=required,
                 initial_default=updated.initial_default,
+                write_default=updated.write_default,
             )
         else:
             self._updates[field.field_id] = NestedField(
@@ -364,6 +365,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=field.doc,
                 required=required,
                 initial_default=field.initial_default,
+                write_default=field.write_default,
             )
 
     def update_column(
@@ -414,6 +416,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=doc if doc is not None else updated.doc,
                 required=updated.required,
                 initial_default=updated.initial_default,
+                write_default=updated.write_default,
             )
         else:
             self._updates[field.field_id] = NestedField(
@@ -423,6 +426,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=doc if doc is not None else field.doc,
                 required=field.required,
                 initial_default=field.initial_default,
+                write_default=field.write_default,
             )
 
         if required is not None:
