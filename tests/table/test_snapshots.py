@@ -143,7 +143,7 @@ def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> No
 
 @pytest.fixture
 def manifest_file() -> ManifestFile:
-    return ManifestFile(
+    return ManifestFile.from_args(
         content=ManifestContent.DATA,
         manifest_length=100,
         added_files_count=1,
@@ -160,7 +160,7 @@ def test_snapshot_summary_collector(table_schema_simple: Schema) -> None:
     ssc = SnapshotSummaryCollector()
 
     assert ssc.build() == {}
-    data_file = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
+    data_file = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
     ssc.add_file(data_file, schema=table_schema_simple)
 
     assert ssc.build() == {
@@ -183,8 +183,8 @@ def test_snapshot_summary_collector_with_partition() -> None:
         NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
     )
     spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name="int_field"))
-    data_file_1 = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
-    data_file_2 = DataFile(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(int_field=2))
+    data_file_1 = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(1))
+    data_file_2 = DataFile.from_args(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(2))
     # When
     ssc.add_file(data_file=data_file_1, schema=schema, partition_spec=spec)
     ssc.remove_file(data_file=data_file_1, schema=schema, partition_spec=spec)
