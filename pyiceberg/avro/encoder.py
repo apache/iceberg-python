@@ -78,4 +78,3 @@ class BinaryEncoder:
 
     def write_unknown(self, _: Any) -> None:
         """Nulls are written as 0 bytes in avro, so we do nothing."""
-        pass
