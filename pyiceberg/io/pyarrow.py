@@ -99,6 +99,10 @@ from pyiceberg.io import (
     HDFS_KERB_TICKET,
     HDFS_PORT,
     HDFS_USER,
+    OSS_ACCESS_KEY_ID,
+    OSS_ACCESS_KEY_SECRET,
+    OSS_ENDPOINT,
+    OSS_SESSION_TOKEN,
     PYARROW_USE_LARGE_TYPES_ON_READ,
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
@@ -398,30 +402,12 @@ class PyArrowFileIO(FileIO):
         from pyarrow.fs import S3FileSystem
 
         client_kwargs: Dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+            "endpoint_override": self.properties.get(OSS_ENDPOINT),
+            "access_key": self.properties.get(OSS_ACCESS_KEY_ID),
+            "secret_key": self.properties.get(OSS_ACCESS_KEY_SECRET),
+            "session_token": self.properties.get(OSS_SESSION_TOKEN),
+            "force_virtual_addressing": True,
         }
-
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
-            client_kwargs["proxy_options"] = proxy_uri
-
-        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
-            client_kwargs["connect_timeout"] = float(connect_timeout)
-
-        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
-            client_kwargs["request_timeout"] = float(request_timeout)
-
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
-            client_kwargs["role_arn"] = role_arn
-
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
-            client_kwargs["session_name"] = session_name
-
-        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
 
         return S3FileSystem(**client_kwargs)
 
