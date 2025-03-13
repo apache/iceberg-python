@@ -408,6 +408,31 @@ def test_upsert_into_empty_table(catalog: Catalog) -> None:
     assert upd.rows_inserted == 4
 
 
+def test_large_upsert_into_empty_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_large_table"
+    _drop_table(catalog, identifier)
+
+    num_columns = 50
+    num_rows = 10000
+
+    schema = Schema(
+        *[NestedField(i, f"field_{i}", StringType(), required=True) for i in range(1, num_columns + 1)],
+        identifier_field_ids=[1, 2],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema([pa.field(f"field_{i}", pa.string(), nullable=False) for i in range(1, num_columns + 1)])
+
+    data = [{f"field_{i}": f"value_{i}_{j}" for i in range(1, num_columns + 1)} for j in range(num_rows)]
+
+    df = pa.Table.from_pylist(data, schema=arrow_schema)
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == num_rows
+
+
 def test_create_match_filter_single_condition() -> None:
     """
     Test create_match_filter with a composite key where the source yields exactly one unique key.
