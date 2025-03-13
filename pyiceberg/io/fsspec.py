@@ -139,9 +139,7 @@ def _oss(properties: Properties) -> AbstractFileSystem:
     }
     config_kwargs = {"s3": {"addressing_style": "virtual"}, "signature_version": "v4"}
 
-    fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
-
-    return fs
+    return S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
 
 def _s3(properties: Properties) -> AbstractFileSystem:

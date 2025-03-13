@@ -175,6 +175,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -402,12 +403,40 @@ class PyArrowFileIO(FileIO):
         from pyarrow.fs import S3FileSystem
 
         client_kwargs: Dict[str, Any] = {
-            "endpoint_override": self.properties.get(OSS_ENDPOINT),
-            "access_key": self.properties.get(OSS_ACCESS_KEY_ID),
-            "secret_key": self.properties.get(OSS_ACCESS_KEY_SECRET),
-            "session_token": self.properties.get(OSS_SESSION_TOKEN),
+            "endpoint_override": get_first_property_value(self.properties, OSS_ENDPOINT, S3_ENDPOINT),
+            "access_key": get_first_property_value(self.properties, OSS_ACCESS_KEY_ID, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(self.properties, OSS_ACCESS_KEY_SECRET, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(self.properties, OSS_SESSION_TOKEN, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "force_virtual_addressing": True,
         }
+
+        if self.properties.get(S3_ENDPOINT):
+            deprecation_message(
+                deprecated_in="0.9.1",
+                removed_in="1.0",
+                help_message=f"The property {S3_ENDPOINT} is deprecated, please use {OSS_ENDPOINT} instead."
+            )
+
+        if access_key := get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID):
+            deprecation_message(
+                deprecated_in="0.9.1",
+                removed_in="1.0",
+                help_message=f"The property {access_key} is deprecated, please use {OSS_ACCESS_KEY_ID} instead."
+            )
+
+        if secret_key := get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY):
+            deprecation_message(
+                deprecated_in="0.9.1",
+                removed_in="1.0",
+                help_message=f"The property {secret_key} is deprecated, please use {OSS_ACCESS_KEY_SECRET} instead."
+            )
+
+        if session_token := get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN):
+            deprecation_message(
+                deprecated_in="0.9.1",
+                removed_in="1.0",
+                help_message=f"The property {session_token} is deprecated, please use {OSS_SESSION_TOKEN} instead."
+            )
 
         return S3FileSystem(**client_kwargs)
 
