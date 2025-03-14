@@ -622,9 +622,9 @@ aws_region: str = "..."
 properties = {"s3tables.warehouse": table_bucket_arn, "s3tables.region": aws_region}
 catalog = S3TablesCatalog(name="s3tables_catalog", **properties)
 
-database_name = "prod"
+namespace = "prod"
 
-catalog.create_namespace(namespace=database_name)
+catalog.create_namespace(namespace=namespace)
 
 pyarrow_table = pa.Table.from_arrays(
     [
@@ -643,7 +643,7 @@ pyarrow_table = pa.Table.from_arrays(
     ),
 )
 
-identifier = (database_name, "orders")
+identifier = (namespace, "orders")
 table = catalog.create_table(identifier=identifier, schema=pyarrow_table.schema)
 table.append(pyarrow_table)
 ```
