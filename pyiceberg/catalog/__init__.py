@@ -117,6 +117,7 @@ class CatalogType(Enum):
     DYNAMODB = "dynamodb"
     SQL = "sql"
     IN_MEMORY = "in-memory"
+    S3TABLES = "s3tables"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -172,6 +173,15 @@ def load_in_memory(name: str, conf: Properties) -> Catalog:
         raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
 
 
+def load_s3tables(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.s3tables import S3TablesCatalog
+
+        return S3TablesCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("AWS S3Tables support not installed: pip install 'pyiceberg[s3tables]'") from exc
+
+
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
@@ -179,6 +189,7 @@ AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
     CatalogType.IN_MEMORY: load_in_memory,
+    CatalogType.S3TABLES: load_s3tables,
 }
 
 
@@ -935,8 +946,8 @@ class MetastoreCatalog(Catalog, ABC):
         raise ValueError("No default path is set, please specify a location when creating a table")
 
     @staticmethod
-    def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str) -> None:
-        ToOutputFile.table_metadata(metadata, io.new_output(metadata_path))
+    def _write_metadata(metadata: TableMetadata, io: FileIO, metadata_path: str, overwrite: bool = False) -> None:
+        ToOutputFile.table_metadata(metadata, io.new_output(metadata_path), overwrite=overwrite)
 
     @staticmethod
     def _parse_metadata_version(metadata_location: str) -> int:

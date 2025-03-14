@@ -550,6 +550,104 @@ catalog:
 
 <!-- prettier-ignore-end -->
 
+### S3Tables Catalog
+
+The S3Tables Catalog leverages the catalog functionalities of the Amazon S3Tables service and requires an existing S3 Tables Bucket to operate.
+
+To use Amazon S3Tables as your catalog, you can configure pyiceberg using one of the following methods. Additionally, refer to the [AWS documentation](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) on configuring credentials to set up your AWS account credentials locally.
+
+If you intend to use the same credentials for both the S3Tables Catalog and S3 FileIO, you can configure the [`client.*` properties](configuration.md#unified-aws-credentials) to streamline the process.
+
+Note that the S3Tables Catalog manages the underlying table locations internally, which makes it incompatible with S3-like storage systems such as MinIO. If you specify the `s3tables.endpoint`, ensure that the `s3.endpoint` is configured accordingly.
+
+```yaml
+catalog:
+  default:
+    type: s3tables
+    warehouse: arn:aws:s3tables:us-east-1:012345678901:bucket/pyiceberg-catalog
+```
+
+If you prefer to pass the credentials explicitly to the client instead of relying on environment variables,
+
+```yaml
+catalog:
+  default:
+    type: s3tables
+    s3tables.access-key-id: <ACCESS_KEY_ID>
+    s3tables.secret-access-key: <SECRET_ACCESS_KEY>
+    s3tables.session-token: <SESSION_TOKEN>
+    s3tables.region: <REGION_NAME>
+    s3tables.endpoint: http://localhost:9000
+    s3.endpoint: http://localhost:9000
+```
+
+<!-- prettier-ignore-start -->
+
+!!! Note "Client-specific Properties"
+    `s3tables.*` properties are for S3TablesCatalog only. If you want to use the same credentials for both S3TablesCatalog and S3 FileIO, you can set the `client.*` properties. See the [Unified AWS Credentials](configuration.md#unified-aws-credentials) section for more details.
+
+<!-- prettier-ignore-end -->
+
+<!-- markdown-link-check-disable -->
+
+| Key                        | Example             | Description                                                                |
+| -------------------------- | ------------------- | -------------------------------------------------------------------------- |
+| s3tables.profile-name      | default             | Configure the static profile used to access the S3Tables Catalog           |
+| s3tables.region            | us-east-1           | Set the region of the S3Tables Catalog                                     |
+| s3tables.access-key-id     | admin               | Configure the static access key id used to access the S3Tables Catalog     |
+| s3tables.secret-access-key | password            | Configure the static secret access key used to access the S3Tables Catalog |
+| s3tables.session-token     | AQoDYXdzEJr...      | Configure the static session token used to access the S3Tables Catalog     |
+| s3tables.endpoint          | <http://localhost>... | Configure the AWS endpoint                                                 |
+| s3tables.warehouse         | arn:aws:s3tables... | Set the underlying S3 Table Bucket                                         |
+
+<!-- markdown-link-check-enable-->
+
+<!-- prettier-ignore-start -->
+
+!!! warning "Removed Properties"
+    The properties `profile_name`, `region_name`, `aws_access_key_id`, `aws_secret_access_key`, and `aws_session_token` were deprecated and removed in 0.8.0
+
+<!-- prettier-ignore-end -->
+
+An example usage of the S3Tables Catalog is shown below:
+
+```python
+from pyiceberg.catalog.s3tables import S3TablesCatalog
+import pyarrow as pa
+
+
+table_bucket_arn: str = "..."
+aws_region: str = "..."
+
+properties = {"s3tables.warehouse": table_bucket_arn, "s3tables.region": aws_region}
+catalog = S3TablesCatalog(name="s3tables_catalog", **properties)
+
+namespace = "prod"
+
+catalog.create_namespace(namespace=namespace)
+
+pyarrow_table = pa.Table.from_arrays(
+    [
+        pa.array([None, "A", "B", "C"]),
+        pa.array([1, 2, 3, 4]),
+        pa.array([True, None, False, True]),
+        pa.array([None, "A", "B", "C"]),
+    ],
+    schema=pa.schema(
+        [
+            pa.field("foo", pa.large_string(), nullable=True),
+            pa.field("bar", pa.int32(), nullable=False),
+            pa.field("baz", pa.bool_(), nullable=True),
+            pa.field("large", pa.large_string(), nullable=True),
+        ]
+    ),
+)
+
+identifier = (namespace, "orders")
+table = catalog.create_table(identifier=identifier, schema=pyarrow_table.schema)
+table.append(pyarrow_table)
+```
+
 ### Custom Catalog Implementations
 
 If you want to load any custom catalog implementation, you can set catalog configurations like the following:
