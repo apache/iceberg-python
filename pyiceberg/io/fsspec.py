@@ -131,13 +131,13 @@ def _file(_: Properties) -> LocalFileSystem:
 def _oss(properties: Properties) -> AbstractFileSystem:
     from s3fs import S3FileSystem
 
-    client_kwargs = {
+    client_kwargs: Dict[str, Any] = {
         "endpoint_url": properties.get(OSS_ENDPOINT),
         "aws_access_key_id": properties.get(OSS_ACCESS_KEY_ID),
         "aws_secret_access_key": properties.get(OSS_ACCESS_KEY_SECRET),
         "aws_session_token": properties.get(OSS_SESSION_TOKEN),
     }
-    config_kwargs = {"s3": {"addressing_style": "virtual"}, "signature_version": "v4"}
+    config_kwargs: Dict[str, Any] = {"s3": {"addressing_style": "virtual"}, "signature_version": "v4"}
 
     return S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
