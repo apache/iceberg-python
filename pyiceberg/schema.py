@@ -57,7 +57,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -362,6 +364,21 @@ class Schema(IcebergBaseModel):
                     f"Cannot add field {field.name} as an identifier field: must not be nested in an optional field {parent}"
                 )
 
+    def check_format_version_compatibility(self, format_version: int) -> None:
+        """Check that the schema is compatible for the given table format version.
+
+        Args:
+          format_version: The Iceberg table format version.
+
+        Raises:
+          ValueError: If the schema is not compatible for the format version.
+        """
+        for field in self._lazy_id_to_field.values():
+            if format_version < field.field_type.minimum_format_version():
+                raise ValueError(
+                    f"{field.field_type} is only supported in {field.field_type.minimum_format_version()} or higher. Current format version is: {format_version}"
+                )
+
 
 class SchemaVisitor(Generic[T], ABC):
     def before_field(self, field: NestedField) -> None:
@@ -522,8 +539,12 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
             return self.visit_time(primitive, primitive_partner)
         elif isinstance(primitive, TimestampType):
             return self.visit_timestamp(primitive, primitive_partner)
+        elif isinstance(primitive, TimestampNanoType):
+            return self.visit_timestamp_ns(primitive, primitive_partner)
         elif isinstance(primitive, TimestamptzType):
             return self.visit_timestamptz(primitive, primitive_partner)
+        elif isinstance(primitive, TimestamptzNanoType):
+            return self.visit_timestamptz_ns(primitive, primitive_partner)
         elif isinstance(primitive, StringType):
             return self.visit_string(primitive, primitive_partner)
         elif isinstance(primitive, UUIDType):
@@ -574,8 +595,16 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
         """Visit a TimestampType."""
 
     @abstractmethod
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType, partner: Optional[P]) -> T:
+        """Visit a TimestampNanoType."""
+
+    @abstractmethod
     def visit_timestamptz(self, timestamptz_type: TimestamptzType, partner: Optional[P]) -> T:
         """Visit a TimestamptzType."""
+
+    @abstractmethod
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType, partner: Optional[P]) -> T:
+        """Visit a TimestamptzNanoType."""
 
     @abstractmethod
     def visit_string(self, string_type: StringType, partner: Optional[P]) -> T:
@@ -706,8 +735,12 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
             return self.visit_time(primitive)
         elif isinstance(primitive, TimestampType):
             return self.visit_timestamp(primitive)
+        elif isinstance(primitive, TimestampNanoType):
+            return self.visit_timestamp_ns(primitive)
         elif isinstance(primitive, TimestamptzType):
             return self.visit_timestamptz(primitive)
+        elif isinstance(primitive, TimestamptzNanoType):
+            return self.visit_timestamptz_ns(primitive)
         elif isinstance(primitive, StringType):
             return self.visit_string(primitive)
         elif isinstance(primitive, UUIDType):
@@ -760,8 +793,16 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
         """Visit a TimestampType."""
 
     @abstractmethod
+    def visit_timestamp_ns(self, timestamp_type: TimestampNanoType) -> T:
+        """Visit a TimestampNanoType."""
+
+    @abstractmethod
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> T:
         """Visit a TimestamptzType."""
+
+    @abstractmethod
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType) -> T:
+        """Visit a TimestamptzNanoType."""
 
     @abstractmethod
     def visit_string(self, string_type: StringType) -> T:

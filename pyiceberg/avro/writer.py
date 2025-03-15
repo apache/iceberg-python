@@ -96,7 +96,19 @@ class TimestampWriter(Writer):
 
 
 @dataclass(frozen=True)
+class TimestampNanoWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: int) -> None:
+        encoder.write_int(val)
+
+
+@dataclass(frozen=True)
 class TimestamptzWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: int) -> None:
+        encoder.write_int(val)
+
+
+@dataclass(frozen=True)
+class TimestamptzNanoWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: int) -> None:
         encoder.write_int(val)
 
