@@ -209,7 +209,7 @@ def test_create_namespace(catalog: RestCatalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
-def test_create_namespace_if_not_exists(catalog: RestCatalog) -> None:
+def test_recreate_existing_namespace(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
     assert TEST_NAMESPACE_IDENTIFIER in catalog.list_namespaces()
@@ -487,9 +487,7 @@ def test_create_table_200(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
-def test_create_table_with_given_location_removes_trailing_slash_200(
-    catalog: RestCatalog, table_schema_simple: Schema
-) -> None:
+def test_create_table_with_given_location_removes_trailing_slash_200(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     location = "s3://warehouse/database/table-custom-location"
 
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
