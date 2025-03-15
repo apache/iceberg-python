@@ -37,12 +37,7 @@ from pyiceberg.table.sorting import (
     assign_fresh_sort_order_ids,
 )
 from pyiceberg.table.statistics import StatisticsFile
-from pyiceberg.typedef import (
-    EMPTY_DICT,
-    IcebergBaseModel,
-    IcebergRootModel,
-    Properties,
-)
+from pyiceberg.typedef import EMPTY_DICT, FormatVersion, IcebergBaseModel, IcebergRootModel, Properties
 from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
@@ -65,7 +60,7 @@ INITIAL_SEQUENCE_NUMBER = 0
 INITIAL_SPEC_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
-SUPPORTED_TABLE_FORMAT_VERSION = 2
+SUPPORTED_TABLE_FORMAT_VERSION = FormatVersion.V2
 
 
 def cleanup_snapshot_id(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -300,7 +295,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         return None
 
     def next_sequence_number(self) -> int:
-        return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
+        return self.last_sequence_number + 1 if self.format_version > FormatVersion.V1 else INITIAL_SEQUENCE_NUMBER
 
     def sort_order_by_id(self, sort_order_id: int) -> Optional[SortOrder]:
         """Get the sort order by sort_order_id."""
@@ -315,7 +310,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     @field_serializer("snapshots")
     def serialize_snapshots(self, snapshots: List[Snapshot]) -> List[Snapshot]:
         # Snapshot field `sequence-number` should not be written for v1 metadata
-        if self.format_version == 1:
+        if self.format_version == FormatVersion.V1:
             return [snapshot.model_copy(update={"sequence_number": None}) for snapshot in snapshots]
         return snapshots
 
@@ -450,7 +445,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         metadata["format-version"] = 2
         return TableMetadataV2.model_validate(metadata)
 
-    format_version: Literal[1] = Field(alias="format-version", default=1)
+    format_version: Literal[FormatVersion.V1] = Field(alias="format-version", default=FormatVersion.V1)
     """An integer version number for the format. Implementations must throw
     an exception if a table’s version is higher than the supported version."""
 
@@ -497,7 +492,7 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
     def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
         return construct_refs(table_metadata)
 
-    format_version: Literal[2] = Field(alias="format-version", default=2)
+    format_version: Literal[FormatVersion.V2] = Field(alias="format-version", default=FormatVersion.V2)
     """An integer version number for the format. Implementations must throw
     an exception if a table’s version is higher than the supported version."""
 
@@ -541,7 +536,7 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     def construct_refs(cls, table_metadata: TableMetadata) -> TableMetadata:
         return construct_refs(table_metadata)
 
-    format_version: Literal[3] = Field(alias="format-version", default=3)
+    format_version: Literal[FormatVersion.V3] = Field(alias="format-version", default=FormatVersion.V3)
     """An integer version number for the format. Implementations must throw
     an exception if a table’s version is higher than the supported version."""
 
@@ -586,8 +581,8 @@ def new_table_metadata(
         table_uuid = uuid.uuid4()
 
     # Remove format-version so it does not get persisted
-    format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
-    if format_version == 1:
+    format_version = properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)
+    if format_version is FormatVersion.V1:
         return TableMetadataV1(
             location=location,
             last_column_id=fresh_schema.highest_field_id,
@@ -602,7 +597,7 @@ def new_table_metadata(
             last_partition_id=fresh_partition_spec.last_assigned_field_id,
             table_uuid=table_uuid,
         )
-    elif format_version == 2:
+    elif format_version is FormatVersion.V2:
         return TableMetadataV2(
             location=location,
             schemas=[fresh_schema],
@@ -616,7 +611,7 @@ def new_table_metadata(
             last_partition_id=fresh_partition_spec.last_assigned_field_id,
             table_uuid=table_uuid,
         )
-    elif format_version == 3:
+    elif format_version is FormatVersion.V3:
         return TableMetadataV3(
             location=location,
             schemas=[fresh_schema],
@@ -654,11 +649,11 @@ class TableMetadataUtil:
             raise ValidationError(f"Missing format-version in TableMetadata: {data}")
         format_version = data["format-version"]
 
-        if format_version == 1:
+        if format_version is FormatVersion.V1:
             return TableMetadataV1(**data)
-        elif format_version == 2:
+        elif format_version is FormatVersion.V2:
             return TableMetadataV2(**data)
-        elif format_version == 3:
+        elif format_version is FormatVersion.V3:
             return TableMetadataV3(**data)
         else:
             raise ValidationError(f"Unknown format version: {format_version}")
@@ -672,11 +667,11 @@ class TableMetadataUtil:
         if table_metadata.format_version is None:
             raise ValidationError(f"Missing format-version in TableMetadata: {table_metadata}")
 
-        if table_metadata.format_version == 1:
+        if table_metadata.format_version is FormatVersion.V1:
             return TableMetadataV1.model_construct(**dict(table_metadata))
-        elif table_metadata.format_version == 2:
+        elif table_metadata.format_version is FormatVersion.V2:
             return TableMetadataV2.model_construct(**dict(table_metadata))
-        elif table_metadata.format_version == 3:
+        elif table_metadata.format_version is FormatVersion.V3:
             return TableMetadataV3.model_construct(**dict(table_metadata))
         else:
             raise ValidationError(f"Unknown format version: {table_metadata.format_version}")

@@ -39,6 +39,7 @@ from pyiceberg.transforms import (
     TruncateTransform,
     YearTransform,
 )
+from pyiceberg.typedef import FormatVersion
 from pyiceberg.types import (
     StringType,
 )
@@ -49,9 +50,9 @@ from utils import TABLE_SCHEMA, _create_table
 @pytest.mark.parametrize(
     "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_query_filter_null_partitioned(
-    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: FormatVersion
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_null_partitioned_on_col_{part_col}"
@@ -70,7 +71,7 @@ def test_query_filter_null_partitioned(
     )
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in arrow_table_with_null.column_names:
@@ -82,14 +83,14 @@ def test_query_filter_null_partitioned(
 @pytest.mark.parametrize(
     "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_query_filter_without_data_partitioned(
     session_catalog: Catalog,
     spark: SparkSession,
     arrow_table_without_data: pa.Table,
     part_col: str,
     arrow_table_with_null: pa.Table,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_without_data_partitioned_on_col_{part_col}"
@@ -108,7 +109,7 @@ def test_query_filter_without_data_partitioned(
     )
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in arrow_table_with_null.column_names:
         assert df.where(f"{col} is null").count() == 0, f"Expected 0 row for {col}"
@@ -119,9 +120,9 @@ def test_query_filter_without_data_partitioned(
 @pytest.mark.parametrize(
     "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_query_filter_only_nulls_partitioned(
-    session_catalog: Catalog, spark: SparkSession, arrow_table_with_only_nulls: pa.Table, part_col: str, format_version: int
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_only_nulls: pa.Table, part_col: str, format_version: FormatVersion
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_only_nulls_partitioned_on_col_{part_col}"
@@ -140,7 +141,7 @@ def test_query_filter_only_nulls_partitioned(
     )
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in arrow_table_with_only_nulls.column_names:
         assert df.where(f"{col} is null").count() == 2, f"Expected 2 row for {col}"
@@ -151,9 +152,9 @@ def test_query_filter_only_nulls_partitioned(
 @pytest.mark.parametrize(
     "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamptz", "timestamp", "binary"]
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_query_filter_appended_null_partitioned(
-    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: FormatVersion
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_appended_with_null_partitioned_on_col_{part_col}"
@@ -175,7 +176,7 @@ def test_query_filter_appended_null_partitioned(
     tbl.append(pa.concat_tables([arrow_table_with_null, arrow_table_with_null]))
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in arrow_table_with_null.column_names:
         assert df.where(f"{col} is not null").count() == 6, f"Expected 6 non-null rows for {col}"
@@ -204,10 +205,10 @@ def test_query_filter_appended_null_partitioned(
 )
 @pytest.mark.parametrize(
     "format_version",
-    [1, 2],
+    [FormatVersion.V1, FormatVersion.V2],
 )
 def test_query_filter_dynamic_partition_overwrite_null_partitioned(
-    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: FormatVersion
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_appended_with_null_partitioned_on_col_{part_col}"
@@ -230,7 +231,7 @@ def test_query_filter_dynamic_partition_overwrite_null_partitioned(
     tbl.dynamic_partition_overwrite(arrow_table_with_null)
     tbl.dynamic_partition_overwrite(arrow_table_with_null.slice(0, 2))
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     for col in arrow_table_with_null.column_names:
         assert df.where(f"{col} is not null").count() == 2, f"Expected 2 non-null rows for {col},"
@@ -265,16 +266,16 @@ def test_query_filter_v1_v2_append_null(
     tbl.append(arrow_table_with_null)
 
     # Then
-    assert tbl.format_version == 1, f"Expected v1, got: v{tbl.format_version}"
+    assert tbl.format_version is FormatVersion.V1, f"Expected v1, got: v{tbl.format_version}"
 
     # When
     with tbl.transaction() as tx:
-        tx.upgrade_table_version(format_version=2)
+        tx.upgrade_table_version(format_version=FormatVersion.V2)
 
     tbl.append(arrow_table_with_null)
 
     # Then
-    assert tbl.format_version == 2, f"Expected v2, got: v{tbl.format_version}"
+    assert tbl.format_version is FormatVersion.V2, f"Expected v2, got: v{tbl.format_version}"
     for col in arrow_table_with_null.column_names:  # type: ignore
         df = spark.table(identifier)
         assert df.where(f"{col} is not null").count() == 4, f"Expected 4 non-null rows for {col}"
@@ -285,9 +286,9 @@ def test_query_filter_v1_v2_append_null(
 @pytest.mark.parametrize(
     "part_col", ["int", "bool", "string", "string_long", "long", "float", "double", "date", "timestamp", "timestamptz", "binary"]
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_object_storage_location_provider_excludes_partition_path(
-    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+    session_catalog: Catalog, spark: SparkSession, arrow_table_with_null: pa.Table, part_col: str, format_version: FormatVersion
 ) -> None:
     nested_field = TABLE_SCHEMA.find_field(part_col)
     partition_spec = PartitionSpec(
@@ -353,10 +354,10 @@ def test_object_storage_location_provider_excludes_partition_path(
 )
 @pytest.mark.parametrize(
     "format_version",
-    [1, 2],
+    [FormatVersion.V1, FormatVersion.V2],
 )
 def test_dynamic_partition_overwrite_non_identity_transform(
-    session_catalog: Catalog, arrow_table_with_null: pa.Table, spec: PartitionSpec, format_version: int
+    session_catalog: Catalog, arrow_table_with_null: pa.Table, spec: PartitionSpec, format_version: FormatVersion
 ) -> None:
     identifier = "default.dynamic_partition_overwrite_non_identity_transform"
     try:
@@ -407,10 +408,10 @@ def test_dynamic_partition_overwrite_invalid_on_unpartitioned_table(
 )
 @pytest.mark.parametrize(
     "format_version",
-    [1, 2],
+    [FormatVersion.V1, FormatVersion.V2],
 )
 def test_dynamic_partition_overwrite_unpartitioned_evolve_to_identity_transform(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, part_col: str, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, part_col: str, format_version: FormatVersion
 ) -> None:
     identifier = f"default.unpartitioned_table_v{format_version}_evolve_into_identity_transformed_partition_field_{part_col}"
 
@@ -648,9 +649,9 @@ def test_data_files_with_table_partitioned_with_null(
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "format_version",
-    [1, 2],
+    [FormatVersion.V1, FormatVersion.V2],
 )
-def test_dynamic_partition_overwrite_rename_column(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_dynamic_partition_overwrite_rename_column(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     arrow_table = pa.Table.from_pydict(
         {
             "place": ["Amsterdam", "Drachten"],
@@ -695,10 +696,10 @@ def test_dynamic_partition_overwrite_rename_column(spark: SparkSession, session_
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "format_version",
-    [1, 2],
+    [FormatVersion.V1, FormatVersion.V2],
 )
 @pytest.mark.filterwarnings("ignore")
-def test_dynamic_partition_overwrite_evolve_partition(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+def test_dynamic_partition_overwrite_evolve_partition(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     arrow_table = pa.Table.from_pydict(
         {
             "place": ["Amsterdam", "Drachten"],
@@ -772,13 +773,13 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog) -> Non
         (PartitionSpec(PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(2), name="string_trunc"))),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_truncate_transform(
     spec: PartitionSpec,
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     identifier = "default.truncate_transform"
 
@@ -795,7 +796,7 @@ def test_truncate_transform(
         partition_spec=spec,
     )
 
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in arrow_table_with_null.column_names:
@@ -825,13 +826,13 @@ def test_truncate_transform(
         ),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_identity_and_bucket_transform_spec(
     spec: PartitionSpec,
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     identifier = "default.identity_and_bucket_transform"
 
@@ -848,7 +849,7 @@ def test_identity_and_bucket_transform_spec(
         partition_spec=spec,
     )
 
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in arrow_table_with_null.column_names:
@@ -910,14 +911,14 @@ def test_unsupported_transform(
         (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=BucketTransform(2), name="binary_bucket")), 2),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_bucket_transform(
     spark: SparkSession,
     session_catalog: Catalog,
     arrow_table_with_null: pa.Table,
     spec: PartitionSpec,
     expected_rows: int,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     identifier = "default.bucket_transform"
 
@@ -934,7 +935,7 @@ def test_bucket_transform(
         partition_spec=spec,
     )
 
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in arrow_table_with_null.column_names:
@@ -961,7 +962,7 @@ def test_bucket_transform(
     ],
 )
 @pytest.mark.parametrize("part_col", ["date", "timestamp", "timestamptz"])
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_append_ymd_transform_partitioned(
     session_catalog: Catalog,
     spark: SparkSession,
@@ -969,7 +970,7 @@ def test_append_ymd_transform_partitioned(
     transform: Transform[Any, Any],
     expected_rows: int,
     part_col: str,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_{str(transform)}_partition_on_col_{part_col}"
@@ -988,7 +989,7 @@ def test_append_ymd_transform_partitioned(
     )
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 3, f"Expected 3 total rows for {identifier}"
     for col in arrow_table_with_null.column_names:
@@ -1017,7 +1018,7 @@ def test_append_ymd_transform_partitioned(
         pytest.param(HourTransform(), {473328, 473352, 474072, 474096, 474102, None}, id="hour_transform"),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_append_transform_partition_verify_partitions_count(
     session_catalog: Catalog,
     spark: SparkSession,
@@ -1025,7 +1026,7 @@ def test_append_transform_partition_verify_partitions_count(
     table_date_timestamps_schema: Schema,
     transform: Transform[Any, Any],
     expected_partitions: Set[Any],
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     # Given
     part_col = "timestamptz"
@@ -1046,7 +1047,7 @@ def test_append_transform_partition_verify_partitions_count(
     )
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 6, f"Expected 6 total rows for {identifier}"
     for col in arrow_table_date_timestamps.column_names:
@@ -1066,13 +1067,13 @@ def test_append_transform_partition_verify_partitions_count(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_append_multiple_partitions(
     session_catalog: Catalog,
     spark: SparkSession,
     arrow_table_date_timestamps: pa.Table,
     table_date_timestamps_schema: Schema,
-    format_version: int,
+    format_version: FormatVersion,
 ) -> None:
     # Given
     identifier = f"default.arrow_table_v{format_version}_with_multiple_partitions"
@@ -1102,7 +1103,7 @@ def test_append_multiple_partitions(
     )
 
     # Then
-    assert tbl.format_version == format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
+    assert tbl.format_version is format_version, f"Expected v{format_version}, got: v{tbl.format_version}"
     df = spark.table(identifier)
     assert df.count() == 6, f"Expected 6 total rows for {identifier}"
     for col in arrow_table_date_timestamps.column_names:

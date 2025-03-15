@@ -59,6 +59,7 @@ from pyiceberg.types import (
     UnknownType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
+from pyiceberg.typedef import FormatVersion
 
 DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
@@ -673,26 +674,26 @@ def test_filter_case_insensitive(catalog: Catalog) -> None:
 def test_upgrade_table_version(catalog: Catalog) -> None:
     table_test_table_version = catalog.load_table("default.test_table_version")
 
-    assert table_test_table_version.format_version == 1
+    assert table_test_table_version.format_version is FormatVersion.V1
 
     with table_test_table_version.transaction() as transaction:
-        transaction.upgrade_table_version(format_version=1)
+        transaction.upgrade_table_version(format_version=FormatVersion.V1)
 
-    assert table_test_table_version.format_version == 1
+    assert table_test_table_version.format_version is FormatVersion.V1
 
     with table_test_table_version.transaction() as transaction:
-        transaction.upgrade_table_version(format_version=2)
+        transaction.upgrade_table_version(format_version=FormatVersion.V2)
 
-    assert table_test_table_version.format_version == 2
+    assert table_test_table_version.format_version is FormatVersion.V2
 
     with pytest.raises(ValueError) as e:  # type: ignore
         with table_test_table_version.transaction() as transaction:
-            transaction.upgrade_table_version(format_version=1)
+            transaction.upgrade_table_version(format_version=FormatVersion.V1)
     assert "Cannot downgrade v2 table to v1" in str(e.value)
 
     with pytest.raises(ValueError) as e:
         with table_test_table_version.transaction() as transaction:
-            transaction.upgrade_table_version(format_version=3)
+            transaction.upgrade_table_version(format_version=FormatVersion.V3)
     assert "Unsupported table format version: 3" in str(e.value)
 
 

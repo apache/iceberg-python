@@ -40,7 +40,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
 )
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, FormatVersion
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -152,9 +152,9 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
         with avro.AvroOutputFile[ManifestEntry](
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
-            file_schema=MANIFEST_ENTRY_SCHEMAS[1],
+            file_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V1],
             schema_name="manifest_entry",
-            record_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2],
             metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
@@ -218,7 +218,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
 
         with avro.AvroOutputFile[ManifestEntry](
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
-            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            file_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2],
             schema_name="manifest_entry",
             metadata=additional_metadata,
         ) as out:
@@ -238,8 +238,8 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
         assert todict(entry) == fa_entry
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: FormatVersion) -> None:
     data_file = DataFile(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
@@ -279,7 +279,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
         # Read as V2
         with avro.AvroFile[ManifestEntry](
             input_file=PyArrowFileIO().new_input(tmp_avro_file),
-            read_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            read_schema=MANIFEST_ENTRY_SCHEMAS[FormatVersion.V2],
             read_types={-1: ManifestEntry, 2: DataFile},
         ) as avro_reader:
             it = iter(avro_reader)
@@ -296,7 +296,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
             it = iter(avro_reader)
             avro_entry = next(it)
 
-            if format_version == 1:
+            if format_version is FormatVersion.V1:
                 v1_datafile = copy(data_file)
                 # Not part of V1
                 v1_datafile.equality_ids = None
@@ -309,7 +309,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
                     file_sequence_number=None,
                     data_file=v1_datafile,
                 )
-            elif format_version == 2:
+            elif format_version is FormatVersion.V2:
                 assert entry == avro_entry
             else:
                 raise ValueError(f"Unsupported version: {format_version}")
