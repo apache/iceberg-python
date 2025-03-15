@@ -330,6 +330,8 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
 
             def hash_func(v: Any) -> int:
+                # In order to bucket TimestampNano the same as Timestamp
+                # convert to micros before hashing.
                 if isinstance(v, py_datetime.datetime):
                     v = datetime.datetime_to_micros(v)
                 else:

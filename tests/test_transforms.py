@@ -153,7 +153,17 @@ from pyiceberg.utils.datetime import (
             -1207196810,
         ),
         (
+            timestamp_to_nanos("2017-11-16T22:31:08.000001001"),
+            TimestampNanoType(),
+            -1207196810,
+        ),
+        (
             timestamptz_to_nanos("2017-11-16T14:31:08.000001-08:00"),
+            TimestamptzNanoType(),
+            -1207196810,
+        ),
+        (
+            timestamptz_to_nanos("2017-11-16T14:31:08.000001001-08:00"),
             TimestamptzNanoType(),
             -1207196810,
         ),
