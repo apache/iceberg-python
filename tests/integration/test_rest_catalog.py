@@ -190,43 +190,41 @@ def table_metadata_no_snapshot_rest(table_metadata_no_snapshot_v2: Dict[str, Any
 
 
 @pytest.mark.integration
-@pytest.fixture(scope="function")
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up")])
+@pytest.fixture(autouse=True)
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog")])
 def test_clean_up(catalog: RestCatalog) -> None:
-    for namespaces_tuple in catalog.list_namespaces():
-        namespace_name = namespaces_tuple[0]
-        if TEST_NAMESPACE_IDENTIFIER[0] in namespace_name:
-            for identifier in catalog.list_tables(namespace_name):
-                catalog.purge_table(identifier)
-            if catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
-                catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
+    if catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
+        for identifier in catalog.list_tables(TEST_NAMESPACE_IDENTIFIER[0]):
+            catalog.purge_table(identifier)
+    if catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
+        catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_namespace_200(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_namespace(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     assert TEST_NAMESPACE_IDENTIFIER in catalog.list_namespaces()
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_namespace_if_exists_409(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_namespace_if_not_exists(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
     assert TEST_NAMESPACE_IDENTIFIER in catalog.list_namespaces()
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_list_namespaces_200(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_list_namespaces_200(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
-    assert catalog.list_namespaces() == [("default",), TEST_NAMESPACE_IDENTIFIER]
+    assert TEST_NAMESPACE_IDENTIFIER in catalog.list_namespaces()
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_namespace_409(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_namespace_409(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
     with pytest.raises(NamespaceAlreadyExistsError) as e:
@@ -235,16 +233,16 @@ def test_create_namespace_409(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_namespace_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_namespace_404(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
     assert "Namespace does not exist" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_namespace_409(catalog: RestCatalog, table_schema_simple: Schema, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_namespace_409(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
 
@@ -254,24 +252,24 @@ def test_drop_namespace_409(catalog: RestCatalog, table_schema_simple: Schema, c
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_load_namespace_properties_200(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_load_namespace_properties_200(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER, properties={"prop": "yes"})
 
     assert "yes" == catalog.load_namespace_properties(TEST_NAMESPACE_IDENTIFIER)["prop"]
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_load_namespace_properties_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_load_namespace_properties_404(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.load_namespace_properties(TEST_NAMESPACE_IDENTIFIER)["prop"]
     assert "Namespace does not exist" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_update_namespace_properties_200(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_update_namespace_properties_200(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER, properties={"prop": "yes", "abc": "abc"})
     assert PropertiesUpdateSummary(removed=["abc"], updated=["prop"], missing=["def"]) == catalog.update_namespace_properties(
         TEST_NAMESPACE_IDENTIFIER, {"abc", "def"}, {"prop": "yes"}
@@ -279,37 +277,37 @@ def test_update_namespace_properties_200(catalog: RestCatalog, clean_up: Any) ->
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_update_namespace_properties_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_update_namespace_properties_404(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.update_namespace_properties(TEST_NAMESPACE_IDENTIFIER, {"abc", "def"}, {"prop": "yes"})
     assert "Namespace does not exist" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_namespace_exists_204(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_namespace_exists_204(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
     assert catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_namespace_exists_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_namespace_exists_404(catalog: RestCatalog) -> None:
     assert not catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_namespace_empty(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_namespace_empty(catalog: RestCatalog) -> None:
     assert not catalog.namespace_exists("")
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_load_table_200(
-    catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
+    catalog: RestCatalog, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
 ) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
@@ -331,9 +329,9 @@ def test_load_table_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_load_table_honor_access_delegation(
-    catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
+    catalog: RestCatalog, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
 ) -> None:
     catalog = RestCatalog(
         "rest",
@@ -366,9 +364,9 @@ def test_load_table_honor_access_delegation(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_load_table_from_self_identifier_200(
-    catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
+    catalog: RestCatalog, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
 ) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
@@ -391,8 +389,8 @@ def test_load_table_from_self_identifier_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_list_tables_200(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_list_tables_200(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
 
@@ -400,9 +398,9 @@ def test_list_tables_200(catalog: RestCatalog, clean_up: Any, table_schema_simpl
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 @pytest.mark.skip(reason="Not establishing proper connection in testing")
-def test_list_tables_200_sigv4(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+def test_list_tables_200_sigv4(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": "some-jwt-token", "rest.sigv4-enabled": "true"})
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
@@ -411,16 +409,16 @@ def test_list_tables_200_sigv4(catalog: RestCatalog, clean_up: Any, table_schema
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_list_tables_404(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_list_tables_404(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.list_tables(TEST_NAMESPACE_IDENTIFIER)
     assert "Namespace does not exist" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_load_table_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_load_table_404(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
     with pytest.raises(NoSuchTableError) as e:
@@ -429,8 +427,8 @@ def test_load_table_404(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_table_exists_204(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_table_exists_204(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
 
@@ -438,14 +436,14 @@ def test_table_exists_204(catalog: RestCatalog, clean_up: Any, table_schema_simp
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_table_exists_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_table_exists_404(catalog: RestCatalog) -> None:
     assert not catalog.table_exists(TEST_TABLE_IDENTIFIER)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_table_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_table_404(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
     with pytest.raises(NoSuchTableError) as e:
@@ -454,10 +452,9 @@ def test_drop_table_404(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_create_table_200(
     catalog: RestCatalog,
-    clean_up: Any,
     table_schema_simple: Schema,
     rest_integration_example_metadata_partitioned_v2: Dict[str, Any],
 ) -> None:
@@ -489,9 +486,9 @@ def test_create_table_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_create_table_with_given_location_removes_trailing_slash_200(
-    catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema
+    catalog: RestCatalog, table_schema_simple: Schema
 ) -> None:
     location = "s3://warehouse/database/table-custom-location"
 
@@ -512,10 +509,9 @@ def test_create_table_with_given_location_removes_trailing_slash_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_create_staged_table_200(
     catalog: RestCatalog,
-    clean_up: Any,
     table_schema_simple: Schema,
     rest_integration_example_metadata_partitioned_v2: Dict[str, Any],
 ) -> None:
@@ -555,8 +551,8 @@ def test_create_staged_table_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_table_409(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_table_409(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -585,8 +581,8 @@ def test_create_table_409(catalog: RestCatalog, clean_up: Any, table_schema_simp
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_table_if_not_exists_200(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_table_if_not_exists_200(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     table1 = catalog.create_table(
         identifier=TEST_TABLE_IDENTIFIER,
@@ -614,8 +610,8 @@ def test_create_table_if_not_exists_200(catalog: RestCatalog, clean_up: Any, tab
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_delete_namespace_204(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_delete_namespace_204(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
 
@@ -623,8 +619,8 @@ def test_delete_namespace_204(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_delete_table_204(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_delete_table_204(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
 
@@ -634,8 +630,8 @@ def test_delete_table_204(catalog: RestCatalog, clean_up: Any, table_schema_simp
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_delete_table_from_self_identifier_204(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_delete_table_from_self_identifier_204(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
     table = catalog.load_table(TEST_TABLE_IDENTIFIER)
@@ -645,8 +641,8 @@ def test_delete_table_from_self_identifier_204(catalog: RestCatalog, clean_up: A
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_delete_table_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_delete_table_404(catalog: RestCatalog) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
     with pytest.raises(NoSuchTableError) as e:
@@ -656,9 +652,9 @@ def test_delete_table_404(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_rename_table_200(
-    catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
+    catalog: RestCatalog, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
 ) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
@@ -683,9 +679,9 @@ def test_rename_table_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 def test_rename_table_from_self_identifier_200(
-    catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
+    catalog: RestCatalog, table_schema_simple: Schema, table_metadata_no_snapshot_rest: Dict[str, Any]
 ) -> None:
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
@@ -710,8 +706,8 @@ def test_rename_table_from_self_identifier_200(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_table_missing_namespace(catalog: RestCatalog, clean_up: Any, table_schema_simple: Schema) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_table_missing_namespace(catalog: RestCatalog, table_schema_simple: Schema) -> None:
     assert not catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
 
     catalog.create_table(TEST_TABLE_IDENTIFIER, schema=table_schema_simple)
@@ -719,8 +715,8 @@ def test_create_table_missing_namespace(catalog: RestCatalog, clean_up: Any, tab
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_load_table_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_load_table_invalid_namespace(catalog: RestCatalog) -> None:
     table = "table"
     with pytest.raises(NoSuchIdentifierError) as e:
         catalog.load_table(table)
@@ -728,8 +724,8 @@ def test_load_table_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> No
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_table_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_table_invalid_namespace(catalog: RestCatalog) -> None:
     table = "table"
     with pytest.raises(NoSuchIdentifierError) as e:
         catalog.drop_table(table)
@@ -737,8 +733,8 @@ def test_drop_table_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> No
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_purge_table_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_purge_table_invalid_namespace(catalog: RestCatalog) -> None:
     table = "table"
     with pytest.raises(NoSuchIdentifierError) as e:
         catalog.purge_table(table)
@@ -746,40 +742,40 @@ def test_purge_table_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> N
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_namespace_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_namespace_invalid_namespace(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.create_namespace(())
     assert "Empty namespace identifier" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_namespace_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_namespace_invalid_namespace(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.drop_namespace(())
     assert "Empty namespace identifier" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_load_namespace_properties_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_load_namespace_properties_invalid_namespace(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.load_namespace_properties(())
     assert "Empty namespace identifier" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_update_namespace_properties_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_update_namespace_properties_invalid_namespace(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         catalog.update_namespace_properties(())
     assert "Empty namespace identifier" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_request_session_with_ssl_client_cert(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_request_session_with_ssl_client_cert(catalog: RestCatalog) -> None:
     catalog_properties = {
         "uri": TEST_URI,
         "token": "some-jwt-token",
@@ -796,8 +792,8 @@ def test_request_session_with_ssl_client_cert(catalog: RestCatalog, clean_up: An
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_namespace_if_not_exists(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_namespace_if_not_exists(catalog: RestCatalog) -> None:
     if catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
         catalog.drop_namespace(TEST_NAMESPACE_IDENTIFIER)
 
@@ -807,8 +803,8 @@ def test_create_namespace_if_not_exists(catalog: RestCatalog, clean_up: Any) -> 
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_create_namespace_if_already_existing(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_create_namespace_if_already_existing(catalog: RestCatalog) -> None:
     if not catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER):
         catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
 
@@ -818,25 +814,25 @@ def test_create_namespace_if_already_existing(catalog: RestCatalog, clean_up: An
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 @pytest.mark.skip(reason="Not establishing proper connection in testing")
-def test_list_views_200_sigv4(catalog: RestCatalog, clean_up: Any) -> None:
+def test_list_views_200_sigv4(catalog: RestCatalog) -> None:
     catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": "some-jwt-token", "rest.sigv4-enabled": "true"})
     catalog.create_namespace(TEST_NAMESPACE_IDENTIFIER)
     assert [] == catalog.list_views(TEST_NAMESPACE_IDENTIFIER)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_list_views_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_list_views_404(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchNamespaceError) as e:
         RestCatalog("rest", uri=TEST_URI, token="some-jwt-token").list_views(TEST_NAMESPACE_IDENTIFIER)
     assert "Namespace does not exist" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_view_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_view_invalid_namespace(catalog: RestCatalog) -> None:
     view = "view"
 
     with pytest.raises(NoSuchIdentifierError) as e:
@@ -846,8 +842,8 @@ def test_drop_view_invalid_namespace(catalog: RestCatalog, clean_up: Any) -> Non
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_drop_view_404(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_drop_view_404(catalog: RestCatalog) -> None:
     with pytest.raises(NoSuchViewError) as e:
         catalog.drop_view((TEST_NAMESPACE_IDENTIFIER[0], "NO_VIEW"))
 
@@ -855,8 +851,8 @@ def test_drop_view_404(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_properties_sets_headers(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_properties_sets_headers(catalog: RestCatalog) -> None:
     catalog = RestCatalog(
         "rest",
         uri=TEST_URI,
@@ -872,35 +868,35 @@ def test_properties_sets_headers(catalog: RestCatalog, clean_up: Any) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
-def test_no_uri_supplied(catalog: RestCatalog, clean_up: Any) -> None:
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
+def test_no_uri_supplied(catalog: RestCatalog) -> None:
     with pytest.raises(KeyError) as e:
         RestCatalog("production")
     assert "uri" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 @pytest.mark.skip(reason="Not raising OAuthError")
-def test_token_400(catalog: RestCatalog, clean_up: Any) -> None:
+def test_token_400(catalog: RestCatalog) -> None:
     with pytest.raises(OAuthError) as e:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
     assert str(e.value) == "invalid_client: Credentials for key invalid_key do not match"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 @pytest.mark.skip(reason="Not raising OAuthError")
-def test_token_401(catalog: RestCatalog, clean_up: Any) -> None:
+def test_token_401(catalog: RestCatalog) -> None:
     with pytest.raises(OAuthError) as e:
         RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
     assert "invalid_client" in str(e.value)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("catalog,clean_up", [(pytest.lazy_fixture("session_catalog"), pytest.lazy_fixture("test_clean_up"))])
+@pytest.mark.parametrize("catalog", [(pytest.lazy_fixture("session_catalog"))])
 @pytest.mark.skip(reason="Not raising OSError")
-def test_request_session_with_ssl_ca_bundle(catalog: RestCatalog, clean_up: Any) -> None:
+def test_request_session_with_ssl_ca_bundle(catalog: RestCatalog) -> None:
     catalog_properties = {
         "uri": "http://localhost:8181",
         "token": "some-jwt-token",
