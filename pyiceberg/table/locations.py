@@ -16,13 +16,13 @@
 # under the License.
 import importlib
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from typing import Optional
 
 import mmh3
 
 from pyiceberg.partitioning import PartitionKey
-from pyiceberg.table import TableProperties
 from pyiceberg.typedef import Properties
 from pyiceberg.utils.properties import property_as_bool
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class LocationProvider(ABC):
-    """A base class for location providers, that provide data file locations for a table's write tasks.
+    """A base class for location providers, that provide file locations for a table's write tasks.
 
     Args:
         table_location (str): The table's base storage location.
@@ -41,15 +41,23 @@ class LocationProvider(ABC):
     table_properties: Properties
 
     data_path: str
+    metadata_path: str
 
     def __init__(self, table_location: str, table_properties: Properties):
         self.table_location = table_location
         self.table_properties = table_properties
 
+        from pyiceberg.table import TableProperties
+
         if path := table_properties.get(TableProperties.WRITE_DATA_PATH):
             self.data_path = path.rstrip("/")
         else:
             self.data_path = f"{self.table_location.rstrip('/')}/data"
+
+        if path := table_properties.get(TableProperties.WRITE_METADATA_PATH):
+            self.metadata_path = path.rstrip("/")
+        else:
+            self.metadata_path = f"{self.table_location.rstrip('/')}/metadata"
 
     @abstractmethod
     def new_data_location(self, data_file_name: str, partition_key: Optional[PartitionKey] = None) -> str:
@@ -62,6 +70,35 @@ class LocationProvider(ABC):
         Returns:
             str: A fully-qualified location URI for the data file.
         """
+
+    def new_table_metadata_file_location(self, new_version: int = 0) -> str:
+        """Return a fully-qualified metadata file location for a new table version.
+
+        Args:
+            new_version (int): Version number of the metadata file.
+
+        Returns:
+            str: fully-qualified URI for the new table metadata file.
+
+        Raises:
+            ValueError: If the version is negative.
+        """
+        if new_version < 0:
+            raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
+
+        file_name = f"{new_version:05d}-{uuid.uuid4()}.metadata.json"
+        return self.new_metadata_location(file_name)
+
+    def new_metadata_location(self, metadata_file_name: str) -> str:
+        """Return a fully-qualified metadata file location for the given filename.
+
+        Args:
+            metadata_file_name (str): Name of the metadata file.
+
+        Returns:
+            str: A fully-qualified location URI for the metadata file.
+        """
+        return f"{self.metadata_path}/{metadata_file_name}"
 
 
 class SimpleLocationProvider(LocationProvider):
@@ -85,6 +122,8 @@ class ObjectStoreLocationProvider(LocationProvider):
 
     def __init__(self, table_location: str, table_properties: Properties):
         super().__init__(table_location, table_properties)
+        from pyiceberg.table import TableProperties
+
         self._include_partition_paths = property_as_bool(
             self.table_properties,
             TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS,
@@ -131,6 +170,8 @@ def _import_location_provider(
     try:
         path_parts = location_provider_impl.split(".")
         if len(path_parts) < 2:
+            from pyiceberg.table import TableProperties
+
             raise ValueError(
                 f"{TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL} should be full path (module.CustomLocationProvider), got: {location_provider_impl}"
             )
@@ -144,6 +185,8 @@ def _import_location_provider(
 
 
 def load_location_provider(table_location: str, table_properties: Properties) -> LocationProvider:
+    from pyiceberg.table import TableProperties
+
     table_location = table_location.rstrip("/")
 
     if location_provider_impl := table_properties.get(TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL):

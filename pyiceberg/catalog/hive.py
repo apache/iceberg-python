@@ -110,6 +110,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.properties import property_as_bool, property_as_float
@@ -124,6 +125,9 @@ OWNER = "owner"
 # If set to true, HiveCatalog will operate in Hive2 compatibility mode
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
+
+HIVE_KERBEROS_AUTH = "hive.kerberos-authentication"
+HIVE_KERBEROS_AUTH_DEFAULT = False
 
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
@@ -142,14 +146,26 @@ class _HiveClient:
     _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None):
-        url_parts = urlparse(uri)
-        transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        self._transport = TTransport.TBufferedTransport(transport)
-        protocol = TBinaryProtocol.TBinaryProtocol(transport)
+    def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
+        self._uri = uri
+        self._kerberos_auth = kerberos_auth
+        self._ugi = ugi.split(":") if ugi else None
+
+        self._init_thrift_client()
+
+    def _init_thrift_client(self) -> None:
+        url_parts = urlparse(self._uri)
+
+        socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
+
+        if not self._kerberos_auth:
+            self._transport = TTransport.TBufferedTransport(socket)
+        else:
+            self._transport = TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service="hive")
+
+        protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
 
         self._client = Client(protocol)
-        self._ugi = ugi.split(":") if ugi else None
 
     def __enter__(self) -> Client:
         self._transport.open()
@@ -221,6 +237,7 @@ HIVE_PRIMITIVE_TYPES = {
     UUIDType: "string",
     BinaryType: "binary",
     FixedType: "binary",
+    UnknownType: "void",
 }
 
 
@@ -276,7 +293,11 @@ class HiveCatalog(MetastoreCatalog):
         last_exception = None
         for uri in properties["uri"].split(","):
             try:
-                return _HiveClient(uri, properties.get("ugi"))
+                return _HiveClient(
+                    uri,
+                    properties.get("ugi"),
+                    property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
+                )
             except BaseException as e:
                 last_exception = e
         if last_exception is not None:

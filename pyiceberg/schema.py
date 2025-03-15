@@ -62,6 +62,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -552,8 +553,10 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
             return self.visit_fixed(primitive, primitive_partner)
         elif isinstance(primitive, BinaryType):
             return self.visit_binary(primitive, primitive_partner)
+        elif isinstance(primitive, UnknownType):
+            return self.visit_unknown(primitive, primitive_partner)
         else:
-            raise ValueError(f"Unknown type: {primitive}")
+            raise ValueError(f"Type not recognized: {primitive}")
 
     @abstractmethod
     def visit_boolean(self, boolean_type: BooleanType, partner: Optional[P]) -> T:
@@ -618,6 +621,10 @@ class PrimitiveWithPartnerVisitor(SchemaWithPartnerVisitor[P, T]):
     @abstractmethod
     def visit_binary(self, binary_type: BinaryType, partner: Optional[P]) -> T:
         """Visit a BinaryType."""
+
+    @abstractmethod
+    def visit_unknown(self, unknown_type: UnknownType, partner: Optional[P]) -> T:
+        """Visit a UnknownType."""
 
 
 class PartnerAccessor(Generic[P], ABC):
@@ -740,8 +747,10 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
             return self.visit_uuid(primitive)
         elif isinstance(primitive, BinaryType):
             return self.visit_binary(primitive)
+        elif isinstance(primitive, UnknownType):
+            return self.visit_unknown(primitive)
         else:
-            raise ValueError(f"Unknown type: {primitive}")
+            raise ValueError(f"Type not recognized: {primitive}")
 
     @abstractmethod
     def visit_fixed(self, fixed_type: FixedType) -> T:
@@ -806,6 +815,10 @@ class SchemaVisitorPerPrimitiveType(SchemaVisitor[T], ABC):
     @abstractmethod
     def visit_binary(self, binary_type: BinaryType) -> T:
         """Visit a BinaryType."""
+
+    @abstractmethod
+    def visit_unknown(self, unknown_type: UnknownType) -> T:
+        """Visit a UnknownType."""
 
 
 @dataclass(init=True, eq=True, frozen=True)

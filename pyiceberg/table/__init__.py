@@ -54,6 +54,7 @@ from pyiceberg.expressions import (
     Reference,
 )
 from pyiceberg.expressions.visitors import (
+    ResidualEvaluator,
     _InclusiveMetricsEvaluator,
     bind,
     expression_evaluator,
@@ -77,6 +78,7 @@ from pyiceberg.partitioning import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import (
     INITIAL_SEQUENCE_NUMBER,
     TableMetadata,
@@ -140,6 +142,7 @@ from pyiceberg.utils.properties import property_as_bool
 if TYPE_CHECKING:
     import daft
     import pandas as pd
+    import polars as pl
     import pyarrow as pa
     import ray
     from duckdb import DuckDBPyConnection
@@ -148,6 +151,14 @@ if TYPE_CHECKING:
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
+
+
+@dataclass()
+class UpsertResult:
+    """Summary the upsert operation."""
+
+    rows_updated: int = 0
+    rows_inserted: int = 0
 
 
 class TableProperties:
@@ -191,12 +202,13 @@ class TableProperties:
     WRITE_PY_LOCATION_PROVIDER_IMPL = "write.py-location-provider.impl"
 
     OBJECT_STORE_ENABLED = "write.object-storage.enabled"
-    OBJECT_STORE_ENABLED_DEFAULT = True
+    OBJECT_STORE_ENABLED_DEFAULT = False
 
     WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
 
     WRITE_DATA_PATH = "write.data.path"
+    WRITE_METADATA_PATH = "write.metadata.path"
 
     DELETE_MODE = "write.delete.mode"
     DELETE_MODE_COPY_ON_WRITE = "copy-on-write"
@@ -218,6 +230,9 @@ class TableProperties:
 
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
+
+    METADATA_DELETE_AFTER_COMMIT_ENABLED = "write.metadata.delete-after-commit.enabled"
+    METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT = False
 
     MAX_SNAPSHOT_AGE_MS = "history.expire.max-snapshot-age-ms"
     MAX_SNAPSHOT_AGE_MS_DEFAULT = 5 * 24 * 60 * 60 * 1000  # 5 days
@@ -269,7 +284,7 @@ class Transaction:
         existing_requirements = {type(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
-                self._requirements = self._requirements + requirements
+                self._requirements = self._requirements + (new_requirement,)
 
         self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
@@ -563,7 +578,9 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
+        if overwrite_filter != AlwaysFalse():
+            # Only delete when the filter is != AlwaysFalse
+            self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
@@ -994,6 +1011,10 @@ class Table:
         """Return the table's base location."""
         return self.metadata.location
 
+    def location_provider(self) -> LocationProvider:
+        """Return the table's location provider."""
+        return load_location_provider(table_location=self.metadata.location, table_properties=self.metadata.properties)
+
     @property
     def last_sequence_number(self) -> int:
         return self.metadata.last_sequence_number
@@ -1085,6 +1106,114 @@ class Table:
     def name_mapping(self) -> Optional[NameMapping]:
         """Return the table's field-id NameMapping."""
         return self.metadata.name_mapping()
+
+    def upsert(
+        self,
+        df: pa.Table,
+        join_cols: Optional[List[str]] = None,
+        when_matched_update_all: bool = True,
+        when_not_matched_insert_all: bool = True,
+        case_sensitive: bool = True,
+    ) -> UpsertResult:
+        """Shorthand API for performing an upsert to an iceberg table.
+
+        Args:
+
+            df: The input dataframe to upsert with the table's data.
+            join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
+            when_matched_update_all: Bool indicating to update rows that are matched but require an update due to a value in a non-key column changing
+            when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any existing rows in the table
+            case_sensitive: Bool indicating if the match should be case-sensitive
+
+            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+
+                Example Use Cases:
+                    Case 1: Both Parameters = True (Full Upsert)
+                    Existing row found → Update it
+                    New row found → Insert it
+
+                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                    Existing row found → Do nothing (no updates)
+                    New row found → Insert it
+
+                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                    Existing row found → Update it
+                    New row found → Do nothing (no inserts)
+
+                    Case 4: Both Parameters = False (No Merge Effect)
+                    Existing row found → Do nothing
+                    New row found → Do nothing
+                    (Function effectively does nothing)
+
+
+        Returns:
+            An UpsertResult class (contains details of rows updated and inserted)
+        """
+        try:
+            import pyarrow as pa  # noqa: F401
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import expression_to_pyarrow
+        from pyiceberg.table import upsert_util
+
+        if join_cols is None:
+            join_cols = []
+            for field_id in self.schema().identifier_field_ids:
+                col = self.schema().find_column_name(field_id)
+                if col is not None:
+                    join_cols.append(col)
+                else:
+                    raise ValueError(f"Field-ID could not be found: {join_cols}")
+
+        if len(join_cols) == 0:
+            raise ValueError("Join columns could not be found, please set identifier-field-ids or pass in explicitly.")
+
+        if not when_matched_update_all and not when_not_matched_insert_all:
+            raise ValueError("no upsert options selected...exiting")
+
+        if upsert_util.has_duplicate_rows(df, join_cols):
+            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
+
+        # get list of rows that exist so we don't have to load the entire target table
+        matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        matched_iceberg_table = self.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
+
+        update_row_cnt = 0
+        insert_row_cnt = 0
+
+        with self.transaction() as tx:
+            if when_matched_update_all:
+                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+                # this extra step avoids unnecessary IO and writes
+                rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
+
+                update_row_cnt = len(rows_to_update)
+
+                # build the match predicate filter
+                overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+
+                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+
+            if when_not_matched_insert_all:
+                expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
+                expr_match_bound = bind(self.schema(), expr_match, case_sensitive=case_sensitive)
+                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
+                rows_to_insert = df.filter(~expr_match_arrow)
+
+                insert_row_cnt = len(rows_to_insert)
+
+                tx.append(rows_to_insert)
+
+        return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -1179,6 +1308,16 @@ class Table:
 
     def _do_commit(self, updates: Tuple[TableUpdate, ...], requirements: Tuple[TableRequirement, ...]) -> None:
         response = self.catalog.commit_table(self, requirements, updates)
+
+        # https://github.com/apache/iceberg/blob/f6faa58/core/src/main/java/org/apache/iceberg/CatalogUtil.java#L527
+        # delete old metadata if METADATA_DELETE_AFTER_COMMIT_ENABLED is set to true and uses
+        # TableProperties.METADATA_PREVIOUS_VERSIONS_MAX to determine how many previous versions to keep -
+        # everything else will be removed.
+        try:
+            self.catalog._delete_old_metadata(self.io, self.metadata, response.metadata)
+        except Exception as e:
+            warnings.warn(f"Failed to delete old metadata after commit: {e}")
+
         self.metadata = response.metadata
         self.metadata_location = response.metadata_location
 
@@ -1209,6 +1348,16 @@ class Table:
         import daft
 
         return daft.read_iceberg(self)
+
+    def to_polars(self) -> pl.LazyFrame:
+        """Lazily read from this Apache Iceberg table.
+
+        Returns:
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+        """
+        import polars as pl
+
+        return pl.scan_iceberg(self)
 
 
 class StaticTable(Table):
@@ -1337,6 +1486,9 @@ class TableScan(ABC):
     @abstractmethod
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame: ...
 
+    @abstractmethod
+    def to_polars(self) -> pl.DataFrame: ...
+
     def update(self: S, **overrides: Any) -> S:
         """Create a copy of this table scan with updated fields."""
         return type(self)(**{**self.__dict__, **overrides})
@@ -1360,6 +1512,9 @@ class TableScan(ABC):
     def with_case_sensitive(self: S, case_sensitive: bool = True) -> S:
         return self.update(case_sensitive=case_sensitive)
 
+    @abstractmethod
+    def count(self) -> int: ...
+
 
 class ScanTask(ABC):
     pass
@@ -1373,6 +1528,7 @@ class FileScanTask(ScanTask):
     delete_files: Set[DataFile]
     start: int
     length: int
+    residual: BooleanExpression
 
     def __init__(
         self,
@@ -1380,11 +1536,13 @@ class FileScanTask(ScanTask):
         delete_files: Optional[Set[DataFile]] = None,
         start: Optional[int] = None,
         length: Optional[int] = None,
+        residual: BooleanExpression = ALWAYS_TRUE,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
         self.start = start or 0
         self.length = length or data_file.file_size_in_bytes
+        self.residual = residual
 
 
 def _open_manifest(
@@ -1466,6 +1624,39 @@ class DataScan(TableScan):
         # shared instance across multiple threads.
         return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
 
+    def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
+        schema = self.table_metadata.schema()
+        include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _InclusiveMetricsEvaluator methods bound to a single
+        # shared instance across multiple threads.
+        return lambda data_file: _InclusiveMetricsEvaluator(
+            schema,
+            self.row_filter,
+            self.case_sensitive,
+            include_empty_files,
+        ).eval(data_file)
+
+    def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
+        spec = self.table_metadata.specs()[spec_id]
+
+        # The lambda created here is run in multiple threads.
+        # So we avoid creating _EvaluatorExpression methods bound to a single
+        # shared instance across multiple threads.
+        # return lambda data_file: (partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
+        from pyiceberg.expressions.visitors import residual_evaluator_of
+
+        # assert self.row_filter == False
+        return lambda datafile: (
+            residual_evaluator_of(
+                spec=spec,
+                expr=self.row_filter,
+                case_sensitive=self.case_sensitive,
+                schema=self.table_metadata.schema(),
+            )
+        )
+
     def _check_sequence_number(self, min_sequence_number: int, manifest: ManifestFile) -> bool:
         """Ensure that no manifests are loaded that contain deletes that are older than the data.
 
@@ -1497,6 +1688,8 @@ class DataScan(TableScan):
 
         manifest_evaluators: Dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
+        residual_evaluators: Dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+
         manifests = [
             manifest_file
             for manifest_file in snapshot.manifests(self.io)
@@ -1507,12 +1700,6 @@ class DataScan(TableScan):
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: Dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
-        metrics_evaluator = _InclusiveMetricsEvaluator(
-            self.table_metadata.schema(),
-            self.row_filter,
-            self.case_sensitive,
-            strtobool(self.options.get("include_empty_files", "false")),
-        ).eval
 
         min_sequence_number = _min_sequence_number(manifests)
 
@@ -1528,7 +1715,7 @@ class DataScan(TableScan):
                         self.io,
                         manifest,
                         partition_evaluators[manifest.partition_spec_id],
-                        metrics_evaluator,
+                        self._build_metrics_evaluator(),
                     )
                     for manifest in manifests
                     if self._check_sequence_number(min_sequence_number, manifest)
@@ -1551,6 +1738,9 @@ class DataScan(TableScan):
                 delete_files=_match_deletes_to_data_file(
                     data_entry,
                     positional_delete_entries,
+                ),
+                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
+                    data_entry.data_file.partition
                 ),
             )
             for data_entry in data_entries
@@ -1626,6 +1816,47 @@ class DataScan(TableScan):
 
         return ray.data.from_arrow(self.to_arrow())
 
+    def to_polars(self) -> pl.DataFrame:
+        """Read a Polars DataFrame from this Iceberg table.
+
+        Returns:
+            pl.DataFrame: Materialized Polars Dataframe from the Iceberg table
+        """
+        import polars as pl
+
+        result = pl.from_arrow(self.to_arrow())
+        if isinstance(result, pl.Series):
+            result = result.to_frame()
+
+        return result
+
+    def count(self) -> int:
+        from pyiceberg.io.pyarrow import ArrowScan
+
+        # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
+        res = 0
+        # every task is a FileScanTask
+        tasks = self.plan_files()
+
+        for task in tasks:
+            # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
+            # partition value and task.delete_files represents that positional delete haven't been merged yet
+            # hence those files have to read as a pyarrow table applying the filter and deletes
+            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
+                # Every File has a metadata stat that stores the file record count
+                res += task.file.record_count
+            else:
+                arrow_scan = ArrowScan(
+                    table_metadata=self.table_metadata,
+                    io=self.io,
+                    projected_schema=self.projection(),
+                    row_filter=self.row_filter,
+                    case_sensitive=self.case_sensitive,
+                )
+                tbl = arrow_scan.to_table([task])
+                res += len(tbl)
+        return res
+
 
 @dataclass(frozen=True)
 class WriteTask:
@@ -1658,6 +1889,9 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     Returns:
         An iterable that supplies DataFiles that describe the parquet files.
     """
-    from pyiceberg.io.pyarrow import parquet_files_to_data_files
+    from pyiceberg.io.pyarrow import parquet_file_to_data_file
 
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
+    executor = ExecutorFactory.get_or_create()
+    futures = [executor.submit(parquet_file_to_data_file, io, table_metadata, file_path) for file_path in file_paths]
+
+    return [f.result() for f in futures if f.result()]

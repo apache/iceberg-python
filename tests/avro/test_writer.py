@@ -21,8 +21,6 @@ import struct
 from _decimal import Decimal
 from typing import Dict, List
 
-import pytest
-
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.resolver import construct_writer
 from pyiceberg.avro.writer import (
@@ -40,6 +38,7 @@ from pyiceberg.avro.writer import (
     TimestamptzWriter,
     TimestampWriter,
     TimeWriter,
+    UnknownWriter,
     UUIDWriter,
 )
 from pyiceberg.typedef import Record
@@ -56,7 +55,6 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
-    PrimitiveType,
     StringType,
     StructType,
     TimestampNanoType,
@@ -64,6 +62,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -139,13 +138,7 @@ def test_binary_writer() -> None:
 
 
 def test_unknown_type() -> None:
-    class UnknownType(PrimitiveType):
-        root: str = "UnknownType"
-
-    with pytest.raises(ValueError) as exc_info:
-        construct_writer(UnknownType())
-
-    assert "Unknown type:" in str(exc_info.value)
+    assert construct_writer(UnknownType()) == UnknownWriter()
 
 
 def test_uuid_writer() -> None:

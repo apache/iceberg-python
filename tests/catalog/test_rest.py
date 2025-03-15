@@ -49,7 +49,7 @@ from pyiceberg.utils.config import Config
 
 TEST_URI = "https://iceberg-test-catalog/"
 TEST_CREDENTIALS = "client:secret"
-TEST_AUTH_URL = "https://auth-endpoint/"
+TEST_OAUTH2_SERVER_URI = "https://auth-endpoint/"
 TEST_TOKEN = "some_jwt_token"
 TEST_SCOPE = "openid_offline_corpds_ds_profile"
 TEST_AUDIENCE = "test_audience"
@@ -257,9 +257,9 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
-def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
+def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
     rest_mock.post(
-        TEST_AUTH_URL,
+        TEST_OAUTH2_SERVER_URI,
         json={
             "access_token": TEST_TOKEN,
             "token_type": "Bearer",
@@ -271,7 +271,7 @@ def test_token_200_w_auth_url(rest_mock: Mocker) -> None:
     )
     # pylint: disable=W0212
     assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_AUTH_URL})._session.headers[
+        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: OAUTH2_SERVER_URI})._session.headers[
             "Authorization"
         ]
         == f"Bearer {TEST_TOKEN}"
@@ -558,7 +558,8 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
 @pytest.mark.filterwarnings(
     "ignore:Deprecated in 0.8.0, will be removed in 1.0.0. Iceberg REST client is missing the OAuth2 server URI:DeprecationWarning"
 )
-def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
+@pytest.mark.parametrize("status_code", [401, 419])
+def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, status_code: int) -> None:
     new_token = "new_jwt_token"
     new_header = dict(TEST_HEADERS)
     new_header["Authorization"] = f"Bearer {new_token}"
@@ -568,12 +569,12 @@ def test_list_namespaces_token_expired(rest_mock: Mocker) -> None:
         f"{TEST_URI}v1/namespaces",
         [
             {
-                "status_code": 419,
+                "status_code": status_code,
                 "json": {
                     "error": {
                         "message": "Authorization expired.",
                         "type": "AuthorizationExpiredError",
-                        "code": 419,
+                        "code": status_code,
                     }
                 },
                 "headers": TEST_HEADERS,

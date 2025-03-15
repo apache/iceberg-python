@@ -15,4 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-__version__ = "0.10.0"
+from pyiceberg.catalog.sql import SqlCatalog
+
+
+class InMemoryCatalog(SqlCatalog):
+    """
+    An in-memory catalog implementation that uses SqlCatalog with SQLite in-memory database.
+
+    This is useful for test, demo, and playground but not in production as it does not support concurrent access.
+    """
+
+    def __init__(self, name: str, warehouse: str = "file:///tmp/iceberg/warehouse", **kwargs: str) -> None:
+        self._warehouse_location = warehouse
+        if "uri" not in kwargs:
+            kwargs["uri"] = "sqlite:///:memory:"
+        super().__init__(name=name, warehouse=warehouse, **kwargs)

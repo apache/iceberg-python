@@ -39,6 +39,7 @@ from pyiceberg.avro.reader import (
     TimestampReader,
     TimestamptzNanoReader,
     TimestamptzReader,
+    UnknownReader,
     UUIDReader,
 )
 from pyiceberg.avro.resolver import construct_reader
@@ -57,7 +58,6 @@ from pyiceberg.types import (
     IntegerType,
     LongType,
     NestedField,
-    PrimitiveType,
     StringType,
     StructType,
     TimestampNanoType,
@@ -65,6 +65,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -337,13 +338,7 @@ def test_binary_reader() -> None:
 
 
 def test_unknown_type() -> None:
-    class UnknownType(PrimitiveType):
-        root: str = "UnknownType"
-
-    with pytest.raises(ValueError) as exc_info:
-        construct_reader(UnknownType())
-
-    assert "Unknown type:" in str(exc_info.value)
+    assert construct_reader(UnknownType()) == UnknownReader()
 
 
 def test_uuid_reader() -> None:
