@@ -20,6 +20,7 @@ This module enables:
     - Converting partition strings to built-in python objects.
     - Converting a value to a byte buffer.
     - Converting a byte buffer to a value.
+    - Converting a json-single field serialized field
 
 Note:
     Conversion logic varies based on the PrimitiveType implementation. Therefore conversion functions
@@ -59,7 +60,7 @@ from pyiceberg.types import (
     UUIDType,
     strtobool,
 )
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros, days_to_date, to_human_day
 from pyiceberg.utils.decimal import decimal_to_bytes, unscaled_to_decimal
 
 _BOOL_STRUCT = Struct("<?")
@@ -296,6 +297,70 @@ def _(_: PrimitiveType, b: bytes) -> int:
 @from_bytes.register(TimestamptzType)
 def _(_: PrimitiveType, b: bytes) -> int:
     return _LONG_STRUCT.unpack(b)[0]
+
+
+@from_bytes.register(FloatType)
+def _(_: FloatType, b: bytes) -> float:
+    return _FLOAT_STRUCT.unpack(b)[0]
+
+
+@from_bytes.register(DoubleType)
+def _(_: DoubleType, b: bytes) -> float:
+    return _DOUBLE_STRUCT.unpack(b)[0]
+
+
+@from_bytes.register(StringType)
+def _(_: StringType, b: bytes) -> str:
+    return bytes(b).decode(UTF8)
+
+
+@from_bytes.register(BinaryType)
+@from_bytes.register(FixedType)
+@from_bytes.register(UUIDType)
+def _(_: PrimitiveType, b: bytes) -> bytes:
+    return b
+
+
+@from_bytes.register(DecimalType)
+def _(primitive_type: DecimalType, buf: bytes) -> Decimal:
+    unscaled = int.from_bytes(buf, "big", signed=True)
+    return unscaled_to_decimal(unscaled, primitive_type.scale)
+
+
+@singledispatch  # type: ignore
+def to_json(primitive_type: PrimitiveType, b: Any) -> L:  # type: ignore
+    """Convert bytes to a built-in python value.
+
+    https://iceberg.apache.org/spec/#json-single-value-serialization
+
+    Args:
+        primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
+        b (bytes): The bytes to convert.
+    """
+    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {str(b)}")
+
+
+@from_bytes.register(BooleanType)
+def _(_: PrimitiveType, val: str) -> bool:
+    return bool(val)
+
+
+@from_bytes.register(IntegerType)
+@from_bytes.register(LongType)
+def _(_: PrimitiveType, val: str) -> int:
+    return int(val)
+
+
+@from_bytes.register(DateType)
+def _(_: PrimitiveType, val: Union[int, date]) -> str:
+    if isinstance(val, date):
+        val = date_to_days(val)
+
+    return to_human_day(val)
+
+@from_bytes.register(TimeType)
+def _(_: PrimitiveType, time) -> str:
+    return to_huma
 
 
 @from_bytes.register(FloatType)

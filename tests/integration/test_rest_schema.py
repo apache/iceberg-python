@@ -15,11 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from datetime import date, time, datetime, timezone
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
 
 import pytest
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError, ValidationError
+from pyiceberg.expressions import literal
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, prune_columns
 from pyiceberg.table import Table, TableProperties
@@ -1092,6 +1097,47 @@ def test_add_required_column(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "iceberg_type, default_value, write_default",
+    [
+        (BooleanType(), True, False),
+        (IntegerType(), 123, 456),
+        (LongType(), 123, 456),
+        (FloatType(), 19.25, 22.27),
+        (DoubleType(), 19.25, 22.27),
+        (DecimalType(10, 2), Decimal("19.25"), Decimal("22.27")),
+        (DecimalType(100, 2), Decimal("19.25"), Decimal("22.27")),
+        (StringType(), "abc", "def"),
+        (DateType(), date(1990, 3, 1), date(1991, 3, 1)),
+         (TimeType(), time(19, 25, 22), time(22, 25, 22)),
+        (TimestampType(), datetime(1990, 5, 1, 22, 1, 1), datetime(2000, 5, 1, 22, 1, 1)),
+        (TimestamptzType(), datetime(1990, 5, 1, 22, 1, 1, tzinfo=timezone.utc), datetime(2000, 5, 1, 22, 1, 1, tzinfo=timezone.utc)),
+        (BinaryType(), b"123", b"456"),
+        (FixedType(4), b"1234", b"5678"),
+        (UUIDType(), UUID(int=0x12345678123456781234567812345678), UUID(int=0x32145678123456781234567812345678)),
+    ]
+)
+def test_initial_default_all_columns(catalog: Catalog, iceberg_type: PrimitiveType, default_value: Any, write_default: Any) -> None:
+    # Round trips all the types through the rest catalog to check the serialization
+    table = _create_table_with_schema(catalog, Schema(), properties={TableProperties.FORMAT_VERSION: 3})
+
+    with table.update_schema() as tx:
+        tx.add_column(path="data", field_type=iceberg_type, required=True, default_value=default_value)
+
+    field = table.schema().find_field(1)
+    physical_type = literal(default_value).to(iceberg_type).value
+    assert physical_type == field.initial_default
+    assert physical_type == field.write_default
+
+    with table.update_schema() as tx:
+        tx.set_default_value("data", write_default)
+
+    field = table.schema().find_field(1)
+    write_physical_type = literal(default_value).to(iceberg_type).value
+    assert physical_type == field.initial_default
+    assert write_physical_type == field.write_default
+
+
 def test_add_required_column_initial_default(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
@@ -1101,8 +1147,21 @@ def test_add_required_column_initial_default(catalog: Catalog) -> None:
         ._apply()
     )
     assert new_schema == Schema(
-        NestedField(field_id=1, name="a", field_type=BooleanType(), required=False),
+        NestedField(field_id=1, name="a", field_type=BooleanType(), required=True, initial_default=True),
         NestedField(field_id=2, name="data", field_type=IntegerType(), required=True, initial_default=22, write_default=22),
+        schema_id=1,
+    )
+
+    # Update
+    new_schema = (
+        UpdateSchema(transaction=table.transaction())
+        .update_column(path="data", field_type=LongType())
+        .rename_column("a", "bool")
+        ._apply()
+    )
+    assert new_schema == Schema(
+        NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="data", field_type=LongType(), required=True, initial_default=22, write_default=22),
         schema_id=1,
     )
 

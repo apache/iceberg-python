@@ -274,6 +274,19 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
+    def set_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Any) -> UpdateSchema:
+        """Set the default value of a column.
+
+        Args:
+            path: The path to the column.
+
+        Returns:
+            The UpdateSchema with the delete operation staged.
+        """
+        self._set_column_default_value(path, default_value)
+
+        return self
+
     def rename_column(self, path_from: Union[str, Tuple[str, ...]], new_name: str) -> UpdateSchema:
         """Update the name of a column.
 
@@ -297,6 +310,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=updated.field_type,
                 doc=updated.doc,
                 required=updated.required,
+                initial_default=updated.initial_default,
+                write_default=updated.write_default,
             )
         else:
             self._updates[field_from.field_id] = NestedField(
@@ -305,6 +320,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 field_type=field_from.field_type,
                 doc=field_from.doc,
                 required=field_from.required,
+                initial_default=field_from.initial_default,
+                write_default=field_from.write_default,
             )
 
         # Lookup the field because of casing
@@ -367,6 +384,52 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 initial_default=field.initial_default,
                 write_default=field.write_default,
             )
+
+
+    def _set_column_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Any) -> None:
+        path = (path,) if isinstance(path, str) else path
+        name = ".".join(path)
+
+        field = self._schema.find_field(name, self._case_sensitive)
+
+        if default_value is not None:
+            try:
+                # To make sure that the value is valid for the type
+                default_value = literal(default_value).to(field.field_type).value
+            except ValueError as e:
+                raise ValueError(f"Invalid default value: {e}") from e
+
+        if field.required and default_value != field.write_default:
+            # if the change is a noop, allow it even if allowIncompatibleChanges is false
+            return
+
+        if not self._allow_incompatible_changes and field.required and default_value is not None:
+            raise ValueError(f"Cannot change change default-value of a required column to None")
+
+        if field.field_id in self._deletes:
+            raise ValueError(f"Cannot update a column that will be deleted: {name}")
+
+        if updated := self._updates.get(field.field_id):
+            self._updates[field.field_id] = NestedField(
+                field_id=updated.field_id,
+                name=updated.name,
+                field_type=updated.field_type,
+                doc=updated.doc,
+                required=updated.required,
+                initial_default=updated.initial_default,
+                write_default=default_value,
+            )
+        else:
+            self._updates[field.field_id] = NestedField(
+                field_id=field.field_id,
+                name=field.name,
+                field_type=field.field_type,
+                doc=field.doc,
+                required=field.required,
+                initial_default=field.initial_default,
+                write_default=default_value
+            )
+
 
     def update_column(
         self,
