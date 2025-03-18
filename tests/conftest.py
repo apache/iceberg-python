@@ -921,7 +921,7 @@ EXAMPLE_TABLE_METADATA_V3 = {
                 {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
                 {"id": 3, "name": "z", "required": True, "type": "long"},
                 # TODO: Add unknown, timestamp(tz)_ns
-                # {"id": 4, "name": "u", "required": True, "type": "unknown"},
+                {"id": 4, "name": "u", "required": True, "type": "unknown"},
                 # {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
                 # {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
             ],
@@ -2433,6 +2433,8 @@ def spark() -> "SparkSession":
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
