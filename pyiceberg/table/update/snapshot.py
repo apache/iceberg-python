@@ -55,6 +55,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
+from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -239,7 +240,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
+    def refresh(self) -> TableMetadata:
+        try:
+            table = self._transaction._table.refresh()
+            return table.metadata
+        except Exception:
+            return self._transaction._table.metadata
+
+    @abstractmethod
+    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None: ...
+
     def _commit(self) -> UpdatesAndRequirements:
+        current_snapshot = self._transaction.table_metadata.current_snapshot()
+        table_metadata = self.refresh()
+        self._validate(table_metadata, current_snapshot)
+
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -249,6 +264,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             attempt=0,
             commit_uuid=self.commit_uuid,
         )
+
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
         with write_manifest_list(
@@ -445,6 +461,14 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         """Indicate if any manifest-entries can be dropped."""
         return len(self._deleted_entries()) > 0
 
+    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
+        if Snapshot is None:
+            raise ValueError("Snapshot cannot be None.")
+
+        if Snapshot.snapshot_id != current_metadata.snapshot_id:
+            raise ValueError("Operation conflicts are not allowed when performing deleting.")
+        return
+
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
     def _existing_manifests(self) -> List[ManifestFile]:
@@ -473,6 +497,10 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         In case of an append, nothing is deleted.
         """
         return []
+
+    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
+        """Other operations don't affect the appending operation, and we can just append."""
+        return
 
 
 class _MergeAppendFiles(_FastAppendFiles):
@@ -601,6 +629,14 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return list(itertools.chain(*list_of_entries))
         else:
             return []
+
+    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
+        if Snapshot is None:
+            raise ValueError("Snapshot cannot be None.")
+
+        if Snapshot.snapshot_id != current_metadata.snapshot_id:
+            raise ValueError("Operation conflicts are not allowed when performing overwriting.")
+        return
 
 
 class UpdateSnapshot:
