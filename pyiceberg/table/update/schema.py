@@ -385,7 +385,6 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 write_default=field.write_default,
             )
 
-
     def _set_column_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Any) -> None:
         path = (path,) if isinstance(path, str) else path
         name = ".".join(path)
@@ -404,7 +403,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             return
 
         if not self._allow_incompatible_changes and field.required and default_value is not None:
-            raise ValueError(f"Cannot change change default-value of a required column to None")
+            raise ValueError("Cannot change change default-value of a required column to None")
 
         if field.field_id in self._deletes:
             raise ValueError(f"Cannot update a column that will be deleted: {name}")
@@ -427,9 +426,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 doc=field.doc,
                 required=field.required,
                 initial_default=field.initial_default,
-                write_default=default_value
+                write_default=default_value,
             )
-
 
     def update_column(
         self,

@@ -152,8 +152,7 @@ def literal(value: L) -> Literal[L]:
         return TimestampLiteral(datetime_to_micros(value))  # type: ignore
     elif isinstance(value, date):
         return DateLiteral(date_to_days(value))  # type: ignore
-    elif isinstance(value, time):
-        return DateLiteral(date_to_days(value))  # type: ignore
+
     else:
         raise TypeError(f"Invalid literal value: {repr(value)}")
 

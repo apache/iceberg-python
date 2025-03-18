@@ -43,16 +43,14 @@ from typing import (
     Tuple,
 )
 
-from typing_extensions import Self
-
 from pydantic import (
     Field,
     PrivateAttr,
     SerializeAsAny,
     model_serializer,
-    model_validator, field_validator,
+    model_validator,
 )
-from pydantic_core.core_schema import ValidatorFunctionWrapHandler, ValidationInfo
+from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L
@@ -310,23 +308,7 @@ class NestedField(IcebergType):
     required: bool = Field(default=False)
     doc: Optional[str] = Field(default=None, repr=False)
     initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
-    write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)
-
-    # @field_validator('initial_default', mode='after')
-    # @classmethod
-    # def check_passwords_match(cls, value: str, info: ValidationInfo) -> str:
-    #     from pyiceberg.expressions import literal
-    #     if value is not None:
-    #         return literal(value).to(info.data['field_type']).value
-    #     return value
-    #
-    # @field_validator('write_default', mode='after')
-    # @classmethod
-    # def check_passwords_match2(cls, value: str, info: ValidationInfo) -> str:
-    #     from pyiceberg.expressions import literal
-    #     if value is not None:
-    #         return literal(value).to(info.data['field_type']).value
-    #     return value
+    write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
 
     def __init__(
         self,

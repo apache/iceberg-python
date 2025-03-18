@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-from datetime import date, time, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -1109,15 +1109,21 @@ def test_add_required_column(catalog: Catalog) -> None:
         (DecimalType(100, 2), Decimal("19.25"), Decimal("22.27")),
         (StringType(), "abc", "def"),
         (DateType(), date(1990, 3, 1), date(1991, 3, 1)),
-         (TimeType(), time(19, 25, 22), time(22, 25, 22)),
+        (TimeType(), time(19, 25, 22), time(22, 25, 22)),
         (TimestampType(), datetime(1990, 5, 1, 22, 1, 1), datetime(2000, 5, 1, 22, 1, 1)),
-        (TimestamptzType(), datetime(1990, 5, 1, 22, 1, 1, tzinfo=timezone.utc), datetime(2000, 5, 1, 22, 1, 1, tzinfo=timezone.utc)),
+        (
+            TimestamptzType(),
+            datetime(1990, 5, 1, 22, 1, 1, tzinfo=timezone.utc),
+            datetime(2000, 5, 1, 22, 1, 1, tzinfo=timezone.utc),
+        ),
         (BinaryType(), b"123", b"456"),
         (FixedType(4), b"1234", b"5678"),
         (UUIDType(), UUID(int=0x12345678123456781234567812345678), UUID(int=0x32145678123456781234567812345678)),
-    ]
+    ],
 )
-def test_initial_default_all_columns(catalog: Catalog, iceberg_type: PrimitiveType, default_value: Any, write_default: Any) -> None:
+def test_initial_default_all_columns(
+    catalog: Catalog, iceberg_type: PrimitiveType, default_value: Any, write_default: Any
+) -> None:
     # Round trips all the types through the rest catalog to check the serialization
     table = _create_table_with_schema(catalog, Schema(), properties={TableProperties.FORMAT_VERSION: 3})
 
