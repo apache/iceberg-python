@@ -59,7 +59,7 @@ from pyiceberg.types import (
     TimestamptzType,
     TimeType,
     UUIDType,
-    strtobool,
+    strtobool, UnknownType,
 )
 from pyiceberg.utils.datetime import (
     date_str_to_days,
@@ -170,6 +170,13 @@ def _(_: PrimitiveType, value_str: str) -> bytes:
 @handle_none
 def _(_: DecimalType, value_str: str) -> Decimal:
     return Decimal(value_str)
+
+
+
+@partition_to_py.register(UnknownType)
+@handle_none
+def _(type_: UnknownType, _: str) -> None:
+    return None
 
 
 @singledispatch
