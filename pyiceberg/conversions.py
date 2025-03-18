@@ -58,8 +58,9 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
-    strtobool, UnknownType,
+    strtobool,
 )
 from pyiceberg.utils.datetime import (
     date_str_to_days,
@@ -170,7 +171,6 @@ def _(_: PrimitiveType, value_str: str) -> bytes:
 @handle_none
 def _(_: DecimalType, value_str: str) -> Decimal:
     return Decimal(value_str)
-
 
 
 @partition_to_py.register(UnknownType)
@@ -349,6 +349,11 @@ def _(_: PrimitiveType, b: bytes) -> bytes:
 def _(primitive_type: DecimalType, buf: bytes) -> Decimal:
     unscaled = int.from_bytes(buf, "big", signed=True)
     return unscaled_to_decimal(unscaled, primitive_type.scale)
+
+
+@from_bytes.register(UnknownType)
+def _(type_: UnknownType, buf: bytes) -> None:
+    return None
 
 
 @singledispatch  # type: ignore
