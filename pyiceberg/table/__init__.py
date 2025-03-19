@@ -1198,10 +1198,11 @@ class Table:
 
                 update_row_cnt = len(rows_to_update)
 
-                # build the match predicate filter
-                overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+                if len(rows_to_update) > 0:
+                    # build the match predicate filter
+                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+                    tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
                 expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
@@ -1211,7 +1212,8 @@ class Table:
 
                 insert_row_cnt = len(rows_to_insert)
 
-                tx.append(rows_to_insert)
+                if insert_row_cnt > 0:
+                    tx.append(rows_to_insert)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
