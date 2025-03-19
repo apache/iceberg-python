@@ -747,8 +747,8 @@ class Transaction:
 
         if join_cols is None:
             join_cols = []
-            for field_id in df.schema.identifier_field_ids:
-                col = df.schema.find_column_name(field_id)
+            for field_id in self.table_metadata.schema().identifier_field_ids:
+                col = self.table_metadata.schema().find_column_name(field_id)
                 if col is not None:
                     join_cols.append(col)
                 else:
@@ -767,12 +767,12 @@ class Transaction:
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
-            df.schema, provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+            self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
-        matched_iceberg_table = df.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
+        matched_iceberg_table = self._table.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -793,7 +793,7 @@ class Transaction:
 
         if when_not_matched_insert_all:
             expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
-            expr_match_bound = bind(df.schema, expr_match, case_sensitive=case_sensitive)
+            expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
             expr_match_arrow = expression_to_pyarrow(expr_match_bound)
             rows_to_insert = df.filter(~expr_match_arrow)
 
@@ -1270,8 +1270,11 @@ class Table:
         """
         with self.transaction() as tx:
             return tx.upsert(
-                df=df, join_cols=join_cols, when_matched_update_all=when_matched_update_all, when_not_matched_insert_all=when_not_matched_insert_all,
-                case_sensitive=case_sensitive
+                df=df,
+                join_cols=join_cols,
+                when_matched_update_all=when_matched_update_all,
+                when_not_matched_insert_all=when_not_matched_insert_all,
+                case_sensitive=case_sensitive,
             )
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
