@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, 
 
 from sortedcontainers import SortedList
 
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -248,7 +249,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             return self._transaction._table.metadata
 
     @abstractmethod
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None: ...
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None: ...
 
     def _commit(self) -> UpdatesAndRequirements:
         current_snapshot = self._transaction.table_metadata.current_snapshot()
@@ -461,12 +462,12 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         """Indicate if any manifest-entries can be dropped."""
         return len(self._deleted_entries()) > 0
 
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
-        if Snapshot is None:
-            raise ValueError("Snapshot cannot be None.")
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None:
+        if snapshot is None:
+            raise CommitFailedException("Snapshot cannot be None.")
 
-        if Snapshot.snapshot_id != current_metadata.snapshot_id:
-            raise ValueError("Operation conflicts are not allowed when performing deleting.")
+        if snapshot.snapshot_id != current_metadata.snapshot_id:
+            raise CommitFailedException("Operation conflicts are not allowed when performing deleting.")
         return
 
 
@@ -498,7 +499,7 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         """
         return []
 
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None:
         """Other operations don't affect the appending operation, and we can just append."""
         return
 
@@ -630,12 +631,12 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         else:
             return []
 
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
-        if Snapshot is None:
-            raise ValueError("Snapshot cannot be None.")
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None:
+        if snapshot is None:
+            raise CommitFailedException("Snapshot cannot be None.")
 
-        if Snapshot.snapshot_id != current_metadata.snapshot_id:
-            raise ValueError("Operation conflicts are not allowed when performing overwriting.")
+        if snapshot.snapshot_id != current_metadata.snapshot_id:
+            raise CommitFailedException("Operation conflicts are not allowed when performing overwriting.")
         return
 
 
