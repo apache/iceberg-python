@@ -59,7 +59,7 @@ from pyiceberg.table.sorting import (
     SortOrder,
 )
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Identifier
+from pyiceberg.typedef import FormatVersion, Identifier
 from pyiceberg.types import IntegerType, strtobool
 
 CATALOG_TABLES = [c.__tablename__ for c in SqlCatalogBaseTable.__subclasses__()]
@@ -346,7 +346,7 @@ def test_create_v1_table(catalog: SqlCatalog, table_schema_nested: Schema, table
     table = catalog.create_table(table_identifier, table_schema_nested, properties={"format-version": "1"})
     assert table.sort_order().order_id == 0, "Order ID must match"
     assert table.sort_order().is_unsorted is True, "Order must be unsorted"
-    assert table.format_version == 1
+    assert table.format_version is FormatVersion.V1
     assert table.spec() == UNPARTITIONED_PARTITION_SPEC
     catalog.drop_table(table_identifier)
 
@@ -1444,8 +1444,8 @@ def test_concurrent_commit_table(catalog: SqlCatalog, table_schema_simple: Schem
         lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_write_and_evolve(catalog: SqlCatalog, format_version: FormatVersion) -> None:
     identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
 
     try:
@@ -1497,8 +1497,8 @@ def test_write_and_evolve(catalog: SqlCatalog, format_version: int) -> None:
         lazy_fixture("catalog_sqlite_without_rowcount"),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_create_table_transaction(catalog: SqlCatalog, format_version: FormatVersion) -> None:
     identifier = f"default.arrow_create_table_transaction_{catalog.name}_{format_version}"
     try:
         catalog.create_namespace("default")
@@ -1547,7 +1547,7 @@ def test_create_table_transaction(catalog: SqlCatalog, format_version: int) -> N
                 snapshot_update.append_data_file(data_file)
 
     tbl = catalog.load_table(identifier=identifier)
-    assert tbl.format_version == format_version
+    assert tbl.format_version is format_version
     assert len(tbl.scan().to_arrow()) == 6
 
 
@@ -1634,8 +1634,10 @@ def test_table_exists(catalog: SqlCatalog, table_schema_simple: Schema, table_id
         lazy_fixture("catalog_sqlite"),
     ],
 )
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_merge_manifests_local_file_system(catalog: SqlCatalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_merge_manifests_local_file_system(
+    catalog: SqlCatalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
+) -> None:
     # To catch manifest file name collision bug during merge:
     # https://github.com/apache/iceberg-python/pull/363#discussion_r1660691918
     catalog.create_namespace_if_not_exists("default")

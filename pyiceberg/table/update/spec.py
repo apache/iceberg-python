@@ -48,6 +48,7 @@ from pyiceberg.table.update import (
     UpdateTableMetadata,
 )
 from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
+from pyiceberg.typedef import FormatVersion
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -226,7 +227,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
                         partition_names,
                     )
                 partition_fields.append(new_field)
-            elif self._transaction.table_metadata.format_version == 1:
+            elif self._transaction.table_metadata.format_version is FormatVersion.V1:
                 renamed = self._renames.get(field.name)
                 if renamed:
                     new_field = _add_new_field(
@@ -270,7 +271,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
     def _partition_field(self, transform_key: Tuple[int, Transform[Any, Any]], name: Optional[str]) -> PartitionField:
-        if self._transaction.table_metadata.format_version == 2:
+        if self._transaction.table_metadata.format_version is FormatVersion.V2:
             source_id, transform = transform_key
             historical_fields = []
             for spec in self._transaction.table_metadata.specs().values():

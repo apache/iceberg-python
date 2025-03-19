@@ -37,10 +37,7 @@ from pyiceberg.table.snapshots import (
 )
 from pyiceberg.table.sorting import SortOrder
 from pyiceberg.table.statistics import StatisticsFile, filter_statistics_by_snapshot_id
-from pyiceberg.typedef import (
-    IcebergBaseModel,
-    Properties,
-)
+from pyiceberg.typedef import FormatVersion, IcebergBaseModel, Properties
 from pyiceberg.types import (
     transform_dict_value_to_str,
 )
@@ -82,7 +79,7 @@ class AssignUUIDUpdate(IcebergBaseModel):
 
 class UpgradeFormatVersionUpdate(IcebergBaseModel):
     action: Literal["upgrade-format-version"] = Field(default="upgrade-format-version")
-    format_version: int = Field(alias="format-version")
+    format_version: FormatVersion = Field(alias="format-version")
 
 
 class AddSchemaUpdate(IcebergBaseModel):
@@ -408,7 +405,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
-        base_metadata.format_version == 2
+        base_metadata.format_version is FormatVersion.V2
         and update.snapshot.sequence_number is not None
         and update.snapshot.sequence_number <= base_metadata.last_sequence_number
         and update.snapshot.parent_snapshot_id is not None

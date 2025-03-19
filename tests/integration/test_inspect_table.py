@@ -28,7 +28,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.typedef import Properties
+from pyiceberg.typedef import FormatVersion, Properties
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -72,9 +72,9 @@ def _create_table(session_catalog: Catalog, identifier: str, properties: Propert
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_inspect_snapshots(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
 ) -> None:
     identifier = "default.table_metadata_snapshots"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
@@ -155,9 +155,9 @@ def test_inspect_snapshots(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_inspect_entries(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
 ) -> None:
     identifier = "default.table_metadata_entries"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
@@ -248,8 +248,8 @@ def test_inspect_entries(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = "default.table_metadata_entries_partitioned"
     try:
         session_catalog.drop_table(identifier=identifier)
@@ -291,9 +291,9 @@ def test_inspect_entries_partitioned(spark: SparkSession, session_catalog: Catal
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_inspect_refs(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
 ) -> None:
     identifier = "default.table_metadata_refs"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
@@ -351,9 +351,9 @@ def test_inspect_refs(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_inspect_partitions_unpartitioned(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
 ) -> None:
     identifier = "default.table_metadata_partitions_unpartitioned"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
@@ -398,8 +398,8 @@ def test_inspect_partitions_unpartitioned(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = "default.table_metadata_partitions_partitioned"
     try:
         session_catalog.drop_table(identifier=identifier)
@@ -469,8 +469,8 @@ def test_inspect_partitions_partitioned(spark: SparkSession, session_catalog: Ca
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = "default.table_metadata_manifests"
     try:
         session_catalog.drop_table(identifier=identifier)
@@ -552,9 +552,9 @@ def test_inspect_manifests(spark: SparkSession, session_catalog: Catalog, format
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_inspect_metadata_log_entries(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
 ) -> None:
     from pandas.testing import assert_frame_equal
 
@@ -592,8 +592,8 @@ def test_inspect_metadata_log_entries(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = "default.table_history"
 
     try:
@@ -661,9 +661,9 @@ def test_inspect_history(spark: SparkSession, session_catalog: Catalog, format_v
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
 def test_inspect_files(
-    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: FormatVersion
 ) -> None:
     from pandas.testing import assert_frame_equal
 
@@ -677,7 +677,7 @@ def test_inspect_files(
     tbl.append(arrow_table_with_null)
 
     # configure table properties
-    if format_version == 2:
+    if format_version is FormatVersion.V2:
         with tbl.transaction() as txn:
             txn.set_properties({"write.delete.mode": "merge-on-read"})
     spark.sql(f"DELETE FROM {identifier} WHERE int = 1")
@@ -814,8 +814,8 @@ def test_inspect_files(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     identifier = "default.table_metadata_files"
 
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version})
@@ -853,8 +853,8 @@ def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+@pytest.mark.parametrize("format_version", [FormatVersion.V1, FormatVersion.V2])
+def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, format_version: FormatVersion) -> None:
     from pandas.testing import assert_frame_equal
 
     identifier = "default.table_metadata_all_manifests"
