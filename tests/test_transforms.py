@@ -1654,6 +1654,8 @@ def test_bucket_pyarrow_transforms(
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
 
 
+# pyiceberg_core currently does not support bucket transform on timestamp_ns and timestamptz_ns
+# https://github.com/apache/iceberg-rust/issues/1110
 @pytest.mark.parametrize(
     "source_type, input_arr, num_buckets",
     [

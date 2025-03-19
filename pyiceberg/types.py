@@ -818,3 +818,6 @@ class UnknownType(PrimitiveType):
     """
 
     root: Literal["unknown"] = Field(default="unknown")
+
+    def minimum_format_version(self) -> TableVersion:
+        return TableVersion.THREE
