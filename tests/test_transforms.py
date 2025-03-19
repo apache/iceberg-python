@@ -106,6 +106,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.datetime import (
@@ -200,6 +201,31 @@ def test_bucket_method(type_var: PrimitiveType) -> None:
     assert bucket_transform.num_buckets == 8
     assert bucket_transform.apply(None) is None
     assert bucket_transform.to_human_string(type_var, "test") == "test"
+
+
+@pytest.mark.parametrize(
+    "test_transform",
+    [
+        BucketTransform(8),
+        TruncateTransform(10),
+        YearTransform(),
+        MonthTransform(),
+        DayTransform(),
+        HourTransform(),
+        UnknownTransform("unknown"),
+    ],
+)
+def test_transforms_unknown_type(test_transform: Transform[Any, Any]) -> None:
+    assert not test_transform.can_transform(UnknownType())
+    with pytest.raises((ValueError, AttributeError)):
+        test_transform.transform(UnknownType())
+
+
+def test_identity_transform_unknown_type() -> None:
+    assert IdentityTransform().can_transform(UnknownType())
+    assert IdentityTransform().result_type(UnknownType()) == UnknownType()
+    assert IdentityTransform().transform(UnknownType())(None) is None
+    assert IdentityTransform().to_human_string(UnknownType(), None) == "null"
 
 
 def test_string_with_surrogate_pair() -> None:

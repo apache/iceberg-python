@@ -110,6 +110,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.properties import property_as_bool, property_as_float
@@ -236,6 +237,7 @@ HIVE_PRIMITIVE_TYPES = {
     UUIDType: "string",
     BinaryType: "binary",
     FixedType: "binary",
+    UnknownType: "void",
 }
 
 
