@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, 
 
 from sortedcontainers import SortedList
 
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -83,7 +84,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Transaction
+    from pyiceberg.table import Transaction, Table
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -240,20 +241,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def refresh(self) -> TableMetadata:
-        try:
-            table = self._transaction._table.refresh()
-            return table.metadata
-        except Exception:
-            return self._transaction._table.metadata
+    def refresh(self) -> Table:
+        table = self._transaction._table.refresh()
+        return table
 
     @abstractmethod
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None: ...
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None: ...
 
     def _commit(self) -> UpdatesAndRequirements:
         current_snapshot = self._transaction.table_metadata.current_snapshot()
-        table_metadata = self.refresh()
-        self._validate(table_metadata, current_snapshot)
+        if current_snapshot is not None:
+            table = self.refresh()
+            if table is None:
+                raise CommitFailedException("Table is none.")
+            self._validate(table.metadata, current_snapshot)
 
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
@@ -461,12 +462,12 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         """Indicate if any manifest-entries can be dropped."""
         return len(self._deleted_entries()) > 0
 
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
-        if Snapshot is None:
-            raise ValueError("Snapshot cannot be None.")
-
-        if Snapshot.snapshot_id != current_metadata.snapshot_id:
-            raise ValueError("Operation conflicts are not allowed when performing deleting.")
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None:
+        if snapshot is None:
+            raise CommitFailedException("Snapshot cannot be None.")
+        current_snapshot_id = current_metadata.current_snapshot_id
+        if current_snapshot_id != None and snapshot.snapshot_id != current_snapshot_id:
+            raise CommitFailedException("Operation conflicts are not allowed when performing deleting.")
         return
 
 
@@ -498,7 +499,7 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         """
         return []
 
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None:
         """Other operations don't affect the appending operation, and we can just append."""
         return
 
@@ -630,12 +631,12 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         else:
             return []
 
-    def _validate(self, current_metadata: TableMetadata, Snapshot: Optional[Snapshot]) -> None:
-        if Snapshot is None:
-            raise ValueError("Snapshot cannot be None.")
-
-        if Snapshot.snapshot_id != current_metadata.snapshot_id:
-            raise ValueError("Operation conflicts are not allowed when performing overwriting.")
+    def _validate(self, current_metadata: TableMetadata, snapshot: Optional[Snapshot]) -> None:
+        if snapshot is None:
+            raise CommitFailedException("Snapshot cannot be None.")
+        current_snapshot_id = current_metadata.current_snapshot_id
+        if current_snapshot_id != None and snapshot.snapshot_id != current_snapshot_id:
+            raise CommitFailedException("Operation conflicts are not allowed when performing overwriting.")
         return
 
 
