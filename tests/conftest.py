@@ -2295,7 +2295,7 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
     return FileScanTask(
-        data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
     )
 
 

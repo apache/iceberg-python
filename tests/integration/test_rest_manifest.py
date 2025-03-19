@@ -80,7 +80,7 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     entry = test_manifest_entries[0]
     test_schema = table_test_all_types.schema()
     test_spec = table_test_all_types.spec()
-    wrapped_data_file_v2_debug = DataFile(
+    wrapped_data_file_v2_debug = DataFile.from_args(
         format_version=2,
         content=entry.data_file.content,
         file_path=entry.data_file.file_path,
@@ -103,8 +103,6 @@ def test_write_sample_manifest(table_test_all_types: Table) -> None:
     wrapped_entry_v2 = copy(entry)
     wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
     wrapped_entry_v2_dict = todict(wrapped_entry_v2)
-    # This one should not be written
-    del wrapped_entry_v2_dict["data_file"]["spec_id"]
 
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
