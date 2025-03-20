@@ -1008,6 +1008,7 @@ def test_read_unknown_type(catalog: Catalog) -> None:
     tbl = catalog.create_table(
         identifier,
         schema=arrow_table.schema,
+        properties={"format-version": "3"},
     )
 
     tbl.append(arrow_table)

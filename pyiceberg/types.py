@@ -33,7 +33,6 @@ Notes:
 from __future__ import annotations
 
 import re
-from enum import IntEnum
 from functools import cached_property
 from typing import (
     Any,
@@ -54,19 +53,13 @@ from pydantic import (
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, TableVersion
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
 DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
-
-
-class TableVersion(IntEnum):
-    ONE = 1
-    TWO = 2
-    THREE = 3
 
 
 def transform_dict_value_to_str(dict: Dict[str, Any]) -> Dict[str, str]:
@@ -190,7 +183,7 @@ class IcebergType(IcebergBaseModel):
 
     def minimum_format_version(self) -> TableVersion:
         """Minimum Iceberg format version after which this type is supported."""
-        return TableVersion.ONE
+        return 1
 
 
 class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
@@ -734,7 +727,7 @@ class TimestampNanoType(PrimitiveType):
     root: Literal["timestamp_ns"] = Field(default="timestamp_ns")
 
     def minimum_format_version(self) -> TableVersion:
-        return TableVersion.THREE
+        return 3
 
 
 class TimestamptzNanoType(PrimitiveType):
@@ -753,7 +746,7 @@ class TimestamptzNanoType(PrimitiveType):
     root: Literal["timestamptz_ns"] = Field(default="timestamptz_ns")
 
     def minimum_format_version(self) -> TableVersion:
-        return TableVersion.THREE
+        return 3
 
 
 class StringType(PrimitiveType):
@@ -820,4 +813,4 @@ class UnknownType(PrimitiveType):
     root: Literal["unknown"] = Field(default="unknown")
 
     def minimum_format_version(self) -> TableVersion:
-        return TableVersion.THREE
+        return 3

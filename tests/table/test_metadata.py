@@ -48,10 +48,12 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
     TimestampNanoType,
     TimestamptzNanoType,
+    UnknownType,
 )
 
 
@@ -843,9 +845,17 @@ def test_new_table_metadata_with_v3_schema() -> None:
     assert actual.sort_orders == [expected_sort_order]
 
 
-def test_new_table_metadata_format_v2_with_v3_schema_fails() -> None:
+@pytest.mark.parametrize(
+    "field_type",
+    [
+        TimestampNanoType(),
+        TimestamptzNanoType(),
+        UnknownType(),
+    ],
+)
+def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: PrimitiveType) -> None:
     schema = Schema(
-        NestedField(field_id=34, name="qux", field_type=TimestampNanoType(), required=False),
+        NestedField(field_id=34, name="qux", field_type=field_type, required=False),
         schema_id=10,
     )
 
@@ -858,7 +868,7 @@ def test_new_table_metadata_format_v2_with_v3_schema_fails() -> None:
         order_id=34,
     )
 
-    with pytest.raises(ValueError, match="timestamp_ns is only supported in 3 or higher. Current format version is: 2"):
+    with pytest.raises(ValueError, match=f"{field_type} is only supported in 3 or higher. Current format version is: 2"):
         new_table_metadata(
             schema=schema,
             partition_spec=partition_spec,
