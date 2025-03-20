@@ -103,10 +103,10 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
-    TimestampType,
-    TimestamptzType,
     TimestampNanoType,
+    TimestampType,
     TimestamptzNanoType,
+    TimestamptzType,
     TimeType,
     UUIDType,
 )
