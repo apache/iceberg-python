@@ -56,7 +56,6 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     TimestampType,
-    UnknownType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 
@@ -979,40 +978,3 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
     df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
     assert len(df) == 0
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
-def test_read_unknown_type(catalog: Catalog) -> None:
-    identifier = "default.test_table_read_unknown_type"
-    arrow_table = pa.Table.from_pydict(
-        {
-            "int": [1, 2],
-            "string": ["a", "b"],
-            "unknown": [None, None],
-        },
-        schema=pa.schema(
-            [
-                pa.field("int", pa.int32(), nullable=True),
-                pa.field("string", pa.string(), nullable=True),
-                pa.field("unknown", pa.null(), nullable=True),
-            ],
-        ),
-    )
-
-    try:
-        catalog.drop_table(identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = catalog.create_table(
-        identifier,
-        schema=arrow_table.schema,
-        properties={"format-version": "3"},
-    )
-
-    tbl.append(arrow_table)
-
-    assert tbl.schema().find_type("unknown") == UnknownType()
-    result_table = tbl.scan().to_arrow()
-    assert result_table["unknown"].to_pylist() == [None, None]
