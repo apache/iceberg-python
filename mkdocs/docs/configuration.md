@@ -94,7 +94,7 @@ Iceberg works with the concept of a FileIO which is a pluggable module for readi
 - **file**: `PyArrowFileIO`
 - **hdfs**: `PyArrowFileIO`
 - **abfs**, **abfss**: `FsspecFileIO`
-- **oss**: `PyArrowFileIO`
+- **oss**: `PyArrowFileIO`, `FsspecFileIO`
 
 You can also set the FileIO explicitly:
 
@@ -181,15 +181,14 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-disable -->
 
-PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pyarrow.fs.S3FileSystem.html) class to connect to OSS bucket as the service is [compatible with S3 SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss) as long as the endpoint is addressed with virtual hosted style.
+PyIceberg uses `PyArrowFileIO`'s `S3FileSystem` and `FsspecFileIO`'s `S3FileSystem` class to connect to OSS bucket as the service is [compatible with S3 SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-amazon-s3-sdks-to-access-oss). With `oss` protocol, both method has virtual hosted style set to default.
 
 | Key                  | Example             | Description                                      |
 | -------------------- | ------------------- | ------------------------------------------------ |
-| s3.endpoint          | <https://s3.oss-your-bucket-region.aliyuncs.com/>      | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
-| s3.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
-| s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
-| s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
-| s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This must be set to True as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+| oss.endpoint          | <https://s3.oss-your-bucket-region.aliyuncs.com/>      | Configure an endpoint of the OSS service for the FileIO to access. Be sure to use S3 compatible endpoint as given in the example. |
+| oss.access-key-id     | admin                      | Configure the static access key id used to access the FileIO.                                                                                                                                                                                             |
+| oss.access-key-secret | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
+| oss.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 
 <!-- markdown-link-check-enable-->
 
