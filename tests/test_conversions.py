@@ -553,3 +553,52 @@ def test_datetime_obj_to_bytes(primitive_type: PrimitiveType, value: Union[datet
     bytes_from_value = conversions.to_bytes(primitive_type, value)
 
     assert bytes_from_value == expected_bytes
+
+
+@pytest.mark.parametrize(
+    "primitive_type, value, expected",
+    [
+        (BooleanType(), True, True),
+        (IntegerType(), 34, 34),
+        (LongType(), 34, 34),
+        (FloatType(), 1.0, 1.0),
+        (DoubleType(), 1.0, 1.0),
+        (DecimalType(9, 4), Decimal("123.4500"), "123.4500"),
+        (DecimalType(9, 0), Decimal("2"), "2"),
+        (DecimalType(9, -20), Decimal("2E+20"), "2E+20"),
+        (DateType(), date(2017, 11, 16), "2017-11-16"),
+        (TimeType(), time(22, 31, 8, 123456), "22:31:08.123456"),
+        (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456), "2017-11-16T22:31:08.123456"),
+        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc), "2017-11-16T22:31:08.123456+00:00"),
+        (StringType(), "iceberg", "iceberg"),
+        (BinaryType(), b"\x01\x02\x03\xff", "010203ff"),
+        (FixedType(4), b"\x01\x02\x03\xff", "010203ff"),
+    ],
+)
+def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, expected: Any) -> None:
+    json_val = conversions.to_json(primitive_type, value)
+    assert json_val == expected
+
+
+@pytest.mark.parametrize(
+    "primitive_type, value",
+    [
+        (BooleanType(), True),
+        (IntegerType(), 34),
+        (LongType(), 34),
+        (FloatType(), 1.0),
+        (DoubleType(), 1.0),
+        (DecimalType(9, 4), Decimal("123.4500")),
+        (DecimalType(9, 0), Decimal("2")),
+        (DecimalType(9, -20), Decimal("2E+20")),
+        (DateType(), date(2017, 11, 16)),
+        (TimeType(), time(22, 31, 8, 123456)),
+        (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456)),
+        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc)),
+        (StringType(), "iceberg"),
+        (BinaryType(), b"\x01\x02\x03\xff"),
+        (FixedType(4), b"\x01\x02\x03\xff"),
+    ],
+)
+def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> None:
+    assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
