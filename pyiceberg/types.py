@@ -53,7 +53,7 @@ from pydantic import (
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, TableVersion
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
@@ -140,6 +140,10 @@ class IcebergType(IcebergBaseModel):
                 return TimestampType()
             if v == "timestamptz":
                 return TimestamptzType()
+            if v == "timestamp_ns":
+                return TimestampNanoType()
+            if v == "timestamptz_ns":
+                return TimestamptzNanoType()
             if v == "date":
                 return DateType()
             if v == "time":
@@ -176,6 +180,10 @@ class IcebergType(IcebergBaseModel):
     @property
     def is_struct(self) -> bool:
         return isinstance(self, StructType)
+
+    def minimum_format_version(self) -> TableVersion:
+        """Minimum Iceberg format version after which this type is supported."""
+        return 1
 
 
 class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
@@ -703,6 +711,44 @@ class TimestamptzType(PrimitiveType):
     root: Literal["timestamptz"] = Field(default="timestamptz")
 
 
+class TimestampNanoType(PrimitiveType):
+    """A TimestampNano data type in Iceberg can be represented using an instance of this class.
+
+    TimestampNanos in Iceberg have nanosecond precision and include a date and a time of day without a timezone.
+
+    Example:
+        >>> column_foo = TimestampNanoType()
+        >>> isinstance(column_foo, TimestampNanoType)
+        True
+        >>> column_foo
+        TimestampNanoType()
+    """
+
+    root: Literal["timestamp_ns"] = Field(default="timestamp_ns")
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
+
+
+class TimestamptzNanoType(PrimitiveType):
+    """A TimestamptzNano data type in Iceberg can be represented using an instance of this class.
+
+    TimestamptzNanos in Iceberg are stored as UTC and include a date and a time of day with a timezone.
+
+    Example:
+        >>> column_foo = TimestamptzNanoType()
+        >>> isinstance(column_foo, TimestamptzNanoType)
+        True
+        >>> column_foo
+        TimestamptzNanoType()
+    """
+
+    root: Literal["timestamptz_ns"] = Field(default="timestamptz_ns")
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
+
+
 class StringType(PrimitiveType):
     """A String data type in Iceberg can be represented using an instance of this class.
 
@@ -765,3 +811,6 @@ class UnknownType(PrimitiveType):
     """
 
     root: Literal["unknown"] = Field(default="unknown")
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
