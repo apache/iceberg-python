@@ -39,11 +39,11 @@ from typing import (
 
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
+    NoCatalogError,
     NoSuchNamespaceError,
     NoSuchTableError,
     NotInstalledError,
     TableAlreadyExistsError,
-    NoCatalogError
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
@@ -236,13 +236,11 @@ def load_catalog(name: Optional[str] = None, **properties: Optional[str]) -> Cat
     conf: RecursiveDict = merge_config(env or {}, cast(RecursiveDict, properties))
 
     if conf == {}:
-        raise NoCatalogError(
-            f"{name} catalog not found, please provide a catalog type using --type"
-        )
-    
+        raise NoCatalogError(f"{name} catalog not found, please provide a catalog type using --type")
+
     catalog_type: Optional[CatalogType]
     provided_catalog_type = conf.get(TYPE)
-    
+
     if catalog_impl := properties.get(PY_CATALOG_IMPL):
         if provided_catalog_type:
             raise ValueError(

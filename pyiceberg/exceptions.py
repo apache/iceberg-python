@@ -27,8 +27,10 @@ class NamespaceNotEmptyError(Exception):
 class NamespaceAlreadyExistsError(Exception):
     """Raised when a name-space being created already exists in the catalog."""
 
+
 class NoCatalogError(Exception):
     """Raised when no catalog is set."""
+
 
 class ValidationError(Exception):
     """Raises when there is an issue with the schema."""
