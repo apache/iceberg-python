@@ -318,14 +318,23 @@ def test_table_scan_row_filter(table_v2: Table) -> None:
 
 def test_table_scan_ref(table_v2: Table) -> None:
     scan = table_v2.scan()
-    assert scan.use_ref("test").snapshot_id == 3051729675574597004
+    assert scan.use_ref("test").ref_name == "test"
+
+
+def test_table_scan_ref_and_snapshot_id(table_v2: Table) -> None:
+    scan = table_v2.scan(snapshot_id=123)
+
+    with pytest.raises(ValueError) as exc_info:
+        _ = scan.use_ref("test").snapshot()
+
+    assert "Cannot specify both snapshot_id and ref_name" in str(exc_info.value)
 
 
 def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
     scan = table_v2.scan()
 
     with pytest.raises(ValueError) as exc_info:
-        _ = scan.use_ref("boom")
+        _ = scan.use_ref("boom").snapshot()
 
     assert "Cannot scan unknown ref=boom" in str(exc_info.value)
 
