@@ -82,3 +82,10 @@ def test_manage_statistics(catalog: "Catalog", arrow_table_with_null: "pa.Table"
         update.remove_statistics(add_snapshot_id_1)
 
     assert len(tbl.metadata.statistics) == 1
+
+    with tbl.transaction() as txn:
+        with txn.update_statistics() as update:
+            update.set_statistics(statistics_file_snap_1)
+            update.set_statistics(statistics_file_snap_2)
+
+    assert len(tbl.metadata.statistics) == 2
