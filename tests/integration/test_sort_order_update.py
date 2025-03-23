@@ -67,7 +67,7 @@ def test_map_column_name_to_id(catalog: Catalog, format_version: str, table_sche
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
     ],
 )
-def test_replace_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
+def test_update_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
     simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).desc(
         "bar", IdentityTransform(), NullOrder.NULLS_LAST
@@ -89,7 +89,7 @@ def test_replace_sort_order(catalog: Catalog, format_version: str, table_schema_
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
     ],
 )
-def test_replace_existing_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
+def test_update_existing_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
     simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()
     assert simple_table.sort_order() == SortOrder(
