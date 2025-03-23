@@ -270,11 +270,8 @@ class SnowflakeCatalog(MetastoreCatalog):
         )
 
         sf_query = "DROP SCHEMA IF EXISTS (%s)"
-        db_query = "DROP DATABASE IF EXISTS (%s)"
 
         with self.connection.cursor(DictCursor) as cursor:
-            if sf_identifier.database:
-                cursor.execute(db_query, (sf_identifier.database,))
             cursor.execute(sf_query, (sf_identifier.schema_name,))
 
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
