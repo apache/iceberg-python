@@ -255,7 +255,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
 
         # get current snapshot id and starting snapshot id, and validate that there are no conflicts
-        if self._transaction._table.__class__.__name__ != "StagedTable":
+        from pyiceberg.table import StagedTable
+        if not isinstance(self._transaction._table, StagedTable):
             starting_snapshot = self._transaction.table_metadata.current_snapshot()
             current_snapshot = self._transaction._table.refresh().metadata.current_snapshot()
             self._validate(starting_snapshot, current_snapshot)
