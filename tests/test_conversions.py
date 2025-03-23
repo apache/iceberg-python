@@ -43,6 +43,10 @@ Notes:
         - Stored as microseconds from 1970-01-01 00:00:00.000000 in an 8-byte little-endian long
         - 400000L is 0...110|00011010|10000000 in binary
         - 10000000 -> 128 (-128), 00011010 -> 26, 00000110 -> 6, ... , 00000000 -> 0
+    TimestampNano:
+        - Stored as nanoseconds from 1970-01-01 00:00:00.000000000 in an 8-byte little-endian long
+        - 400000000L is 00010111|11010111|10000100|00000000 in binary
+        - 00000000 -> 0, 10000100 -> 124 (-124), 11010111 -> 41 (-41), 00010111 -> 23, ... , 00000000 -> 0
     String:
         - Stored as UTF-8 bytes (without length)
         - 'A' -> 65, 'B' -> 66, 'C' -> 67
@@ -99,7 +103,9 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -266,6 +272,8 @@ def test_partition_to_py_raise_on_incorrect_precision_or_scale(
         (TimestamptzType(), b"\x00\xe8vH\x17\x00\x00\x00", 100000000000),
         (TimestampType(), b"\x80\x1a\x06\x00\x00\x00\x00\x00", 400000),
         (TimestampType(), b"\x00\xe8vH\x17\x00\x00\x00", 100000000000),
+        (TimestampNanoType(), b"\00\x84\xd7\x17\x00\x00\x00\x00", 400000000),
+        (TimestamptzNanoType(), b"\00\x84\xd7\x17\x00\x00\x00\x00", 400000000),
         (StringType(), b"ABC", "ABC"),
         (StringType(), b"foo", "foo"),
         (
