@@ -575,6 +575,7 @@ class MonthTransform(TimeTransform[S]):
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.month, expected_type=pa.int32())
 
+
 class DayTransform(TimeTransform[S]):
     """Transforms a datetime value into a day value.
 

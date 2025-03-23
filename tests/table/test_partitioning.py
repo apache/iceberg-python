@@ -209,7 +209,7 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
     for t in all_transforms:
         if t.can_transform(source_type):
             try:
-                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0];
+                assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
             except ValueError as e:
                 # Skipping unsupported feature
                 if "FeatureUnsupported => Unsupported data type for truncate transform" in str(e):
