@@ -79,7 +79,7 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
+from pyiceberg.utils.properties import get_header_properties, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -137,7 +137,6 @@ SSL = "ssl"
 SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
-AUTH_URL = "rest.authorization-url"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
@@ -149,7 +148,7 @@ def _retry_hook(retry_state: RetryCallState) -> None:
 
 
 _RETRY_ARGS = {
-    "retry": retry_if_exception_type(AuthorizationExpiredError),
+    "retry": retry_if_exception_type((AuthorizationExpiredError, UnauthorizedError)),
     "stop": stop_after_attempt(2),
     "before_sleep": _retry_hook,
     "reraise": True,
@@ -318,16 +317,9 @@ class RestCatalog(Catalog):
 
     @property
     def auth_url(self) -> str:
-        if self.properties.get(AUTH_URL):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {AUTH_URL} is deprecated. Please use {OAUTH2_SERVER_URI} instead",
-            )
-
         self._warn_oauth_tokens_deprecation()
 
-        if url := get_first_property_value(self.properties, AUTH_URL, OAUTH2_SERVER_URI):
+        if url := self.properties.get(OAUTH2_SERVER_URI):
             return url
         else:
             return self.url(Endpoints.get_token, prefixed=False)

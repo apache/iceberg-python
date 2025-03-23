@@ -96,7 +96,19 @@ class TimestampWriter(Writer):
 
 
 @dataclass(frozen=True)
+class TimestampNanoWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: int) -> None:
+        encoder.write_int(val)
+
+
+@dataclass(frozen=True)
 class TimestamptzWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: int) -> None:
+        encoder.write_int(val)
+
+
+@dataclass(frozen=True)
+class TimestamptzNanoWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: int) -> None:
         encoder.write_int(val)
 
@@ -111,6 +123,12 @@ class StringWriter(Writer):
 class UUIDWriter(Writer):
     def write(self, encoder: BinaryEncoder, val: UUID) -> None:
         encoder.write(val.bytes)
+
+
+@dataclass(frozen=True)
+class UnknownWriter(Writer):
+    def write(self, encoder: BinaryEncoder, val: Any) -> None:
+        encoder.write_unknown(val)
 
 
 @dataclass(frozen=True)

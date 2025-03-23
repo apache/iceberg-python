@@ -818,7 +818,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             branch_name (str): name of the new branch
             max_ref_age_ms (Optional[int]): max ref age in milliseconds
             max_snapshot_age_ms (Optional[int]): max age of snapshots to keep in milliseconds
-            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep in milliseconds
+            min_snapshots_to_keep (Optional[int]): min number of snapshots to keep for the branch
         Returns:
             This for method chaining
         """

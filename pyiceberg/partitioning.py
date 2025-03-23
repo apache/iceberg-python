@@ -444,7 +444,7 @@ def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]
     elif isinstance(value, datetime):
         return datetime_to_micros(value)
     else:
-        raise ValueError(f"Unknown type: {value}")
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(DateType)
@@ -456,7 +456,7 @@ def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
     elif isinstance(value, date):
         return date_to_days(value)
     else:
-        raise ValueError(f"Unknown type: {value}")
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(TimeType)
