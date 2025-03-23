@@ -73,7 +73,9 @@ from pyiceberg.types import (
     IntegerType,
     LongType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -299,6 +301,8 @@ class BucketTransform(Transform[S, int]):
                 TimeType,
                 TimestampType,
                 TimestamptzType,
+                TimestampNanoType,
+                TimestamptzNanoType,
                 DecimalType,
                 StringType,
                 FixedType,
@@ -329,6 +333,18 @@ class BucketTransform(Transform[S, int]):
             def hash_func(v: Any) -> int:
                 if isinstance(v, py_datetime.datetime):
                     v = datetime.datetime_to_micros(v)
+
+                return mmh3.hash(struct.pack("<q", v))
+
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def hash_func(v: Any) -> int:
+                # In order to bucket TimestampNano the same as Timestamp
+                # convert to micros before hashing.
+                if isinstance(v, py_datetime.datetime):
+                    v = datetime.datetime_to_micros(v)
+                else:
+                    v = datetime.nanos_to_micros(v)
 
                 return mmh3.hash(struct.pack("<q", v))
 
@@ -466,13 +482,20 @@ class YearTransform(TimeTransform[S]):
 
                 return datetime.micros_to_years(v)
 
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def year_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_years(v)
+
         else:
             raise ValueError(f"Cannot apply year transform for type: {source}")
 
         return lambda v: year_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (DateType, TimestampType, TimestamptzType))
+        return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -520,13 +543,20 @@ class MonthTransform(TimeTransform[S]):
 
                 return datetime.micros_to_months(v)
 
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def month_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_months(v)
+
         else:
             raise ValueError(f"Cannot apply month transform for type: {source}")
 
         return lambda v: month_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (DateType, TimestampType, TimestamptzType))
+        return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     @property
     def granularity(self) -> TimeResolution:
@@ -544,7 +574,6 @@ class MonthTransform(TimeTransform[S]):
         from pyiceberg_core import transform as pyiceberg_core_transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.month, expected_type=pa.int32())
-
 
 class DayTransform(TimeTransform[S]):
     """Transforms a datetime value into a day value.
@@ -574,13 +603,20 @@ class DayTransform(TimeTransform[S]):
 
                 return datetime.micros_to_days(v)
 
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def day_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_days(v)
+
         else:
             raise ValueError(f"Cannot apply day transform for type: {source}")
 
         return lambda v: day_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (DateType, TimestampType, TimestamptzType))
+        return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         """Return the result type of a day transform.
@@ -628,13 +664,20 @@ class HourTransform(TimeTransform[S]):
 
                 return datetime.micros_to_hours(v)
 
+        elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
+
+            def day_func(v: Any) -> int:
+                # python datetime has no nanoseconds support.
+                # nanosecond datetimes will be expressed as int as a workaround
+                return datetime.nanos_to_hours(v)
+
         else:
             raise ValueError(f"Cannot apply hour transform for type: {source}")
 
         return lambda v: hour_func(v) if v is not None else None
 
     def can_transform(self, source: IcebergType) -> bool:
-        return isinstance(source, (TimestampType, TimestamptzType))
+        return isinstance(source, (TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
     @property
     def granularity(self) -> TimeResolution:
