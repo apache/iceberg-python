@@ -1186,6 +1186,7 @@ class _BuildPositionAccessors(SchemaVisitor[Dict[Position, Accessor]]):
         ...     1: Accessor(position=1, inner=None),
         ...     5: Accessor(position=2, inner=Accessor(position=0, inner=None)),
         ...     6: Accessor(position=2, inner=Accessor(position=1, inner=None))
+        ...     3: Accessor(position=2, inner=None),
         ... }
         >>> result == expected
         True
@@ -1201,8 +1202,7 @@ class _BuildPositionAccessors(SchemaVisitor[Dict[Position, Accessor]]):
             if field_results[position]:
                 for inner_field_id, acc in field_results[position].items():
                     result[inner_field_id] = Accessor(position, inner=acc)
-            else:
-                result[field.field_id] = Accessor(position)
+            result[field.field_id] = Accessor(position)
 
         return result
 
