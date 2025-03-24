@@ -278,7 +278,7 @@ ignore_missing_imports = true
 pyiceberg = "pyiceberg.cli.console:run"
 
 [build-system]
-requires = ["poetry-core>=1.0.0", "wheel", "Cython>=3.0.0", "setuptools"]
+requires = ["poetry-core>=1.0.0", "wheel", "Cython>=3.0.0", "setuptools==77.0.3"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.build]
