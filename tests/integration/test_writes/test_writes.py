@@ -263,6 +263,76 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
 
 
 @pytest.mark.integration
+def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catalog) -> None:
+    identifier = "default.test_summaries_partial_overwrite"
+    TEST_DATA = {
+        "id": [1, 2, 3, 1, 1],
+        "name": ["AB", "CD", "EF", "CD", "EF"],
+    }
+    pa_schema = pa.schema(
+        [
+            pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
+            pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
+        ]
+    )
+    arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, schema=pa_schema)
+    with tbl.update_spec() as txn:
+        txn.add_identity("id")  # partition by `id` to create 3 data files
+    tbl.append(arrow_table)  # append
+    tbl.delete(delete_filter="id == 1 and name = 'AB'")  # partial overwrite data from 1 data file
+
+    rows = spark.sql(
+        f"""
+        SELECT operation, summary
+        FROM {identifier}.snapshots
+        ORDER BY committed_at ASC
+    """
+    ).collect()
+
+    operations = [row.operation for row in rows]
+    assert operations == ["append", "overwrite"]
+
+    summaries = [row.summary for row in rows]
+
+    file_size = int(summaries[0]["added-files-size"])
+    assert file_size > 0
+
+    # APPEND
+    assert summaries[0] == {
+        "added-data-files": "3",
+        "added-files-size": "2848",
+        "added-records": "5",
+        "changed-partition-count": "3",
+        "total-data-files": "3",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "2848",
+        "total-position-deletes": "0",
+        "total-records": "5",
+    }
+    # BUG `deleted-data-files` property is being replaced by the previous summary's `total-data-files` value
+    # OVERWRITE from tbl.delete
+    assert summaries[1] == {
+        "added-data-files": "1",
+        "added-files-size": "859",
+        "added-records": "2",  # wrong should be 0
+        "changed-partition-count": "1",
+        "deleted-data-files": "3",  # wrong should be 1
+        "deleted-records": "5",  # wrong should be 1
+        "removed-files-size": "2848",
+        "total-data-files": "1",  # wrong should be 3
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "859",
+        "total-position-deletes": "0",
+        "total-records": "2",  # wrong should be 4
+    }
+    assert len(tbl.inspect.data_files()) == 3
+    assert len(tbl.scan().to_pandas()) == 4
+
+
+@pytest.mark.integration
 def test_data_files(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.arrow_data_files"
     tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
