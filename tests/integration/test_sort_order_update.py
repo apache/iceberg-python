@@ -138,3 +138,29 @@ def test_update_existing_sort_order(catalog: Catalog, format_version: str, table
         SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
         order_id=1,
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "catalog, format_version",
+    [
+        (pytest.lazy_fixture("session_catalog"), "1"),
+        (pytest.lazy_fixture("session_catalog_hive"), "1"),
+        (pytest.lazy_fixture("session_catalog"), "2"),
+        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+    ],
+)
+def test_update_existing_sort_order_with_unsorted_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
+    simple_table = _simple_table(catalog, table_schema_simple, format_version)
+    simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()
+    assert simple_table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        order_id=1,
+    )
+    # Table should now be unsorted
+    simple_table.update_sort_order().commit()
+    # Go back to the first sort order
+    assert (
+        len(simple_table.sort_orders()) == 2
+    )
+    assert simple_table.sort_order() == SortOrder(order_id=0)
