@@ -89,7 +89,7 @@ def test_update_sort_order(catalog: Catalog, format_version: str, table_schema_s
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
     ],
 )
-def test_update_existing_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
+def test_increment_existing_sort_order_id(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
     simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()
     assert simple_table.sort_order() == SortOrder(
@@ -106,4 +106,35 @@ def test_update_existing_sort_order(catalog: Catalog, format_version: str, table
         SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
         SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_FIRST),
         order_id=2,
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "catalog, format_version",
+    [
+        (pytest.lazy_fixture("session_catalog"), "1"),
+        (pytest.lazy_fixture("session_catalog_hive"), "1"),
+        (pytest.lazy_fixture("session_catalog"), "2"),
+        (pytest.lazy_fixture("session_catalog_hive"), "2"),
+    ],
+)
+def test_update_existing_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
+    simple_table = _simple_table(catalog, table_schema_simple, format_version)
+    simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()
+    assert simple_table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        order_id=1,
+    )
+    simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_LAST).desc(
+        "bar", IdentityTransform(), NullOrder.NULLS_FIRST
+    ).commit()
+    # Go back to the first sort order
+    simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()        
+    assert (
+        len(simple_table.sort_orders()) == 3
+    ) # line 133 should not create a new sort order since it is the same as the first one
+    assert simple_table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        order_id=1,
     )
