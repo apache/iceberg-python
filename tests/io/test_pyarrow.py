@@ -1153,7 +1153,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
-    file_data = pa.array(["foo"], type=pa.string())
+    file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
     file_loc = f"{tmp_path}/test.parquet"
     pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
 
@@ -1181,14 +1181,13 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         with transaction.update_snapshot().overwrite() as update:
             update.append_data_file(unpartitioned_file)
 
-    assert (
-        str(table.scan().to_arrow())
-        == """pyarrow.Table
-other_field: large_string
-partition_id: int64
-----
-other_field: [["foo"]]
-partition_id: [[1]]"""
+    schema = pa.schema([("other_field", pa.large_string()), ("partition_id", pa.int64())])
+    assert table.scan().to_arrow() == pa.table(
+        {
+            "other_field": ["foo", "bar", "baz"],
+            "partition_id": [1, 1, 1],
+        },
+        schema=schema,
     )
 
 

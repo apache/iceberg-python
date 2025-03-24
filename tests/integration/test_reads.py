@@ -41,6 +41,7 @@ from pyiceberg.expressions import (
     LessThan,
     NotEqualTo,
     NotNaN,
+    NotNull,
 )
 from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
 from pyiceberg.io.pyarrow import (
@@ -665,6 +666,24 @@ def test_filter_case_insensitive(catalog: Catalog) -> None:
 
     arrow_table = test_table_add_column.scan(row_filter="B == '2'", case_sensitive=False).to_arrow()
     assert arrow_table["b"].to_pylist() == ["2"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filters_on_top_level_struct(catalog: Catalog) -> None:
+    test_empty_struct = catalog.load_table("default.test_table_empty_list_and_map")
+
+    arrow_table = test_empty_struct.scan().to_arrow()
+    assert None in arrow_table["col_struct"].to_pylist()
+
+    arrow_table = test_empty_struct.scan(row_filter=NotNull("col_struct")).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [{"test": 1}]
+
+    arrow_table = test_empty_struct.scan(row_filter="col_struct is not null", case_sensitive=False).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [{"test": 1}]
+
+    arrow_table = test_empty_struct.scan(row_filter="COL_STRUCT is null", case_sensitive=False).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [None]
 
 
 @pytest.mark.integration

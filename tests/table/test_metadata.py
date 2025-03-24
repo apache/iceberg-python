@@ -48,8 +48,12 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
+    TimestamptzNanoType,
+    UnknownType,
 )
 
 
@@ -765,3 +769,110 @@ def test_make_metadata_fresh() -> None:
     )
 
     assert actual.model_dump() == expected.model_dump()
+
+
+def test_new_table_metadata_with_v3_schema() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=33, name="baz", field_type=BooleanType(), required=False),
+        NestedField(field_id=34, name="qux", field_type=TimestampNanoType(), required=False),
+        NestedField(field_id=35, name="quux", field_type=TimestamptzNanoType(), required=False),
+        schema_id=10,
+        identifier_field_ids=[22],
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=22, field_id=1022, transform=IdentityTransform(), name="bar"), spec_id=10
+    )
+
+    sort_order = SortOrder(
+        SortField(source_id=10, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=10,
+    )
+
+    actual = new_table_metadata(
+        schema=schema,
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+        location="s3://some_v1_location/",
+        properties={"format-version": "3"},
+    )
+
+    expected_schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
+        NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
+        NestedField(field_id=4, name="qux", field_type=TimestampNanoType(), required=False),
+        NestedField(field_id=5, name="quux", field_type=TimestamptzNanoType(), required=False),
+        schema_id=0,
+        identifier_field_ids=[2],
+    )
+
+    expected_spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bar"))
+
+    expected_sort_order = SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
+    )
+
+    expected = TableMetadataV3(
+        location="s3://some_v1_location/",
+        table_uuid=actual.table_uuid,
+        last_updated_ms=actual.last_updated_ms,
+        last_column_id=5,
+        schemas=[expected_schema],
+        schema_=expected_schema,
+        current_schema_id=0,
+        partition_spec=[field.model_dump() for field in expected_spec.fields],
+        partition_specs=[expected_spec],
+        default_spec_id=0,
+        last_partition_id=1000,
+        properties={},
+        current_snapshot_id=None,
+        snapshots=[],
+        snapshot_log=[],
+        metadata_log=[],
+        sort_orders=[expected_sort_order],
+        default_sort_order_id=1,
+        refs={},
+        format_version=3,
+    )
+
+    assert actual.model_dump() == expected.model_dump()
+    assert actual.schemas == [expected_schema]
+    assert actual.partition_specs == [expected_spec]
+    assert actual.sort_orders == [expected_sort_order]
+
+
+@pytest.mark.parametrize(
+    "field_type",
+    [
+        TimestampNanoType(),
+        TimestamptzNanoType(),
+        UnknownType(),
+    ],
+)
+def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: PrimitiveType) -> None:
+    schema = Schema(
+        NestedField(field_id=34, name="qux", field_type=field_type, required=False),
+        schema_id=10,
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=34, field_id=1022, transform=IdentityTransform(), name="qux"), spec_id=10
+    )
+
+    sort_order = SortOrder(
+        SortField(source_id=34, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        order_id=34,
+    )
+
+    with pytest.raises(ValueError, match=f"{field_type} is only supported in 3 or higher. Current format version is: 2"):
+        new_table_metadata(
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=sort_order,
+            location="s3://some_v1_location/",
+            properties={"format-version": "2"},
+        )

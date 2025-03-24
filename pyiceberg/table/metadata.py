@@ -578,6 +578,11 @@ def new_table_metadata(
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 
+    # Remove format-version so it does not get persisted
+    format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
+
+    schema.check_format_version_compatibility(format_version)
+
     fresh_schema = assign_fresh_schema_ids(schema)
     fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
     fresh_sort_order = assign_fresh_sort_order_ids(sort_order, schema, fresh_schema)
@@ -585,8 +590,6 @@ def new_table_metadata(
     if table_uuid is None:
         table_uuid = uuid.uuid4()
 
-    # Remove format-version so it does not get persisted
-    format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
     if format_version == 1:
         return TableMetadataV1(
             location=location,
