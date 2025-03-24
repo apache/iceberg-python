@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from functools import cached_property, reduce
+from functools import cached_property
 from typing import (
     Any,
     Callable,
@@ -255,7 +255,7 @@ class And(BooleanExpression):
 
     def __new__(cls, left: BooleanExpression, right: BooleanExpression, *rest: BooleanExpression) -> BooleanExpression:  # type: ignore
         if rest:
-            return reduce(And, (left, right, *rest))
+            return _build_balanced_tree(And, (left, right, *rest))
         if left is AlwaysFalse() or right is AlwaysFalse():
             return AlwaysFalse()
         elif left is AlwaysTrue():
