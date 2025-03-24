@@ -113,9 +113,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         if next(iter(self._fields), None) is None:
             return UNSORTED_SORT_ORDER
         else:
-            _sort_order_id = self._reuse_or_create_sort_order_id()
-            self._last_assigned_order_id = _sort_order_id
-            return SortOrder(*self._fields, order_id=_sort_order_id)
+            return SortOrder(*self._fields, order_id=self._reuse_or_create_sort_order_id())
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
@@ -127,6 +125,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
             self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id
             and self._transaction.table_metadata.sort_order_by_id(new_sort_order.order_id) is None
         ):
+            self._last_assigned_order_id = new_sort_order.order_id
             updates = (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1))
         else:
             updates = (SetDefaultSortOrderUpdate(sort_order_id=new_sort_order.order_id),)
