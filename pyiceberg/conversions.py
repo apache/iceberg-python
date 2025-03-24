@@ -472,7 +472,7 @@ def _(_: DecimalType, val: Decimal) -> str:
 
 @to_json.register(UUIDType)
 def _(_: UUIDType, val: uuid.UUID) -> str:
-    """Serializes into a JSON string."""
+    """Serialize into a JSON string."""
     return str(val)
 
 

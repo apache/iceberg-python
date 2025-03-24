@@ -24,7 +24,7 @@ import pytest
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError, ValidationError
-from pyiceberg.expressions import literal
+from pyiceberg.expressions import literal  # type: ignore
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, prune_columns
 from pyiceberg.table import Table, TableProperties
@@ -1144,6 +1144,7 @@ def test_initial_default_all_columns(
     assert write_physical_type == field.write_default
 
 
+@pytest.mark.integration
 def test_add_required_column_initial_default(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
     table = _create_table_with_schema(catalog, schema_)
