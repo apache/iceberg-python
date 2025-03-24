@@ -16,9 +16,9 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List, Tuple, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
-from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder, INITIAL_SORT_ORDER_ID, UNSORTED_SORT_ORDER
+from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, UNSORTED_SORT_ORDER, NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import (
     AddSortOrderUpdate,
     AssertDefaultSortOrderId,
@@ -74,7 +74,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
             )
         )
         return self
-    
+
     def _reuse_or_create_sort_order_id(self) -> int:
         """Return the last assigned sort order id or create a new one."""
         new_sort_order_id = INITIAL_SORT_ORDER_ID
@@ -123,7 +123,10 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         requirements: Tuple[TableRequirement, ...] = ()
         updates: Tuple[TableUpdate, ...] = ()
 
-        if self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id and self._transaction.table_metadata.sort_order_by_id(new_sort_order.order_id) is None:
+        if (
+            self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id
+            and self._transaction.table_metadata.sort_order_by_id(new_sort_order.order_id) is None
+        ):
             updates = (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1))
         else:
             updates = (SetDefaultSortOrderUpdate(sort_order_id=new_sort_order.order_id),)
