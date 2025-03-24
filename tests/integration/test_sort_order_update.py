@@ -150,7 +150,9 @@ def test_update_existing_sort_order(catalog: Catalog, format_version: str, table
         (pytest.lazy_fixture("session_catalog_hive"), "2"),
     ],
 )
-def test_update_existing_sort_order_with_unsorted_sort_order(catalog: Catalog, format_version: str, table_schema_simple: Schema) -> None:
+def test_update_existing_sort_order_with_unsorted_sort_order(
+    catalog: Catalog, format_version: str, table_schema_simple: Schema
+) -> None:
     simple_table = _simple_table(catalog, table_schema_simple, format_version)
     simple_table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_FIRST).commit()
     assert simple_table.sort_order() == SortOrder(
@@ -160,7 +162,5 @@ def test_update_existing_sort_order_with_unsorted_sort_order(catalog: Catalog, f
     # Table should now be unsorted
     simple_table.update_sort_order().commit()
     # Go back to the first sort order
-    assert (
-        len(simple_table.sort_orders()) == 2
-    )
+    assert len(simple_table.sort_orders()) == 2
     assert simple_table.sort_order() == SortOrder(order_id=0)
