@@ -16,9 +16,9 @@
 # under the License.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, List, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple, Optional
 
-from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder, INITIAL_SORT_ORDER_ID, UNSORTED_SORT_ORDER
 from pyiceberg.table.update import (
     AddSortOrderUpdate,
     AssertDefaultSortOrderId,
@@ -36,16 +36,15 @@ if TYPE_CHECKING:
 
 class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
     _transaction: Transaction
-    _last_assigned_order_id: int
+    _last_assigned_order_id: Optional[int]
     _case_sensitive: bool
     _fields: List[SortField]
-    _last_sort_order_id: int
 
     def __init__(self, transaction: Transaction, case_sensitive: bool = True) -> None:
         super().__init__(transaction)
         self._fields: List[SortField] = []
         self._case_sensitive: bool = case_sensitive
-        self._last_sort_order_id: int = transaction.table_metadata.default_sort_order_id
+        self._last_assigned_order_id: Optional[int] = None
 
     def _column_name_to_id(self, column_name: str) -> int:
         """Map the column name to the column field id."""
@@ -75,6 +74,17 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
             )
         )
         return self
+    
+    def _reuse_or_create_sort_order_id(self) -> int:
+        """Return the last assigned sort order id or create a new one."""
+        new_sort_order_id = INITIAL_SORT_ORDER_ID
+        for sort_order in self._transaction.table_metadata.sort_orders:
+            new_sort_order_id = max(new_sort_order_id, sort_order.order_id)
+            if sort_order.fields == self._fields:
+                return sort_order.order_id
+            elif new_sort_order_id <= sort_order.order_id:
+                new_sort_order_id = sort_order.order_id + 1
+        return new_sort_order_id
 
     def asc(
         self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder = NullOrder.NULLS_LAST
@@ -100,7 +110,12 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
 
     def _apply(self) -> SortOrder:
         """Return the sort order."""
-        return SortOrder(*self._fields, order_id=self._last_sort_order_id + 1)
+        if next(iter(self._fields), None) is None:
+            return UNSORTED_SORT_ORDER
+        else:
+            _sort_order_id = self._reuse_or_create_sort_order_id()
+            self._last_assigned_order_id = _sort_order_id
+            return SortOrder(*self._fields, order_id=_sort_order_id)
 
     def _commit(self) -> UpdatesAndRequirements:
         """Apply the pending changes and commit."""
@@ -108,7 +123,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         requirements: Tuple[TableRequirement, ...] = ()
         updates: Tuple[TableUpdate, ...] = ()
 
-        if self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id:
+        if self._transaction.table_metadata.default_sort_order_id != new_sort_order.order_id and self._transaction.table_metadata.sort_order_by_id(new_sort_order.order_id) is None:
             updates = (AddSortOrderUpdate(sort_order=new_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1))
         else:
             updates = (SetDefaultSortOrderUpdate(sort_order_id=new_sort_order.order_id),)
