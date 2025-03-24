@@ -230,8 +230,8 @@ def test_boolean_expression_visitor() -> None:
         "NOT",
         "OR",
         "EQUALTO",
-        "OR",
         "NOTEQUALTO",
+        "OR",
         "OR",
         "EQUALTO",
         "NOT",
@@ -408,14 +408,14 @@ def test_and_expression_binding(
                 ),
             ),
             Or(
-                Or(
-                    BoundIn(
-                        BoundReference(
-                            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                            accessor=Accessor(position=0, inner=None),
-                        ),
-                        {literal("bar"), literal("baz")},
+                BoundIn(
+                    BoundReference(
+                        field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+                        accessor=Accessor(position=0, inner=None),
                     ),
+                    {literal("bar"), literal("baz")},
+                ),
+                Or(
                     BoundIn(
                         BoundReference(
                             field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
@@ -423,13 +423,13 @@ def test_and_expression_binding(
                         ),
                         {literal("bar")},
                     ),
-                ),
-                BoundIn(
-                    BoundReference(
-                        field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
-                        accessor=Accessor(position=0, inner=None),
+                    BoundIn(
+                        BoundReference(
+                            field=NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+                            accessor=Accessor(position=0, inner=None),
+                        ),
+                        {literal("baz")},
                     ),
-                    {literal("baz")},
                 ),
             ),
         ),
