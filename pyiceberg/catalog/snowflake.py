@@ -39,9 +39,9 @@ from pyiceberg.io import (
 )
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import (
     CommitTableResponse,
-    StaticTable,
     Table,
     sorting,
 )
@@ -182,11 +182,11 @@ class SnowflakeCatalog(MetastoreCatalog):
             try:
                 cursor.execute(METADATA_QUERY, (sf_identifier.table_name,))
                 # Extract the metadata path from the output
-                metadata = json.loads(cursor.fetchone()["METADATA"])["metadataLocation"]
+                metadata_loc = json.loads(cursor.fetchone()["METADATA"])["metadataLocation"]
             except Exception as e:
                 raise NoSuchTableError(f"Table {sf_identifier.table_name} not found") from e
 
-        _fs_scheme = urlparse(metadata)
+        _fs_scheme = urlparse(metadata_loc)
         _fs_props = {}
 
         if _fs_scheme.scheme == "s3":
@@ -200,11 +200,16 @@ class SnowflakeCatalog(MetastoreCatalog):
         else:
             warnings.warn(f"Unsupported filesystem scheme: {_fs_scheme.scheme}")
 
-        tbl = StaticTable.from_metadata(metadata, properties=_fs_props)
-        tbl._identifier = tuple(identifier.split(".")) if isinstance(identifier, str) else identifier
-        tbl.catalog = self
-
-        return tbl
+        io = self._load_file_io(properties=_fs_props, location=metadata_loc)
+        file = io.new_input(metadata_loc)
+        metadata = FromInputFile.table_metadata(file)
+        return Table(
+            self.identifier_to_tuple(identifier),
+            metadata,
+            metadata_loc,
+            io=self._load_file_io({**_fs_props, **metadata.properties}),
+            catalog=self,
+        )
 
     def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
         query = "CREATE ICEBERG TABLE (%s) METADATA_FILE_PATH = (%s)"
