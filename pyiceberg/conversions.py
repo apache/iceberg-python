@@ -55,9 +55,12 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
     strtobool,
 )
@@ -65,6 +68,7 @@ from pyiceberg.utils.datetime import (
     date_str_to_days,
     date_to_days,
     datetime_to_micros,
+    datetime_to_nanos,
     days_to_date,
     micros_to_time,
     micros_to_timestamp,
@@ -126,7 +130,9 @@ def _(primitive_type: BooleanType, value_str: str) -> Union[int, float, str, uui
 @partition_to_py.register(DateType)
 @partition_to_py.register(TimeType)
 @partition_to_py.register(TimestampType)
+@partition_to_py.register(TimestampNanoType)
 @partition_to_py.register(TimestamptzType)
+@partition_to_py.register(TimestamptzNanoType)
 @handle_none
 def _(primitive_type: PrimitiveType, value_str: str) -> int:
     """Convert a string to an integer value.
@@ -172,6 +178,12 @@ def _(_: DecimalType, value_str: str) -> Decimal:
     return Decimal(value_str)
 
 
+@partition_to_py.register(UnknownType)
+@handle_none
+def _(type_: UnknownType, _: str) -> None:
+    return None
+
+
 @singledispatch
 def to_bytes(
     primitive_type: PrimitiveType, _: Union[bool, bytes, Decimal, date, datetime, float, int, str, time, uuid.UUID]
@@ -206,9 +218,17 @@ def _(_: PrimitiveType, value: int) -> bytes:
 
 @to_bytes.register(TimestampType)
 @to_bytes.register(TimestamptzType)
-def _(_: TimestampType, value: Union[datetime, int]) -> bytes:
+def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
     if isinstance(value, datetime):
         value = datetime_to_micros(value)
+    return _LONG_STRUCT.pack(value)
+
+
+@to_bytes.register(TimestampNanoType)
+@to_bytes.register(TimestamptzNanoType)
+def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
+    if isinstance(value, datetime):
+        value = datetime_to_nanos(value)
     return _LONG_STRUCT.pack(value)
 
 
@@ -312,6 +332,8 @@ def _(_: PrimitiveType, b: bytes) -> int:
 @from_bytes.register(TimeType)
 @from_bytes.register(TimestampType)
 @from_bytes.register(TimestamptzType)
+@from_bytes.register(TimestampNanoType)
+@from_bytes.register(TimestamptzNanoType)
 def _(_: PrimitiveType, b: bytes) -> int:
     return _LONG_STRUCT.unpack(b)[0]
 
@@ -344,6 +366,11 @@ def _(primitive_type: DecimalType, buf: bytes) -> Decimal:
     return unscaled_to_decimal(unscaled, primitive_type.scale)
 
 
+@from_bytes.register(UnknownType)
+def _(type_: UnknownType, buf: bytes) -> None:
+    return None
+
+
 @singledispatch  # type: ignore
 def to_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
     """Convert built-in python values into JSON value types.
@@ -372,7 +399,7 @@ def _(_: Union[IntegerType, LongType], val: int) -> int:
 
 @to_json.register(DateType)
 def _(_: DateType, val: Union[date, int]) -> str:
-    """JSON date is string encoded"""
+    """JSON date is string encoded."""
     if isinstance(val, date):
         val = date_to_days(val)
     return to_human_day(val)
@@ -380,7 +407,7 @@ def _(_: DateType, val: Union[date, int]) -> str:
 
 @to_json.register(TimeType)
 def _(_: TimeType, val: Union[int, time]) -> str:
-    """Python time or microseconds since epoch serializes into an ISO8601 time"""
+    """Python time or microseconds since epoch serializes into an ISO8601 time."""
     if isinstance(val, time):
         val = time_to_micros(val)
     return to_human_time(val)
@@ -433,13 +460,13 @@ def _(_: BinaryType, b: bytes) -> str:
 
 @to_json.register(DecimalType)
 def _(_: DecimalType, val: Decimal) -> str:
-    """Python decimal serializes into string
+    """Python decimal serializes into string.
 
     Stores the string representation of the decimal value, specifically, for
     values with a positive scale, the number of digits to the right of the
     decimal point is used to indicate scale, for values with a negative scale,
-    the scientific notation is used and the exponent must equal the negated scale
-    ."""
+    the scientific notation is used and the exponent must equal the negated scale.
+    """
     return str(val)
 
 
@@ -531,11 +558,11 @@ def _(_: BinaryType, val: str) -> bytes:
 
 @from_json.register(DecimalType)
 def _(_: DecimalType, val: str) -> Decimal:
-    """string into a Python decimal."""
+    """Convert JSON string into a Python Decimal."""
     return Decimal(val)
 
 
 @from_json.register(UUIDType)
 def _(_: UUIDType, val: str) -> uuid.UUID:
-    """JSON string into Python UUID."""
+    """Convert JSON string into Python UUID."""
     return uuid.UUID(val)
