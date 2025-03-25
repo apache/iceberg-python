@@ -117,6 +117,7 @@ class CatalogType(Enum):
     DYNAMODB = "dynamodb"
     SQL = "sql"
     IN_MEMORY = "in-memory"
+    SNOWFLAKE = "snowflake"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -172,6 +173,15 @@ def load_in_memory(name: str, conf: Properties) -> Catalog:
         raise NotInstalledError("SQLAlchemy support not installed: pip install 'pyiceberg[sql-sqlite]'") from exc
 
 
+def load_snowflake(name: str, conf: Properties) -> Catalog:
+    try:
+        from pyiceberg.catalog.snowflake import SnowflakeCatalog
+
+        return SnowflakeCatalog(name, **conf)
+    except ImportError as exc:
+        raise NotInstalledError("Snowflake support not installed: pip install 'pyiceberg[snowflake]'") from exc
+
+
 AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.REST: load_rest,
     CatalogType.HIVE: load_hive,
@@ -179,6 +189,7 @@ AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.DYNAMODB: load_dynamodb,
     CatalogType.SQL: load_sql,
     CatalogType.IN_MEMORY: load_in_memory,
+    CatalogType.SNOWFLAKE: load_snowflake,
 }
 
 
