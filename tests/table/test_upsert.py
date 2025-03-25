@@ -28,6 +28,7 @@ from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
@@ -368,8 +369,20 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     )
     upd = tbl.upsert(df)
 
+    expected_operations = [Operation.APPEND, Operation.OVERWRITE, Operation.APPEND, Operation.APPEND]
+
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+    assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
+
+    # This should be a no-op
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 0
+
+    assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
 
 def test_upsert_into_empty_table(catalog: Catalog) -> None:

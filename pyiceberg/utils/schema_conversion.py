@@ -47,6 +47,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.decimal import decimal_required_bytes
@@ -62,6 +63,7 @@ PRIMITIVE_FIELD_TYPE_MAPPING: Dict[str, PrimitiveType] = {
     "long": LongType(),
     "string": StringType(),
     "enum": StringType(),
+    "null": UnknownType(),
 }
 
 LOGICAL_FIELD_TYPE_MAPPING: Dict[Tuple[str, str], PrimitiveType] = {
@@ -209,9 +211,9 @@ class AvroSchemaConversion:
                 elif isinstance(type_identifier, str) and type_identifier in PRIMITIVE_FIELD_TYPE_MAPPING:
                     return PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
                 else:
-                    raise TypeError(f"Unknown type: {avro_type}")
+                    raise TypeError(f"Type not recognized: {avro_type}")
         else:
-            raise TypeError(f"Unknown type: {avro_type}")
+            raise TypeError(f"Type not recognized: {avro_type}")
 
     def _convert_field(self, field: Dict[str, Any]) -> NestedField:
         """Convert an Avro field into an Iceberg equivalent field.
@@ -603,12 +605,16 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         return {"type": "long", "logicalType": "time-micros"}
 
     def visit_timestamp(self, timestamp_type: TimestampType) -> AvroType:
-        # Iceberg only supports micro's
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": False}
 
+    def visit_timestamp_ns(self, timestamp_type: TimestampType) -> AvroType:
+        return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": False}
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> AvroType:
-        # Iceberg only supports micro's
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": True}
+
+    def visit_timestamptz_ns(self, timestamptz_type: TimestamptzType) -> AvroType:
+        return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": True}
 
     def visit_string(self, string_type: StringType) -> AvroType:
         return "string"
@@ -618,3 +624,6 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"
+
+    def visit_unknown(self, unknown_type: UnknownType) -> AvroType:
+        return "null"

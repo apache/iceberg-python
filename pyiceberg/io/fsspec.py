@@ -67,6 +67,7 @@ from pyiceberg.io import (
     S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SIGNER,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
@@ -137,7 +138,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     config_kwargs = {}
     register_events: Dict[str, Callable[[Properties], None]] = {}
 
-    if signer := properties.get("s3.signer"):
+    if signer := properties.get(S3_SIGNER):
         logger.info("Loading signer %s", signer)
         if signer_func := SIGNERS.get(signer):
             signer_func_with_properties = partial(signer_func, properties)
@@ -189,9 +190,7 @@ def _adls(properties: Properties) -> AbstractFileSystem:
     from adlfs import AzureBlobFileSystem
 
     for key, sas_token in {
-        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value
-        for key, value in properties.items()
-        if key.startswith(ADLS_SAS_TOKEN) and key.endswith(".windows.net")
+        key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(ADLS_SAS_TOKEN)
     }.items():
         if ADLS_ACCOUNT_NAME not in properties:
             properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
