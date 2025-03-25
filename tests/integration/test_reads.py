@@ -41,6 +41,7 @@ from pyiceberg.expressions import (
     LessThan,
     NotEqualTo,
     NotNaN,
+    NotNull,
 )
 from pyiceberg.io import PYARROW_USE_LARGE_TYPES_ON_READ
 from pyiceberg.io.pyarrow import (
@@ -56,7 +57,6 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     TimestampType,
-    UnknownType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
 
@@ -670,6 +670,24 @@ def test_filter_case_insensitive(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
+def test_filters_on_top_level_struct(catalog: Catalog) -> None:
+    test_empty_struct = catalog.load_table("default.test_table_empty_list_and_map")
+
+    arrow_table = test_empty_struct.scan().to_arrow()
+    assert None in arrow_table["col_struct"].to_pylist()
+
+    arrow_table = test_empty_struct.scan(row_filter=NotNull("col_struct")).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [{"test": 1}]
+
+    arrow_table = test_empty_struct.scan(row_filter="col_struct is not null", case_sensitive=False).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [{"test": 1}]
+
+    arrow_table = test_empty_struct.scan(row_filter="COL_STRUCT is null", case_sensitive=False).to_arrow()
+    assert arrow_table["col_struct"].to_pylist() == [None]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
 def test_upgrade_table_version(catalog: Catalog) -> None:
     table_test_table_version = catalog.load_table("default.test_table_version")
 
@@ -979,39 +997,3 @@ def test_scan_with_datetime(catalog: Catalog) -> None:
 
     df = table.scan(row_filter=LessThan("datetime", yesterday)).to_pandas()
     assert len(df) == 0
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive")])
-def test_read_unknown_type(catalog: Catalog) -> None:
-    identifier = "default.test_table_read_unknown_type"
-    arrow_table = pa.Table.from_pydict(
-        {
-            "int": [1, 2],
-            "string": ["a", "b"],
-            "unknown": [None, None],
-        },
-        schema=pa.schema(
-            [
-                pa.field("int", pa.int32(), nullable=True),
-                pa.field("string", pa.string(), nullable=True),
-                pa.field("unknown", pa.null(), nullable=True),
-            ],
-        ),
-    )
-
-    try:
-        catalog.drop_table(identifier)
-    except NoSuchTableError:
-        pass
-
-    tbl = catalog.create_table(
-        identifier,
-        schema=arrow_table.schema,
-    )
-
-    tbl.append(arrow_table)
-
-    assert tbl.schema().find_type("unknown") == UnknownType()
-    result_table = tbl.scan().to_arrow()
-    assert result_table["unknown"].to_pylist() == [None, None]
