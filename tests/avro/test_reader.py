@@ -35,7 +35,9 @@ from pyiceberg.avro.reader import (
     StringReader,
     StructReader,
     TimeReader,
+    TimestampNanoReader,
     TimestampReader,
+    TimestamptzNanoReader,
     TimestamptzReader,
     UnknownReader,
     UUIDReader,
@@ -58,7 +60,9 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -313,8 +317,16 @@ def test_timestamp_reader() -> None:
     assert construct_reader(TimestampType()) == TimestampReader()
 
 
+def test_timestamp_ns_reader() -> None:
+    assert construct_reader(TimestampNanoType()) == TimestampNanoReader()
+
+
 def test_timestamptz_reader() -> None:
     assert construct_reader(TimestamptzType()) == TimestamptzReader()
+
+
+def test_timestamptz_ns_reader() -> None:
+    assert construct_reader(TimestamptzNanoType()) == TimestamptzNanoReader()
 
 
 def test_string_reader() -> None:

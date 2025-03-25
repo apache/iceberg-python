@@ -398,6 +398,7 @@ def test_build_position_accessors(table_schema_nested: Schema) -> None:
         4: Accessor(position=3, inner=None),
         6: Accessor(position=4, inner=None),
         11: Accessor(position=5, inner=None),
+        15: Accessor(position=6, inner=None),
         16: Accessor(position=6, inner=Accessor(position=0, inner=None)),
         17: Accessor(position=6, inner=Accessor(position=1, inner=None)),
     }
@@ -925,7 +926,7 @@ def primitive_fields() -> List[NestedField]:
     ]
 
 
-def test_add_top_level_primitives(primitive_fields: NestedField) -> None:
+def test_add_top_level_primitives(primitive_fields: List[NestedField]) -> None:
     for primitive_field in primitive_fields:
         new_schema = Schema(primitive_field)
         applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore

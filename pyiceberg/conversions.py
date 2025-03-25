@@ -55,7 +55,9 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -66,6 +68,7 @@ from pyiceberg.utils.datetime import (
     date_str_to_days,
     date_to_days,
     datetime_to_micros,
+    datetime_to_nanos,
     days_to_date,
     micros_to_time,
     micros_to_timestamp,
@@ -127,7 +130,9 @@ def _(primitive_type: BooleanType, value_str: str) -> Union[int, float, str, uui
 @partition_to_py.register(DateType)
 @partition_to_py.register(TimeType)
 @partition_to_py.register(TimestampType)
+@partition_to_py.register(TimestampNanoType)
 @partition_to_py.register(TimestamptzType)
+@partition_to_py.register(TimestamptzNanoType)
 @handle_none
 def _(primitive_type: PrimitiveType, value_str: str) -> int:
     """Convert a string to an integer value.
@@ -213,9 +218,17 @@ def _(_: PrimitiveType, value: int) -> bytes:
 
 @to_bytes.register(TimestampType)
 @to_bytes.register(TimestamptzType)
-def _(_: TimestampType, value: Union[datetime, int]) -> bytes:
+def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
     if isinstance(value, datetime):
         value = datetime_to_micros(value)
+    return _LONG_STRUCT.pack(value)
+
+
+@to_bytes.register(TimestampNanoType)
+@to_bytes.register(TimestamptzNanoType)
+def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
+    if isinstance(value, datetime):
+        value = datetime_to_nanos(value)
     return _LONG_STRUCT.pack(value)
 
 
@@ -319,6 +332,8 @@ def _(_: PrimitiveType, b: bytes) -> int:
 @from_bytes.register(TimeType)
 @from_bytes.register(TimestampType)
 @from_bytes.register(TimestamptzType)
+@from_bytes.register(TimestampNanoType)
+@from_bytes.register(TimestamptzNanoType)
 def _(_: PrimitiveType, b: bytes) -> int:
     return _LONG_STRUCT.unpack(b)[0]
 
