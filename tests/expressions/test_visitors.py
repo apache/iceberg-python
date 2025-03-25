@@ -62,6 +62,9 @@ from pyiceberg.expressions import (
     StartsWith,
     UnboundPredicate,
 )
+
+# N.B. Just to test visit_iterative:
+from pyiceberg.expressions.iterative_visitors import visit_iterative as visit
 from pyiceberg.expressions.literals import Literal, literal
 from pyiceberg.expressions.visitors import (
     BindVisitor,
@@ -72,7 +75,6 @@ from pyiceberg.expressions.visitors import (
     expression_to_plain_format,
     rewrite_not,
     rewrite_to_dnf,
-    visit,
     visit_bound_predicate,
 )
 from pyiceberg.manifest import ManifestFile, PartitionFieldSummary

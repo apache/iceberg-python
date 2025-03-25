@@ -201,7 +201,7 @@ def _(obj: Or, visitor: BooleanExpressionVisitor[T]) -> T:
 
 
 def bind(schema: Schema, expression: BooleanExpression, case_sensitive: bool) -> BooleanExpression:
-    """Travers over an expression to bind the predicates to the schema.
+    """Traverse over an expression to bind the predicates to the schema.
 
     Args:
       schema (Schema): A schema to use when binding the expression.
