@@ -23,7 +23,7 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
@@ -709,3 +709,26 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
         ],
         schema=schema,
     )
+
+
+def test_transaction(catalog: Catalog) -> None:
+    """Test the upsert within a Transaction. Make sure that if something fails the entire Transaction is
+    rolled back."""
+    identifier = "default.test_merge_source_dups"
+    _drop_table(catalog, identifier)
+
+    ctx = SessionContext()
+
+    table = gen_target_iceberg_table(1, 10, False, ctx, catalog, identifier)
+    df_before_transaction = table.scan().to_arrow()
+
+    source_df = gen_source_dataset(5, 15, False, True, ctx)
+
+    with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
+        with table.transaction() as tx:
+            tx.delete(delete_filter=AlwaysTrue())
+            tx.upsert(df=source_df, join_cols=["order_id"])
+
+    df = table.scan().to_arrow()
+
+    assert df_before_transaction == df
