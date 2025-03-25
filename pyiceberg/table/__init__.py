@@ -1544,7 +1544,7 @@ class FileScanTask(ScanTask):
         self.length = length or data_file.file_size_in_bytes
         self.residual = residual
 
-    def set_residual(self, expr: BooleanExpression) -> "FileScanTask":
+    def _set_residual(self, expr: BooleanExpression) -> "FileScanTask":
         self.residual = expr
         return self
 

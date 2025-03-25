@@ -171,6 +171,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -1515,8 +1516,12 @@ class ArrowScan:
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
-        # TBD: Should we deprecate the `row_filter` argument?
         if row_filter is not None:
+            deprecation_message(
+                deprecated_in="0.9.0",
+                removed_in="0.10.0",
+                help_message="row_filter is marked as deprecated, and will be removed in 0.10.0. Please make sure to set the residual on the ScanTasks.",
+            )
             self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         else:
             self._bound_row_filter = None
@@ -1552,7 +1557,7 @@ class ArrowScan:
         executor = ExecutorFactory.get_or_create()
 
         if self._bound_row_filter is not None:
-            tasks = [task.set_residual(expr=self._bound_row_filter) for task in tasks]
+            tasks = [task._set_residual(expr=self._bound_row_filter) for task in tasks]
 
         def _table_from_scan_task(task: FileScanTask) -> Optional[pa.Table]:
             batches = list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
@@ -1615,7 +1620,7 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         if self._bound_row_filter is not None:
-            tasks = [task.set_residual(expr=self._bound_row_filter) for task in tasks]
+            tasks = [task._set_residual(expr=self._bound_row_filter) for task in tasks]
 
         deletes_per_file = _read_all_delete_files(self._io, tasks)
         return self._record_batches_from_scan_tasks_and_deletes(tasks, deletes_per_file)
