@@ -39,6 +39,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from functools import lru_cache, singledispatch
 from typing import (
@@ -177,7 +178,6 @@ from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
-from decimal import Decimal
 
 if TYPE_CHECKING:
     from pyiceberg.table import FileScanTask, WriteTask
@@ -1877,11 +1877,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
-        return (
-            "INT32" if decimal_type.precision <= 9 
-            else "INT64" if decimal_type.precision <= 18 
-            else "FIXED_LEN_BYTE_ARRAY"
-        )
+        return "INT32" if decimal_type.precision <= 9 else "INT64" if decimal_type.precision <= 18 else "FIXED_LEN_BYTE_ARRAY"
 
     def visit_boolean(self, boolean_type: BooleanType) -> str:
         return "BOOLEAN"
@@ -2356,11 +2352,15 @@ def data_file_statistics_from_parquet_metadata(
                         )
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
-                        precision= stats_col.iceberg_type.precision
+                        precision = stats_col.iceberg_type.precision
                         scale = stats_col.iceberg_type.scale
                         decimal_type = pa.decimal128(precision, scale)
-                        col_aggs[field_id].update_min(pa.array([Decimal(statistics.min_raw)/ (10 ** scale)], decimal_type)[0].as_py())
-                        col_aggs[field_id].update_max(pa.array([Decimal(statistics.max_raw)/ (10 ** scale)], decimal_type)[0].as_py())
+                        col_aggs[field_id].update_min(
+                            pa.array([Decimal(statistics.min_raw) / (10**scale)], decimal_type)[0].as_py()
+                        )
+                        col_aggs[field_id].update_max(
+                            pa.array([Decimal(statistics.max_raw) / (10**scale)], decimal_type)[0].as_py()
+                        )
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)

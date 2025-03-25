@@ -27,6 +27,7 @@ from datetime import (
     timedelta,
     timezone,
 )
+from decimal import Decimal
 from typing import (
     Any,
     Dict,
@@ -72,7 +73,7 @@ from pyiceberg.types import (
     StringType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
-from decimal import Decimal
+
 
 @dataclass(frozen=True)
 class TestStruct:
@@ -473,7 +474,7 @@ def construct_test_table_primitive_types() -> Tuple[pq.FileMetaData, Union[Table
     strings = ["hello", "world"]
     uuids = [uuid.uuid3(uuid.NAMESPACE_DNS, "foo").bytes, uuid.uuid3(uuid.NAMESPACE_DNS, "bar").bytes]
     binaries = [b"hello", b"world"]
-    decimal8 = pa.array([Decimal('123.45'), Decimal('678.91')], pa.decimal128(8, 2))
+    decimal8 = pa.array([Decimal("123.45"), Decimal("678.91")], pa.decimal128(8, 2))
     decimal16 = pa.array([Decimal("12345679.123456"), Decimal("67891234.678912")], pa.decimal128(16, 6))
     decimal32 = pa.array([Decimal("1234567890123.123456"), Decimal("9876543210703.654321")], pa.decimal128(19, 6))
 
@@ -538,9 +539,9 @@ def test_metrics_primitive_types() -> None:
     assert datafile.lower_bounds[10] == b"he"
     assert datafile.lower_bounds[11] == uuid.uuid3(uuid.NAMESPACE_DNS, "foo").bytes
     assert datafile.lower_bounds[12] == b"he"
-    assert datafile.lower_bounds[13][::-1].ljust(4, b'\x00') == STRUCT_INT32.pack(12345)
-    assert datafile.lower_bounds[14][::-1].ljust(8, b'\x00') == STRUCT_INT64.pack(12345679123456)
-    assert str(int.from_bytes(datafile.lower_bounds[15], byteorder='big', signed=True)).encode('utf-8')== b"1234567890123123456"
+    assert datafile.lower_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(12345)
+    assert datafile.lower_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(12345679123456)
+    assert str(int.from_bytes(datafile.lower_bounds[15], byteorder="big", signed=True)).encode("utf-8") == b"1234567890123123456"
 
     assert len(datafile.upper_bounds) == 15
     assert datafile.upper_bounds[1] == STRUCT_BOOL.pack(True)
@@ -555,9 +556,9 @@ def test_metrics_primitive_types() -> None:
     assert datafile.upper_bounds[10] == b"wp"
     assert datafile.upper_bounds[11] == uuid.uuid3(uuid.NAMESPACE_DNS, "bar").bytes
     assert datafile.upper_bounds[12] == b"wp"
-    assert datafile.upper_bounds[13][::-1].ljust(4, b'\x00')== STRUCT_INT32.pack(67891)
-    assert datafile.upper_bounds[14][::-1].ljust(8, b'\x00')== STRUCT_INT64.pack(67891234678912)
-    assert str(int.from_bytes(datafile.upper_bounds[15], byteorder='big', signed=True)).encode('utf-8')== b"9876543210703654321"
+    assert datafile.upper_bounds[13][::-1].ljust(4, b"\x00") == STRUCT_INT32.pack(67891)
+    assert datafile.upper_bounds[14][::-1].ljust(8, b"\x00") == STRUCT_INT64.pack(67891234678912)
+    assert str(int.from_bytes(datafile.upper_bounds[15], byteorder="big", signed=True)).encode("utf-8") == b"9876543210703654321"
 
 
 def construct_test_table_invalid_upper_bound() -> Tuple[pq.FileMetaData, Union[TableMetadataV1, TableMetadataV2]]:
