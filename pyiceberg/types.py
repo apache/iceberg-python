@@ -40,7 +40,7 @@ from typing import (
     Dict,
     Literal,
     Optional,
-    Tuple,
+    Tuple, Annotated,
 )
 
 from pydantic import (
@@ -48,9 +48,9 @@ from pydantic import (
     PrivateAttr,
     SerializeAsAny,
     model_serializer,
-    model_validator,
+    model_validator, PlainSerializer, BeforeValidator,
 )
-from pydantic_core.core_schema import ValidatorFunctionWrapHandler
+from pydantic_core.core_schema import ValidatorFunctionWrapHandler, SerializationInfo, ValidationInfo
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, TableVersion
@@ -289,6 +289,24 @@ class DecimalType(PrimitiveType):
         return self.root == other.root if isinstance(other, DecimalType) else False
 
 
+# def _serialize_default_value(v: Any, context: SerializationInfo) -> Any:
+#     from pyiceberg.conversions import to_json, from_json
+#     return v
+def _deserialize_default_value(v: Any, context: ValidationInfo) -> Any:
+    if context.mode != 'python':
+        if v is not None:
+            from pyiceberg.conversions import from_json
+            return from_json(context.data.get("field_type"), v)
+        else:
+            return None
+    else:
+        return v
+
+# PlainSerializer(_serialize_default_value, return_type=Any),
+DefaultValue = Annotated[
+    Any, BeforeValidator(_deserialize_default_value)
+]
+
 class NestedField(IcebergType):
     """Represents a field of a struct, a map key, a map value, or a list element.
 
@@ -317,8 +335,8 @@ class NestedField(IcebergType):
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
     doc: Optional[str] = Field(default=None, repr=False)
-    initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
-    write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
+    initial_default: DefaultValue = Field(alias="initial-default", default=None, repr=False)
+    write_default: DefaultValue = Field(alias="write-default", default=None, repr=False)  # type: ignore
 
     def __init__(
         self,

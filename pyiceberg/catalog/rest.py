@@ -781,7 +781,7 @@ class RestCatalog(Catalog):
                     504: CommitStateUnknownException,
                 },
             )
-        return CommitTableResponse(**response.json())
+        return CommitTableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
