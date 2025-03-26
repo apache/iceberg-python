@@ -88,7 +88,7 @@ thrift-sasl = { version = ">=0.4.3", optional = true }
 pytest = "7.4.4"
 pytest-checkdocs = "2.13.0"
 pytest-lazy-fixture = "0.6.3"
-pre-commit = "4.1.0"
+pre-commit = "4.2.0"
 fastavro = "1.10.0"
 coverage = { version = "^7.4.2", extras = ["toml"] }
 requests-mock = "1.12.1"
@@ -104,11 +104,11 @@ docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/924
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
-griffe = "1.6.0"
+griffe = "1.6.3"
 jinja2 = "3.1.6"
 mkdocstrings = "0.29.0"
-mkdocstrings-python = "1.16.5"
-mkdocs-literate-nav = "0.6.1"
+mkdocstrings-python = "1.16.8"
+mkdocs-literate-nav = "0.6.2"
 mkdocs-autorefs = "1.4.1"
 mkdocs-gen-files = "0.5.0"
 mkdocs-material = "9.6.9"

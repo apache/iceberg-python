@@ -339,6 +339,7 @@ for catalog_name, catalog in catalogs.items():
     CREATE TABLE {catalog_name}.default.test_table_empty_list_and_map (
         col_list             array<int>,
         col_map              map<int, int>,
+        col_struct           struct<test:int>,
         col_list_with_struct array<struct<test:int>>
     )
     USING iceberg
@@ -351,8 +352,8 @@ for catalog_name, catalog in catalogs.items():
     spark.sql(
         f"""
     INSERT INTO {catalog_name}.default.test_table_empty_list_and_map
-    VALUES (null, null, null),
-           (array(), map(), array(struct(1)))
+    VALUES (null, null, null, null),
+           (array(), map(), struct(1), array(struct(1)))
     """
     )
 
