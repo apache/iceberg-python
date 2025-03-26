@@ -1415,10 +1415,6 @@ def _task_to_record_batches(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            # With PyArrow 16.0.0 there is an issue with casting record-batches:
-            # https://github.com/apache/arrow/issues/41884
-            # https://github.com/apache/arrow/issues/43183
-            # Would be good to remove this later on
             schema=physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
