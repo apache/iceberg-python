@@ -300,10 +300,7 @@ def _deserialize_default_value(v: Any, context: ValidationInfo) -> Any:
         return None
 
 
-DefaultValue = Annotated[
-    L,
-    BeforeValidator(_deserialize_default_value),
-]
+DefaultValue = Annotated[L, BeforeValidator(_deserialize_default_value)]
 
 
 class NestedField(IcebergType):
