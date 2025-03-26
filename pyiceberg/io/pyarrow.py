@@ -144,6 +144,7 @@ from pyiceberg.schema import (
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
+from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -163,9 +164,12 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -662,14 +666,23 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     def visit_timestamp(self, _: TimestampType) -> pa.DataType:
         return pa.timestamp(unit="us")
 
+    def visit_timestamp_ns(self, _: TimestampNanoType) -> pa.DataType:
+        return pa.timestamp(unit="ns")
+
     def visit_timestamptz(self, _: TimestamptzType) -> pa.DataType:
         return pa.timestamp(unit="us", tz="UTC")
+
+    def visit_timestamptz_ns(self, _: TimestamptzNanoType) -> pa.DataType:
+        return pa.timestamp(unit="ns", tz="UTC")
 
     def visit_string(self, _: StringType) -> pa.DataType:
         return pa.large_string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
         return pa.binary(16)
+
+    def visit_unknown(self, _: UnknownType) -> pa.DataType:
+        return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
         return pa.large_binary()
@@ -904,15 +917,26 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
-    delete_fragment = _construct_fragment(
-        fs, data_file, file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE}
-    )
-    table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-    table = table.unify_dictionaries()
-    return {
-        file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-        for file in table.column("file_path").chunks[0].dictionary
-    }
+    if data_file.file_format == FileFormat.PARQUET:
+        delete_fragment = _construct_fragment(
+            fs,
+            data_file,
+            file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
+        )
+        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+        table = table.unify_dictionaries()
+        return {
+            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
+            for file in table.column("file_path").chunks[0].dictionary
+        }
+    elif data_file.file_format == FileFormat.PUFFIN:
+        _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
+        with fs.open_input_file(path) as fi:
+            payload = fi.read()
+
+        return PuffinFile(payload).to_vector()
+    else:
+        raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
 
 def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
@@ -1221,6 +1245,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[Union[IcebergType, Schema]]):
         elif pa.types.is_fixed_size_binary(primitive):
             primitive = cast(pa.FixedSizeBinaryType, primitive)
             return FixedType(primitive.byte_width)
+        elif pa.types.is_null(primitive):
+            return UnknownType()
 
         raise TypeError(f"Unsupported type: {primitive}")
 
@@ -1435,7 +1461,8 @@ def _task_to_record_batches(
                 for name, value in projected_missing_fields.items():
                     index = result_batch.schema.get_field_index(name)
                     if index != -1:
-                        result_batch = result_batch.set_column(index, name, [value])
+                        arr = pa.repeat(value, result_batch.num_rows)
+                        result_batch = result_batch.set_column(index, name, arr)
 
             yield result_batch
 
@@ -1891,7 +1918,13 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
     def visit_timestamp(self, timestamp_type: TimestampType) -> str:
         return "INT64"
 
+    def visit_timestamp_ns(self, timestamp_type: TimestampNanoType) -> str:
+        return "INT64"
+
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> str:
+        return "INT64"
+
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType) -> str:
         return "INT64"
 
     def visit_string(self, string_type: StringType) -> str:
@@ -1902,6 +1935,9 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
 
     def visit_binary(self, binary_type: BinaryType) -> str:
         return "BYTE_ARRAY"
+
+    def visit_unknown(self, unknown_type: UnknownType) -> str:
+        return "UNKNOWN"
 
 
 _PRIMITIVE_TO_PHYSICAL_TYPE_VISITOR = PrimitiveToPhysicalType()

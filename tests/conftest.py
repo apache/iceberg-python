@@ -48,7 +48,6 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from pyiceberg import schema
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
@@ -140,7 +139,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.fixture(scope="session")
 def table_schema_simple() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -151,7 +150,7 @@ def table_schema_simple() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_with_full_nested_fields() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(
             field_id=1,
             name="foo",
@@ -180,7 +179,7 @@ def table_schema_with_full_nested_fields() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_nested() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -231,7 +230,7 @@ def table_schema_nested() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_nested_with_struct_key_map() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -303,7 +302,7 @@ def table_schema_nested_with_struct_key_map() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_with_all_types() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
         NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="long", field_type=LongType(), required=True),
@@ -920,10 +919,9 @@ EXAMPLE_TABLE_METADATA_V3 = {
                 {"id": 1, "name": "x", "required": True, "type": "long"},
                 {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
                 {"id": 3, "name": "z", "required": True, "type": "long"},
-                # TODO: Add unknown, timestamp(tz)_ns
-                # {"id": 4, "name": "u", "required": True, "type": "unknown"},
-                # {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
-                # {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
+                {"id": 4, "name": "u", "required": True, "type": "unknown"},
+                {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
+                {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
             ],
         },
     ],
@@ -2433,6 +2431,8 @@ def spark() -> "SparkSession":
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")
