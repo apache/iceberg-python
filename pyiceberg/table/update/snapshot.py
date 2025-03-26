@@ -81,7 +81,6 @@ from pyiceberg.typedef import (
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
-from pyiceberg.utils.snapshot import ancestors_between
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -256,10 +255,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         # get current snapshot id and starting snapshot id, and validate that there are no conflicts
         from pyiceberg.table import StagedTable
+
         if not isinstance(self._transaction._table, StagedTable):
             starting_snapshot = self._transaction.table_metadata.current_snapshot()
             current_snapshot = self._transaction._table.refresh().metadata.current_snapshot()
-            self._validate(starting_snapshot, current_snapshot)
+            if starting_snapshot is not None and current_snapshot is not None:
+                self._validate(starting_snapshot, current_snapshot)
 
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
@@ -289,7 +290,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             (AssertRefSnapshotId(snapshot_id=self._transaction.table_metadata.current_snapshot_id, ref="main"),),
         )
 
-    def _validate(self, starting_snapshot: Optional[Snapshot], current_snapshot: Optional[Snapshot]) -> None:
+    def _validate(self, starting_snapshot: Snapshot, current_snapshot: Snapshot) -> None:
         # Define allowed operations for each type of operation
         allowed_operations = {
             Operation.APPEND: {Operation.APPEND, Operation.REPLACE, Operation.OVERWRITE, Operation.DELETE},
@@ -305,7 +306,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             if snapshot.snapshot_id == starting_snapshot.snapshot_id:
                 break
 
-            snapshot_operation = snapshot.summary.operation
+            snapshot_operation = snapshot.summary.operation if snapshot.summary is not None else None
 
             if snapshot_operation not in allowed_operations[self._operation]:
                 raise ValueError(
