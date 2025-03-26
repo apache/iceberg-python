@@ -70,5 +70,5 @@ def test_map_spread_vals() -> None:
 def test_map_high_vals() -> None:
     puffin = _open_file("64maphighvals.bin")
 
-    with pytest.raises(ValueError, match="Key 4022190063 is too large, max 2147483648 to maintain compatibility with Java impl"):
+    with pytest.raises(ValueError, match="Key 4022190063 is too large, max 2147483647 to maintain compatibility with Java impl"):
         _ = _deserialize_bitmap(puffin)
