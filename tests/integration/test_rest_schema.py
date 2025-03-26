@@ -1145,26 +1145,20 @@ def test_initial_default_all_columns(
 @pytest.mark.integration
 def test_add_required_column_initial_default(catalog: Catalog) -> None:
     schema_ = Schema(NestedField(field_id=1, name="a", field_type=BooleanType(), required=False))
-    table = _create_table_with_schema(catalog, schema_)
-    new_schema = (
-        UpdateSchema(transaction=table.transaction())
-        .add_column(path="data", field_type=IntegerType(), required=True, default_value=22)
-        ._apply()
-    )
-    assert new_schema == Schema(
-        NestedField(field_id=1, name="a", field_type=BooleanType(), required=True, initial_default=True),
+    table = _create_table_with_schema(catalog, schema_, properties={TableProperties.FORMAT_VERSION: 3})
+
+    table.update_schema().add_column(path="data", field_type=IntegerType(), required=True, default_value=22).commit()
+
+    assert table.schema() == Schema(
+        NestedField(field_id=1, name="a", field_type=BooleanType(), required=False),
         NestedField(field_id=2, name="data", field_type=IntegerType(), required=True, initial_default=22, write_default=22),
         schema_id=1,
     )
 
     # Update
-    new_schema = (
-        UpdateSchema(transaction=table.transaction())
-        .update_column(path="data", field_type=LongType())
-        .rename_column("a", "bool")
-        ._apply()
-    )
-    assert new_schema == Schema(
+    table.update_schema().update_column(path="data", field_type=LongType()).rename_column("a", "bool").commit()
+
+    assert table.schema() == Schema(
         NestedField(field_id=1, name="bool", field_type=BooleanType(), required=False),
         NestedField(field_id=2, name="data", field_type=LongType(), required=True, initial_default=22, write_default=22),
         schema_id=1,

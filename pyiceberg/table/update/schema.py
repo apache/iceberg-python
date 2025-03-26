@@ -48,6 +48,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+from pyiceberg.typedef import L
 from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
 
 if TYPE_CHECKING:
@@ -159,7 +160,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         field_type: IcebergType,
         doc: Optional[str] = None,
         required: bool = False,
-        default_value: Optional[Any] = None,
+        default_value: Optional[L] = None,
     ) -> UpdateSchema:
         """Add a new column to a nested struct or Add a new top-level column.
 
@@ -224,7 +225,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             except ValueError as e:
                 raise ValueError(f"Invalid default value: {e}") from e
         else:
-            initial_default = default_value
+            initial_default = default_value  # type: ignore
 
         if (required and initial_default is None) and not self._allow_incompatible_changes:
             # Table format version 1 and 2 cannot add required column because there is no initial value
@@ -274,7 +275,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self
 
-    def set_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Any) -> UpdateSchema:
+    def set_default_value(self, path: Union[str, Tuple[str, ...]], default_value: Optional[L]) -> UpdateSchema:
         """Set the default value of a column.
 
         Args:
