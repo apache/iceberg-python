@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 # Short for: Puffin Fratercula arctica, version 1
 MAGIC_BYTES = b"PFA1"
 EMPTY_BITMAP = FrozenBitMap()
-MAX_JAVA_SIGNED = int(math.pow(2, 31))
+MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
 
 
@@ -38,7 +38,7 @@ def _deserialize_bitmap(pl: bytes) -> List[BitMap]:
 
     bitmaps = []
     last_key = -1
-    while number_of_bitmaps > 0:
+    for _ in range(number_of_bitmaps):
         key = int.from_bytes(pl[0:4], byteorder="little")
         if key < 0:
             raise ValueError(f"Invalid unsigned key: {key}")
@@ -58,8 +58,6 @@ def _deserialize_bitmap(pl: bytes) -> List[BitMap]:
         bitmaps.append(bm)
 
         last_key = key
-
-        number_of_bitmaps -= 1
 
     return bitmaps
 
