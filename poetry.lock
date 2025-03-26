@@ -1887,7 +1887,7 @@ description = "Lightweight in-process concurrent programming"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "(extra == \"sql-postgres\" or extra == \"sql-sqlite\") and (platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\") and python_version < \"3.14\""
+markers = "(extra == \"sql-postgres\" or extra == \"sql-sqlite\") and python_version < \"3.14\" and (platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\")"
 files = [
     {file = "greenlet-3.1.1-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:0bbae94a29c9e5c7e4a2b7f0aae5c17e8e90acbfd3bf6270eeba60c39fce3563"},
     {file = "greenlet-3.1.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0fde093fb93f35ca72a556cf72c92ea3ebfda3d79fc35bb19fbe685853869a83"},
@@ -3184,7 +3184,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "extra == \"pandas\" and python_version == \"3.11\" or extra == \"pandas\" and python_version >= \"3.12\" or extra == \"ray\" and python_version == \"3.11\" or extra == \"ray\" and python_version >= \"3.12\""
+markers = "extra == \"pandas\" and python_version >= \"3.12\" or extra == \"pandas\" and python_version == \"3.11\" or extra == \"ray\" and python_version >= \"3.12\" or extra == \"ray\" and python_version == \"3.11\""
 files = [
     {file = "numpy-2.2.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:8146f3550d627252269ac42ae660281d673eb6f8b32f113538e0cc2a9aed42b9"},
     {file = "numpy-2.2.4-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e642d86b8f956098b564a45e6f6ce68a22c2c97a04f5acd3f221f57b8cb850ae"},
@@ -3381,8 +3381,8 @@ files = [
 [package.dependencies]
 numpy = [
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
-    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -4064,19 +4064,19 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.4.0.dev20250325000152"
+version = "0.4.0.dev20250326000154"
 description = ""
 optional = true
 python-versions = "~=3.9"
 groups = ["main"]
 markers = "extra == \"pyiceberg-core\""
 files = [
-    {file = "pyiceberg_core-0.4.0.dev20250325000152-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:561263d23209f14c1062f7b20cd2df53d094fcf6e63434307f3b6171cb4111b7"},
-    {file = "pyiceberg_core-0.4.0.dev20250325000152-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:86ff55783bdc9e68e6e79de2f3dfdf3eb2d8dc637d33a8c07ce1c48d60dca76e"},
-    {file = "pyiceberg_core-0.4.0.dev20250325000152-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1d5cf5d18222d5a2e081111a9e581b2137245419d555d2169df135f546105188"},
-    {file = "pyiceberg_core-0.4.0.dev20250325000152-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:a96f4c5d2bbf578727b49ec6ec4bfe004d471c168f8f9aa89ad735f87e8f20a0"},
-    {file = "pyiceberg_core-0.4.0.dev20250325000152-cp39-abi3-win_amd64.whl", hash = "sha256:160c1f9766503fc821de645384539584e25ead2463f53cc3a5acd5bb89541979"},
-    {file = "pyiceberg_core-0.4.0.dev20250325000152.tar.gz", hash = "sha256:89317d5557aed9ab69a5096e8fc49f6e28f9a5a5143082ab7dc23a5938e4cdc9"},
+    {file = "pyiceberg_core-0.4.0.dev20250326000154-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:0fb7b1b12a07170919c5f7b911eddd64eb3dd03340edbd06198c5b490ddca8cd"},
+    {file = "pyiceberg_core-0.4.0.dev20250326000154-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:de884887a847f624878895ca8ca84a53683f50057954a3a8f3be5645443e6d65"},
+    {file = "pyiceberg_core-0.4.0.dev20250326000154-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3133db2113d09c8dd256f7437e6687ece46c71efd53f8d3762556711e3882b74"},
+    {file = "pyiceberg_core-0.4.0.dev20250326000154-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:49c8a4c68b0097f5f4eeb401f449fb77c9fcecf93544e49d0b2a61e24b9c65b4"},
+    {file = "pyiceberg_core-0.4.0.dev20250326000154-cp39-abi3-win_amd64.whl", hash = "sha256:5a2159526bc56aa3e5e44bc76d979a5fe07d80c7d7d984b360f8a4f2c5ab7aec"},
+    {file = "pyiceberg_core-0.4.0.dev20250326000154.tar.gz", hash = "sha256:5d4c04d11a99385c92f2572a7e9980df8e6109dde59f8b0ff016dca930e70bde"},
 ]
 
 [package.source]
@@ -5344,7 +5344,7 @@ description = "A lil' TOML parser"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
-markers = "python_version < \"3.11\""
+markers = "python_full_version <= \"3.11.0a6\""
 files = [
     {file = "tomli-2.2.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:678e4fa69e4575eb77d103de3df8a895e1591b48e740211bd1067378c69e8249"},
     {file = "tomli-2.2.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:023aa114dd824ade0100497eb2318602af309e5a55595f76b626d6d9f3b7b0a6"},
@@ -5921,4 +5921,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "a6d17beaddd2f3d9724ce65be3cb6d8f682cfc0cbc6d3d0de4a085ab09b46dce"
+content-hash = "358dc5aa888edf4a49a296b79c42d27fadc22b7d5e5e885a04920601be2f25b9"
