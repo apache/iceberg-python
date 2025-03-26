@@ -398,11 +398,11 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             except ValueError as e:
                 raise ValueError(f"Invalid default value: {e}") from e
 
-        if field.required and default_value != field.write_default:
+        if field.required and default_value == field.write_default:
             # if the change is a noop, allow it even if allowIncompatibleChanges is false
             return
 
-        if not self._allow_incompatible_changes and field.required and default_value is not None:
+        if not self._allow_incompatible_changes and field.required and default_value is None:
             raise ValueError("Cannot change change default-value of a required column to None")
 
         if field.field_id in self._deletes:
@@ -729,19 +729,35 @@ class _ApplyChanges(SchemaVisitor[Optional[IcebergType]]):
             name = field.name
             doc = field.doc
             required = field.required
+            write_default = field.write_default
 
             # There is an update
             if update := self._updates.get(field.field_id):
                 name = update.name
                 doc = update.doc
                 required = update.required
+                write_default = update.write_default
 
-            if field.name == name and field.field_type == result_type and field.required == required and field.doc == doc:
+            if (
+                field.name == name
+                and field.field_type == result_type
+                and field.required == required
+                and field.doc == doc
+                and field.write_default == write_default
+            ):
                 new_fields.append(field)
             else:
                 has_changes = True
                 new_fields.append(
-                    NestedField(field_id=field.field_id, name=name, field_type=result_type, required=required, doc=doc)
+                    NestedField(
+                        field_id=field.field_id,
+                        name=name,
+                        field_type=result_type,
+                        required=required,
+                        doc=doc,
+                        initial_default=field.initial_default,
+                        write_default=write_default,
+                    )
                 )
 
         if has_changes:

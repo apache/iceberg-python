@@ -416,7 +416,7 @@ def test_write_manifest(
 
         data_file = manifest_entry.data_file
 
-        assert data_file.content is DataFileContent.DATA
+        assert data_file.content == DataFileContent.DATA
         assert (
             data_file.file_path
             == "/home/iceberg/warehouse/nyc/taxis_partitioned/data/VendorID=null/00000-633-d8a4223e-dc97-45a1-86e1-adaba6e8abd7-00001.parquet"
