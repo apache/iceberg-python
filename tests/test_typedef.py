@@ -47,28 +47,3 @@ def test_record_named_args() -> None:
     assert r[2] is True
 
     assert repr(r) == "Record[1, a, True]"
-
-
-#
-# def test_bind_record_nested(table_schema_nested: Schema) -> None:
-#     struct = table_schema_nested.as_struct()
-#     data = {
-#         "foo": "str",
-#         "bar": 123,
-#         "baz": True,
-#         "qux": ["a", "b", "c"],
-#         "quux": {"a": 1, "b": 2},
-#         "location": [{"latitude": 52.377956, "longitude": 4.897070}, {"latitude": 4.897070, "longitude": -122.431297}],
-#         "person": {"name": "Fokko", "age": 35},  # Possible data quality issue
-#     }
-#     res = _bind_to_struct(struct, data)
-#
-#     assert res == Record(
-#         "str",
-#         123,
-#         True,
-#         ["a", "b", "c"],
-#         {"a": 1, "b": 2},
-#         [Record(52.377956, 4.89707), Record(4.89707, -122.431297)],
-#         Record("Fokko", 35),
-#     )
