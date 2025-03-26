@@ -61,6 +61,7 @@ fsspec = ">=2023.1.0"
 pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<10.0.0"
+pyroaring = ">=1.0.0,<2.0.0"
 pyarrow = { version = ">=17.0.0,<20.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
@@ -103,7 +104,7 @@ docutils = "!=0.21.post1"   # https://github.com/python-poetry/poetry/issues/924
 [tool.poetry.group.docs.dependencies]
 # for mkdocs
 mkdocs = "1.6.1"
-griffe = "1.6.2"
+griffe = "1.6.3"
 jinja2 = "3.1.6"
 mkdocstrings = "0.29.0"
 mkdocstrings-python = "1.16.8"
@@ -515,6 +516,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "datafusion.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyroaring.*"
 ignore_missing_imports = true
 
 [tool.coverage.run]
