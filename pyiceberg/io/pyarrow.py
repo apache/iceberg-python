@@ -1718,8 +1718,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                if self._use_large_types is False:
-                    target_schema = _pyarrow_schema_ensure_small_types(target_schema)
+                if self._use_large_types is True:
+                    target_schema = _pyarrow_schema_ensure_large_types(target_schema)
                 return values.cast(target_schema)
             elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
                 if field.field_type == TimestampType():
