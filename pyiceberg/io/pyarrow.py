@@ -1612,7 +1612,7 @@ class ArrowScan:
                 removed_in="0.11.0",
                 help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
             )
-            result = result.cast(arrow_schema)
+            result = result.cast(_pyarrow_schema_ensure_large_types(arrow_schema))
 
         if self._limit is not None:
             return result.slice(0, self._limit)
