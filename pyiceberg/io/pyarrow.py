@@ -625,7 +625,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
 
     def list(self, list_type: ListType, element_result: pa.DataType) -> pa.DataType:
         element_field = self.field(list_type.element_field, element_result)
-        return pa.large_list(value_type=element_field)
+        return pa.list_(value_type=element_field)
 
     def map(self, map_type: MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
         key_field = self.field(map_type.key_field, key_result)
@@ -675,7 +675,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.timestamp(unit="ns", tz="UTC")
 
     def visit_string(self, _: StringType) -> pa.DataType:
-        return pa.large_string()
+        return pa.string()
 
     def visit_uuid(self, _: UUIDType) -> pa.DataType:
         return pa.binary(16)
@@ -684,7 +684,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.null()
 
     def visit_binary(self, _: BinaryType) -> pa.DataType:
-        return pa.large_binary()
+        return pa.binary()
 
 
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:

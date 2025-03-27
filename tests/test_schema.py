@@ -1648,7 +1648,7 @@ def test_arrow_schema() -> None:
 
     expected_schema = pa.schema(
         [
-            pa.field("foo", pa.large_string(), nullable=False),
+            pa.field("foo", pa.string(), nullable=False),
             pa.field("bar", pa.int32(), nullable=True),
             pa.field("baz", pa.bool_(), nullable=True),
         ]
