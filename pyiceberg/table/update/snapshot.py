@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Generic, List, Optional, Set, 
 
 from sortedcontainers import SortedList
 
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
@@ -259,8 +260,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         if not isinstance(self._transaction._table, StagedTable):
             starting_snapshot = self._transaction.table_metadata.current_snapshot()
             current_snapshot = self._transaction._table.refresh().metadata.current_snapshot()
+
             if starting_snapshot is not None and current_snapshot is not None:
                 self._validate(starting_snapshot, current_snapshot)
+
+            # If the current snapshot is not the same as the parent snapshot, update the parent snapshot id
+            if current_snapshot is not None and current_snapshot.snapshot_id != self._parent_snapshot_id:
+                self._parent_snapshot_id = current_snapshot.snapshot_id
 
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
@@ -309,7 +315,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             snapshot_operation = snapshot.summary.operation if snapshot.summary is not None else None
 
             if snapshot_operation not in allowed_operations[self._operation]:
-                raise ValueError(
+                raise CommitFailedException(
                     f"Operation {snapshot_operation} is not allowed when performing {self._operation}. "
                     "Check for overlaps or conflicts."
                 )
