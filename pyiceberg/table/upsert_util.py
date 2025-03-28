@@ -26,6 +26,7 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     In,
+    Or,
 )
 
 
@@ -39,7 +40,12 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
             functools.reduce(operator.and_, [EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()
         ]
 
-        return AlwaysFalse() if len(filters) == 0 else functools.reduce(operator.or_, filters)
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return Or(*filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
