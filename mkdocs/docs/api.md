@@ -1394,6 +1394,12 @@ The low level API `plan_files` methods returns a set of tasks that provide the f
 
 In this case it is up to the engine itself to filter the file itself. Below, `to_arrow()` and `to_duckdb()` that already do this for you.
 
+A scan can also run against any named branch or tag.
+
+```python
+table.scan(ref_name='v1')
+```
+
 ### Apache Arrow
 
 <!-- prettier-ignore-start -->
