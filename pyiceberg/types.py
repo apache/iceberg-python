@@ -324,7 +324,7 @@ class NestedField(IcebergType):
         self,
         field_id: Optional[int] = None,
         name: Optional[str] = None,
-        field_type: Optional[IcebergType] = None,
+        field_type: Optional[IcebergType | str] = None,
         required: bool = False,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
@@ -340,6 +340,12 @@ class NestedField(IcebergType):
         data["doc"] = doc
         data["initial-default"] = data["initial-default"] if "initial-default" in data else initial_default
         data["write-default"] = data["write-default"] if "write-default" in data else write_default
+        if isinstance(data["type"], str):
+            try:
+                data["type"] = IcebergType.handle_primitive_type(data["type"], None)
+            except ValueError as e:
+                raise ValueError(f"Unsupported field type: {data['type']}.") from e
+
         super().__init__(**data)
 
     def __str__(self) -> str:

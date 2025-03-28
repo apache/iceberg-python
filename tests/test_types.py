@@ -231,6 +231,22 @@ def test_nested_field() -> None:
     assert "validation errors for NestedField" in str(exc_info.value)
 
 
+def test_nested_field_type_as_str_unsupported() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        _ = (NestedField(1, "field", "list", required=True),)
+    assert "Unsupported field type: list" in str(exc_info.value)
+
+
+def test_nested_field_type_as_str_struct() -> None:
+    field_var = NestedField(
+        1,
+        "field",
+        "string",
+        required=True,
+    )
+    assert isinstance(field_var.field_type, StringType)
+
+
 @pytest.mark.parametrize("input_index,input_type", non_parameterized_types)
 @pytest.mark.parametrize("check_index,check_type", non_parameterized_types)
 def test_non_parameterized_type_equality(
