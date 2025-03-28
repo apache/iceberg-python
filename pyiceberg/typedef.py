@@ -19,13 +19,13 @@ from __future__ import annotations
 from abc import abstractmethod
 from datetime import date, datetime
 from decimal import Decimal
-from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
     Dict,
     Generic,
+    List,
     Literal,
     Optional,
     Protocol,
@@ -38,7 +38,7 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
-from typing_extensions import TypeAlias
+from typing_extensions import Self, TypeAlias
 
 if TYPE_CHECKING:
     from pyiceberg.types import StructType
@@ -171,51 +171,36 @@ class IcebergRootModel(RootModel[T], Generic[T]):
     model_config = ConfigDict(frozen=True)
 
 
-@lru_cache
-def _get_struct_fields(struct_type: StructType) -> Tuple[str, ...]:
-    return tuple(field.name for field in struct_type.fields)
-
-
 class Record(StructProtocol):
-    __slots__ = ("_position_to_field_name",)
-    _position_to_field_name: Tuple[str, ...]
+    __slots__ = ("_data",)
+    _data: List[Any]
 
-    def __init__(self, *data: Any, struct: Optional[StructType] = None, **named_data: Any) -> None:
-        if struct is not None:
-            self._position_to_field_name = _get_struct_fields(struct)
-        elif named_data:
-            # Order of named_data is preserved (PEP 468) so this can be used to generate the position dict
-            self._position_to_field_name = tuple(named_data.keys())
-        else:
-            self._position_to_field_name = tuple(f"field{idx + 1}" for idx in range(len(data)))
+    @classmethod
+    def _bind(cls, struct: StructType, **arguments: Any) -> Self:
+        return cls(*[arguments[field.name] if field.name in arguments else field.initial_default for field in struct.fields])
 
-        for idx, d in enumerate(data):
-            self[idx] = d
-
-        for field_name, d in named_data.items():
-            self.__setattr__(field_name, d)
+    def __init__(self, *data: Any) -> None:
+        self._data = list(data)
 
     def __setitem__(self, pos: int, value: Any) -> None:
         """Assign a value to a Record."""
-        self.__setattr__(self._position_to_field_name[pos], value)
+        self._data[pos] = value
 
     def __getitem__(self, pos: int) -> Any:
         """Fetch a value from a Record."""
-        return self.__getattribute__(self._position_to_field_name[pos])
+        return self._data[pos]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Record class."""
-        if not isinstance(other, Record):
-            return False
-        return self.__dict__ == other.__dict__
+        return self._data == other._data if isinstance(other, Record) else False
 
     def __repr__(self) -> str:
         """Return the string representation of the Record class."""
-        return f"{self.__class__.__name__}[{', '.join(f'{key}={repr(value)}' for key, value in self.__dict__.items() if not key.startswith('_'))}]"
+        return f"{self.__class__.__name__}[{', '.join(str(v) for v in self._data)}]"
 
     def __len__(self) -> int:
         """Return the number of fields in the Record class."""
-        return len(self._position_to_field_name)
+        return len(self._data)
 
     def __hash__(self) -> int:
         """Return hash value of the Record class."""

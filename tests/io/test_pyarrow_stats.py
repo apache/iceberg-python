@@ -194,7 +194,7 @@ def test_record_count() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
     assert datafile.record_count == 4
 
 
@@ -207,7 +207,7 @@ def test_value_counts() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert datafile.value_counts[1] == 4
@@ -228,7 +228,7 @@ def test_column_sizes() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.column_sizes) == 7
     # these values are an artifact of how the write_table encodes the columns
@@ -248,7 +248,7 @@ def test_null_and_nan_counts() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.null_value_counts) == 7
     assert datafile.null_value_counts[1] == 1
@@ -275,7 +275,7 @@ def test_bounds() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.lower_bounds) == 2
     assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaa"
@@ -319,7 +319,7 @@ def test_metrics_mode_none() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 0
     assert len(datafile.null_value_counts) == 0
@@ -338,7 +338,7 @@ def test_metrics_mode_counts() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -357,7 +357,7 @@ def test_metrics_mode_full() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -382,7 +382,7 @@ def test_metrics_mode_non_default_trunc() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 7
     assert len(datafile.null_value_counts) == 7
@@ -408,7 +408,7 @@ def test_column_metrics_mode() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 6
     assert len(datafile.null_value_counts) == 6
@@ -508,7 +508,7 @@ def test_metrics_primitive_types() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 12
     assert len(datafile.null_value_counts) == 12
@@ -606,7 +606,7 @@ def test_metrics_invalid_upper_bound() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert len(datafile.value_counts) == 4
     assert len(datafile.null_value_counts) == 4
@@ -632,7 +632,7 @@ def test_offsets() -> None:
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     assert datafile.split_offsets is not None
     assert len(datafile.split_offsets) == 1
@@ -707,7 +707,7 @@ def test_read_missing_statistics() -> None:
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
 
-    datafile = DataFile(**statistics.to_serialized_dict())
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
     # expect only "strings" column values to be reflected in the
     # upper_bound, lower_bound and null_value_counts props of datafile
