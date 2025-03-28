@@ -229,14 +229,14 @@ def test_pyarrow_timestamp_tz_invalid_tz() -> None:
 def test_pyarrow_string_to_iceberg(pyarrow_type: pa.DataType) -> None:
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == StringType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.large_string()
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.string()
 
 
 @pytest.mark.parametrize("pyarrow_type", [pa.binary(), pa.large_binary(), pa.binary_view()])
 def test_pyarrow_variable_binary_to_iceberg(pyarrow_type: pa.DataType) -> None:
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == BinaryType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.binary()
 
 
 def test_pyarrow_struct_to_iceberg() -> None:
