@@ -62,6 +62,21 @@ non_parameterized_types = [
     (12, BinaryType),
 ]
 
+primitive_types = {
+    "boolean": BooleanType,
+    "int": IntegerType,
+    "long": LongType,
+    "float": FloatType,
+    "double": DoubleType,
+    "date": DateType,
+    "time": TimeType,
+    "timestamp": TimestampType,
+    "timestamptz": TimestamptzType,
+    "string": StringType,
+    "uuid": UUIDType,
+    "binary": BinaryType,
+}
+
 
 @pytest.mark.parametrize("input_index, input_type", non_parameterized_types)
 def test_repr_primitive_types(input_index: int, input_type: Type[PrimitiveType]) -> None:
@@ -232,19 +247,24 @@ def test_nested_field() -> None:
 
 
 def test_nested_field_type_as_str_unsupported() -> None:
-    with pytest.raises(ValueError) as exc_info:
-        _ = (NestedField(1, "field", "list", required=True),)
-    assert "Unsupported field type: list" in str(exc_info.value)
+    unsupported_types = ["list", "map", "struct"]
+    for type_str in unsupported_types:
+        with pytest.raises(ValueError) as exc_info:
+            _ = NestedField(1, "field", type_str, required=True)
+        assert f"Unsupported field type: '{type_str}'" in str(exc_info.value)
 
 
-def test_nested_field_type_as_str_struct() -> None:
+@pytest.mark.parametrize("type_str, type_class", primitive_types.items())
+def test_nested_field_type_as_str(type_str: str, type_class: type) -> None:
     field_var = NestedField(
         1,
         "field",
-        "string",
+        type_str,
         required=True,
     )
-    assert isinstance(field_var.field_type, StringType)
+    assert isinstance(
+        field_var.field_type, type_class
+    ), f"Expected {type_class.__name__}, got {field_var.field_type.__class__.__name__}"
 
 
 @pytest.mark.parametrize("input_index,input_type", non_parameterized_types)
