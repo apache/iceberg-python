@@ -68,11 +68,13 @@ from pyiceberg.table.update import (
     RemoveSnapshotRefUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
+    TableMetadata,
     TableUpdate,
     U,
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+
 from pyiceberg.typedef import (
     EMPTY_DICT,
     KeyDefaultDict,
@@ -83,6 +85,12 @@ from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
+
+from pyiceberg.table import Table
+from pyiceberg.table.metadata import Snapshot
+from pyiceberg.table.update import UpdateTableMetadata
+from typing import Optional, Set
+from datetime import datetime, timezone
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -844,3 +852,103 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
+
+
+class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
+    def __init__(self, table: Table):
+        super().__init__(table)
+        self._expire_older_than: Optional[int] = None
+        self._snapshot_ids_to_expire: Set[int] = set()
+        self._retain_last: Optional[int] = None
+        self._delete_func: Optional[Callable[[str], None]] = None
+
+    def expire_older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
+        """Expire snapshots older than the given timestamp."""
+        self._expire_older_than = timestamp_ms
+        return self
+
+    def expire_snapshot_id(self, snapshot_id: int) -> "ExpireSnapshots":
+        """Explicitly expire a snapshot by its ID."""
+        self._snapshot_ids_to_expire.add(snapshot_id)
+        return self
+
+    def retain_last(self, num_snapshots: int) -> "ExpireSnapshots":
+        """Retain the last N snapshots."""
+        if num_snapshots < 1:
+            raise ValueError("Number of snapshots to retain must be at least 1.")
+        self._retain_last = num_snapshots
+        return self
+
+    def delete_with(self, delete_func: Callable[[str], None]) -> "ExpireSnapshots":
+        """Set a custom delete function for cleaning up files."""
+        self._delete_func = delete_func
+        return self
+
+    def _commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
+        snapshots_to_expire = set()
+
+        # Identify snapshots by timestamp
+        if self._expire_older_than is not None:
+            snapshots_to_expire.update(
+                s.snapshot_id for s in base_metadata.snapshots
+                if s.timestamp_ms < self._expire_older_than
+            )
+
+        # Explicitly added snapshot IDs
+        snapshots_to_expire.update(self._snapshot_ids_to_expire)
+
+        # Retain the last N snapshots
+        if self._retain_last is not None:
+            sorted_snapshots = sorted(base_metadata.snapshots, key=lambda s: s.timestamp_ms, reverse=True)
+            retained_snapshots = {s.snapshot_id for s in sorted_snapshots[:self._retain_last]}
+            snapshots_to_expire.difference_update(retained_snapshots)
+
+        if not snapshots_to_expire:
+            print("No snapshots identified for expiration.")
+            return base_metadata  # No change, return original metadata
+
+        print(f"Expiring snapshots: {snapshots_to_expire}")
+
+        # Filter snapshots
+        remaining_snapshots = [
+            snapshot for snapshot in base_metadata.snapshots
+            if snapshot.snapshot_id not in snapshots_to_expire
+        ]
+
+        # Update snapshot log
+        remaining_snapshot_log = [
+            log for log in base_metadata.snapshot_log
+            if log.snapshot_id not in snapshots_to_expire
+        ]
+
+        # Determine the new current snapshot ID
+        new_current_snapshot_id = (
+            max(remaining_snapshots, key=lambda s: s.timestamp_ms).snapshot_id
+            if remaining_snapshots else None
+        )
+
+        # Return new metadata object reflecting the expired snapshots
+        updated_metadata = base_metadata.model_copy(
+            update={
+                "snapshots": remaining_snapshots,
+                "snapshot_log": remaining_snapshot_log,
+                "current_snapshot_id": new_current_snapshot_id
+            }
+        )
+
+        # Cleanup orphaned files (manifests/data files)
+        self._cleanup_files(snapshots_to_expire, base_metadata)
+
+        return updated_metadata
+
+    def _cleanup_files(self, expired_snapshot_ids: Set[int], metadata: TableMetadata):
+        """Remove files no longer referenced by any snapshots."""
+        print(f"Cleaning up resources for expired snapshots: {expired_snapshot_ids}")
+        if self._delete_func:
+            # Use the custom delete function if provided
+            for snapshot_id in expired_snapshot_ids:
+                self._delete_func(f"Snapshot {snapshot_id}")
+        else:
+            # Default cleanup logic (placeholder)
+            for snapshot_id in expired_snapshot_ids:
+                print(f"Default cleanup for snapshot {snapshot_id}")
