@@ -69,8 +69,8 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         operator.or_,
         [
             pc.or_kleene(
-                pc.is_null(pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs"))),
                 pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs")),
+                pc.is_null(pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs"))),
             )
             for col in non_key_cols
         ],
