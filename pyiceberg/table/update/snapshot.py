@@ -247,7 +247,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def _commit(self) -> UpdatesAndRequirements:
+    def commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -748,6 +748,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
     """
 
+    _snapshot_ids_to_expire: Set[int] = set()
+
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
 
@@ -853,102 +855,80 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
 
+    def _get_snapshot_ref_name(self, snapshot_id: int) -> Optional[str]:
+        """Get the reference name of a snapshot."""
+        for ref_name, snapshot in self._transaction.table_metadata.refs.items():
+            if snapshot.snapshot_id == snapshot_id:
+                return ref_name
+        return None
 
-class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
-    def __init__(self, table: Table):
-        super().__init__(table)
-        self._expire_older_than: Optional[int] = None
-        self._snapshot_ids_to_expire: Set[int] = set()
-        self._retain_last: Optional[int] = None
-        self._delete_func: Optional[Callable[[str], None]] = None
+    def _check_forward_ref(self, snapshot_id: int) -> bool:
+        """Check if the snapshot ID is a forward reference."""
+        # Ensure that remaining snapshots correctly reference their parent
+        for ref in self._transaction.table_metadata.refs.values():
+            if ref.snapshot_id == snapshot_id:
+                parent_snapshot_id = ref.parent_snapshot_id
+                if parent_snapshot_id is not None and parent_snapshot_id not in self._transaction.table_metadata.snapshots:
+                    return False
+        return True
+    
+    def _find_dependant_snapshot(self, snapshot_id: int) -> Optional[int]:
+        """Find any dependant snapshot."""
+        for ref in self._transaction.table_metadata.refs.values():
+            if ref.snapshot_id == snapshot_id:
+                return ref.parent_snapshot_id
+        return None
 
-    def expire_older_than(self, timestamp_ms: int) -> "ExpireSnapshots":
-        """Expire snapshots older than the given timestamp."""
-        self._expire_older_than = timestamp_ms
-        return self
-
-    def expire_snapshot_id(self, snapshot_id: int) -> "ExpireSnapshots":
+    def exipre_snapshot_by_id(self, snapshot_id: int) -> ManageSnapshots:
         """Explicitly expire a snapshot by its ID."""
         self._snapshot_ids_to_expire.add(snapshot_id)
         return self
 
-    def retain_last(self, num_snapshots: int) -> "ExpireSnapshots":
-        """Retain the last N snapshots."""
-        if num_snapshots < 1:
-            raise ValueError("Number of snapshots to retain must be at least 1.")
-        self._retain_last = num_snapshots
-        return self
-
-    def delete_with(self, delete_func: Callable[[str], None]) -> "ExpireSnapshots":
-        """Set a custom delete function for cleaning up files."""
-        self._delete_func = delete_func
-        return self
-
-    def _commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
-        snapshots_to_expire = set()
-
-        # Identify snapshots by timestamp
-        if self._expire_older_than is not None:
-            snapshots_to_expire.update(
-                s.snapshot_id for s in base_metadata.snapshots
-                if s.timestamp_ms < self._expire_older_than
+    def expire_snapshots(self) -> ManageSnapshots:
+        """Expire the snapshots that are marked for expiration."""
+        # iterate over each snapshot requested to be expired
+        for snapshot_id in self._snapshot_ids_to_expire:
+            # remove the reference to the snapshot in the table metadata
+            # and stage the chagnes
+            update, requirement = self._remove_ref_snapshot(
+                ref_name=self._get_snapshot_ref_name(snapshot_id=snapshot_id),
             )
 
-        # Explicitly added snapshot IDs
-        snapshots_to_expire.update(self._snapshot_ids_to_expire)
+            # return the updates and requirements to be committed
+            self._updates += update
+            self._requirements += requirement
+            
+            # check if there is a dependant snapshot
+            dependant_snapshot_id = self._find_dependant_snapshot(snapshot_id=snapshot_id)
+            if dependant_snapshot_id is not None:
+                # remove the reference to the dependant snapshot in the table metadata
+                # and stage the changes
+                update, requirement = self._transaction._set_ref_snapshot(
+                    ref_name=self._get_snapshot_ref_name(snapshot_id=dependant_snapshot_id),
+                    snapshot_id=dependant_snapshot_id
+                )
+                self._updates += update
+                self._requirements += requirement
 
-        # Retain the last N snapshots
-        if self._retain_last is not None:
-            sorted_snapshots = sorted(base_metadata.snapshots, key=lambda s: s.timestamp_ms, reverse=True)
-            retained_snapshots = {s.snapshot_id for s in sorted_snapshots[:self._retain_last]}
-            snapshots_to_expire.difference_update(retained_snapshots)
+            # clean up the the unused files
 
-        if not snapshots_to_expire:
-            print("No snapshots identified for expiration.")
-            return base_metadata  # No change, return original metadata
+        return self
 
-        print(f"Expiring snapshots: {snapshots_to_expire}")
-
-        # Filter snapshots
-        remaining_snapshots = [
-            snapshot for snapshot in base_metadata.snapshots
-            if snapshot.snapshot_id not in snapshots_to_expire
-        ]
-
-        # Update snapshot log
-        remaining_snapshot_log = [
-            log for log in base_metadata.snapshot_log
-            if log.snapshot_id not in snapshots_to_expire
-        ]
-
-        # Determine the new current snapshot ID
-        new_current_snapshot_id = (
-            max(remaining_snapshots, key=lambda s: s.timestamp_ms).snapshot_id
-            if remaining_snapshots else None
-        )
-
-        # Return new metadata object reflecting the expired snapshots
-        updated_metadata = base_metadata.model_copy(
-            update={
-                "snapshots": remaining_snapshots,
-                "snapshot_log": remaining_snapshot_log,
-                "current_snapshot_id": new_current_snapshot_id
-            }
-        )
-
-        # Cleanup orphaned files (manifests/data files)
-        self._cleanup_files(snapshots_to_expire, base_metadata)
-
-        return updated_metadata
-
-    def _cleanup_files(self, expired_snapshot_ids: Set[int], metadata: TableMetadata):
+    def cleanup_files(self):
         """Remove files no longer referenced by any snapshots."""
-        print(f"Cleaning up resources for expired snapshots: {expired_snapshot_ids}")
-        if self._delete_func:
-            # Use the custom delete function if provided
-            for snapshot_id in expired_snapshot_ids:
-                self._delete_func(f"Snapshot {snapshot_id}")
-        else:
-            # Default cleanup logic (placeholder)
-            for snapshot_id in expired_snapshot_ids:
-                print(f"Default cleanup for snapshot {snapshot_id}")
+        # Remove the manifest files for the expired snapshots
+        for entry in self._snapshot_ids_to_expire:
+
+            # remove the manifest files for the expired snapshots
+            for manifest in self._transaction._table.snapshot_by_id(entry).manifests(self._transaction._table.io):
+                # get a list of all parquette files in the manifest that are orphaned
+                data_files = manifest.fetch_manifest_entry(io=self._transaction._table.io, discard_deleted=True)
+                
+                # remove the manfiest
+                self._transaction._table.io.delete(manifest.manifest_path)
+                
+                # remove the data files
+                [self._transaction._table.io.delete(file.data_file.file_path) for file in data_files if file.data_file.file_path is not None]
+        return self
+
+
