@@ -528,6 +528,7 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
     data_with_null = pa.Table.from_pylist(
         [
             {"foo": "apple", "bar": None, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
         ],
         schema=schema,
     )
@@ -544,4 +545,10 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
     upd = table.upsert(data_without_null, join_cols=["foo"])
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 0
-    assert table.scan().to_arrow() == data_without_null
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
