@@ -171,6 +171,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -1861,7 +1862,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
-        return "FIXED_LEN_BYTE_ARRAY"
+        return "INT32" if decimal_type.precision <= 9 else "INT64" if decimal_type.precision <= 18 else "FIXED_LEN_BYTE_ARRAY"
 
     def visit_boolean(self, boolean_type: BooleanType) -> str:
         return "BOOLEAN"
@@ -2326,8 +2327,13 @@ def data_file_statistics_from_parquet_metadata(
                             stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
                         )
 
-                    col_aggs[field_id].update_min(statistics.min)
-                    col_aggs[field_id].update_max(statistics.max)
+                    if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
+                        scale = stats_col.iceberg_type.scale
+                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
+                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                    else:
+                        col_aggs[field_id].update_min(statistics.min)
+                        col_aggs[field_id].update_max(statistics.max)
 
                 except pyarrow.lib.ArrowNotImplementedError as e:
                     invalidate_col.add(field_id)
