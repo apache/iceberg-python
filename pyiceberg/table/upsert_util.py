@@ -71,7 +71,16 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
-    diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
+    diff_expr = functools.reduce(
+        operator.or_,
+        [
+            pc.or_kleene(
+                pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs")),
+                pc.is_null(pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs"))),
+            )
+            for col in non_key_cols
+        ],
+    )
 
     return (
         source_table
