@@ -52,6 +52,7 @@ from pyiceberg.types import (
     DateType,
     DoubleType,
     IntegerType,
+    ListType,
     LongType,
     NestedField,
     StringType,
@@ -1647,3 +1648,37 @@ def test_abort_table_transaction_on_exception(
 
     # Validate the transaction is aborted and no partial update is applied
     assert len(tbl.scan().to_pandas()) == table_size  # type: ignore
+
+
+def test_write_optional_list(session_catalog: Catalog) -> None:
+    identifier = "default.test_write_optional_list"
+    schema = Schema(
+        NestedField(field_id=1, name="name", field_type=StringType(), required=False),
+        NestedField(
+            field_id=3,
+            name="my_list",
+            field_type=ListType(element_id=45, element=StringType(), element_required=False),
+            required=False,
+        ),
+    )
+    session_catalog.create_table_if_not_exists(identifier, schema)
+
+    df_1 = pa.Table.from_pylist(
+        [
+            {"name": "one", "my_list": ["test"]},
+            {"name": "another", "my_list": ["test"]},
+        ]
+    )
+    session_catalog.load_table(identifier).append(df_1)
+
+    assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 2
+
+    df_2 = pa.Table.from_pylist(
+        [
+            {"name": "one"},
+            {"name": "another"},
+        ]
+    )
+    session_catalog.load_table(identifier).append(df_2)
+
+    assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 4
