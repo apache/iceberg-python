@@ -1650,6 +1650,7 @@ def test_abort_table_transaction_on_exception(
     assert len(tbl.scan().to_pandas()) == table_size  # type: ignore
 
 
+@pytest.mark.integration
 def test_write_optional_list(session_catalog: Catalog) -> None:
     identifier = "default.test_write_optional_list"
     schema = Schema(
