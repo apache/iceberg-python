@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from pyiceberg.conversions import from_bytes
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, PartitionFieldSummary
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
 from pyiceberg.types import PrimitiveType
@@ -523,7 +523,62 @@ class InspectTable:
 
         return pa.Table.from_pylist(history, schema=history_schema)
 
-    def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+    def _files_by_manifest(
+        self, manifest_list: ManifestFile, data_file_filter: Optional[Set[DataFileContent]] = None
+    ) -> List[Dict[str, Any]]:
+        files: list[dict[str, Any]] = []
+        schema = self.tbl.metadata.schema()
+        io = self.tbl.io
+
+        for manifest_entry in manifest_list.fetch_manifest_entry(io):
+            data_file = manifest_entry.data_file
+            if data_file_filter and data_file.content not in data_file_filter:
+                continue
+            column_sizes = data_file.column_sizes or {}
+            value_counts = data_file.value_counts or {}
+            null_value_counts = data_file.null_value_counts or {}
+            nan_value_counts = data_file.nan_value_counts or {}
+            lower_bounds = data_file.lower_bounds or {}
+            upper_bounds = data_file.upper_bounds or {}
+            readable_metrics = {
+                schema.find_column_name(field.field_id): {
+                    "column_size": column_sizes.get(field.field_id),
+                    "value_count": value_counts.get(field.field_id),
+                    "null_value_count": null_value_counts.get(field.field_id),
+                    "nan_value_count": nan_value_counts.get(field.field_id),
+                    "lower_bound": from_bytes(field.field_type, lower_bound)
+                    if (lower_bound := lower_bounds.get(field.field_id))
+                    else None,
+                    "upper_bound": from_bytes(field.field_type, upper_bound)
+                    if (upper_bound := upper_bounds.get(field.field_id))
+                    else None,
+                }
+                for field in self.tbl.metadata.schema().fields
+            }
+            files.append(
+                {
+                    "content": data_file.content,
+                    "file_path": data_file.file_path,
+                    "file_format": data_file.file_format,
+                    "spec_id": data_file.spec_id,
+                    "record_count": data_file.record_count,
+                    "file_size_in_bytes": data_file.file_size_in_bytes,
+                    "column_sizes": dict(data_file.column_sizes) if data_file.column_sizes is not None else None,
+                    "value_counts": dict(data_file.value_counts) if data_file.value_counts is not None else None,
+                    "null_value_counts": dict(data_file.null_value_counts) if data_file.null_value_counts is not None else None,
+                    "nan_value_counts": dict(data_file.nan_value_counts) if data_file.nan_value_counts is not None else None,
+                    "lower_bounds": dict(data_file.lower_bounds) if data_file.lower_bounds is not None else None,
+                    "upper_bounds": dict(data_file.upper_bounds) if data_file.upper_bounds is not None else None,
+                    "key_metadata": data_file.key_metadata,
+                    "split_offsets": data_file.split_offsets,
+                    "equality_ids": data_file.equality_ids,
+                    "sort_order_id": data_file.sort_order_id,
+                    "readable_metrics": readable_metrics,
+                }
+            )
+        return files
+
+    def _get_files_schema(self) -> "pa.Schema":
         import pyarrow as pa
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -570,70 +625,27 @@ class InspectTable:
                 pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
             ]
         )
+        return files_schema
+
+    def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+        import pyarrow as pa
 
         files: list[dict[str, Any]] = []
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
             return pa.Table.from_pylist(
                 files,
-                schema=files_schema,
+                schema=self._get_files_schema(),
             )
         snapshot = self._get_snapshot(snapshot_id)
 
         io = self.tbl.io
         for manifest_list in snapshot.manifests(io):
-            for manifest_entry in manifest_list.fetch_manifest_entry(io):
-                data_file = manifest_entry.data_file
-                if data_file_filter and data_file.content not in data_file_filter:
-                    continue
-                column_sizes = data_file.column_sizes or {}
-                value_counts = data_file.value_counts or {}
-                null_value_counts = data_file.null_value_counts or {}
-                nan_value_counts = data_file.nan_value_counts or {}
-                lower_bounds = data_file.lower_bounds or {}
-                upper_bounds = data_file.upper_bounds or {}
-                readable_metrics = {
-                    schema.find_column_name(field.field_id): {
-                        "column_size": column_sizes.get(field.field_id),
-                        "value_count": value_counts.get(field.field_id),
-                        "null_value_count": null_value_counts.get(field.field_id),
-                        "nan_value_count": nan_value_counts.get(field.field_id),
-                        "lower_bound": from_bytes(field.field_type, lower_bound)
-                        if (lower_bound := lower_bounds.get(field.field_id))
-                        else None,
-                        "upper_bound": from_bytes(field.field_type, upper_bound)
-                        if (upper_bound := upper_bounds.get(field.field_id))
-                        else None,
-                    }
-                    for field in self.tbl.metadata.schema().fields
-                }
-                files.append(
-                    {
-                        "content": data_file.content,
-                        "file_path": data_file.file_path,
-                        "file_format": data_file.file_format,
-                        "spec_id": data_file.spec_id,
-                        "record_count": data_file.record_count,
-                        "file_size_in_bytes": data_file.file_size_in_bytes,
-                        "column_sizes": dict(data_file.column_sizes) if data_file.column_sizes is not None else None,
-                        "value_counts": dict(data_file.value_counts) if data_file.value_counts is not None else None,
-                        "null_value_counts": dict(data_file.null_value_counts)
-                        if data_file.null_value_counts is not None
-                        else None,
-                        "nan_value_counts": dict(data_file.nan_value_counts) if data_file.nan_value_counts is not None else None,
-                        "lower_bounds": dict(data_file.lower_bounds) if data_file.lower_bounds is not None else None,
-                        "upper_bounds": dict(data_file.upper_bounds) if data_file.upper_bounds is not None else None,
-                        "key_metadata": data_file.key_metadata,
-                        "split_offsets": data_file.split_offsets,
-                        "equality_ids": data_file.equality_ids,
-                        "sort_order_id": data_file.sort_order_id,
-                        "readable_metrics": readable_metrics,
-                    }
-                )
+            files.extend(self._files_by_manifest(manifest_list, data_file_filter))
 
         return pa.Table.from_pylist(
             files,
-            schema=files_schema,
+            schema=self._get_files_schema(),
         )
 
     def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
@@ -657,3 +669,35 @@ class InspectTable:
             lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
         )
         return pa.concat_tables(manifests_by_snapshots)
+
+    def _all_files(self, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
+        import pyarrow as pa
+
+        snapshots = self.tbl.snapshots()
+        if not snapshots:
+            return pa.Table.from_pylist([], schema=self._get_files_schema())
+
+        executor = ExecutorFactory.get_or_create()
+        all_manifest_files_by_snapshot: Iterator[List[ManifestFile]] = executor.map(
+            lambda args: args[0].manifests(self.tbl.io), [(snapshot,) for snapshot in snapshots]
+        )
+        all_manifest_files = list(
+            {(manifest.manifest_path, manifest) for manifest_list in all_manifest_files_by_snapshot for manifest in manifest_list}
+        )
+        all_files_by_manifest: Iterator[List[Dict[str, Any]]] = executor.map(
+            lambda args: self._files_by_manifest(*args), [(manifest, data_file_filter) for _, manifest in all_manifest_files]
+        )
+        all_files_list = [file for files in all_files_by_manifest for file in files]
+        return pa.Table.from_pylist(
+            all_files_list,
+            schema=self._get_files_schema(),
+        )
+
+    def all_files(self) -> "pa.Table":
+        return self._all_files()
+
+    def all_data_files(self) -> "pa.Table":
+        return self._all_files({DataFileContent.DATA})
+
+    def all_delete_files(self) -> "pa.Table":
+        return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
