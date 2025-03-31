@@ -39,7 +39,6 @@ from abc import ABC, abstractmethod
 from concurrent.futures import Future
 from copy import copy
 from dataclasses import dataclass
-from decimal import Decimal
 from enum import Enum
 from functools import lru_cache, singledispatch
 from typing import (
@@ -176,6 +175,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
@@ -2364,15 +2364,9 @@ def data_file_statistics_from_parquet_metadata(
                         )
 
                     if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
-                        precision = stats_col.iceberg_type.precision
                         scale = stats_col.iceberg_type.scale
-                        decimal_type = pa.decimal128(precision, scale)
-                        col_aggs[field_id].update_min(
-                            pa.array([Decimal(statistics.min_raw) / (10**scale)], decimal_type)[0].as_py()
-                        )
-                        col_aggs[field_id].update_max(
-                            pa.array([Decimal(statistics.max_raw) / (10**scale)], decimal_type)[0].as_py()
-                        )
+                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
+                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
                     else:
                         col_aggs[field_id].update_min(statistics.min)
                         col_aggs[field_id].update_max(statistics.max)
