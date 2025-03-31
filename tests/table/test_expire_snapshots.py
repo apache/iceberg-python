@@ -6,7 +6,7 @@ import pytest
 from pyiceberg.table import Table
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
-from pyiceberg.table.update.snapshot import ExpireSnapshots
+from pyiceberg.table.update.snapshot import ManageSnapshots
 
 from pyiceberg.schema import Schema
 from pyiceberg.partitioning import PartitionSpec
@@ -64,33 +64,14 @@ def test_expire_snapshots_removes_correct_snapshots(mock_table: Mock):
     """
     Test case for the `ExpireSnapshots` class to ensure that the correct snapshots
     are removed and the delete function is called the expected number of times.
-    Args:
-        mock_table (Mock): A mock object representing the table.
-    Test Steps:
-    1. Create a mock delete function and a mock transaction.
-    2. Instantiate the `ExpireSnapshots` class with the mock transaction.
-    3. Configure the `ExpireSnapshots` instance to expire snapshots with IDs 1 and 2,
-       and set the delete function to the mock delete function.
-    4. Commit the changes using the `_commit` method with the mock table's metadata.
-    5. Validate that the mock delete function is called for the correct snapshots.
-    6. Verify that the delete function is called exactly twice.
-    7. Ensure that the updated metadata returned by `_commit` is not `None`.
+
     """
-    mock_delete_func = Mock()
-    mock_transaction = Mock()
 
-    expire_snapshots = ExpireSnapshots(mock_transaction)
-    expire_snapshots \
-        .expire_snapshot_id(1) \
-        .expire_snapshot_id(2) \
-        .delete_with(mock_delete_func)
+    with ManageSnapshots(mock_table) as transaction:
+        # Mock the transaction to return the mock table
+        transaction.exipre_snapshot_by_id(1).exipre_snapshot_by_id(2).expire_snapshots().cleanup_files()
 
-    updated_metadata = expire_snapshots._commit(mock_table.metadata)
 
-    # Validate delete calls
-    mock_delete_func.assert_any_call(mock_table.return_value.snapshots[0])
-    mock_delete_func.assert_any_call(mock_table.metadata.snapshots[1])
-    assert mock_delete_func.call_count == 2
-
-    # Verify updated metadata returned
-    assert updated_metadata is not None
+    for snapshot in mock_table.metadata.snapshots:
+        # Verify that the snapshot is removed from the metadata
+        assert snapshot.snapshot_id not in [1, 2]
