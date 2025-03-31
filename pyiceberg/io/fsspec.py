@@ -59,6 +59,10 @@ from pyiceberg.io import (
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
     GCS_VERSION_AWARE,
+    OSS_ACCESS_KEY_ID,
+    OSS_ACCESS_KEY_SECRET,
+    OSS_ENDPOINT,
+    OSS_SESSION_TOKEN,
     S3_ACCESS_KEY_ID,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -123,6 +127,20 @@ SIGNERS: Dict[str, Callable[[Properties, "AWSRequest"], "AWSRequest"]] = {"S3V4R
 
 def _file(_: Properties) -> LocalFileSystem:
     return LocalFileSystem(auto_mkdir=True)
+
+
+def _oss(properties: Properties) -> AbstractFileSystem:
+    from s3fs import S3FileSystem
+
+    client_kwargs: Dict[str, Any] = {
+        "endpoint_url": properties.get(OSS_ENDPOINT),
+        "aws_access_key_id": properties.get(OSS_ACCESS_KEY_ID),
+        "aws_secret_access_key": properties.get(OSS_ACCESS_KEY_SECRET),
+        "aws_session_token": properties.get(OSS_SESSION_TOKEN),
+    }
+    config_kwargs: Dict[str, Any] = {"s3": {"addressing_style": "virtual"}, "signature_version": "v4"}
+
+    return S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
 
 def _s3(properties: Properties) -> AbstractFileSystem:
@@ -218,6 +236,7 @@ SCHEME_TO_FS = {
     "abfss": _adls,
     "gs": _gs,
     "gcs": _gs,
+    "oss": _oss,
 }
 
 
