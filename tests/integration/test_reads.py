@@ -385,7 +385,8 @@ def test_pyarrow_to_iceberg_all_types(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_deletes(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_deletes(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -399,7 +400,7 @@ def test_pyarrow_deletes(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
 
@@ -422,7 +423,8 @@ def test_pyarrow_deletes(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_deletes_double(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_deletes_double(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -436,7 +438,7 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_double_deletes = catalog.load_table("default.test_positional_mor_double_deletes")
+    test_positional_mor_double_deletes = catalog.load_table(f"default.test_positional_mor_double_deletes_v{format_version}")
     arrow_table = test_positional_mor_double_deletes.scan().to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
 
@@ -459,7 +461,8 @@ def test_pyarrow_deletes_double(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_batches_deletes(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -473,7 +476,7 @@ def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12]
 
@@ -500,7 +503,8 @@ def test_pyarrow_batches_deletes(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_pyarrow_batches_deletes_double(catalog: Catalog) -> None:
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_pyarrow_batches_deletes_double(catalog: Catalog, format_version: int) -> None:
     # number, letter
     #  (1, 'a'),
     #  (2, 'b'),
@@ -514,7 +518,7 @@ def test_pyarrow_batches_deletes_double(catalog: Catalog) -> None:
     #  (10, 'j'),
     #  (11, 'k'),
     #  (12, 'l')
-    test_positional_mor_double_deletes = catalog.load_table("default.test_positional_mor_double_deletes")
+    test_positional_mor_double_deletes = catalog.load_table(f"default.test_positional_mor_double_deletes_v{format_version}")
     arrow_table = test_positional_mor_double_deletes.scan().to_arrow_batch_reader().read_all()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 7, 8, 10, 11, 12]
 
@@ -596,16 +600,18 @@ def test_unpartitioned_fixed_table(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_scan_tag(catalog: Catalog) -> None:
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_scan_tag(catalog: Catalog, format_version: int) -> None:
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().use_ref("tag_12").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_scan_branch(catalog: Catalog) -> None:
-    test_positional_mor_deletes = catalog.load_table("default.test_positional_mor_deletes")
+@pytest.mark.parametrize("format_version", [2, 3])
+def test_scan_branch(catalog: Catalog, format_version: int) -> None:
+    test_positional_mor_deletes = catalog.load_table(f"default.test_positional_mor_deletes_v{format_version}")
     arrow_table = test_positional_mor_deletes.scan().use_ref("without_5").to_arrow()
     assert arrow_table["number"].to_pylist() == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
 
@@ -825,7 +831,16 @@ def test_configure_row_group_batch_size(session_catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [pytest.lazy_fixture("session_catalog_hive"), pytest.lazy_fixture("session_catalog")])
-def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
+def test_table_scan_keep_types(catalog: Catalog) -> None:
+    expected_schema = pa.schema(
+        [
+            pa.field("string", pa.string()),
+            pa.field("string-to-binary", pa.large_binary()),
+            pa.field("binary", pa.binary()),
+            pa.field("list", pa.list_(pa.large_string())),
+        ]
+    )
+
     identifier = "default.test_table_scan_default_to_large_types"
     arrow_table = pa.Table.from_arrays(
         [
@@ -834,7 +849,7 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
             pa.array([b"a", b"b", b"c"]),
             pa.array([["a", "b"], ["c", "d"], ["e", "f"]]),
         ],
-        names=["string", "string-to-binary", "binary", "list"],
+        schema=expected_schema,
     )
 
     try:
@@ -853,15 +868,6 @@ def test_table_scan_default_to_large_types(catalog: Catalog) -> None:
         update_schema.update_column("string-to-binary", BinaryType())
 
     result_table = tbl.scan().to_arrow()
-
-    expected_schema = pa.schema(
-        [
-            pa.field("string", pa.large_string()),
-            pa.field("string-to-binary", pa.large_binary()),
-            pa.field("binary", pa.large_binary()),
-            pa.field("list", pa.large_list(pa.large_string())),
-        ]
-    )
     assert result_table.schema.equals(expected_schema)
 
 
@@ -900,7 +906,7 @@ def test_table_scan_override_with_small_types(catalog: Catalog) -> None:
     expected_schema = pa.schema(
         [
             pa.field("string", pa.string()),
-            pa.field("string-to-binary", pa.binary()),
+            pa.field("string-to-binary", pa.large_binary()),
             pa.field("binary", pa.binary()),
             pa.field("list", pa.list_(pa.string())),
         ]

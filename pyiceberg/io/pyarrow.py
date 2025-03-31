@@ -145,6 +145,7 @@ from pyiceberg.schema import (
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
+from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
 from pyiceberg.types import (
@@ -175,6 +176,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -916,15 +918,26 @@ def _construct_fragment(fs: FileSystem, data_file: DataFile, file_format_kwargs:
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
-    delete_fragment = _construct_fragment(
-        fs, data_file, file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE}
-    )
-    table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-    table = table.unify_dictionaries()
-    return {
-        file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-        for file in table.column("file_path").chunks[0].dictionary
-    }
+    if data_file.file_format == FileFormat.PARQUET:
+        delete_fragment = _construct_fragment(
+            fs,
+            data_file,
+            file_format_kwargs={"dictionary_columns": ("file_path",), "pre_buffer": True, "buffer_size": ONE_MEGABYTE},
+        )
+        table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
+        table = table.unify_dictionaries()
+        return {
+            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
+            for file in table.column("file_path").chunks[0].dictionary
+        }
+    elif data_file.file_format == FileFormat.PUFFIN:
+        _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
+        with fs.open_input_file(path) as fi:
+            payload = fi.read()
+
+        return PuffinFile(payload).to_vector()
+    else:
+        raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
 
 def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
@@ -1374,7 +1387,6 @@ def _task_to_record_batches(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
-    use_large_types: bool = True,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = _parse_location(task.file.file_path)
@@ -1404,13 +1416,7 @@ def _task_to_record_batches(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            # With PyArrow 16.0.0 there is an issue with casting record-batches:
-            # https://github.com/apache/arrow/issues/41884
-            # https://github.com/apache/arrow/issues/43183
-            # Would be good to remove this later on
-            schema=_pyarrow_schema_ensure_large_types(physical_schema)
-            if use_large_types
-            else (_pyarrow_schema_ensure_small_types(physical_schema)),
+            schema=physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
@@ -1445,7 +1451,6 @@ def _task_to_record_batches(
                 file_project_schema,
                 current_batch,
                 downcast_ns_timestamp_to_us=True,
-                use_large_types=use_large_types,
             )
 
             # Inject projected column values if available
@@ -1532,14 +1537,6 @@ class ArrowScan:
         self._limit = limit
 
     @property
-    def _use_large_types(self) -> bool:
-        """Whether to represent data as large arrow types.
-
-        Defaults to True.
-        """
-        return property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
-
-    @property
     def _projected_field_ids(self) -> Set[int]:
         """Set of field IDs that should be projected from the data files."""
         return {
@@ -1600,10 +1597,20 @@ class ArrowScan:
 
         tables = [f.result() for f in completed_futures if f.result()]
 
+        arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
+
         if len(tables) < 1:
-            return pa.Table.from_batches([], schema=schema_to_pyarrow(self._projected_schema, include_field_ids=False))
+            return pa.Table.from_batches([], schema=arrow_schema)
 
         result = pa.concat_tables(tables, promote_options="permissive")
+
+        if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
+            )
+            result = result.cast(arrow_schema)
 
         if self._limit is not None:
             return result.slice(0, self._limit)
@@ -1647,7 +1654,6 @@ class ArrowScan:
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
-                self._use_large_types,
                 self._table_metadata.spec(),
             )
             for batch in batches:
@@ -1666,13 +1672,12 @@ def _to_requested_schema(
     batch: pa.RecordBatch,
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
-    use_large_types: bool = True,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
-        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids, use_large_types),
+        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
         ArrowAccessor(file_schema),
     )
     return pa.RecordBatch.from_struct_array(struct_array)
@@ -1682,19 +1687,26 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
-    _use_large_types: bool
+    _use_large_types: Optional[bool]
 
     def __init__(
         self,
         file_schema: Schema,
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
-        use_large_types: bool = True,
+        use_large_types: Optional[bool] = None,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
+
+        if use_large_types is not None:
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message="Argument `use_large_types` will be removed from ArrowProjectionVisitor",
+            )
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
@@ -1704,7 +1716,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                if not self._use_large_types:
+                if self._use_large_types is False:
                     target_schema = _pyarrow_schema_ensure_small_types(target_schema)
                 return values.cast(target_schema)
             elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
