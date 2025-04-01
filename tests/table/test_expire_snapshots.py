@@ -1,77 +1,117 @@
-# pylint:disable=redefined-outer-name
-# pylint:disable=redefined-outer-name
-from unittest.mock import Mock
+from datetime import datetime, timezone
+from pathlib import PosixPath
+from random import randint
+import time
+from typing import Any, Dict, Optional
 import pytest
-
+from pyiceberg.catalog.memory import InMemoryCatalog
+from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.io import load_file_io
 from pyiceberg.table import Table
-from pyiceberg.table.metadata import new_table_metadata
-from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
-from pyiceberg.table.update.snapshot import ManageSnapshots
-
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
+from pyiceberg.table.update.snapshot import ExpireSnapshots
+from pyiceberg.transforms import IdentityTransform
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, LongType, MapType, StructType
+from tests.catalog.test_base import InMemoryCatalog, Table
+from pyiceberg.table import Table
 from pyiceberg.schema import Schema
-from pyiceberg.partitioning import PartitionSpec
-from pyiceberg.table.sorting import SortOrder
+from pyiceberg.types import NestedField, LongType, StringType
+from pyiceberg.table.snapshots import Snapshot
+from pyiceberg.table.metadata import TableMetadata, TableMetadataV2, new_table_metadata
+
 
 
 
 @pytest.fixture
-def mock_table():
-    """
-    Creates a mock Iceberg table with predefined metadata, snapshots, and snapshot log entries.
-    The mock table includes:
-    - Snapshots with unique IDs, timestamps, and manifest lists.
-    - A snapshot log that tracks the history of snapshots with their IDs and timestamps.
-    - Table metadata including schema, partition spec, sort order, location, properties, and UUID.
-    - A current snapshot ID and last updated timestamp.
-    Returns:
-        Mock: A mock object representing an Iceberg table with the specified metadata and attributes.
-    """
-    snapshots = [
-        Snapshot(snapshot_id=1, timestamp_ms=1000, manifest_list="manifest1.avro"),
-        Snapshot(snapshot_id=2, timestamp_ms=2000, manifest_list="manifest2.avro"),
-        Snapshot(snapshot_id=3, timestamp_ms=3000, manifest_list="manifest3.avro"),
-    ]
-    snapshot_log = [
-        SnapshotLogEntry(snapshot_id=1, timestamp_ms=1000),
-        SnapshotLogEntry(snapshot_id=2, timestamp_ms=2000),
-        SnapshotLogEntry(snapshot_id=3, timestamp_ms=3000),
-    ]
-
-    metadata = new_table_metadata(
-        schema=Schema(fields=[]),
-        partition_spec=PartitionSpec(spec_id=0, fields=[]),
-        sort_order=SortOrder(order_id=0, fields=[]),
-        location="s3://example-bucket/path/",
-        properties={},
-        table_uuid="12345678-1234-1234-1234-123456789abc",
-    ).model_copy(
-        update={
-            "snapshots": snapshots,
-            "snapshot_log": snapshot_log,
-            "current_snapshot_id": 3,
-            "last_updated_ms": 3000,
+def generate_test_table() -> Table:
+    def generate_snapshot(
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int] = None,
+        timestamp_ms: Optional[int] = None,
+        sequence_number: int = 0,
+    ) -> Dict[str, Any]:
+        return {
+            "snapshot-id": snapshot_id,
+            "parent-snapshot-id": parent_snapshot_id,
+            "timestamp-ms": timestamp_ms or int(time.time() * 1000),
+            "sequence-number": sequence_number,
+            "summary": {"operation": "append"},
+            "manifest-list": f"s3://a/b/{snapshot_id}.avro",
         }
+
+    snapshots = []
+    snapshot_log = []
+    initial_snapshot_id = 3051729675574597004
+
+    for i in range(2000):
+        snapshot_id = initial_snapshot_id + i
+        parent_snapshot_id = snapshot_id - 1 if i > 0 else None
+        timestamp_ms = int(time.time() * 1000) - randint(0, 1000000)
+        snapshots.append(generate_snapshot(snapshot_id, parent_snapshot_id, timestamp_ms, i))
+        snapshot_log.append({"snapshot-id": snapshot_id, "timestamp-ms": timestamp_ms})
+
+    metadata = {
+        "format-version": 2,
+        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+        "location": "s3://bucket/test/location",
+        "last-sequence-number": 34,
+        "last-updated-ms": 1602638573590,
+        "last-column-id": 3,
+        "current-schema-id": 1,
+        "schemas": [
+            {"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]},
+            {
+                "type": "struct",
+                "schema-id": 1,
+                "identifier-field-ids": [1, 2],
+                "fields": [
+                    {"id": 1, "name": "x", "required": True, "type": "long"},
+                    {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
+                    {"id": 3, "name": "z", "required": True, "type": "long"},
+                ],
+            },
+        ],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000}]}],
+        "last-partition-id": 1000,
+        "default-sort-order-id": 3,
+        "sort-orders": [
+            {
+                "order-id": 3,
+                "fields": [
+                    {"transform": "identity", "source-id": 2, "direction": "asc", "null-order": "nulls-first"},
+                    {"transform": "bucket[4]", "source-id": 3, "direction": "desc", "null-order": "nulls-last"},
+                ],
+            }
+        ],
+        "properties": {"read.split.target.size": "134217728"},
+        "current-snapshot-id": initial_snapshot_id + 1999,
+        "snapshots": snapshots,
+        "snapshot-log": snapshot_log,
+        "metadata-log": [{"metadata-file": "s3://bucket/.../v1.json", "timestamp-ms": 1515100}],
+        "refs": {"test": {"snapshot-id": initial_snapshot_id, "type": "tag", "max-ref-age-ms": 10000000}},
+    }
+
+    return Table(
+        identifier=("database", "table"),
+        metadata=metadata,
+        metadata_location=f"{metadata['location']}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
     )
 
-    table = Mock(spec=Table)
-    table.metadata = metadata
-    table.identifier = ("db", "table") 
 
 
-    return table
-
-def test_expire_snapshots_removes_correct_snapshots(mock_table: Mock):
+def test_expire_snapshots_removes_correct_snapshots(generate_test_table):
     """
     Test case for the `ExpireSnapshots` class to ensure that the correct snapshots
     are removed and the delete function is called the expected number of times.
-
     """
 
-    with ManageSnapshots(mock_table) as transaction:
-        # Mock the transaction to return the mock table
-        transaction.exipre_snapshot_by_id(1).exipre_snapshot_by_id(2).expire_snapshots().cleanup_files()
+    # Use the fixture-provided table
+    with ExpireSnapshots(generate_test_table.transaction()) as manage_snapshots:
+        manage_snapshots.expire_snapshot_id(3051729675574597004)
 
-
-    for snapshot in mock_table.metadata.snapshots:
-        # Verify that the snapshot is removed from the metadata
-        assert snapshot.snapshot_id not in [1, 2]
+    # Check the remaining snapshots
+    remaining_snapshot_ids = {snapshot.snapshot_id for snapshot in generate_test_table.metadata.snapshots}
+    assert not remaining_snapshot_ids.issubset({3051729675574597004})

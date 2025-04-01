@@ -575,6 +575,20 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
 
     return base_metadata.model_copy(update={"statistics": statistics})
 
+@_apply_table_update.register(RemoveSnapshotsUpdate)
+def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if len(update.snapshot_ids) == 0 or len(base_metadata.snapshots) == 0:
+        return base_metadata
+
+    retained_snapshots = []
+    ids_to_remove = set(update.snapshot_ids)
+    for snapshot in base_metadata.snapshots:
+        if snapshot.snapshot_id not in ids_to_remove:
+            retained_snapshots.append(snapshot)
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"snapshots": retained_snapshots})
+
 
 def update_table_metadata(
     base_metadata: TableMetadata,
