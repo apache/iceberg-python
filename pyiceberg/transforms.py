@@ -703,7 +703,7 @@ class HourTransform(TimeTransform[S]):
 
         elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
 
-            def day_func(v: Any) -> int:
+            def hour_func(v: Any) -> int:
                 # python datetime has no nanoseconds support.
                 # nanosecond datetimes will be expressed as int as a workaround
                 return datetime.nanos_to_hours(v)

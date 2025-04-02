@@ -25,6 +25,7 @@ from typing import Any, Dict
 from urllib.parse import urlparse
 
 import pandas as pd
+import pandas.testing
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -51,6 +52,7 @@ from pyiceberg.types import (
     DateType,
     DoubleType,
     IntegerType,
+    ListType,
     LongType,
     NestedField,
     StringType,
@@ -401,7 +403,14 @@ def test_python_writes_dictionary_encoded_column_with_spark_reads(
     tbl.append(arrow_table)
     spark_df = spark.sql(f"SELECT * FROM {identifier}").toPandas()
     pyiceberg_df = tbl.scan().to_pandas()
-    assert spark_df.equals(pyiceberg_df)
+
+    # We're just interested in the content, PyIceberg actually makes a nice Categorical out of it:
+    # E       AssertionError: Attributes of DataFrame.iloc[:, 1] (column name="name") are different
+    # E
+    # E       Attribute "dtype" are different
+    # E       [left]:  object
+    # E       [right]: CategoricalDtype(categories=['AB', 'CD', 'EF'], ordered=False, categories_dtype=object)
+    pandas.testing.assert_frame_equal(spark_df, pyiceberg_df, check_dtype=False, check_categorical=False)
 
 
 @pytest.mark.integration
@@ -422,7 +431,7 @@ def test_python_writes_with_small_and_large_types_spark_reads(
     }
     pa_schema = pa.schema(
         [
-            pa.field("foo", pa.large_string()),
+            pa.field("foo", pa.string()),
             pa.field("id", pa.int32()),
             pa.field("name", pa.string()),
             pa.field(
@@ -432,7 +441,7 @@ def test_python_writes_with_small_and_large_types_spark_reads(
                         pa.field("street", pa.string()),
                         pa.field("city", pa.string()),
                         pa.field("zip", pa.int32()),
-                        pa.field("bar", pa.large_string()),
+                        pa.field("bar", pa.string()),
                     ]
                 ),
             ),
@@ -448,17 +457,17 @@ def test_python_writes_with_small_and_large_types_spark_reads(
     arrow_table_on_read = tbl.scan().to_arrow()
     assert arrow_table_on_read.schema == pa.schema(
         [
-            pa.field("foo", pa.large_string()),
+            pa.field("foo", pa.string()),
             pa.field("id", pa.int32()),
-            pa.field("name", pa.large_string()),
+            pa.field("name", pa.string()),
             pa.field(
                 "address",
                 pa.struct(
                     [
-                        pa.field("street", pa.large_string()),
-                        pa.field("city", pa.large_string()),
+                        pa.field("street", pa.string()),
+                        pa.field("city", pa.string()),
                         pa.field("zip", pa.int32()),
-                        pa.field("bar", pa.large_string()),
+                        pa.field("bar", pa.string()),
                     ]
                 ),
             ),
@@ -1164,8 +1173,8 @@ def test_table_write_schema_with_valid_upcast(
         pa.schema(
             (
                 pa.field("long", pa.int64(), nullable=True),
-                pa.field("list", pa.large_list(pa.int64()), nullable=False),
-                pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+                pa.field("list", pa.list_(pa.int64()), nullable=False),
+                pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),  # can support upcasting float to double
                 pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
             )
@@ -1639,3 +1648,38 @@ def test_abort_table_transaction_on_exception(
 
     # Validate the transaction is aborted and no partial update is applied
     assert len(tbl.scan().to_pandas()) == table_size  # type: ignore
+
+
+@pytest.mark.integration
+def test_write_optional_list(session_catalog: Catalog) -> None:
+    identifier = "default.test_write_optional_list"
+    schema = Schema(
+        NestedField(field_id=1, name="name", field_type=StringType(), required=False),
+        NestedField(
+            field_id=3,
+            name="my_list",
+            field_type=ListType(element_id=45, element=StringType(), element_required=False),
+            required=False,
+        ),
+    )
+    session_catalog.create_table_if_not_exists(identifier, schema)
+
+    df_1 = pa.Table.from_pylist(
+        [
+            {"name": "one", "my_list": ["test"]},
+            {"name": "another", "my_list": ["test"]},
+        ]
+    )
+    session_catalog.load_table(identifier).append(df_1)
+
+    assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 2
+
+    df_2 = pa.Table.from_pylist(
+        [
+            {"name": "one"},
+            {"name": "another"},
+        ]
+    )
+    session_catalog.load_table(identifier).append(df_2)
+
+    assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 4
