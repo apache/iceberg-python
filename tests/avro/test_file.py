@@ -16,8 +16,7 @@
 #  under the License.
 import inspect
 from _decimal import Decimal
-from copy import copy
-from datetime import date, datetime, time
+from datetime import datetime
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -28,7 +27,7 @@ from fastavro import reader, writer
 
 import pyiceberg.avro.file as avro
 from pyiceberg.avro.codecs.deflate import DeflateCodec
-from pyiceberg.avro.file import META_SCHEMA, AvroFileHeader
+from pyiceberg.avro.file import AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
     DEFAULT_BLOCK_SIZE,
@@ -40,7 +39,7 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
 )
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -61,26 +60,17 @@ from pyiceberg.utils.schema_conversion import AvroSchemaConversion
 
 
 def get_deflate_compressor() -> None:
-    header = AvroFileHeader(struct=META_SCHEMA)
-    header[0] = bytes(0)
-    header[1] = {"avro.codec": "deflate"}
-    header[2] = bytes(16)
+    header = AvroFileHeader(bytes(0), {"avro.codec": "deflate"}, bytes(16))
     assert header.compression_codec() == DeflateCodec
 
 
 def get_null_compressor() -> None:
-    header = AvroFileHeader(struct=META_SCHEMA)
-    header[0] = bytes(0)
-    header[1] = {"avro.codec": "null"}
-    header[2] = bytes(16)
+    header = AvroFileHeader(bytes(0), {"avro.codec": "null"}, bytes(16))
     assert header.compression_codec() is None
 
 
 def test_unknown_codec() -> None:
-    header = AvroFileHeader(struct=META_SCHEMA)
-    header[0] = bytes(0)
-    header[1] = {"avro.codec": "unknown"}
-    header[2] = bytes(16)
+    header = AvroFileHeader(bytes(0), {"avro.codec": "unknown"}, bytes(16))
 
     with pytest.raises(ValueError) as exc_info:
         header.compression_codec()
@@ -89,10 +79,7 @@ def test_unknown_codec() -> None:
 
 
 def test_missing_schema() -> None:
-    header = AvroFileHeader(struct=META_SCHEMA)
-    header[0] = bytes(0)
-    header[1] = {}
-    header[2] = bytes(16)
+    header = AvroFileHeader(bytes(0), {}, bytes(16))
 
     with pytest.raises(ValueError) as exc_info:
         header.get_schema()
@@ -119,7 +106,7 @@ def todict(obj: Any) -> Any:
 
 
 def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
-    data_file = DataFile(
+    data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
         file_format=FileFormat.PARQUET,
@@ -137,7 +124,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         equality_ids=[],
         sort_order_id=4,
     )
-    entry = ManifestEntry(
+    entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
         sequence_number=0,
@@ -185,7 +172,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
 
 def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
-    data_file = DataFile(
+    data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
         file_format=FileFormat.PARQUET,
@@ -203,7 +190,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
         equality_ids=[],
         sort_order_id=4,
     )
-    entry = ManifestEntry(
+    entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
         sequence_number=0,
@@ -239,33 +226,32 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
-def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: int) -> None:
-    data_file = DataFile(
-        content=DataFileContent.DATA,
-        file_path="s3://some-path/some-file.parquet",
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        record_count=131327,
-        file_size_in_bytes=220669226,
-        column_sizes={1: 220661854},
-        value_counts={1: 131327},
-        null_value_counts={1: 0},
-        nan_value_counts={},
-        lower_bounds={1: b"aaaaaaaaaaaaaaaa"},
-        upper_bounds={1: b"zzzzzzzzzzzzzzzz"},
-        key_metadata=b"\xde\xad\xbe\xef",
-        split_offsets=[4, 133697593],
-        equality_ids=[],
-        sort_order_id=4,
-        spec_id=3,
-    )
+def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: TableVersion) -> None:
+    data_file_dict = {
+        "content": DataFileContent.DATA,
+        "file_path": "s3://some-path/some-file.parquet",
+        "file_format": FileFormat.PARQUET,
+        "partition": Record(),
+        "record_count": 131327,
+        "file_size_in_bytes": 220669226,
+        "column_sizes": {1: 220661854},
+        "value_counts": {1: 131327},
+        "null_value_counts": {1: 0},
+        "nan_value_counts": {},
+        "lower_bounds": {1: b"aaaaaaaaaaaaaaaa"},
+        "upper_bounds": {1: b"zzzzzzzzzzzzzzzz"},
+        "key_metadata": b"\xde\xad\xbe\xef",
+        "split_offsets": [4, 133697593],
+        "equality_ids": [],
+        "sort_order_id": 4,
+        "spec_id": 3,
+    }
+    data_file_v2 = DataFile.from_args(**data_file_dict)  # type: ignore
 
-    entry = ManifestEntry(
+    entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
-        sequence_number=0,
-        file_sequence_number=0,
-        data_file=data_file,
+        data_file=data_file_v2,
     )
 
     with TemporaryDirectory() as tmpdir:
@@ -297,17 +283,13 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: in
             avro_entry = next(it)
 
             if format_version == 1:
-                v1_datafile = copy(data_file)
-                # Not part of V1
-                v1_datafile.equality_ids = None
+                data_file_v1 = DataFile.from_args(**data_file_dict, _table_format_version=format_version)
 
-                assert avro_entry == ManifestEntry(
-                    status=ManifestEntryStatus.ADDED,
+                assert avro_entry == ManifestEntry.from_args(
+                    status=1,
                     snapshot_id=8638475580105682862,
-                    # Not part of v1
-                    sequence_number=None,
-                    file_sequence_number=None,
-                    data_file=v1_datafile,
+                    data_file=data_file_v1,
+                    _table_format_version=format_version,
                 )
             elif format_version == 2:
                 assert entry == avro_entry
@@ -335,22 +317,49 @@ def test_all_primitive_types(is_required: bool) -> None:
     )
 
     class AllPrimitivesRecord(Record):
-        field_fixed: bytes
-        field_decimal: Decimal
-        field_bool: bool
-        field_int: int
-        field_long: int
-        field_float: float
-        field_double: float
-        field_date: date
-        field_time: time
-        field_timestamp: datetime
-        field_timestamptz: datetime
-        field_string: str
-        field_uuid: UUID
+        @property
+        def field_fixed(self) -> bytes:
+            return self._data[0]
 
-        def __init__(self, *data: Any, **named_data: Any) -> None:
-            super().__init__(*data, **{"struct": all_primitives_schema.as_struct(), **named_data})
+        @property
+        def field_decimal(self) -> Decimal:
+            return self._data[1]
+
+        @property
+        def field_bool(self) -> bool:
+            return self._data[2]
+
+        @property
+        def field_int(self) -> int:
+            return self._data[3]
+
+        @property
+        def field_long(self) -> int:
+            return self._data[4]
+
+        @property
+        def field_float(self) -> float:
+            return self._data[5]
+
+        @property
+        def field_double(self) -> float:
+            return self._data[6]
+
+        @property
+        def field_timestamp(self) -> datetime:
+            return self._data[7]
+
+        @property
+        def field_timestamptz(self) -> datetime:
+            return self._data[8]
+
+        @property
+        def field_string(self) -> str:
+            return self._data[9]
+
+        @property
+        def field_uuid(self) -> UUID:
+            return self._data[10]
 
     record = AllPrimitivesRecord(
         b"\x124Vx\x124Vx\x124Vx\x124Vx",

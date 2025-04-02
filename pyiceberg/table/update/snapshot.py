@@ -157,7 +157,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 ) as writer:
                     for data_file in self._added_data_files:
                         writer.add(
-                            ManifestEntry(
+                            ManifestEntry.from_args(
                                 status=ManifestEntryStatus.ADDED,
                                 snapshot_id=self._snapshot_id,
                                 sequence_number=None,
@@ -368,7 +368,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         schema = self._transaction.table_metadata.schema()
 
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
-            return ManifestEntry(
+            return ManifestEntry.from_args(
                 status=status,
                 snapshot_id=entry.snapshot_id,
                 sequence_number=entry.sequence_number,
@@ -555,7 +555,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                         ) as writer:
                             [
                                 writer.add_entry(
-                                    ManifestEntry(
+                                    ManifestEntry.from_args(
                                         status=ManifestEntryStatus.EXISTING,
                                         snapshot_id=entry.snapshot_id,
                                         sequence_number=entry.sequence_number,
@@ -586,7 +586,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 
             def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
                 return [
-                    ManifestEntry(
+                    ManifestEntry.from_args(
                         status=ManifestEntryStatus.DELETED,
                         snapshot_id=entry.snapshot_id,
                         sequence_number=entry.sequence_number,
