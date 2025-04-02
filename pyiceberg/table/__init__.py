@@ -1793,7 +1793,7 @@ class DataScan(TableScan):
         return pa.RecordBatchReader.from_batches(
             target_schema,
             batches,
-        )
+        ).cast(target_schema)
 
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         """Read a Pandas DataFrame eagerly from this Iceberg table.

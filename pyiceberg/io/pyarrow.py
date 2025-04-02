@@ -175,6 +175,7 @@ from pyiceberg.types import (
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
+from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
@@ -1384,7 +1385,6 @@ def _task_to_record_batches(
     positional_deletes: Optional[List[ChunkedArray]],
     case_sensitive: bool,
     name_mapping: Optional[NameMapping] = None,
-    use_large_types: bool = True,
     partition_spec: Optional[PartitionSpec] = None,
 ) -> Iterator[pa.RecordBatch]:
     _, _, path = _parse_location(task.file.file_path)
@@ -1420,13 +1420,7 @@ def _task_to_record_batches(
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
-            # With PyArrow 16.0.0 there is an issue with casting record-batches:
-            # https://github.com/apache/arrow/issues/41884
-            # https://github.com/apache/arrow/issues/43183
-            # Would be good to remove this later on
-            schema=_pyarrow_schema_ensure_large_types(physical_schema)
-            if use_large_types
-            else (_pyarrow_schema_ensure_small_types(physical_schema)),
+            schema=physical_schema,
             # This will push down the query to Arrow.
             # But in case there are positional deletes, we have to apply them first
             filter=pyarrow_filter if not positional_deletes else None,
@@ -1461,7 +1455,6 @@ def _task_to_record_batches(
                 file_project_schema,
                 current_batch,
                 downcast_ns_timestamp_to_us=True,
-                use_large_types=use_large_types,
             )
 
             # Inject projected column values if available
@@ -1555,14 +1548,6 @@ class ArrowScan:
         self._case_sensitive = case_sensitive
         self._limit = limit
 
-    @property
-    def _use_large_types(self) -> bool:
-        """Whether to represent data as large arrow types.
-
-        Defaults to True.
-        """
-        return property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, True)
-
     def to_table(self, tasks: Iterable[FileScanTask]) -> pa.Table:
         """Scan the Iceberg table and return a pa.Table.
 
@@ -1618,10 +1603,20 @@ class ArrowScan:
 
         tables = [f.result() for f in completed_futures if f.result()]
 
+        arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
+
         if len(tables) < 1:
-            return pa.Table.from_batches([], schema=schema_to_pyarrow(self._projected_schema, include_field_ids=False))
+            return pa.Table.from_batches([], schema=arrow_schema)
 
         result = pa.concat_tables(tables, promote_options="permissive")
+
+        if property_as_bool(self._io.properties, PYARROW_USE_LARGE_TYPES_ON_READ, False):
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message=f"Property `{PYARROW_USE_LARGE_TYPES_ON_READ}` will be removed.",
+            )
+            result = result.cast(arrow_schema)
 
         if self._limit is not None:
             return result.slice(0, self._limit)
@@ -1666,7 +1661,6 @@ class ArrowScan:
                 deletes_per_file.get(task.file.file_path),
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
-                self._use_large_types,
                 self._table_metadata.spec(),
             )
             for batch in batches:
@@ -1685,13 +1679,12 @@ def _to_requested_schema(
     batch: pa.RecordBatch,
     downcast_ns_timestamp_to_us: bool = False,
     include_field_ids: bool = False,
-    use_large_types: bool = True,
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
         batch,
-        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids, use_large_types),
+        ArrowProjectionVisitor(file_schema, downcast_ns_timestamp_to_us, include_field_ids),
         ArrowAccessor(file_schema),
     )
     return pa.RecordBatch.from_struct_array(struct_array)
@@ -1701,19 +1694,26 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
-    _use_large_types: bool
+    _use_large_types: Optional[bool]
 
     def __init__(
         self,
         file_schema: Schema,
         downcast_ns_timestamp_to_us: bool = False,
         include_field_ids: bool = False,
-        use_large_types: bool = True,
+        use_large_types: Optional[bool] = None,
     ) -> None:
         self._file_schema = file_schema
         self._include_field_ids = include_field_ids
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._use_large_types = use_large_types
+
+        if use_large_types is not None:
+            deprecation_message(
+                deprecated_in="0.10.0",
+                removed_in="0.11.0",
+                help_message="Argument `use_large_types` will be removed from ArrowProjectionVisitor",
+            )
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
@@ -1723,7 +1723,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                if not self._use_large_types:
+                if self._use_large_types is False:
                     target_schema = _pyarrow_schema_ensure_small_types(target_schema)
                 return values.cast(target_schema)
             elif (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
@@ -1784,7 +1784,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
             elif field.optional:
-                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=False)
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
                 field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 fields.append(self._construct_field(field, arrow_type))
             else:
@@ -1896,7 +1896,7 @@ class PrimitiveToPhysicalType(SchemaVisitorPerPrimitiveType[str]):
         return "FIXED_LEN_BYTE_ARRAY"
 
     def visit_decimal(self, decimal_type: DecimalType) -> str:
-        return "FIXED_LEN_BYTE_ARRAY"
+        return "INT32" if decimal_type.precision <= 9 else "INT64" if decimal_type.precision <= 18 else "FIXED_LEN_BYTE_ARRAY"
 
     def visit_boolean(self, boolean_type: BooleanType) -> str:
         return "BOOLEAN"
@@ -2370,8 +2370,13 @@ def data_file_statistics_from_parquet_metadata(
                             stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
                         )
 
-                    col_aggs[field_id].update_min(statistics.min)
-                    col_aggs[field_id].update_max(statistics.max)
+                    if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
+                        scale = stats_col.iceberg_type.scale
+                        col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
+                        col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
+                    else:
+                        col_aggs[field_id].update_min(statistics.min)
+                        col_aggs[field_id].update_max(statistics.max)
 
                 except pyarrow.lib.ArrowNotImplementedError as e:
                     invalidate_col.add(field_id)
