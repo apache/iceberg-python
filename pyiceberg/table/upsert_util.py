@@ -82,14 +82,16 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         ],
     )
 
-    return (
-        source_table
-        # We already know that the schema is compatible, this is to fix large_ types
-        .cast(target_table.schema)
-        .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
-        .filter(diff_expr)
-        .drop_columns([f"{col}-rhs" for col in non_key_cols])
-        .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
-        # Finally cast to the original schema since it doesn't carry nullability:
-        # https://github.com/apache/arrow/issues/45557
-    ).cast(target_table.schema)
+    return source_table
+
+    # return (
+    #     source_table
+    #     # We already know that the schema is compatible, this is to fix large_ types
+    #     .cast(target_table.schema)
+    #     .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
+    #     .filter(diff_expr)
+    #     .drop_columns([f"{col}-rhs" for col in non_key_cols])
+    #     .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
+    #     # Finally cast to the original schema since it doesn't carry nullability:
+    #     # https://github.com/apache/arrow/issues/45557
+    # ).cast(target_table.schema)
