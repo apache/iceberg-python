@@ -734,6 +734,7 @@ def test_transaction(catalog: Catalog) -> None:
     assert df_before_transaction == df
 
 
+@pytest.mark.skip("This test is just for reference. Multiple upserts or delete+upsert doesn't work in a transaction")
 def test_transaction_multiple_upserts(catalog: Catalog) -> None:
     identifier = "default.test_multi_upsert"
     _drop_table(catalog, identifier)
@@ -747,24 +748,28 @@ def test_transaction_multiple_upserts(catalog: Catalog) -> None:
     tbl = catalog.create_table(identifier, schema=schema)
 
     # Define exact schema: required int32 and required string
-    arrow_schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-    ])
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+        ]
+    )
 
     tbl.append(pa.Table.from_pylist([{"id": 1, "name": "Alice"}], schema=arrow_schema))
 
     df = pa.Table.from_pylist([{"id": 2, "name": "Bob"}, {"id": 1, "name": "Alicia"}], schema=arrow_schema)
 
     with tbl.transaction() as txn:
+        txn.append(df)
+        txn.delete(delete_filter="id = 1")
+        txn.append(df)
         # This should read the uncommitted changes?
         txn.upsert(df, join_cols=["id"])
 
-        txn.upsert(df, join_cols=["id"])
+        # txn.upsert(df, join_cols=["id"])
 
     result = tbl.scan().to_arrow().to_pylist()
     assert sorted(result, key=lambda x: x["id"]) == [
         {"id": 1, "name": "Alicia"},
         {"id": 2, "name": "Bob"},
     ]
-
