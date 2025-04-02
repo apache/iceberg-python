@@ -30,7 +30,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
-from pyiceberg.types import IntegerType, NestedField, StringType
+from pyiceberg.types import IntegerType, NestedField, StringType, StructType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
 
@@ -509,3 +509,69 @@ def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
         ValueError, match="Join columns could not be found, please set identifier-field-ids or pass in explicitly."
     ):
         tbl.upsert(df)
+
+
+def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_struct_field_fails"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "nested_type",
+            # Struct<type: string, coordinates: list<double>>
+            StructType(
+                NestedField(3, "sub1", StringType(), required=True),
+                NestedField(4, "sub2", StringType(), required=True),
+            ),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field(
+                "nested_type",
+                pa.struct(
+                    [
+                        pa.field("sub1", pa.large_string(), nullable=False),
+                        pa.field("sub2", pa.large_string(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
+        ],
+        schema=arrow_schema,
+    )
+
+    upd = tbl.upsert(update_data, join_cols=["id"])
+
+    # Row needs to be updated even tho it's not changed.
+    # When pyarrow isn't able to compare rows, just update everything
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 0
