@@ -271,15 +271,19 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     }
     pa_schema = pa.schema(
         [
-            pa.field("id", pa.dictionary(pa.int32(), pa.int32(), False)),
-            pa.field("name", pa.dictionary(pa.int32(), pa.string(), False)),
+            pa.field("id", pa.int32(), pa.int32()),
+            pa.field("name", pa.int32(), pa.string()),
         ]
     )
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
     tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, schema=pa_schema)
     with tbl.update_spec() as txn:
-        txn.add_identity("id")  # partition by `id` to create 3 data files
-    tbl.append(arrow_table)  # append
+        txn.add_identity("id")
+    tbl.append(arrow_table)
+
+    # TODO: We might want to check why this ends up in 3 files
+    assert len(tbl.inspect.data_files()) == 3
+
     tbl.delete(delete_filter="id == 1 and name = 'AB'")  # partial overwrite data from 1 data file
 
     rows = spark.sql(
@@ -311,24 +315,44 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
         "total-position-deletes": "0",
         "total-records": "5",
     }
-    # BUG `deleted-data-files` property is being replaced by the previous summary's `total-data-files` value
-    # OVERWRITE from tbl.delete
+    # Java produces:
+    # {
+    #     "added-data-files": "1",
+    #     "added-files-size": "707",
+    #     "added-records": "2",
+    #     "app-id": "local-1743678304626",
+    #     "changed-partition-count": "1",
+    #     "deleted-data-files": "1",
+    #     "deleted-records": "3",
+    #     "engine-name": "spark",
+    #     "engine-version": "3.5.5",
+    #     "iceberg-version": "Apache Iceberg 1.8.1 (commit 9ce0fcf0af7becf25ad9fc996c3bad2afdcfd33d)",
+    #     "removed-files-size": "693",
+    #     "spark.app.id": "local-1743678304626",
+    #     "total-data-files": "3",
+    #     "total-delete-files": "0",
+    #     "total-equality-deletes": "0",
+    #     "total-files-size": "1993",
+    #     "total-position-deletes": "0",
+    #     "total-records": "4"
+    # }
+    files = tbl.inspect.data_files()
+    assert len(files) == 3
     assert summaries[1] == {
         "added-data-files": "1",
         "added-files-size": "859",
-        "added-records": "2",  # wrong should be 0
+        "added-records": "2",
         "changed-partition-count": "1",
-        "deleted-data-files": "3",  # wrong should be 1
-        "deleted-records": "5",  # wrong should be 1
-        "removed-files-size": "2848",
-        "total-data-files": "1",  # wrong should be 3
+        "deleted-data-files": "1",
+        "deleted-records": "3",
+        "removed-files-size": "950",
+        "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "859",
+        "total-files-size": "2757",
         "total-position-deletes": "0",
-        "total-records": "2",  # wrong should be 4
+        "total-records": "4",
     }
-    assert len(tbl.inspect.data_files()) == 3
     assert len(tbl.scan().to_pandas()) == 4
 
 

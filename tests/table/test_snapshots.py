@@ -289,7 +289,6 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
             "total-position-deletes": "1",
             "total-records": "1",
         },
-        truncate_full_table=True,
     )
 
     expected = {
@@ -337,7 +336,6 @@ def test_invalid_type() -> None:
                 },
             ),
             previous_summary={"total-data-files": "abc"},  # should be a number
-            truncate_full_table=True,
         )
 
     assert "Could not parse summary property total-data-files to an int: abc" in str(e.value)
