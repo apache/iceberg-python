@@ -1088,6 +1088,36 @@ with table.transaction() as transaction:
     # ... Update properties etc
 ```
 
+### Overwrite schema
+
+To overwrite the entire schema of a table, use the `overwrite` method:
+
+```python
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, DoubleType
+
+catalog = load_catalog()
+
+initial_schema = Schema(
+    NestedField(1, "city_name", StringType(), required=False),
+    NestedField(2, "latitude", DoubleType(), required=False),
+    NestedField(3, "longitude", DoubleType(), required=False),
+)
+
+table = catalog.create_table("default.locations", initial_schema)
+
+new_schema = Schema(
+    NestedField(1, "city", StringType(), required=False),
+    NestedField(2, "lat", DoubleType(), required=False),
+    NestedField(3, "long", DoubleType(), required=False),
+    NestedField(4, "population", LongType(), required=False),
+)
+
+with table.update_schema() as update:
+    update.overwrite(new_schema)
+```
+
 ### Union by Name
 
 Using `.union_by_name()` you can merge another schema into an existing schema without having to worry about field-IDs:
