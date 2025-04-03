@@ -580,7 +580,7 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
 
-    
+
 def test_upsert_with_nulls(catalog: Catalog) -> None:
     identifier = "default.test_upsert_with_nulls"
     _drop_table(catalog, identifier)
