@@ -248,7 +248,7 @@ def test_summaries(spark: SparkSession, session_catalog: Catalog, arrow_table_wi
         "total-records": "0",
     }
 
-    # Overwrite
+    # Append
     assert summaries[3] == {
         "added-data-files": "1",
         "added-files-size": str(file_size),
