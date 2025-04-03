@@ -257,7 +257,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
+    def _commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -762,9 +762,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     _requirements: Tuple[TableRequirement, ...] = ()
 
     def _commit(self) -> UpdatesAndRequirements:
-        """Apply the pending changes and commit."""
-        if not hasattr(self._transaction, "_apply"):
-            raise AttributeError("Transaction object is not properly initialized.")
         return self._updates, self._requirements
 
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
