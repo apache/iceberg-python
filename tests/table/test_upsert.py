@@ -564,7 +564,11 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
             {
                 "id": 1,
                 "nested_type": {"sub1": "bla1", "sub2": "bla"},
-            }
+            },
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
         ],
         schema=arrow_schema,
     )
@@ -574,4 +578,4 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
     # Row needs to be updated even tho it's not changed.
     # When pyarrow isn't able to compare rows, just update everything
     assert upd.rows_updated == 1
-    assert upd.rows_inserted == 0
+    assert upd.rows_inserted == 1

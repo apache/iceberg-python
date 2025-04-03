@@ -80,5 +80,30 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
             # https://github.com/apache/arrow/issues/45557
         ).cast(target_table.schema)
     except pa.ArrowInvalid:
-        # When we are not able to compare, just update all rows from source table
-        return source_table.cast(target_table.schema)
+        # When we are not able to compare (e.g. due to unsupported types),
+        # fall back to selecting only rows in the source table that do NOT already exist in the target.
+        # See: https://github.com/apache/arrow/issues/35785
+
+        MARKER_COLUMN_NAME = "__from_target"
+
+        assert MARKER_COLUMN_NAME not in join_cols_set
+
+        # Step 1: Prepare source index with join keys and a marker
+        # Cast to target table schema, so we can do the join
+        source_index = source_table.cast(target_table.schema).select(join_cols_set)
+
+        # Step 2: Prepare target index with join keys and a marker
+        target_index = target_table.select(join_cols_set).append_column(
+            MARKER_COLUMN_NAME, pa.array([True] * len(target_table), pa.bool_())
+        )
+
+        # Step 3: Perform a left outer join to find which rows from source exist in target
+        joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
+
+        # Step 4: Create a boolean mask for rows that do NOT exist in the target
+        # i.e., where 'from_target' is null after the join
+        to_update_mask = pc.invert(pc.is_null(joined[MARKER_COLUMN_NAME]))
+
+        # Step 5: Filter source table using the mask (keep only rows that should be updated),
+        # and cast to the target schema to ensure compatibility (e.g. large_string → string)
+        return source_table.filter(to_update_mask)
