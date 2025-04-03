@@ -116,7 +116,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
 
         # Step 4: Create a boolean mask for rows that do NOT exist in the target
-        # i.e., where 'from_target' is null after the join
+        # i.e., where market column is null after the join
         to_update_mask = pc.invert(pc.is_null(joined[MARKER_COLUMN_NAME]))
 
         # Step 5: Filter source table using the mask (keep only rows that should be updated),
