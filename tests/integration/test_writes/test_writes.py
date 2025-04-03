@@ -271,8 +271,8 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     }
     pa_schema = pa.schema(
         [
-            pa.field("id", pa.int32(), pa.int32()),
-            pa.field("name", pa.int32(), pa.string()),
+            pa.field("id", pa.int32()),
+            pa.field("name", pa.string()),
         ]
     )
     arrow_table = pa.Table.from_pydict(TEST_DATA, schema=pa_schema)
@@ -305,13 +305,13 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # APPEND
     assert summaries[0] == {
         "added-data-files": "3",
-        "added-files-size": "2848",
+        "added-files-size": "2570",
         "added-records": "5",
         "changed-partition-count": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2848",
+        "total-files-size": "2570",
         "total-position-deletes": "0",
         "total-records": "5",
     }
@@ -345,11 +345,11 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
         "changed-partition-count": "1",
         "deleted-data-files": "1",
         "deleted-records": "3",
-        "removed-files-size": "950",
+        "removed-files-size": "866",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2757",
+        "total-files-size": "2563",
         "total-position-deletes": "0",
         "total-records": "4",
     }
