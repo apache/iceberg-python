@@ -865,7 +865,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
 
-
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     """
     API for removing old snapshots from the table.
@@ -873,15 +872,12 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
 
-    _updates: Tuple[TableUpdate, ...] = ()
-    _requirements: Tuple[TableRequirement, ...] = ()
-
-    def __init__(self, transaction: Transaction) -> None:
+    def __init__(self, transaction) -> None:
         super().__init__(transaction)
         self._transaction = transaction
         self._ids_to_remove: Set[int] = set()
 
-    def _commit(self) -> UpdatesAndRequirements:
+    def _commit(self) -> Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]:
         """Apply the pending changes and commit."""
         if not hasattr(self, "_transaction") or not self._transaction:
             raise AttributeError("Transaction object is not properly initialized.")
@@ -893,18 +889,23 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         current_snapshot_ids = {ref.snapshot_id for ref in self._transaction.table_metadata.refs.values()}
         conflicting_ids = self._ids_to_remove.intersection(current_snapshot_ids)
         if conflicting_ids:
-            raise ValueError(f"Cannot expire snapshot IDs {conflicting_ids} as they are currently referenced by table refs.")
+            # Remove references to the conflicting snapshots before expiring them
+            for ref_name, ref in list(self._transaction.table_metadata.refs.items()):
+                if ref.snapshot_id in conflicting_ids:
+                    self._updates += (RemoveSnapshotRefUpdate(ref_name=ref_name),)
 
+        # Remove the snapshots
         updates = (RemoveSnapshotsUpdate(snapshot_ids=list(self._ids_to_remove)),)
 
         # Ensure refs haven't changed (snapshot ID consistency check)
         requirements = tuple(
             AssertRefSnapshotId(snapshot_id=ref.snapshot_id, ref=ref_name)
             for ref_name, ref in self._transaction.table_metadata.refs.items()
+            if ref.snapshot_id not in self._ids_to_remove
         )
         self._updates += updates
         self._requirements += requirements
-        return self
+        return self._updates, self._requirements
 
     def expire_snapshot_id(self, snapshot_id_to_expire: int) -> ExpireSnapshots:
         """Mark a specific snapshot ID for expiration."""
@@ -921,5 +922,3 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             if snapshot.timestamp_ms < timestamp_ms:
                 self._ids_to_remove.add(snapshot.snapshot_id)
         return self
-
-
