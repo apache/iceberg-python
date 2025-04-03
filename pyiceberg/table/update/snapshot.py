@@ -885,9 +885,16 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         if not self._ids_to_remove:
             raise ValueError("No snapshot IDs marked for expiration.")
 
+
+        print(f"Totals number of snapshot IDs to expire: {len(self._ids_to_remove)}")
+        print(f"Total number of snapshots in the table: {len(self._transaction.table_metadata.snapshots)}")
         # Ensure current snapshots in refs are not marked for removal
         current_snapshot_ids = {ref.snapshot_id for ref in self._transaction.table_metadata.refs.values()}
+        print(f"Current snapshot IDs in refs: {current_snapshot_ids}")
+        print(f"Snapshot IDs marked for removal: {self._ids_to_remove}")
         conflicting_ids = self._ids_to_remove.intersection(current_snapshot_ids)
+        print(f"Conflicting snapshot IDs: {conflicting_ids}")
+        
         if conflicting_ids:
             # Remove references to the conflicting snapshots before expiring them
             for ref_name, ref in list(self._transaction.table_metadata.refs.items()):
@@ -895,7 +902,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
                     self._updates += (RemoveSnapshotRefUpdate(ref_name=ref_name),)
 
         # Remove the snapshots
-        updates = (RemoveSnapshotsUpdate(snapshot_ids=list(self._ids_to_remove)),)
+        self._updates = (RemoveSnapshotsUpdate(snapshot_ids=list(self._ids_to_remove)),)
 
         # Ensure refs haven't changed (snapshot ID consistency check)
         requirements = tuple(
@@ -903,7 +910,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             for ref_name, ref in self._transaction.table_metadata.refs.items()
             if ref.snapshot_id not in self._ids_to_remove
         )
-        self._updates += updates
+        
         self._requirements += requirements
         return self._updates, self._requirements
 

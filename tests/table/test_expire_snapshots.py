@@ -169,13 +169,8 @@ def test_remove_snapshot(table_v2_with_extensive_snapshots: Table):
     # Ensure the table has snapshots
     assert table.metadata.snapshots is not None, "Snapshots list is None"
     assert len(table.metadata.snapshots) == 2000, f"Expected 2000 snapshots, got {len(table.metadata.snapshots)}"
-
-    # Print snapshot information for debugging
-    print(f"Initial snapshot ID: {initial_snapshot_id}")
-    print(f"Number of snapshots before expiry: {len(table.metadata.snapshots)}")
-
+    
     # Find an older snapshot that is not the current snapshot
-    snapshot_to_expire = None
     for snapshot in table.metadata.snapshots:
         if snapshot.snapshot_id != initial_snapshot_id and snapshot.snapshot_id not in table.metadata.refs.values():
             snapshot_to_expire = snapshot.snapshot_id
@@ -190,5 +185,7 @@ def test_remove_snapshot(table_v2_with_extensive_snapshots: Table):
     assert snapshot_to_expire not in [snapshot.snapshot_id for snapshot in table.metadata.snapshots], \
         f"Snapshot ID {snapshot_to_expire} was not removed"
 
+    # Use the built-in pytest capsys fixture to capture printed output
     print(f"Snapshot ID {snapshot_to_expire} expired successfully")
     print(f"Number of snapshots after expiry: {len(table.metadata.snapshots)}")
+    print(table.metadata.snapshots)
