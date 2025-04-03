@@ -591,11 +591,11 @@ def test_negate(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
     [
         (
             And(ExpressionA(), ExpressionB(), ExpressionA()),
-            And(And(ExpressionA(), ExpressionB()), ExpressionA()),
+            And(ExpressionA(), And(ExpressionB(), ExpressionA())),
         ),
         (
             Or(ExpressionA(), ExpressionB(), ExpressionA()),
-            Or(Or(ExpressionA(), ExpressionB()), ExpressionA()),
+            Or(ExpressionA(), Or(ExpressionB(), ExpressionA())),
         ),
         (Not(Not(ExpressionA())), ExpressionA()),
     ],

@@ -579,3 +579,46 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
     # When pyarrow isn't able to compare rows, just update everything
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+    
+def test_upsert_with_nulls(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_nulls"
+    _drop_table(catalog, identifier)
+
+    schema = pa.schema(
+        [
+            ("foo", pa.string()),
+            ("bar", pa.int32()),
+            ("baz", pa.bool_()),
+        ]
+    )
+
+    # create table with null value
+    table = catalog.create_table(identifier, schema)
+    data_with_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": None, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+    table.append(data_with_null)
+    assert table.scan().to_arrow()["bar"].is_null()
+
+    # upsert table with non-null value
+    data_without_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+        ],
+        schema=schema,
+    )
+    upd = table.upsert(data_without_null, join_cols=["foo"])
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 0
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )

@@ -26,6 +26,7 @@ from pyiceberg.expressions import (
     BooleanExpression,
     EqualTo,
     In,
+    Or,
 )
 
 
@@ -39,7 +40,12 @@ def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpre
             functools.reduce(operator.and_, [EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()
         ]
 
-        return AlwaysFalse() if len(filters) == 0 else functools.reduce(operator.or_, filters)
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return Or(*filters)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
@@ -65,7 +71,16 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
-    diff_expr = functools.reduce(operator.or_, [pc.field(f"{col}-lhs") != pc.field(f"{col}-rhs") for col in non_key_cols])
+    diff_expr = functools.reduce(
+        operator.or_,
+        [
+            pc.or_kleene(
+                pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs")),
+                pc.is_null(pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs"))),
+            )
+            for col in non_key_cols
+        ],
+    )
 
     try:
         return (
