@@ -232,8 +232,8 @@ class BucketTransform(Transform[S, int]):
     _num_buckets: PositiveInt = PrivateAttr()
 
     def __init__(self, num_buckets: int, **data: Any) -> None:
-        self._num_buckets = num_buckets
         super().__init__(f"bucket[{num_buckets}]", **data)
+        self._num_buckets = num_buckets
 
     @property
     def num_buckets(self) -> int:
