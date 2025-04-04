@@ -24,6 +24,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    Union,
 )
 
 from pyiceberg.expressions import (
@@ -47,7 +48,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
+from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform, parse_transform
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -85,12 +86,16 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     def add_field(
         self,
         source_column_name: str,
-        transform: Transform[Any, Any],
+        transform: Union[str, Transform[Any, Any]],  # Aceptamos strings o Transform
         partition_field_name: Optional[str] = None,
     ) -> UpdateSpec:
+        
+        if isinstance(transform, str):
+            transform = parse_transform(transform)
+
         ref = Reference(source_column_name)
         bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
-        # verify transform can actually bind it
+
         output_type = bound_ref.field.field_type
         if not transform.can_transform(output_type):
             raise ValueError(f"{transform} cannot transform {output_type} values from {bound_ref.field.name}")
@@ -127,6 +132,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         self._name_to_added_field[new_field.name] = new_field
         self._adds.append(new_field)
         return self
+
 
     def add_identity(self, source_column_name: str) -> UpdateSpec:
         return self.add_field(source_column_name, IdentityTransform(), None)
