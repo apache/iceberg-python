@@ -439,6 +439,15 @@ class Transaction:
         """
         return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
 
+    def update_statistics(self) -> UpdateStatistics:
+        """
+        Create a new UpdateStatistics to update the statistics of the table.
+
+        Returns:
+            A new UpdateStatistics
+        """
+        return UpdateStatistics(transaction=self)
+
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
