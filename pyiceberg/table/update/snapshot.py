@@ -66,13 +66,16 @@ from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
     RemoveSnapshotRefUpdate,
+    RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
     TableRequirement,
+    TableMetadata,
     TableUpdate,
     U,
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+
 from pyiceberg.typedef import (
     EMPTY_DICT,
     KeyDefaultDict,
@@ -82,8 +85,23 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Transaction
+    from pyiceberg.table import Table
 
+from pyiceberg.table.metadata import Snapshot
+from pyiceberg.table.update import UpdateTableMetadata
+from typing import Optional, Set
+from datetime import datetime, timezone
+
+from typing import Dict, Optional, Set
+import uuid
+from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.snapshots import Snapshot
+from pyiceberg.table.update import (
+    UpdateTableMetadata,
+    RemoveSnapshotsUpdate,
+    UpdatesAndRequirements,
+    AssertRefSnapshotId,
+)
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
     return f"{commit_uuid}-m{num}.avro"
@@ -239,7 +257,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
-    def _commit(self) -> UpdatesAndRequirements:
+    def _commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -744,7 +762,6 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     _requirements: Tuple[TableRequirement, ...] = ()
 
     def _commit(self) -> UpdatesAndRequirements:
-        """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
@@ -844,3 +861,70 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
+
+class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
+    """
+    API for removing old snapshots from the table.
+    """
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+
+    def __init__(self, transaction) -> None:
+        super().__init__(transaction)
+        self._transaction = transaction
+        self._ids_to_remove: Set[int] = set()
+
+    def _commit(self) -> Tuple[Tuple[TableUpdate, ...], Tuple[TableRequirement, ...]]:
+        """Apply the pending changes and commit."""
+        if not hasattr(self, "_transaction") or not self._transaction:
+            raise AttributeError("Transaction object is not properly initialized.")
+
+        if not self._ids_to_remove:
+            raise ValueError("No snapshot IDs marked for expiration.")
+
+        # print all children snapshots of the current snapshot
+        print(f"Current snapshot ID of {self._transaction._table.current_snapshot()} which has {len(self._transaction._table.snapshots())}")
+        print(f"Totals number of snapshot IDs to expire: {len(self._ids_to_remove)}")
+        print(f"Total number of snapshots in the table: {len(self._transaction.table_metadata.snapshots)}")
+        # Ensure current snapshots in refs are not marked for removal
+        current_snapshot_ids = {ref.snapshot_id for ref in self._transaction.table_metadata.refs.values()}
+
+        print(f"Current snapshot IDs in refs: {current_snapshot_ids}")
+        print(f"Snapshot IDs marked for removal: {self._ids_to_remove}")
+        conflicting_ids = self._ids_to_remove.intersection(current_snapshot_ids)
+        print(f"Conflicting snapshot IDs: {conflicting_ids}")
+        
+        if conflicting_ids:
+            # Remove references to the conflicting snapshots before expiring them
+            for ref_name, ref in list(self._transaction.table_metadata.refs.items()):
+                if ref.snapshot_id in conflicting_ids:
+                    self._updates += (RemoveSnapshotRefUpdate(ref_name=ref_name),)
+
+        # Remove the snapshots
+        self._updates = (RemoveSnapshotsUpdate(snapshot_ids=list(self._ids_to_remove)),)
+
+        # Ensure refs haven't changed (snapshot ID consistency check)
+        requirements = tuple(
+            AssertRefSnapshotId(snapshot_id=ref.snapshot_id, ref=ref_name)
+            for ref_name, ref in self._transaction.table_metadata.refs.items()
+            if ref.snapshot_id not in self._ids_to_remove
+        )
+
+        self._requirements += requirements
+        return self._updates, self._requirements
+
+    def expire_snapshot_id(self, snapshot_id_to_expire: int) -> ExpireSnapshots:
+        """Mark a specific snapshot ID for expiration."""
+        snapshot = self._transaction._table.snapshot_by_id(snapshot_id_to_expire)
+        if snapshot:
+            self._ids_to_remove.add(snapshot_id_to_expire)
+        else:
+            raise ValueError(f"Snapshot ID {snapshot_id_to_expire} does not exist.")
+        return self
+
+    def expire_older_than(self, timestamp_ms: int) -> ExpireSnapshots:
+        """Mark snapshots older than the given timestamp for expiration."""
+        for snapshot in self._transaction.table_metadata.snapshots:
+            if snapshot.timestamp_ms < timestamp_ms:
+                self._ids_to_remove.add(snapshot.snapshot_id)
+        return self
