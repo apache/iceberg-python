@@ -82,14 +82,43 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         ],
     )
 
-    return (
-        source_table
-        # We already know that the schema is compatible, this is to fix large_ types
-        .cast(target_table.schema)
-        .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
-        .filter(diff_expr)
-        .drop_columns([f"{col}-rhs" for col in non_key_cols])
-        .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
-        # Finally cast to the original schema since it doesn't carry nullability:
-        # https://github.com/apache/arrow/issues/45557
-    ).cast(target_table.schema)
+    try:
+        return (
+            source_table
+            # We already know that the schema is compatible, this is to fix large_ types
+            .cast(target_table.schema)
+            .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
+            .filter(diff_expr)
+            .drop_columns([f"{col}-rhs" for col in non_key_cols])
+            .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
+            # Finally cast to the original schema since it doesn't carry nullability:
+            # https://github.com/apache/arrow/issues/45557
+        ).cast(target_table.schema)
+    except pa.ArrowInvalid:
+        # When we are not able to compare (e.g. due to unsupported types),
+        # fall back to selecting only rows in the source table that do NOT already exist in the target.
+        # See: https://github.com/apache/arrow/issues/35785
+
+        MARKER_COLUMN_NAME = "__from_target"
+
+        assert MARKER_COLUMN_NAME not in join_cols_set
+
+        # Step 1: Prepare source index with join keys and a marker
+        # Cast to target table schema, so we can do the join
+        source_index = source_table.cast(target_table.schema).select(join_cols_set)
+
+        # Step 2: Prepare target index with join keys and a marker
+        target_index = target_table.select(join_cols_set).append_column(
+            MARKER_COLUMN_NAME, pa.array([True] * len(target_table), pa.bool_())
+        )
+
+        # Step 3: Perform a left outer join to find which rows from source exist in target
+        joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
+
+        # Step 4: Create a boolean mask for rows that do NOT exist in the target
+        # i.e., where market column is null after the join
+        to_update_mask = pc.invert(pc.is_null(joined[MARKER_COLUMN_NAME]))
+
+        # Step 5: Filter source table using the mask (keep only rows that should be updated),
+        # and cast to the target schema to ensure compatibility (e.g. large_string → string)
+        return source_table.filter(to_update_mask)
