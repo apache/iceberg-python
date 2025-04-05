@@ -236,7 +236,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return update_snapshot_summaries(
             summary=Summary(operation=self._operation, **ssc.build(), **snapshot_properties),
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
-            truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
     def _commit(self) -> UpdatesAndRequirements:
