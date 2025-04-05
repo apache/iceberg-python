@@ -2596,6 +2596,7 @@ def _dataframe_to_data_files(
     table_metadata: TableMetadata,
     df: pa.Table,
     io: FileIO,
+    task_id: int = 0,
     write_uuid: Optional[uuid.UUID] = None,
     counter: Optional[itertools.count[int]] = None,
 ) -> Iterable[DataFile]:
@@ -2623,7 +2624,13 @@ def _dataframe_to_data_files(
             table_metadata=table_metadata,
             tasks=iter(
                 [
-                    WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                    WriteTask(
+                        task_id=task_id,
+                        write_uuid=write_uuid,
+                        counter_id=next(counter),
+                        record_batches=batches,
+                        schema=task_schema,
+                    )
                     for batches in bin_pack_arrow_table(df, target_file_size)
                 ]
             ),
@@ -2636,8 +2643,9 @@ def _dataframe_to_data_files(
             tasks=iter(
                 [
                     WriteTask(
+                        task_id=task_id,
                         write_uuid=write_uuid,
-                        task_id=next(counter),
+                        counter_id=next(counter),
                         record_batches=batches,
                         partition_key=partition.partition_key,
                         schema=task_schema,
