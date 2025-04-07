@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import os
 import itertools
 import uuid
 import warnings
@@ -1379,7 +1380,26 @@ class StaticTable(Table):
         raise NotImplementedError("To be implemented")
 
     @classmethod
+    def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
+        version_hint_location = os.path.join(metadata_location, 'metadata', 'version-hint.text')
+        io = load_file_io(properties=properties, location=version_hint_location)
+        file = io.new_input(version_hint_location)
+        
+        with file.open() as stream:
+            content = file.open().read().decode("utf-8")
+
+        if content.endswith('.metadata.json'):
+            return os.path.join(metadata_location, 'metadata', content)
+        elif content.isnumeric():
+            return os.path.join(metadata_location, 'metadata', 'v%s.metadata.json'.format(content))
+        else:
+            return os.path.join(metadata_location, 'metadata', '%s.metadata.json'.format(content))
+
+    @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:
+        if not metadata_location.endswith('.metadata.json'):
+            metadata_location = StaticTable._metadata_location_from_version_hint(metadata_location, properties)
+
         io = load_file_io(properties=properties, location=metadata_location)
         file = io.new_input(metadata_location)
 
