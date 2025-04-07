@@ -3061,15 +3061,15 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.37.13"
-description = "Type annotations for boto3 Glue 1.37.13 service generated with mypy-boto3-builder 8.10.0"
+version = "1.37.29"
+description = "Type annotations for boto3 Glue 1.37.29 service generated with mypy-boto3-builder 8.10.1"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "extra == \"glue\""
 files = [
-    {file = "mypy_boto3_glue-1.37.13-py3-none-any.whl", hash = "sha256:29c544edfba503077cedeb1eb0cecc9fe9a8c11bc2acde4decc32222a31f9b78"},
-    {file = "mypy_boto3_glue-1.37.13.tar.gz", hash = "sha256:16b25fb94e797d4337a71b787b2fca2e68170f7c13b3a3e592c08e04243589b0"},
+    {file = "mypy_boto3_glue-1.37.29-py3-none-any.whl", hash = "sha256:b17f035f4574c636f5ebdf7c9109ba2a31bde5920b66ea4302a3e87234c502a8"},
+    {file = "mypy_boto3_glue-1.37.29.tar.gz", hash = "sha256:2cbef39fd5a307b3721583766ece785fdbf98be6b1d86a430c5ccc726eade4dd"},
 ]
 
 [package.dependencies]
