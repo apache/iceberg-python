@@ -101,7 +101,10 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
 
         MARKER_COLUMN_NAME = "__from_target"
 
-        assert MARKER_COLUMN_NAME not in join_cols_set
+        if MARKER_COLUMN_NAME in join_cols_set:
+            raise ValueError(
+                f"{MARKER_COLUMN_NAME} is used for joining " f"DataFrames, and cannot be used as column name"
+            ) from None
 
         # Step 1: Prepare source index with join keys and a marker
         # Cast to target table schema, so we can do the join
