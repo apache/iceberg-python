@@ -243,7 +243,6 @@ class TableProperties:
 
 class Transaction:
     _table: Table
-    table_metadata: TableMetadata
     _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
@@ -255,11 +254,14 @@ class Transaction:
             table: The table that will be altered.
             autocommit: Option to automatically commit the changes when they are staged.
         """
-        self.table_metadata = table.metadata
         self._table = table
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
+
+    @property
+    def table_metadata(self) -> TableMetadata:
+        return update_table_metadata(self._table.metadata, self._updates)
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
@@ -285,8 +287,6 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
-
-        self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
         if self._autocommit:
             self.commit_transaction()
