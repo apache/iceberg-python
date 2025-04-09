@@ -1386,7 +1386,7 @@ class StaticTable(Table):
         file = io.new_input(version_hint_location)
         
         with file.open() as stream:
-            content = file.open().read().decode("utf-8")
+            content = stream.read().decode("utf-8")
 
         if content.endswith('.metadata.json'):
             return os.path.join(metadata_location, 'metadata', content)
