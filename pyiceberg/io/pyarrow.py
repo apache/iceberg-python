@@ -1421,10 +1421,14 @@ def _task_to_record_batches(
 
             # Apply the user filter
             if pyarrow_filter is not None:
-                current_batch = current_batch.filter(pyarrow_filter)
+                # Temporary fix until PyArrow 21 is released ( https://github.com/apache/arrow/pull/46057 )
+                table = pa.Table.from_batches([current_batch])
+                table = table.filter(pyarrow_filter)
                 # skip empty batches
-                if current_batch.num_rows == 0:
+                if table.num_rows == 0:
                     continue
+
+                current_batch = table.combine_chunks().to_batches()[0]
 
             result_batch = _to_requested_schema(
                 projected_schema,
