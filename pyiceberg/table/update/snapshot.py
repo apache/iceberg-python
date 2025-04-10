@@ -239,7 +239,16 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
+    @abstractmethod
+    def _validate(self) -> None:
+        pass
+
     def _commit(self) -> UpdatesAndRequirements:
+        from pyiceberg.table import StagedTable
+
+        if not isinstance(self._transaction._table, StagedTable):
+            self._validate()
+
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -435,6 +444,9 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     def _deleted_entries(self) -> List[ManifestEntry]:
         return self._compute_deletes[1]
 
+    def _validate(self) -> None:
+        return
+
     @property
     def rewrites_needed(self) -> bool:
         """Indicate if data files need to be rewritten."""
@@ -473,6 +485,15 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         In case of an append, nothing is deleted.
         """
         return []
+
+    def _validate(self) -> None:
+        refresh_table = self._transaction._table.check_and_refresh_table()
+        if refresh_table is None:
+            return
+        current_snapshot = refresh_table.metadata.current_snapshot()
+        if current_snapshot is not None and current_snapshot.snapshot_id != self._parent_snapshot_id:
+            self._parent_snapshot_id = current_snapshot.snapshot_id
+        self._transaction.table_metadata = refresh_table.metadata
 
 
 class _MergeAppendFiles(_FastAppendFiles):
@@ -601,6 +622,9 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return list(itertools.chain(*list_of_entries))
         else:
             return []
+
+    def _validate(self) -> None:
+        return
 
 
 class UpdateSnapshot:

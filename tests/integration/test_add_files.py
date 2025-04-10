@@ -898,3 +898,32 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=[existing_files_in_table], check_duplicate_files=True)
     assert f"Cannot add files that are already referenced by table, files: {existing_files_in_table}" in str(exc_info.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_conflict_delete_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_conflict"
+    tbl1 = _create_table(session_catalog, identifier, format_version, schema=arrow_table_with_null.schema)
+    tbl1.append(arrow_table_with_null)
+    tbl2 = session_catalog.load_table(identifier)
+
+    # This is allowed
+    tbl1.delete("string == 'z'")
+    tbl2.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_conflict_append_append(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_conflict"
+    tbl1 = _create_table(session_catalog, identifier, format_version, schema=arrow_table_with_null.schema)
+    tbl1.append(arrow_table_with_null)
+    tbl2 = session_catalog.load_table(identifier)
+
+    tbl1.append(arrow_table_with_null)
+    tbl2.append(arrow_table_with_null)
