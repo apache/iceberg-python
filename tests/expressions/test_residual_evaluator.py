@@ -58,7 +58,7 @@ def test_identity_transform_residual() -> None:
     )
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(dateint=20170815))
+    residual = res_eval.residual_for(Record(20170815))
 
     # assert residual == True
     assert isinstance(residual, LessThan)
@@ -67,7 +67,7 @@ def test_identity_transform_residual() -> None:
     assert residual.literal.value == 12
     assert type(residual) is LessThan
 
-    residual = res_eval.residual_for(Record(dateint=20170801))
+    residual = res_eval.residual_for(Record(20170801))
 
     # assert isinstance(residual, UnboundPredicate)
     from pyiceberg.expressions import LiteralPredicate
@@ -79,11 +79,11 @@ def test_identity_transform_residual() -> None:
     assert residual.literal.value == 11  # type :ignore
     # assert type(residual) == BoundGreaterThan
 
-    residual = res_eval.residual_for(Record(dateint=20170812))
+    residual = res_eval.residual_for(Record(20170812))
 
     assert residual == AlwaysTrue()
 
-    residual = res_eval.residual_for(Record(dateint=20170817))
+    residual = res_eval.residual_for(Record(20170817))
 
     assert residual == AlwaysFalse()
 
@@ -103,7 +103,7 @@ def test_case_insensitive_identity_transform_residuals() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     with pytest.raises(ValueError) as e:
-        res_eval.residual_for(Record(dateint=20170815))
+        res_eval.residual_for(Record(20170815))
     assert "Could not find field with name DATEINT, case_sensitive=True" in str(e.value)
 
 
@@ -142,7 +142,7 @@ def test_in() -> None:
 
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(dateint=20170815))
+    residual = res_eval.residual_for(Record(20170815))
 
     assert residual == AlwaysTrue()
 
@@ -178,10 +178,10 @@ def test_not_in() -> None:
 
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(dateint=20180815))
+    residual = res_eval.residual_for(Record(20180815))
     assert residual == AlwaysTrue()
 
-    residual = res_eval.residual_for(Record(dateint=20170815))
+    residual = res_eval.residual_for(Record(20170815))
     assert residual == AlwaysFalse()
 
 
@@ -194,10 +194,10 @@ def test_is_nan() -> None:
 
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(double=float("nan")))
+    residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysTrue()
 
-    residual = res_eval.residual_for(Record(double=2))
+    residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysFalse()
 
 
@@ -210,10 +210,10 @@ def test_is_not_nan() -> None:
 
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(double=None))
+    residual = res_eval.residual_for(Record(None))
     assert residual == AlwaysFalse()
 
-    residual = res_eval.residual_for(Record(double=2))
+    residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
 
     spec = PartitionSpec(PartitionField(51, 1051, IdentityTransform(), "float_part"))
@@ -222,10 +222,10 @@ def test_is_not_nan() -> None:
 
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
-    residual = res_eval.residual_for(Record(double=None))
+    residual = res_eval.residual_for(Record(None))
     assert residual == AlwaysFalse()
 
-    residual = res_eval.residual_for(Record(double=2))
+    residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
 
 

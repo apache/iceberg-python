@@ -822,7 +822,7 @@ def _to_byte_buffer(field_type: IcebergType, val: Any) -> bytes:
 
 def _to_manifest_file(*partitions: PartitionFieldSummary) -> ManifestFile:
     """Helper to create a ManifestFile"""
-    return ManifestFile(manifest_path="", manifest_length=0, partition_spec_id=0, partitions=partitions)
+    return ManifestFile.from_args(manifest_path="", manifest_length=0, partition_spec_id=0, partitions=partitions)
 
 
 INT_MIN_VALUE = 30
@@ -863,81 +863,81 @@ def manifest_no_stats() -> ManifestFile:
 def manifest() -> ManifestFile:
     return _to_manifest_file(
         # id
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=False,
             contains_nan=None,
             lower_bound=INT_MIN,
             upper_bound=INT_MAX,
         ),
         # all_nulls_missing_nan
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=True,
             contains_nan=None,
             lower_bound=None,
             upper_bound=None,
         ),
         # some_nulls
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=True,
             contains_nan=None,
             lower_bound=STRING_MIN,
             upper_bound=STRING_MAX,
         ),
         # no_nulls
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=False,
             contains_nan=None,
             lower_bound=STRING_MIN,
             upper_bound=STRING_MAX,
         ),
         # float
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=True,
             contains_nan=None,
             lower_bound=_to_byte_buffer(FloatType(), 0.0),
             upper_bound=_to_byte_buffer(FloatType(), 20.0),
         ),
         # all_nulls_double
-        PartitionFieldSummary(contains_null=True, contains_nan=None, lower_bound=None, upper_bound=None),
+        PartitionFieldSummary.from_args(contains_null=True, contains_nan=None, lower_bound=None, upper_bound=None),
         # all_nulls_no_nans
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=True,
             contains_nan=False,
             lower_bound=None,
             upper_bound=None,
         ),
         # all_nans
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=False,
             contains_nan=True,
             lower_bound=None,
             upper_bound=None,
         ),
         # both_nan_and_null
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=True,
             contains_nan=True,
             lower_bound=None,
             upper_bound=None,
         ),
         # no_nan_or_null
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=False,
             contains_nan=False,
             lower_bound=_to_byte_buffer(FloatType(), 0.0),
             upper_bound=_to_byte_buffer(FloatType(), 20.0),
         ),
         # all_nulls_missing_nan_float
-        PartitionFieldSummary(contains_null=True, contains_nan=None, lower_bound=None, upper_bound=None),
+        PartitionFieldSummary.from_args(contains_null=True, contains_nan=None, lower_bound=None, upper_bound=None),
         # all_same_value_or_null
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=True,
             contains_nan=None,
             lower_bound=STRING_MIN,
             upper_bound=STRING_MIN,
         ),
         # no_nulls_same_value_a
-        PartitionFieldSummary(
+        PartitionFieldSummary.from_args(
             contains_null=False,
             contains_nan=None,
             lower_bound=STRING_MIN,
@@ -1607,7 +1607,7 @@ def test_dnf_to_dask(table_schema_simple: Schema) -> None:
 
 
 def test_expression_evaluator_null() -> None:
-    struct = Record(a=None)
+    struct = Record(None)
     schema = Schema(NestedField(1, "a", IntegerType(), required=False), schema_id=1)
     assert expression_evaluator(schema, In("a", {1, 2, 3}), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, NotIn("a", {1, 2, 3}), case_sensitive=True)(struct) is True
