@@ -290,7 +290,7 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
                 # There is a default value
                 if file_field.write_default is not None:
                     # The field is not in the record, but there is a write default value
-                    results.append((None, DefaultWriter(writer=writer, value=file_field.write_default)))  # type: ignore
+                    results.append((None, DefaultWriter(writer=writer, value=file_field.write_default)))
                 elif file_field.required:
                     raise ValueError(f"Field is required, and there is no write default: {file_field}")
             else:
