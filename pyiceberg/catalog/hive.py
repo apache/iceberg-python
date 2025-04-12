@@ -147,6 +147,7 @@ class _HiveClient:
         self._uri = uri
         self._kerberos_auth = kerberos_auth
         self._ugi = ugi.split(":") if ugi else None
+        self._transport = self._init_thrift_transport()
 
     def _init_thrift_transport(self) -> TTransport:
         url_parts = urlparse(self._uri)
@@ -158,7 +159,6 @@ class _HiveClient:
 
     @cached_property
     def _client(self) -> Client:
-        self._transport = self._init_thrift_transport()
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
         client = Client(protocol)
         if self._ugi:
@@ -169,6 +169,7 @@ class _HiveClient:
         """Reinitialize transport if was closed."""
         if self._transport and not self._transport.isOpen():
             self._transport = self._init_thrift_transport()
+            self._transport.open()
         return self._client
 
     def __exit__(
