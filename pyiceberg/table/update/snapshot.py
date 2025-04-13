@@ -68,14 +68,13 @@ from pyiceberg.table.update import (
     RemoveSnapshotRefUpdate,
     RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
-    TableRequirement,
     TableMetadata,
+    TableRequirement,
     TableUpdate,
     U,
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-
 from pyiceberg.typedef import (
     EMPTY_DICT,
     KeyDefaultDict,
@@ -85,23 +84,12 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Table
+    pass
 
-from pyiceberg.table.metadata import Snapshot
-from pyiceberg.table.update import UpdateTableMetadata
-from typing import Optional, Set
-from datetime import datetime, timezone
 
-from typing import Dict, Optional, Set
-import uuid
-from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.metadata import Snapshot, TableMetadata
 from pyiceberg.table.snapshots import Snapshot
-from pyiceberg.table.update import (
-    UpdateTableMetadata,
-    RemoveSnapshotsUpdate,
-    UpdatesAndRequirements,
-    AssertRefSnapshotId,
-)
+
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
     return f"{commit_uuid}-m{num}.avro"

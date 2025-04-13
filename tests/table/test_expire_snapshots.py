@@ -1,6 +1,8 @@
-from uuid import uuid4
-from pyiceberg.table import CommitTableResponse, Table
 from unittest.mock import MagicMock
+from uuid import uuid4
+
+from pyiceberg.table import CommitTableResponse, Table
+
 
 def test_expire_snapshot(table_v2: Table) -> None:
     EXPIRE_SNAPSHOT = 3051729675574597004
@@ -10,7 +12,7 @@ def test_expire_snapshot(table_v2: Table) -> None:
         # Use the table's current metadata but keep only the snapshot not to be expired
         metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
         metadata_location="mock://metadata/location",
-        uuid=uuid4()
+        uuid=uuid4(),
     )
 
     # Mock the commit_table method to return the mock response
