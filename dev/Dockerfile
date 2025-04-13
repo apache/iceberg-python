@@ -52,7 +52,7 @@ RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org
 
 
 # Download AWS bundle
-RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-aws-bundle/1.9.0-SNAPSHOT/iceberg-aws-bundle-1.9.0-20250408.002722-86.jar \
+RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-aws-bundle/1.9.0-SNAPSHOT/iceberg-aws-bundle-1.9.0-20250409.002731-88.jar \
       -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
 
 COPY spark-defaults.conf /opt/spark/conf
