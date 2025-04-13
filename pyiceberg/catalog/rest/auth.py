@@ -15,24 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import base64
 from abc import ABC, abstractmethod
 from typing import Optional
+
 from requests import PreparedRequest
 from requests.auth import AuthBase
 
-import base64
 
 class AuthManager(ABC):
     """
-    Abstract base class for Authentication Managers used to supply authorization headers
-    to HTTP clients (e.g. requests.Session).
-    
+    Abstract base class for Authentication Managers used to supply authorization headers to HTTP clients (e.g. requests.Session).
+
     Subclasses must implement the `auth_header` method to return an Authorization header value.
     """
+
     @abstractmethod
     def auth_header(self) -> Optional[str]:
         """Return the Authorization header value, or None if not applicable."""
-        pass
 
 
 class NoopAuthManager(AuthManager):
@@ -41,7 +41,7 @@ class NoopAuthManager(AuthManager):
 
 
 class BasicAuthManager(AuthManager):
-    def __init__(self, username: str, password: str):        
+    def __init__(self, username: str, password: str):
         credentials = f"{username}:{password}"
         self._token = base64.b64encode(credentials.encode()).decode()
 
@@ -50,24 +50,24 @@ class BasicAuthManager(AuthManager):
 
 
 class AuthManagerAdapter(AuthBase):
-    """
-    A `requests.auth.AuthBase` adapter that integrates an `AuthManager`
-    into a `requests.Session` to automatically attach the appropriate
-    Authorization header to every request.
+    """A `requests.auth.AuthBase` adapter that integrates an `AuthManager` into a `requests.Session` to automatically attach the appropriate Authorization header to every request.
 
     This adapter is useful when working with `requests.Session.auth`
     and allows reuse of authentication strategies defined by `AuthManager`.
     """
+
     def __init__(self, auth_manager: AuthManager):
         """
-            Args:
-                auth_manager (AuthManager): An instance of an AuthManager subclass.
+        Initialize AuthManagerAdapter.
+
+        Args:
+            auth_manager (AuthManager): An instance of an AuthManager subclass.
         """
         self.auth_manager = auth_manager
 
     def __call__(self, r: PreparedRequest) -> PreparedRequest:
         """
-        Modifies the outgoing request to include the Authorization header.
+        Modify the outgoing request to include the Authorization header.
 
         Args:
             r (requests.PreparedRequest): The HTTP request being prepared.
@@ -77,5 +77,5 @@ class AuthManagerAdapter(AuthBase):
         """
         auth_header = self.auth_manager.auth_header()
         if auth_header:
-            r.headers['Authorization'] = auth_header
+            r.headers["Authorization"] = auth_header
         return r

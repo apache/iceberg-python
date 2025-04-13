@@ -15,14 +15,16 @@
 #  specific language governing permissions and limitations
 #  under the License.
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, NoopAuthManager, BasicAuthManager
-
 import base64
+
 import pytest
 import requests
 from requests_mock import Mocker
 
+from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, NoopAuthManager
+
 TEST_URI = "https://iceberg-test-catalog/"
+
 
 @pytest.fixture
 def rest_mock(requests_mock: Mocker) -> Mocker:
@@ -34,19 +36,19 @@ def rest_mock(requests_mock: Mocker) -> Mocker:
     return requests_mock
 
 
-def test_noop_auth_header(rest_mock: Mocker):
+def test_noop_auth_header(rest_mock: Mocker) -> None:
     auth_manager = NoopAuthManager()
     session = requests.Session()
     session.auth = AuthManagerAdapter(auth_manager)
 
-    response = session.get(TEST_URI)
+    session.get(TEST_URI)
     history = rest_mock.request_history
     assert len(history) == 1
     actual_headers = history[0].headers
     assert "Authorization" not in actual_headers
 
 
-def test_basic_auth_header(rest_mock: Mocker):
+def test_basic_auth_header(rest_mock: Mocker) -> None:
     username = "testuser"
     password = "testpassword"
     expected_token = base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -56,7 +58,7 @@ def test_basic_auth_header(rest_mock: Mocker):
     session = requests.Session()
     session.auth = AuthManagerAdapter(auth_manager)
 
-    response = session.get(TEST_URI)
+    session.get(TEST_URI)
     history = rest_mock.request_history
     assert len(history) == 1
     actual_headers = history[0].headers
