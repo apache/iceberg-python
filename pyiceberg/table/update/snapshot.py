@@ -869,7 +869,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         This will remove the snapshots with the given IDs.
 
         Returns:
-            Tuple of updates and requirements to be committed, 
+            Tuple of updates and requirements to be committed,
             as requried by the calling parent apply functions.
         """
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)

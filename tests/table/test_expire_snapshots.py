@@ -8,9 +8,9 @@ def test_expire_snapshot(table_v2: Table) -> None:
     # Mock the catalog's commit_table method
     mock_response = CommitTableResponse(
         # Use the table's current metadata but keep only the snapshot not to be expired
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}), 
+        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
         metadata_location="mock://metadata/location",
-        uuid=uuid4() 
+        uuid=uuid4()
     )
 
     # Mock the commit_table method to return the mock response
