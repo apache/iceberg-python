@@ -115,7 +115,6 @@ from pyiceberg.table.update import (
 )
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import (
-    ExpireSnapshots,
     ManageSnapshots,
     UpdateSnapshot,
     _FastAppendFiles,
@@ -1078,23 +1077,6 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
-    
-    def expire_snapshots(self) -> ExpireSnapshots:
-        """
-        Shorthand to expire snapshots.
-
-        Use table.expire_snapshots().expire_snapshot_id(...).commit() or
-        table.expire_snapshots().expire_older_than(...).commit()
-
-        You can also use it inside a transaction context:
-            with table.transaction() as tx:
-                tx.expire_snapshots().expire_older_than(...)
-
-        """
-        return ExpireSnapshots(Transaction(self, autocommit=True))
-
-
-
 
     def update_statistics(self) -> UpdateStatistics:
         """
