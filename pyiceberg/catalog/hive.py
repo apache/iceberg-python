@@ -166,9 +166,10 @@ class _HiveClient:
         return client
 
     def __enter__(self) -> Client:
-        """Reinitialize transport if was closed."""
-        if self._transport and not self._transport.isOpen():
+        """Make sure the transport is initialized and open."""
+        if not self._transport:
             self._transport = self._init_thrift_transport()
+        if not self._transport.isOpen():
             self._transport.open()
         return self._client
 
