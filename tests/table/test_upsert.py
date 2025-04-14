@@ -568,7 +568,7 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
             {
                 "id": 1,
                 "nested_type": {"sub1": "bla1", "sub2": "bla"},
-            }
+            },
         ],
         schema=arrow_schema,
     )
