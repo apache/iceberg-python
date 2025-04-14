@@ -1692,13 +1692,17 @@ def test_evolve_and_write(
 ) -> None:
     identifier = "default.test_evolve_and_write"
     tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version}, schema=Schema())
+    other_table = session_catalog.load_table(identifier)
 
     numbers = pa.array([1, 2, 3, 4], type=pa.int32())
 
-    with tbl.transaction() as tx:
-        with tx.update_schema() as upd:
-            upd.add_column("id", IntegerType())
+    with tbl.update_schema() as upd:
+        # This is not known by other_table
+        upd.add_column("id", IntegerType())
 
+    with other_table.transaction() as tx:
+        # Refreshes the underlying metadata, and the schema
+        other_table.refresh()
         tx.append(
             pa.Table.from_arrays(
                 [
@@ -1712,4 +1716,4 @@ def test_evolve_and_write(
             )
         )
 
-    assert tbl.scan().to_arrow().column(0).combine_chunks() == numbers
+    assert session_catalog.load_table(identifier).scan().to_arrow().column(0).combine_chunks() == numbers
