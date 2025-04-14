@@ -562,13 +562,13 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
     update_data = pa.Table.from_pylist(
         [
             {
-                "id": 1,
-                "nested_type": {"sub1": "bla1", "sub2": "bla"},
-            },
-            {
                 "id": 2,
                 "nested_type": {"sub1": "bla1", "sub2": "bla"},
             },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
         ],
         schema=arrow_schema,
     )
