@@ -360,7 +360,7 @@ def update_snapshot_summaries(
         deprecation_message(
             deprecated_in="0.10.0",
             removed_in="0.11.0",
-            help_message="The truncate-full-table should be used.",
+            help_message="The truncate-full-table shouldn't be used.",
         )
         summary = _truncate_table_summary(summary, previous_summary)
 
