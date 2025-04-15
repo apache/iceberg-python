@@ -281,7 +281,6 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
         txn.add_identity("id")
     tbl.append(arrow_table)
 
-    # TODO: We might want to check why this ends up in 3 files
     assert len(tbl.inspect.data_files()) == 3
 
     tbl.delete(delete_filter="id == 1 and name = 'AB'")  # partial overwrite data from 1 data file
