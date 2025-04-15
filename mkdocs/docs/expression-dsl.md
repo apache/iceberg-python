@@ -38,7 +38,7 @@ age_field = Reference("age")
 
 Predicates are expressions that evaluate to a boolean value. They can be combined using logical operators.
 
-#### Comparison Predicates
+#### Literal Predicates
 
 ```python
 from pyiceberg.expressions import EqualTo, NotEqualTo, LessThan, LessThanOrEqual, GreaterThan, GreaterThanOrEqual
