@@ -72,7 +72,7 @@ class AuthManagerAdapter(AuthBase):
         Modify the outgoing request to include the Authorization header.
 
         Args:
-            r (requests.PreparedRequest): The HTTP request being prepared.
+            requests (requests.PreparedRequest): The HTTP request being prepared.
 
         Returns:
             requests.PreparedRequest: The modified request with Authorization header.
