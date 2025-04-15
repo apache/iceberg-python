@@ -687,6 +687,7 @@ def test_summaries_with_only_nulls(
 
 
 @pytest.mark.integration
+@pytest.mark.skip(reason="Reported the issue: https://github.com/duckdb/duckdb-iceberg/issues/185")
 def test_duckdb_url_import(warehouse: Path, arrow_table_with_null: pa.Table) -> None:
     os.environ["TZ"] = "Etc/UTC"
     time.tzset()
