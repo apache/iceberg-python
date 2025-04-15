@@ -166,6 +166,7 @@ price IS NOT NULL AND price > 100 AND quantity > 0
    ```
 
 ## Best Practices
+
 1. For complex use cases, use the primary [Expression DSL](expression-dsl.md)
 2. When using multiple conditions, consider the order of operations (NOT > AND > OR)
 3. For string comparisons, be consistent with case usage
