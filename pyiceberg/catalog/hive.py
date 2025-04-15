@@ -143,6 +143,9 @@ logger = logging.getLogger(__name__)
 class _HiveClient:
     """Helper class to nicely open and close the transport."""
 
+    _transport: TTransport
+    _ugi: Optional[List[str]]
+
     def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
         self._uri = uri
         self._kerberos_auth = kerberos_auth
@@ -167,17 +170,20 @@ class _HiveClient:
 
     def __enter__(self) -> Client:
         """Make sure the transport is initialized and open."""
-        if not self._transport:
-            self._transport = self._init_thrift_transport()
         if not self._transport.isOpen():
-            self._transport.open()
+            try:
+                self._transport.open()
+            except TTransport.TTransportException:
+                # reinitialize _transport
+                self._transport = self._init_thrift_transport()
+                self._transport.open()
         return self._client
 
     def __exit__(
         self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
     ) -> None:
         """Close transport if it was opened."""
-        if self._transport and self._transport.isOpen():
+        if self._transport.isOpen():
             self._transport.close()
 
 
