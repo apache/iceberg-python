@@ -54,6 +54,8 @@ class AuthManagerAdapter(AuthBase):
 
     This adapter is useful when working with `requests.Session.auth`
     and allows reuse of authentication strategies defined by `AuthManager`.
+    This AuthManagerAdapter is only intended to be used against the REST Catalog
+    Server that expects the Authorization Header.
     """
 
     def __init__(self, auth_manager: AuthManager):
@@ -65,7 +67,7 @@ class AuthManagerAdapter(AuthBase):
         """
         self.auth_manager = auth_manager
 
-    def __call__(self, r: PreparedRequest) -> PreparedRequest:
+    def __call__(self, request: PreparedRequest) -> PreparedRequest:
         """
         Modify the outgoing request to include the Authorization header.
 
@@ -75,7 +77,6 @@ class AuthManagerAdapter(AuthBase):
         Returns:
             requests.PreparedRequest: The modified request with Authorization header.
         """
-        auth_header = self.auth_manager.auth_header()
-        if auth_header:
-            r.headers["Authorization"] = auth_header
-        return r
+        if auth_header := self.auth_manager.auth_header():
+            request.headers["Authorization"] = auth_header
+        return request
