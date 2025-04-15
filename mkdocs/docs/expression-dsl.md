@@ -14,7 +14,7 @@
  - See the License for the specific language governing permissions and
  - limitations under the License.
  -->
- 
+
 # Expression DSL
 
 The PyIceberg library provides a powerful expression DSL (Domain Specific Language) for building complex row filter expressions. This guide will help you understand how to use the expression DSL effectively. This DSL allows you to build type-safe expressions for use in the `row_filter` scan argument.
@@ -200,13 +200,11 @@ complex_filter = And(age_range, status_filter)
 
 ## Common Pitfalls
 
-1. **Type Mismatches**: Always ensure that the types of your literals match the field types in your schema.
+1. **Null Handling**: Be careful when using `IsNull` and `NotNull` predicates with required fields. The expression DSL will automatically optimize these cases:
+   - `IsNull` (and `IsNaN` for doubles/floats) on a required field will always return `False`
+   - `NotNull` (and `NotNaN` for doubles/floats) on a required field will always return `True`
 
-2. **Null Handling**: Be careful when using `IsNull` and `NotNull` predicates with required fields. The expression DSL will automatically optimize these cases:
-   - `IsNull` on a required field will always return `False`
-   - `NotNull` on a required field will always return `True`
-
-3. **String Comparisons**: When using string predicates like `StartsWith`, ensure that the field type is actually a string type.
+2. **String Comparisons**: When using string predicates like `StartsWith`, ensure that the field type is actually a string type.
 
 ## Examples
 
