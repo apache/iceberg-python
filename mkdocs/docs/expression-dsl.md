@@ -74,7 +74,7 @@ age_in_set = In("age", [18, 19, 20])
 age_not_in_set = NotIn("age", [18, 19, 20])
 ```
 
-#### Null Predicates
+#### Unary Predicates
 
 ```python
 from pyiceberg.expressions import IsNull, NotNull
