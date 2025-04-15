@@ -303,10 +303,16 @@ def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id
 
 
 class GlueCatalog(MetastoreCatalog):
-    def __init__(self, name: str, **properties: Any):
+    glue: GlueClient
+
+    def __init__(self, name: str, client: GlueClient | None = None, **properties: Any):
         super().__init__(name, **properties)
 
         retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
+
+        if client:
+            self.glue = client
+            return
 
         session = boto3.Session(
             profile_name=properties.get(GLUE_PROFILE_NAME),
