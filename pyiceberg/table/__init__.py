@@ -918,6 +918,15 @@ class Table:
         self.metadata_location = fresh.metadata_location
         return self
 
+    def check_and_refresh_table(self) -> Optional[Table]:
+        fresh = self.catalog.load_table(self._identifier)
+        if self.metadata.current_snapshot_id != fresh.metadata.current_snapshot_id:
+            self.metadata = fresh.metadata
+            self.io = fresh.io
+            self.metadata_location = fresh.metadata_location
+            return fresh
+        return None
+
     def name(self) -> Identifier:
         """Return the identifier of this table.
 
