@@ -234,8 +234,8 @@ class BucketTransform(Transform[S, int]):
     _num_buckets: PositiveInt = PrivateAttr()
 
     def __init__(self, num_buckets: int, **data: Any) -> None:
-        self._num_buckets = num_buckets
         super().__init__(f"bucket[{num_buckets}]", **data)
+        self._num_buckets = num_buckets
 
     @property
     def num_buckets(self) -> int:
@@ -703,7 +703,7 @@ class HourTransform(TimeTransform[S]):
 
         elif isinstance(source, (TimestampNanoType, TimestamptzNanoType)):
 
-            def day_func(v: Any) -> int:
+            def hour_func(v: Any) -> int:
                 # python datetime has no nanoseconds support.
                 # nanosecond datetimes will be expressed as int as a workaround
                 return datetime.nanos_to_hours(v)

@@ -47,6 +47,7 @@ from pydantic import (
     Field,
     PrivateAttr,
     SerializeAsAny,
+    field_validator,
     model_serializer,
     model_validator,
 )
@@ -310,6 +311,14 @@ class NestedField(IcebergType):
         ...     doc="Just a long"
         ... ))
         '2: bar: required long (Just a long)'
+        >>> str(NestedField(
+        ...     field_id=3,
+        ...     name='baz',
+        ...     field_type="string",
+        ...     required=True,
+        ...     doc="A string field"
+        ... ))
+        '3: baz: required string (A string field)'
     """
 
     field_id: int = Field(alias="id")
@@ -320,11 +329,21 @@ class NestedField(IcebergType):
     initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
     write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
 
+    @field_validator("field_type", mode="before")
+    def convert_field_type(cls, v: Any) -> IcebergType:
+        """Convert string values into IcebergType instances."""
+        if isinstance(v, str):
+            try:
+                return IcebergType.handle_primitive_type(v, None)
+            except ValueError as e:
+                raise ValueError(f"Unsupported field type: '{v}'") from e
+        return v
+
     def __init__(
         self,
         field_id: Optional[int] = None,
         name: Optional[str] = None,
-        field_type: Optional[IcebergType] = None,
+        field_type: Optional[IcebergType | str] = None,
         required: bool = False,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
