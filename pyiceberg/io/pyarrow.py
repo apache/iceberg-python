@@ -408,7 +408,7 @@ class PyArrowFileIO(FileIO):
             "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
             "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True)
+            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
         }
 
         if proxy_uri := self.properties.get(S3_PROXY_URI):
@@ -469,7 +469,7 @@ class PyArrowFileIO(FileIO):
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
-        if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) != None:
+        if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
             client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
         return S3FileSystem(**client_kwargs)
