@@ -117,9 +117,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         )
 
         # Step 2: Prepare target index with join keys and a marker
-        target_index = target_table.select(join_cols_set).append_column(
-            MARKER_COLUMN_NAME, pa.array([True] * len(target_table), pa.bool_())
-        )
+        target_index = target_table.select(join_cols_set).append_column(MARKER_COLUMN_NAME, pa.repeat(True, len(target_table)))
 
         # Step 3: Perform a left outer join to find which rows from source exist in target
         joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
