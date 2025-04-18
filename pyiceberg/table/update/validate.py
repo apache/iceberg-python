@@ -27,7 +27,7 @@ def validation_history(
     table: Table,
     starting_snapshot: Snapshot,
     matching_operations: set[Operation],
-    manifest_content: ManifestContent,
+    manifest_content_filter: ManifestContent,
     parent_snapshot: Snapshot,
 ) -> tuple[list[ManifestFile], set[Snapshot]]:
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
@@ -36,7 +36,7 @@ def validation_history(
         table: Table to get the history from
         starting_snapshot: Starting snapshot
         matching_operations: Operations to match on
-        manifest_content: Manifest content type to filter
+        manifest_content_filter: Manifest content type to filter
         parent_snapshot: Parent snapshot to get the history from
 
     Raises:
@@ -56,22 +56,13 @@ def validation_history(
             continue
         if summary.operation in matching_operations:
             snapshots.add(snapshot)
-            if manifest_content == ManifestContent.DATA:
-                manifests_files.extend(
-                    [
-                        manifest
-                        for manifest in snapshot.data_manifests(table.io)
-                        if manifest.added_snapshot_id == snapshot.snapshot_id
-                    ]
-                )
-            else:
-                manifests_files.extend(
-                    [
-                        manifest
-                        for manifest in snapshot.delete_manifests(table.io)
-                        if manifest.added_snapshot_id == snapshot.snapshot_id
-                    ]
-                )
+            manifests_files.extend(
+                [
+                    manifest
+                    for manifest in snapshot.manifests(table.io, manifest_content_filter)
+                    if manifest.added_snapshot_id == snapshot.snapshot_id
+                ]
+            )
 
     if last_snapshot is None or last_snapshot.snapshot_id == starting_snapshot.snapshot_id:
         raise ValidationException("No matching snapshot found.")

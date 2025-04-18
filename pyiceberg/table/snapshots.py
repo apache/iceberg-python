@@ -251,17 +251,18 @@ class Snapshot(IcebergBaseModel):
         result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
         return result_str
 
-    def manifests(self, io: FileIO) -> List[ManifestFile]:
-        """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list))
+    def manifests(self, io: FileIO, content_filter: Optional[ManifestContent] = None) -> List[ManifestFile]:
+        """Return the manifests for the given snapshot.
 
-    def data_manifests(self, io: FileIO) -> List[ManifestFile]:
-        """Return the data manifests for the given snapshot."""
-        return [manifest for manifest in self.manifests(io) if manifest.content == ManifestContent.DATA]
+        Args:
+            io: The IO instance to read the manifest list.
+            content_filter: The content filter to apply to the manifests. One of ManifestContent.DATA or ManifestContent.DELETES.
+        """
+        all_manifests = list(_manifests(io, self.manifest_list))
+        if content_filter is not None:
+            all_manifests = [manifest for manifest in all_manifests if manifest.content == content_filter]
 
-    def delete_manifests(self, io: FileIO) -> List[ManifestFile]:
-        """Return the delete manifests for the given snapshot."""
-        return [manifest for manifest in self.manifests(io) if manifest.content == ManifestContent.DELETES]
+        return all_manifests
 
 
 class MetadataLogEntry(IcebergBaseModel):
