@@ -28,6 +28,7 @@ from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.types import IntegerType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog, Table
@@ -368,8 +369,20 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     )
     upd = tbl.upsert(df)
 
+    expected_operations = [Operation.APPEND, Operation.OVERWRITE, Operation.APPEND, Operation.APPEND]
+
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+    assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
+
+    # This should be a no-op
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 0
+
+    assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
 
 def test_upsert_into_empty_table(catalog: Catalog) -> None:
@@ -496,3 +509,46 @@ def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
         ValueError, match="Join columns could not be found, please set identifier-field-ids or pass in explicitly."
     ):
         tbl.upsert(df)
+
+
+def test_upsert_with_nulls(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_nulls"
+    _drop_table(catalog, identifier)
+
+    schema = pa.schema(
+        [
+            ("foo", pa.string()),
+            ("bar", pa.int32()),
+            ("baz", pa.bool_()),
+        ]
+    )
+
+    # create table with null value
+    table = catalog.create_table(identifier, schema)
+    data_with_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": None, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+    table.append(data_with_null)
+    assert table.scan().to_arrow()["bar"].is_null()
+
+    # upsert table with non-null value
+    data_without_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+        ],
+        schema=schema,
+    )
+    upd = table.upsert(data_without_null, join_cols=["foo"])
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 0
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )

@@ -47,13 +47,14 @@ from pydantic import (
     Field,
     PrivateAttr,
     SerializeAsAny,
+    field_validator,
     model_serializer,
     model_validator,
 )
 from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, TableVersion
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
@@ -140,6 +141,10 @@ class IcebergType(IcebergBaseModel):
                 return TimestampType()
             if v == "timestamptz":
                 return TimestamptzType()
+            if v == "timestamp_ns":
+                return TimestampNanoType()
+            if v == "timestamptz_ns":
+                return TimestamptzNanoType()
             if v == "date":
                 return DateType()
             if v == "time":
@@ -148,13 +153,15 @@ class IcebergType(IcebergBaseModel):
                 return UUIDType()
             if v == "binary":
                 return BinaryType()
+            if v == "unknown":
+                return UnknownType()
             if v.startswith("fixed"):
                 return FixedType(_parse_fixed_type(v))
             if v.startswith("decimal"):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
             else:
-                raise ValueError(f"Unknown type: {v}")
+                raise ValueError(f"Type not recognized: {v}")
         if isinstance(v, dict) and cls == IcebergType:
             complex_type = v.get("type")
             if complex_type == "list":
@@ -174,6 +181,10 @@ class IcebergType(IcebergBaseModel):
     @property
     def is_struct(self) -> bool:
         return isinstance(self, StructType)
+
+    def minimum_format_version(self) -> TableVersion:
+        """Minimum Iceberg format version after which this type is supported."""
+        return 1
 
 
 class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
@@ -300,6 +311,14 @@ class NestedField(IcebergType):
         ...     doc="Just a long"
         ... ))
         '2: bar: required long (Just a long)'
+        >>> str(NestedField(
+        ...     field_id=3,
+        ...     name='baz',
+        ...     field_type="string",
+        ...     required=True,
+        ...     doc="A string field"
+        ... ))
+        '3: baz: required string (A string field)'
     """
 
     field_id: int = Field(alias="id")
@@ -310,11 +329,21 @@ class NestedField(IcebergType):
     initial_default: Optional[Any] = Field(alias="initial-default", default=None, repr=False)
     write_default: Optional[L] = Field(alias="write-default", default=None, repr=False)  # type: ignore
 
+    @field_validator("field_type", mode="before")
+    def convert_field_type(cls, v: Any) -> IcebergType:
+        """Convert string values into IcebergType instances."""
+        if isinstance(v, str):
+            try:
+                return IcebergType.handle_primitive_type(v, None)
+            except ValueError as e:
+                raise ValueError(f"Unsupported field type: '{v}'") from e
+        return v
+
     def __init__(
         self,
         field_id: Optional[int] = None,
         name: Optional[str] = None,
-        field_type: Optional[IcebergType] = None,
+        field_type: Optional[IcebergType | str] = None,
         required: bool = False,
         doc: Optional[str] = None,
         initial_default: Optional[Any] = None,
@@ -701,6 +730,44 @@ class TimestamptzType(PrimitiveType):
     root: Literal["timestamptz"] = Field(default="timestamptz")
 
 
+class TimestampNanoType(PrimitiveType):
+    """A TimestampNano data type in Iceberg can be represented using an instance of this class.
+
+    TimestampNanos in Iceberg have nanosecond precision and include a date and a time of day without a timezone.
+
+    Example:
+        >>> column_foo = TimestampNanoType()
+        >>> isinstance(column_foo, TimestampNanoType)
+        True
+        >>> column_foo
+        TimestampNanoType()
+    """
+
+    root: Literal["timestamp_ns"] = Field(default="timestamp_ns")
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
+
+
+class TimestamptzNanoType(PrimitiveType):
+    """A TimestamptzNano data type in Iceberg can be represented using an instance of this class.
+
+    TimestamptzNanos in Iceberg are stored as UTC and include a date and a time of day with a timezone.
+
+    Example:
+        >>> column_foo = TimestamptzNanoType()
+        >>> isinstance(column_foo, TimestamptzNanoType)
+        True
+        >>> column_foo
+        TimestamptzNanoType()
+    """
+
+    root: Literal["timestamptz_ns"] = Field(default="timestamptz_ns")
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3
+
+
 class StringType(PrimitiveType):
     """A String data type in Iceberg can be represented using an instance of this class.
 
@@ -747,3 +814,22 @@ class BinaryType(PrimitiveType):
     """
 
     root: Literal["binary"] = Field(default="binary")
+
+
+class UnknownType(PrimitiveType):
+    """An unknown data type in Iceberg can be represented using an instance of this class.
+
+    Unknowns in Iceberg are used to represent data types that are not known at the time of writing.
+
+    Example:
+        >>> column_foo = UnknownType()
+        >>> isinstance(column_foo, UnknownType)
+        True
+        >>> column_foo
+        UnknownType()
+    """
+
+    root: Literal["unknown"] = Field(default="unknown")
+
+    def minimum_format_version(self) -> TableVersion:
+        return 3

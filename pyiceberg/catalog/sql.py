@@ -619,15 +619,28 @@ class SqlCatalog(MetastoreCatalog):
         table_stmt = select(IcebergTables.table_namespace).where(IcebergTables.catalog_name == self.name)
         namespace_stmt = select(IcebergNamespaceProperties.namespace).where(IcebergNamespaceProperties.catalog_name == self.name)
         if namespace:
-            namespace_str = Catalog.namespace_to_string(namespace, NoSuchNamespaceError)
-            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_str))
-            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_str))
+            namespace_like = Catalog.namespace_to_string(namespace, NoSuchNamespaceError) + "%"
+            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_like))
+            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_like))
         stmt = union(
             table_stmt,
             namespace_stmt,
         )
         with Session(self.engine) as session:
-            return [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
+            namespace_tuple = Catalog.identifier_to_tuple(namespace)
+            sub_namespaces_level_length = len(namespace_tuple) + 1
+
+            namespaces = list(
+                {  # only get distinct namespaces
+                    ns[:sub_namespaces_level_length]  # truncate to the required level
+                    for ns in {Catalog.identifier_to_tuple(ns) for ns in session.execute(stmt).scalars()}
+                    if len(ns) >= sub_namespaces_level_length  # only get sub namespaces/children
+                    and ns[: sub_namespaces_level_length - 1] == namespace_tuple
+                    # exclude fuzzy matches when `namespace` contains `%` or `_`
+                }
+            )
+
+            return namespaces
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.

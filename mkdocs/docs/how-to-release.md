@@ -379,6 +379,8 @@ Then, select the previous release version as the **Previous tag** to use the dif
 
 **Set as the latest release** and **Publish**.
 
+Make sure to check the `changelog` label on GitHub to see if anything needs to be highlighted.
+
 ### Release the docs
 
 Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).

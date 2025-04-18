@@ -16,10 +16,13 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+import multiprocessing
 import os
 import re
+import threading
 from datetime import date
 from typing import Iterator
+from unittest import mock
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -30,11 +33,13 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.io import FileIO
-from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _pyarrow_schema_ensure_large_types
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, schema_to_pyarrow
+from pyiceberg.manifest import DataFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import BucketTransform, IdentityTransform, MonthTransform
+from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, MonthTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -42,6 +47,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    TimestampType,
     TimestamptzType,
 )
 
@@ -227,6 +233,54 @@ def test_add_files_to_unpartitioned_table_raises_has_field_ids(
     # add the parquet files as data files
     with pytest.raises(NotImplementedError):
         tbl.add_files(file_paths=file_paths)
+
+
+@pytest.mark.integration
+def test_add_files_parallelized(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pyiceberg.io.pyarrow import parquet_file_to_data_file
+
+    real_parquet_file_to_data_file = parquet_file_to_data_file
+
+    lock = threading.Lock()
+    unique_threads_seen = set()
+    cpu_count = multiprocessing.cpu_count()
+
+    # patch the function _parquet_file_to_data_file to we can track how many unique thread IDs
+    # it was executed from
+    with mock.patch("pyiceberg.io.pyarrow.parquet_file_to_data_file") as patch_func:
+
+        def mock_parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
+            lock.acquire()
+            thread_id = threading.get_ident()  # the current thread ID
+            unique_threads_seen.add(thread_id)
+            lock.release()
+            return real_parquet_file_to_data_file(io=io, table_metadata=table_metadata, file_path=file_path)
+
+        patch_func.side_effect = mock_parquet_file_to_data_file
+
+        identifier = f"default.unpartitioned_table_schema_updates_v{format_version}"
+        tbl = _create_table(session_catalog, identifier, format_version)
+
+        file_paths = [
+            f"s3://warehouse/default/add_files_parallel/v{format_version}/test-{i}.parquet" for i in range(cpu_count * 2)
+        ]
+        # write parquet files
+        for file_path in file_paths:
+            fo = tbl.io.new_output(file_path)
+            with fo.create(overwrite=True) as fos:
+                with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                    writer.write_table(ARROW_TABLE)
+
+        tbl.add_files(file_paths=file_paths)
+
+    # duration creation of threadpool processor, when max_workers is not
+    # specified, python will add cpu_count + 4 as the number of threads in the
+    # pool in this case
+    # https://github.com/python/cpython/blob/e06bebb87e1b33f7251196e1ddb566f528c3fc98/Lib/concurrent/futures/thread.py#L173-L181
+    # we check that we have at least seen the number of threads. we don't
+    # specify the workers in the thread pool and we can't check without
+    # accessing private attributes of ThreadPoolExecutor
+    assert len(unique_threads_seen) >= cpu_count
 
 
 @pytest.mark.integration
@@ -535,11 +589,6 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
             pa.field("foo", pa.string(), nullable=False),
         ]
     )
-    arrow_schema_large = pa.schema(
-        [
-            pa.field("foo", pa.large_string(), nullable=False),
-        ]
-    )
 
     tbl = _create_table(session_catalog, identifier, format_version, schema=iceberg_schema)
 
@@ -561,27 +610,27 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     tbl.add_files([file_path])
 
     table_schema = tbl.scan().to_arrow().schema
-    assert table_schema == arrow_schema_large
+    assert table_schema == arrow_schema
 
     file_path_large = f"s3://warehouse/default/unpartitioned_with_large_types/v{format_version}/test-1.parquet"
     _write_parquet(
         tbl.io,
         file_path_large,
-        arrow_schema_large,
+        arrow_schema,
         pa.Table.from_pylist(
             [
                 {
                     "foo": "normal",
                 }
             ],
-            schema=arrow_schema_large,
+            schema=arrow_schema,
         ),
     )
 
     tbl.add_files([file_path_large])
 
     table_schema = tbl.scan().to_arrow().schema
-    assert table_schema == arrow_schema_large
+    assert table_schema == arrow_schema
 
 
 @pytest.mark.integration
@@ -695,8 +744,8 @@ def test_add_files_with_valid_upcast(
         pa.schema(
             (
                 pa.field("long", pa.int64(), nullable=True),
-                pa.field("list", pa.large_list(pa.int64()), nullable=False),
-                pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+                pa.field("list", pa.list_(pa.int64()), nullable=False),
+                pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),
                 pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
             )
@@ -746,7 +795,7 @@ def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalo
                 "qux": date(2024, 3, 7),
             }
         ],
-        schema=_pyarrow_schema_ensure_large_types(ARROW_SCHEMA),
+        schema=ARROW_SCHEMA,
     )
 
     lhs = spark.table(f"{identifier}").toPandas()
@@ -917,3 +966,30 @@ def test_conflict_append_append(
 
     tbl1.append(arrow_table_with_null)
     tbl2.append(arrow_table_with_null)
+
+
+@pytest.mark.integration
+def test_add_files_hour_transform(session_catalog: Catalog) -> None:
+    identifier = "default.test_add_files_hour_transform"
+
+    schema = Schema(NestedField(1, "hourly", TimestampType()))
+    schema_arrow = schema_to_pyarrow(schema, include_field_ids=False)
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=HourTransform(), name="spec_hour"))
+
+    tbl = _create_table(session_catalog, identifier, format_version=1, schema=schema, partition_spec=spec)
+
+    file_path = "s3://warehouse/default/test_add_files_hour_transform/test.parquet"
+
+    from pyiceberg.utils.datetime import micros_to_timestamp
+
+    arrow_table = pa.Table.from_pylist(
+        [{"hourly": micros_to_timestamp(1743465600155254)}, {"hourly": micros_to_timestamp(1743469198047855)}],
+        schema=schema_arrow,
+    )
+
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=schema_arrow) as writer:
+            writer.write_table(arrow_table)
+
+    tbl.add_files(file_paths=[file_path])

@@ -20,6 +20,7 @@ This module enables:
     - Converting partition strings to built-in python objects.
     - Converting a value to a byte buffer.
     - Converting a byte buffer to a value.
+    - Converting a json-single field serialized field
 
 Note:
     Conversion logic varies based on the PrimitiveType implementation. Therefore conversion functions
@@ -28,6 +29,7 @@ Note:
     implementations that share the same conversion logic, registrations can be stacked.
 """
 
+import codecs
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -53,13 +55,33 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
     strtobool,
 )
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
+from pyiceberg.utils.datetime import (
+    date_str_to_days,
+    date_to_days,
+    datetime_to_micros,
+    datetime_to_nanos,
+    days_to_date,
+    micros_to_time,
+    micros_to_timestamp,
+    micros_to_timestamptz,
+    time_str_to_micros,
+    time_to_micros,
+    timestamp_to_micros,
+    timestamptz_to_micros,
+    to_human_day,
+    to_human_time,
+    to_human_timestamp,
+    to_human_timestamptz,
+)
 from pyiceberg.utils.decimal import decimal_to_bytes, unscaled_to_decimal
 
 _BOOL_STRUCT = Struct("<?")
@@ -108,7 +130,9 @@ def _(primitive_type: BooleanType, value_str: str) -> Union[int, float, str, uui
 @partition_to_py.register(DateType)
 @partition_to_py.register(TimeType)
 @partition_to_py.register(TimestampType)
+@partition_to_py.register(TimestampNanoType)
 @partition_to_py.register(TimestamptzType)
+@partition_to_py.register(TimestamptzNanoType)
 @handle_none
 def _(primitive_type: PrimitiveType, value_str: str) -> int:
     """Convert a string to an integer value.
@@ -154,6 +178,12 @@ def _(_: DecimalType, value_str: str) -> Decimal:
     return Decimal(value_str)
 
 
+@partition_to_py.register(UnknownType)
+@handle_none
+def _(type_: UnknownType, _: str) -> None:
+    return None
+
+
 @singledispatch
 def to_bytes(
     primitive_type: PrimitiveType, _: Union[bool, bytes, Decimal, date, datetime, float, int, str, time, uuid.UUID]
@@ -188,9 +218,17 @@ def _(_: PrimitiveType, value: int) -> bytes:
 
 @to_bytes.register(TimestampType)
 @to_bytes.register(TimestamptzType)
-def _(_: TimestampType, value: Union[datetime, int]) -> bytes:
+def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
     if isinstance(value, datetime):
         value = datetime_to_micros(value)
+    return _LONG_STRUCT.pack(value)
+
+
+@to_bytes.register(TimestampNanoType)
+@to_bytes.register(TimestamptzNanoType)
+def _(_: PrimitiveType, value: Union[datetime, int]) -> bytes:
+    if isinstance(value, datetime):
+        value = datetime_to_nanos(value)
     return _LONG_STRUCT.pack(value)
 
 
@@ -276,7 +314,7 @@ def from_bytes(primitive_type: PrimitiveType, b: bytes) -> L:  # type: ignore
         primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
         b (bytes): The bytes to convert.
     """
-    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {str(b)}")
+    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {b!r}")
 
 
 @from_bytes.register(BooleanType)
@@ -294,6 +332,8 @@ def _(_: PrimitiveType, b: bytes) -> int:
 @from_bytes.register(TimeType)
 @from_bytes.register(TimestampType)
 @from_bytes.register(TimestamptzType)
+@from_bytes.register(TimestampNanoType)
+@from_bytes.register(TimestamptzNanoType)
 def _(_: PrimitiveType, b: bytes) -> int:
     return _LONG_STRUCT.unpack(b)[0]
 
@@ -324,3 +364,205 @@ def _(_: PrimitiveType, b: bytes) -> bytes:
 def _(primitive_type: DecimalType, buf: bytes) -> Decimal:
     unscaled = int.from_bytes(buf, "big", signed=True)
     return unscaled_to_decimal(unscaled, primitive_type.scale)
+
+
+@from_bytes.register(UnknownType)
+def _(type_: UnknownType, buf: bytes) -> None:
+    return None
+
+
+@singledispatch  # type: ignore
+def to_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
+    """Convert built-in python values into JSON value types.
+
+    https://iceberg.apache.org/spec/#json-single-value-serialization
+
+    Args:
+        primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
+        val (Any): The arbitrary built-in value to convert into the right form
+    """
+    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {val}")
+
+
+@to_json.register(BooleanType)
+def _(_: BooleanType, val: bool) -> bool:
+    """Python bool automatically converts into a JSON bool."""
+    return val
+
+
+@to_json.register(IntegerType)
+@to_json.register(LongType)
+def _(_: Union[IntegerType, LongType], val: int) -> int:
+    """Python int automatically converts to a JSON int."""
+    return val
+
+
+@to_json.register(DateType)
+def _(_: DateType, val: Union[date, int]) -> str:
+    """JSON date is string encoded."""
+    if isinstance(val, date):
+        val = date_to_days(val)
+    return to_human_day(val)
+
+
+@to_json.register(TimeType)
+def _(_: TimeType, val: Union[int, time]) -> str:
+    """Python time or microseconds since epoch serializes into an ISO8601 time."""
+    if isinstance(val, time):
+        val = time_to_micros(val)
+    return to_human_time(val)
+
+
+@to_json.register(TimestampType)
+def _(_: PrimitiveType, val: Union[int, datetime]) -> str:
+    """Python datetime (without timezone) or microseconds since epoch serializes into an ISO8601 timestamp."""
+    if isinstance(val, datetime):
+        val = datetime_to_micros(val)
+
+    return to_human_timestamp(val)
+
+
+@to_json.register(TimestamptzType)
+def _(_: TimestamptzType, val: Union[int, datetime]) -> str:
+    """Python datetime (with timezone) or microseconds since epoch serializes into an ISO8601 timestamp."""
+    if isinstance(val, datetime):
+        val = datetime_to_micros(val)
+    return to_human_timestamptz(val)
+
+
+@to_json.register(FloatType)
+@to_json.register(DoubleType)
+def _(_: Union[FloatType, DoubleType], val: float) -> float:
+    """Float serializes into JSON float."""
+    return val
+
+
+@to_json.register(StringType)
+def _(_: StringType, val: str) -> str:
+    """Python string serializes into JSON string."""
+    return val
+
+
+@to_json.register(FixedType)
+def _(t: FixedType, b: bytes) -> str:
+    """Python bytes serializes into hexadecimal encoded string."""
+    if len(t) != len(b):
+        raise ValueError(f"FixedType has length {len(t)}, which is different from the value: {len(b)}")
+
+    return codecs.encode(b, "hex").decode(UTF8)
+
+
+@to_json.register(BinaryType)
+def _(_: BinaryType, b: bytes) -> str:
+    """Python bytes serializes into hexadecimal encoded string."""
+    return codecs.encode(b, "hex").decode(UTF8)
+
+
+@to_json.register(DecimalType)
+def _(_: DecimalType, val: Decimal) -> str:
+    """Python decimal serializes into string.
+
+    Stores the string representation of the decimal value, specifically, for
+    values with a positive scale, the number of digits to the right of the
+    decimal point is used to indicate scale, for values with a negative scale,
+    the scientific notation is used and the exponent must equal the negated scale.
+    """
+    return str(val)
+
+
+@to_json.register(UUIDType)
+def _(_: UUIDType, val: uuid.UUID) -> str:
+    """Serialize into a JSON string."""
+    return str(val)
+
+
+@singledispatch  # type: ignore
+def from_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
+    """Convert JSON value types into built-in python values.
+
+    https://iceberg.apache.org/spec/#json-single-value-serialization
+
+    Args:
+        primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
+        val (Any): The arbitrary JSON value to convert into the right form
+    """
+    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {str(val)}")
+
+
+@from_json.register(BooleanType)
+def _(_: BooleanType, val: bool) -> bool:
+    """JSON bool automatically converts into a Python bool."""
+    return val
+
+
+@from_json.register(IntegerType)
+@from_json.register(LongType)
+def _(_: Union[IntegerType, LongType], val: int) -> int:
+    """JSON int automatically converts to a Python int."""
+    return val
+
+
+@from_json.register(DateType)
+def _(_: DateType, val: str) -> date:
+    """JSON date is string encoded."""
+    return days_to_date(date_str_to_days(val))
+
+
+@from_json.register(TimeType)
+def _(_: TimeType, val: str) -> time:
+    """JSON ISO8601 string into Python time."""
+    return micros_to_time(time_str_to_micros(val))
+
+
+@from_json.register(TimestampType)
+def _(_: PrimitiveType, val: str) -> datetime:
+    """JSON ISO8601 string into Python datetime."""
+    return micros_to_timestamp(timestamp_to_micros(val))
+
+
+@from_json.register(TimestamptzType)
+def _(_: TimestamptzType, val: str) -> datetime:
+    """JSON ISO8601 string into Python datetime."""
+    return micros_to_timestamptz(timestamptz_to_micros(val))
+
+
+@from_json.register(FloatType)
+@from_json.register(DoubleType)
+def _(_: Union[FloatType, DoubleType], val: float) -> float:
+    """JSON float deserializes into a Python float."""
+    return val
+
+
+@from_json.register(StringType)
+def _(_: StringType, val: str) -> str:
+    """JSON string serializes into a Python string."""
+    return val
+
+
+@from_json.register(FixedType)
+def _(t: FixedType, val: str) -> bytes:
+    """JSON hexadecimal encoded string into bytes."""
+    b = codecs.decode(val.encode(UTF8), "hex")
+
+    if len(t) != len(b):
+        raise ValueError(f"FixedType has length {len(t)}, which is different from the value: {len(b)}")
+
+    return b
+
+
+@from_json.register(BinaryType)
+def _(_: BinaryType, val: str) -> bytes:
+    """JSON hexadecimal encoded string into bytes."""
+    return codecs.decode(val.encode(UTF8), "hex")
+
+
+@from_json.register(DecimalType)
+def _(_: DecimalType, val: str) -> Decimal:
+    """Convert JSON string into a Python Decimal."""
+    return Decimal(val)
+
+
+@from_json.register(UUIDType)
+def _(_: UUIDType, val: str) -> uuid.UUID:
+    """Convert JSON string into Python UUID."""
+    return uuid.UUID(val)

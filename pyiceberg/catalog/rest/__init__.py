@@ -148,7 +148,7 @@ def _retry_hook(retry_state: RetryCallState) -> None:
 
 
 _RETRY_ARGS = {
-    "retry": retry_if_exception_type(AuthorizationExpiredError),
+    "retry": retry_if_exception_type((AuthorizationExpiredError, UnauthorizedError)),
     "stop": stop_after_attempt(2),
     "before_sleep": _retry_hook,
     "reraise": True,
@@ -370,7 +370,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {400: OAuthError, 401: OAuthError})
 
-        return TokenResponse(**response.json()).access_token
+        return TokenResponse.model_validate_json(response.text).access_token
 
     def _fetch_config(self) -> None:
         params = {}
@@ -383,7 +383,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
-        config_response = ConfigResponse(**response.json())
+        config_response = ConfigResponse.model_validate_json(response.text)
 
         config = config_response.defaults
         config.update(self.properties)
@@ -443,14 +443,14 @@ class RestCatalog(Catalog):
         try:
             if exception == OAuthError:
                 # The OAuthErrorResponse has a different format
-                error = OAuthErrorResponse(**exc.response.json())
+                error = OAuthErrorResponse.model_validate_json(exc.response.text)
                 response = str(error.error)
                 if description := error.error_description:
                     response += f": {description}"
                 if uri := error.error_uri:
                     response += f" ({uri})"
             else:
-                error = ErrorResponse(**exc.response.json()).error
+                error = ErrorResponse.model_validate_json(exc.response.text).error
                 response = f"{error.type}: {error.message}"
         except JSONDecodeError:
             # In the case we don't have a proper response
@@ -588,7 +588,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
-        return TableResponse(**response.json())
+        return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
     def create_table(
@@ -662,7 +662,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
 
-        table_response = TableResponse(**response.json())
+        table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
@@ -674,7 +674,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*table.namespace, table.name) for table in ListTablesResponse(**response.json()).identifiers]
+        return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -684,7 +684,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchTableError})
 
-        table_response = TableResponse(**response.json())
+        table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
@@ -735,7 +735,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
+        return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
     def commit_table(
@@ -781,7 +781,7 @@ class RestCatalog(Catalog):
                     504: CommitStateUnknownException,
                 },
             )
-        return CommitTableResponse(**response.json())
+        return CommitTableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
@@ -818,7 +818,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
 
-        return ListNamespaceResponse(**response.json()).namespaces
+        return ListNamespaceResponse.model_validate_json(response.text).namespaces
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
@@ -830,7 +830,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
-        return NamespaceResponse(**response.json()).properties
+        return NamespaceResponse.model_validate_json(response.text).properties
 
     @retry(**_RETRY_ARGS)
     def update_namespace_properties(
@@ -844,7 +844,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        parsed_response = UpdateNamespacePropertiesResponse(**response.json())
+        parsed_response = UpdateNamespacePropertiesResponse.model_validate_json(response.text)
         return PropertiesUpdateSummary(
             removed=parsed_response.removed,
             updated=parsed_response.updated,

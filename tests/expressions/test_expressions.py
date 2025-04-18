@@ -168,6 +168,23 @@ def test_notnull_bind_required() -> None:
     assert NotNull(Reference("a")).bind(schema) == AlwaysTrue()
 
 
+def test_notnull_bind_top_struct() -> None:
+    schema = Schema(
+        NestedField(
+            3,
+            "struct_col",
+            required=False,
+            field_type=StructType(
+                NestedField(1, "id", IntegerType(), required=True),
+                NestedField(2, "cost", DecimalType(38, 18), required=False),
+            ),
+        ),
+        schema_id=1,
+    )
+    bound = BoundNotNull(BoundReference(schema.find_field(3), schema.accessor_for_field(3)))
+    assert NotNull(Reference("struct_col")).bind(schema) == bound
+
+
 def test_isnan_inverse() -> None:
     assert ~IsNaN(Reference("f")) == NotNaN(Reference("f"))
 
@@ -574,11 +591,11 @@ def test_negate(lhs: BooleanExpression, rhs: BooleanExpression) -> None:
     [
         (
             And(ExpressionA(), ExpressionB(), ExpressionA()),
-            And(And(ExpressionA(), ExpressionB()), ExpressionA()),
+            And(ExpressionA(), And(ExpressionB(), ExpressionA())),
         ),
         (
             Or(ExpressionA(), ExpressionB(), ExpressionA()),
-            Or(Or(ExpressionA(), ExpressionB()), ExpressionA()),
+            Or(ExpressionA(), Or(ExpressionB(), ExpressionA())),
         ),
         (Not(Not(ExpressionA())), ExpressionA()),
     ],
