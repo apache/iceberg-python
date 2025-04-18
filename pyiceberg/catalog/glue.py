@@ -305,36 +305,44 @@ def _register_glue_catalog_id_with_glue_client(glue: GlueClient, glue_catalog_id
 class GlueCatalog(MetastoreCatalog):
     glue: GlueClient
 
-    def __init__(self, name: str, client: GlueClient | None = None, **properties: Any):
-        super().__init__(name, **properties)
+    def __init__(self, name: str, client: Optional[GlueClient] = None, **properties: Any):
+        """Glue Catalog.
 
-        retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
+        You either need to provide a boto3 glue client, or one will be constructed from the properties.
+
+        Args:
+            name: Name to identify the catalog.
+            client: An optional boto3 glue client.
+            properties: Properties for glue client construction and configuration.
+        """
+        super().__init__(name, **properties)
 
         if client:
             self.glue = client
-            return
+        else:
+            retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
 
-        session = boto3.Session(
-            profile_name=properties.get(GLUE_PROFILE_NAME),
-            region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
-            botocore_session=properties.get(BOTOCORE_SESSION),
-            aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
-        )
-        self.glue: GlueClient = session.client(
-            "glue",
-            endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT),
-            config=Config(
-                retries={
-                    "max_attempts": properties.get(GLUE_MAX_RETRIES, MAX_RETRIES),
-                    "mode": retry_mode_prop_value if retry_mode_prop_value in EXISTING_RETRY_MODES else STANDARD_RETRY_MODE,
-                }
-            ),
-        )
+            session = boto3.Session(
+                profile_name=properties.get(GLUE_PROFILE_NAME),
+                region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
+                botocore_session=properties.get(BOTOCORE_SESSION),
+                aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+                aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+                aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            )
+            self.glue: GlueClient = session.client(
+                "glue",
+                endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT),
+                config=Config(
+                    retries={
+                        "max_attempts": properties.get(GLUE_MAX_RETRIES, MAX_RETRIES),
+                        "mode": retry_mode_prop_value if retry_mode_prop_value in EXISTING_RETRY_MODES else STANDARD_RETRY_MODE,
+                    }
+                ),
+            )
 
-        if glue_catalog_id := properties.get(GLUE_ID):
-            _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
+            if glue_catalog_id := properties.get(GLUE_ID):
+                _register_glue_catalog_id_with_glue_client(self.glue, glue_catalog_id)
 
     def _convert_glue_to_iceberg(self, glue_table: TableTypeDef) -> Table:
         properties: Properties = glue_table["Parameters"]
