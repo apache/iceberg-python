@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mappin
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
@@ -255,6 +255,14 @@ class Snapshot(IcebergBaseModel):
         """Return the manifests for the given snapshot."""
         return list(_manifests(io, self.manifest_list))
 
+    def data_manifests(self, io: FileIO) -> List[ManifestFile]:
+        """Return the data manifests for the given snapshot."""
+        return [manifest for manifest in self.manifests(io) if manifest.content == ManifestContent.DATA]
+
+    def delete_manifests(self, io: FileIO) -> List[ManifestFile]:
+        """Return the delete manifests for the given snapshot."""
+        return [manifest for manifest in self.manifests(io) if manifest.content == ManifestContent.DELETES]
+
 
 class MetadataLogEntry(IcebergBaseModel):
     metadata_file: str = Field(alias="metadata-file")
@@ -429,3 +437,13 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         if snapshot.parent_snapshot_id is None:
             break
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
+
+
+def ancestors_between(
+    current_snapshot: Optional[Snapshot], oldest_snapshot: Optional[Snapshot], table_metadata: TableMetadata
+) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given snapshot between the latest and oldest snapshot."""
+    for snapshot in ancestors_of(current_snapshot, table_metadata):
+        if snapshot.snapshot_id == oldest_snapshot.snapshot_id:
+            break
+        yield snapshot
