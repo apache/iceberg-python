@@ -51,7 +51,10 @@ def validation_history(
     last_snapshot = None
     for snapshot in ancestors_between(starting_snapshot, parent_snapshot, table.metadata):
         last_snapshot = snapshot
-        if snapshot.operation in matching_operations:
+        summary = snapshot.summary
+        if summary is None:
+            continue
+        if summary.operation in matching_operations:
             snapshots.add(snapshot)
             if manifest_content == ManifestContent.DATA:
                 manifests_files.extend(
