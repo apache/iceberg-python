@@ -716,3 +716,53 @@ def test_transform_dict_value_to_str() -> None:
     input_dict["key6"] = None
     with pytest.raises(ValueError, match="None type is not a supported value in properties: key6"):
         transform_dict_value_to_str(input_dict)
+
+
+def test_string_based_types():
+    """Test creating types from string literals."""
+    from pyiceberg.types import IcebergType, StringType, IntegerType, NestedField, ListType, MapType, DecimalType
+
+    # Test primitive types
+    assert IcebergType.handle_primitive_type("string", None) == StringType()
+    assert IcebergType.handle_primitive_type("int", None) == IntegerType()
+
+    # Test decimal type
+    decimal_type = IcebergType.handle_primitive_type("decimal(10, 2)", None)
+    assert isinstance(decimal_type, DecimalType)
+    assert decimal_type.precision == 10
+    assert decimal_type.scale == 2
+
+    # Test list type
+    list_type = IcebergType.handle_primitive_type("list<string>", None)
+    assert isinstance(list_type, ListType)
+    assert isinstance(list_type.element_type, StringType)
+    assert list_type.element_id == -1  # Default placeholder ID
+
+    # Test map type
+    map_type = IcebergType.handle_primitive_type("map<string, int>", None)
+    assert isinstance(map_type, MapType)
+    assert isinstance(map_type.key_type, StringType)
+    assert isinstance(map_type.value_type, IntegerType)
+    assert map_type.key_id == -1  # Default placeholder ID
+    assert map_type.value_id == -1  # Default placeholder ID
+
+    # Test nested map type
+    nested_map_type = IcebergType.handle_primitive_type("map<string, map<int, string>>", None)
+    assert isinstance(nested_map_type, MapType)
+    assert isinstance(nested_map_type.key_type, StringType)
+    assert isinstance(nested_map_type.value_type, MapType)
+    assert isinstance(nested_map_type.value_type.key_type, IntegerType)
+    assert isinstance(nested_map_type.value_type.value_type, StringType)
+
+    # Test using string types in NestedField
+    field = NestedField(field_id=1, name="test_field", field_type="string", required=True)
+    assert isinstance(field.field_type, StringType)
+
+    field = NestedField(field_id=2, name="list_field", field_type="list<string>", required=False)
+    assert isinstance(field.field_type, ListType)
+    assert isinstance(field.field_type.element_type, StringType)
+
+    field = NestedField(field_id=3, name="map_field", field_type="map<string, int>", required=True)
+    assert isinstance(field.field_type, MapType)
+    assert isinstance(field.field_type.key_type, StringType)
+    assert isinstance(field.field_type.value_type, IntegerType)
