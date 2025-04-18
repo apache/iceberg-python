@@ -162,6 +162,7 @@ class IcebergType(IcebergBaseModel):
                 element_type_str = v[5:-1].strip()
                 # For simplicity, use -1 as placeholder ID that should be assigned later
                 element_type = IcebergType.handle_primitive_type(element_type_str, None)
+                # The 'element' parameter in the ListType constructor maps to the 'element_type' attribute
                 return ListType(element_id=-1, element=element_type, element_required=True)
 
             if v.startswith("map<") and v.endswith(">"):
