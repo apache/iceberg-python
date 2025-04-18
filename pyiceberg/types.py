@@ -125,6 +125,7 @@ class IcebergType(IcebergBaseModel):
         # Pydantic works mostly around dicts, and there seems to be something
         # by not serializing into a RootModel, might revisit this.
         if isinstance(v, str):
+            # Handle primitive types
             if v == "boolean":
                 return BooleanType()
             elif v == "string":
@@ -155,13 +156,33 @@ class IcebergType(IcebergBaseModel):
                 return BinaryType()
             if v == "unknown":
                 return UnknownType()
+
+            # Handle complex types with simplified string syntax
+            if v.startswith("list<") and v.endswith(">"):
+                element_type_str = v[5:-1].strip()
+                # For simplicity, use -1 as placeholder ID that should be assigned later
+                element_type = IcebergType.handle_primitive_type(element_type_str, None)
+                return ListType(element_id=-1, element=element_type, element_required=True)
+
+            if v.startswith("map<") and v.endswith(">"):
+                inner_types = v[4:-1].strip().split(",", 1)
+                if len(inner_types) != 2:
+                    raise ValueError(f"Invalid map type format: {v}, expected 'map<keyType, valueType>'")
+                key_type = IcebergType.handle_primitive_type(inner_types[0].strip(), None)
+                value_type = IcebergType.handle_primitive_type(inner_types[1].strip(), None)
+                # For simplicity, use -1 as placeholder IDs that should be assigned later
+                return MapType(key_id=-1, key_type=key_type, value_id=-1, value_type=value_type, value_required=True)
+
+            # Handle fixed and decimal types
             if v.startswith("fixed"):
                 return FixedType(_parse_fixed_type(v))
             if v.startswith("decimal"):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
-            else:
-                raise ValueError(f"Type not recognized: {v}")
+
+            # If none of the above matched, it's an unknown type
+            raise ValueError(f"Type not recognized: {v}")
+
         if isinstance(v, dict) and cls == IcebergType:
             complex_type = v.get("type")
             if complex_type == "list":
