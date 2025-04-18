@@ -26,18 +26,18 @@ class ValidationException(Exception):
 def validation_history(
     table: Table,
     starting_snapshot: Snapshot,
+    parent_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
-    parent_snapshot: Snapshot,
 ) -> tuple[list[ManifestFile], set[Snapshot]]:
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
 
     Args:
         table: Table to get the history from
         starting_snapshot: Starting snapshot
+        parent_snapshot: Parent snapshot to get the history from
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
-        parent_snapshot: Parent snapshot to get the history from
 
     Raises:
         ValidationException: If no matching snapshot is found or only one snapshot is found

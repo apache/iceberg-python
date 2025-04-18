@@ -28,6 +28,10 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
     oldest_snapshot = table_v2_with_extensive_snapshots.snapshots()[0]
     newest_snapshot = cast(Snapshot, table_v2_with_extensive_snapshots.current_snapshot())
     manifests, snapshots = validation_history(
-        table_v2_with_extensive_snapshots, newest_snapshot, {Operation.APPEND}, ManifestContent.DATA, oldest_snapshot
+        table_v2_with_extensive_snapshots,
+        newest_snapshot,
+        oldest_snapshot,
+        {Operation.APPEND},
+        ManifestContent.DATA,
     )
     assert len(snapshots) == 2
