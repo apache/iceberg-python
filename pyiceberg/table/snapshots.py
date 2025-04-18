@@ -258,11 +258,11 @@ class Snapshot(IcebergBaseModel):
             io: The IO instance to read the manifest list.
             content_filter: The content filter to apply to the manifests. One of ManifestContent.DATA or ManifestContent.DELETES.
         """
-        all_manifests = list(_manifests(io, self.manifest_list))
-        if content_filter is not None:
-            all_manifests = [manifest for manifest in all_manifests if manifest.content == content_filter]
-
-        return all_manifests
+        return [
+            manifest
+            for manifest in _manifests(io, self.manifest_list)
+            if content_filter is None or manifest.content == content_filter
+        ]
 
 
 class MetadataLogEntry(IcebergBaseModel):
