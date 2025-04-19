@@ -54,17 +54,17 @@ def validation_history(
     for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
         last_snapshot = snapshot
         summary = snapshot.summary
-        if summary is None:
+        if summary is None or summary.matching_operations not in matching_operations:
             continue
-        if summary.operation in matching_operations:
-            snapshots.add(snapshot)
-            manifests_files.extend(
-                [
-                    manifest
-                    for manifest in snapshot.manifests(table.io)
-                    if manifest.added_snapshot_id == snapshot.snapshot_id and manifest.content == manifest_content_filter
-                ]
-            )
+
+        snapshots.add(snapshot)
+        manifests_files.extend(
+            [
+                manifest
+                for manifest in snapshot.manifests(table.io)
+                if manifest.added_snapshot_id == snapshot.snapshot_id and manifest.content == manifest_content_filter
+            ]
+        )
 
     if last_snapshot is None or last_snapshot.snapshot_id == from_snapshot.snapshot_id:
         raise ValidationException("No matching snapshot found.")
