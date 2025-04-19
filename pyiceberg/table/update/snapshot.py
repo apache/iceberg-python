@@ -857,7 +857,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
         Returns:
             Tuple of updates and requirements to be committed,
-            as requried by the calling parent apply functions.
+            as required by the calling parent apply functions.
         """
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
         self._updates += (update,)
