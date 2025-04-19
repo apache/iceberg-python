@@ -530,7 +530,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         }
 
         if field.write_default is not None:
-            result["default"] = field.write_default  # type: ignore
+            result["default"] = field.write_default
         elif field.optional:
             result["default"] = None
 
