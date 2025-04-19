@@ -66,7 +66,9 @@ from pyiceberg.table.update import (
     AddSnapshotUpdate,
     AssertRefSnapshotId,
     RemoveSnapshotRefUpdate,
+    RemoveSnapshotsUpdate,
     SetSnapshotRefUpdate,
+    TableMetadata,
     TableRequirement,
     TableUpdate,
     U,
@@ -82,7 +84,11 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Transaction
+    pass
+
+
+from pyiceberg.table.metadata import Snapshot, TableMetadata
+from pyiceberg.table.snapshots import Snapshot
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -238,7 +244,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
         )
 
-    def _commit(self) -> UpdatesAndRequirements:
+    def _commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -739,11 +745,11 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
        ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
     """
 
+    _snapshot_ids_to_expire = set()
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
 
     def _commit(self) -> UpdatesAndRequirements:
-        """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
@@ -843,3 +849,52 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
+
+    def _commit(self) -> UpdatesAndRequirements:
+        """
+        Commit the staged updates and requirements.
+        This will remove the snapshots with the given IDs.
+
+        Returns:
+            Tuple of updates and requirements to be committed,
+            as required by the calling parent apply functions.
+        """
+        update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
+        self._updates += (update,)
+        return self._updates, self._requirements
+
+    def expire_snapshot_by_id(self, snapshot_id: int) -> ManageSnapshots:
+        """
+        Expire a snapshot by its ID.
+
+        Args:
+            snapshot_id (int): The ID of the snapshot to expire.
+
+        Returns:
+            This for method chaining.
+        """
+        if self._transaction.table_metadata.snapshot_by_id(snapshot_id) is None:
+            raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
+        self._snapshot_ids_to_expire.add(snapshot_id)
+        return self
+
+    def expire_snapshots_older_than(self, timestamp_ms: int) -> ManageSnapshots:
+        """
+        Expire snapshots older than the given timestamp.
+
+        Args:
+            timestamp_ms (int): The timestamp in milliseconds. Snapshots older than this will be expired.
+
+        Returns:
+            This for method chaining.
+        """
+        # Collect IDs of snapshots to be expired
+        snapshots_to_remove = [
+            snapshot.snapshot_id
+            for snapshot in self._transaction.table_metadata.snapshots
+            if snapshot.timestamp_ms < timestamp_ms
+        ]
+        if snapshots_to_remove:
+            for snapshot_id in snapshots_to_remove:
+                self._snapshot_ids_to_expire.add(snapshot_id)
+        return self
