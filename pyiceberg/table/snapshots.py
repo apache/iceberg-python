@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, DefaultDict, Dict, Iterable, List, Mappin
 from pydantic import Field, PrivateAttr, model_serializer
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, _manifests
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
@@ -251,18 +251,9 @@ class Snapshot(IcebergBaseModel):
         result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
         return result_str
 
-    def manifests(self, io: FileIO, content_filter: Optional[ManifestContent] = None) -> List[ManifestFile]:
-        """Return the manifests for the given snapshot.
-
-        Args:
-            io: The IO instance to read the manifest list.
-            content_filter: The content filter to apply to the manifests. One of ManifestContent.DATA or ManifestContent.DELETES.
-        """
-        return [
-            manifest
-            for manifest in _manifests(io, self.manifest_list)
-            if content_filter is None or manifest.content == content_filter
-        ]
+    def manifests(self, io: FileIO) -> List[ManifestFile]:
+        """Return the manifests for the given snapshot."""
+        return list(_manifests(io, self.manifest_list))
 
 
 class MetadataLogEntry(IcebergBaseModel):
