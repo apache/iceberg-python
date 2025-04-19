@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name,eval-used
+from typing import cast
+
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
@@ -392,11 +394,12 @@ def test_ancestors_of_recursive_error(table_v2_with_extensive_snapshots: Table) 
 
 def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
     oldest_snapshot = table_v2_with_extensive_snapshots.snapshots()[0]
+    current_snapshot = cast(Snapshot, table_v2_with_extensive_snapshots.current_snapshot())
     assert (
         len(
             list(
                 ancestors_between(
-                    table_v2_with_extensive_snapshots.current_snapshot(),
+                    current_snapshot,
                     oldest_snapshot,
                     table_v2_with_extensive_snapshots.metadata,
                 )

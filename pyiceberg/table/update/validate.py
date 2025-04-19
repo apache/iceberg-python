@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Optional
+
 from pyiceberg.manifest import ManifestContent, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
@@ -25,8 +27,8 @@ class ValidationException(Exception):
 
 def validation_history(
     table: Table,
-    starting_snapshot: Snapshot,
-    parent_snapshot: Snapshot,
+    from_snapshot: Snapshot,
+    to_snapshot: Optional[Snapshot],
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
 ) -> tuple[list[ManifestFile], set[Snapshot]]:
@@ -34,8 +36,8 @@ def validation_history(
 
     Args:
         table: Table to get the history from
-        starting_snapshot: Starting snapshot
-        parent_snapshot: Parent snapshot to get the history from
+        from_snapshot: Parent snapshot to get the history from
+        to_snapshot: Starting snapshot
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
 
@@ -49,7 +51,7 @@ def validation_history(
     snapshots: set[Snapshot] = set()
 
     last_snapshot = None
-    for snapshot in ancestors_between(starting_snapshot, parent_snapshot, table.metadata):
+    for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
         last_snapshot = snapshot
         summary = snapshot.summary
         if summary is None:
@@ -64,7 +66,7 @@ def validation_history(
                 ]
             )
 
-    if last_snapshot is None or last_snapshot.snapshot_id == starting_snapshot.snapshot_id:
+    if last_snapshot is None or last_snapshot.snapshot_id == from_snapshot.snapshot_id:
         raise ValidationException("No matching snapshot found.")
 
     return manifests_files, snapshots
