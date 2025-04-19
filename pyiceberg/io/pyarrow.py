@@ -2271,7 +2271,7 @@ class DataFileStatistics:
         return lower_value
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
-        return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
+        return Record(*[self._partition_value(field, schema) for field in partition_spec.fields])
 
     def to_serialized_dict(self) -> Dict[str, Any]:
         lower_bounds = {}
@@ -2449,7 +2449,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
-        data_file = DataFile(
+        data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
@@ -2540,7 +2540,7 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    data_file = DataFile(
+    data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_path,
         file_format=FileFormat.PARQUET,
