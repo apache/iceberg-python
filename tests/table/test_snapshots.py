@@ -300,7 +300,6 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
             "total-position-deletes": "1",
             "total-records": "1",
         },
-        truncate_full_table=True,
     )
 
     expected = {
@@ -310,18 +309,12 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
         "added-files-size": "4",
         "added-position-deletes": "5",
         "added-records": "6",
-        "total-data-files": "1",
-        "total-records": "6",
-        "total-delete-files": "2",
-        "total-equality-deletes": "3",
-        "total-files-size": "4",
-        "total-position-deletes": "5",
-        "deleted-data-files": "1",
-        "removed-delete-files": "1",
-        "deleted-records": "1",
-        "removed-files-size": "1",
-        "removed-position-deletes": "1",
-        "removed-equality-deletes": "1",
+        "total-data-files": "2",
+        "total-delete-files": "3",
+        "total-records": "7",
+        "total-files-size": "5",
+        "total-position-deletes": "6",
+        "total-equality-deletes": "4",
     }
 
     assert actual.additional_properties == expected
@@ -348,7 +341,6 @@ def test_invalid_type() -> None:
                 },
             ),
             previous_summary={"total-data-files": "abc"},  # should be a number
-            truncate_full_table=True,
         )
 
     assert "Could not parse summary property total-data-files to an int: abc" in str(e.value)

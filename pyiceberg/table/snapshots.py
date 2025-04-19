@@ -28,6 +28,7 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     from pyiceberg.table.metadata import TableMetadata
@@ -356,6 +357,11 @@ def update_snapshot_summaries(
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
     if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
+        deprecation_message(
+            deprecated_in="0.10.0",
+            removed_in="0.11.0",
+            help_message="The truncate-full-table shouldn't be used.",
+        )
         summary = _truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:

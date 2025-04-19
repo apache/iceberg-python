@@ -344,6 +344,12 @@ def test_static_table_gz_same_as_table(table_v2: Table, metadata_location_gz: st
     assert static_table.metadata == table_v2.metadata
 
 
+def test_static_table_version_hint_same_as_table(table_v2: Table, table_location: str) -> None:
+    static_table = StaticTable.from_metadata(table_location)
+    assert isinstance(static_table, Table)
+    assert static_table.metadata == table_v2.metadata
+
+
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
     with pytest.raises(ValueError):
         StaticTable.from_metadata(metadata_location, {PY_IO_IMPL: "pyiceberg.does.not.exist.FileIO"})
