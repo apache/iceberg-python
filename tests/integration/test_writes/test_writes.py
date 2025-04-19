@@ -1776,3 +1776,37 @@ def test_write_optional_list(session_catalog: Catalog) -> None:
     session_catalog.load_table(identifier).append(df_2)
 
     assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 4
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_evolve_and_write(
+    spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
+) -> None:
+    identifier = "default.test_evolve_and_write"
+    tbl = _create_table(session_catalog, identifier, properties={"format-version": format_version}, schema=Schema())
+    other_table = session_catalog.load_table(identifier)
+
+    numbers = pa.array([1, 2, 3, 4], type=pa.int32())
+
+    with tbl.update_schema() as upd:
+        # This is not known by other_table
+        upd.add_column("id", IntegerType())
+
+    with other_table.transaction() as tx:
+        # Refreshes the underlying metadata, and the schema
+        other_table.refresh()
+        tx.append(
+            pa.Table.from_arrays(
+                [
+                    numbers,
+                ],
+                schema=pa.schema(
+                    [
+                        pa.field("id", pa.int32(), nullable=True),
+                    ]
+                ),
+            )
+        )
+
+    assert session_catalog.load_table(identifier).scan().to_arrow().column(0).combine_chunks() == numbers

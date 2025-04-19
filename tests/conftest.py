@@ -2365,7 +2365,7 @@ def table_v2_with_extensive_snapshots(example_table_metadata_v2_with_extensive_s
         identifier=("database", "table"),
         metadata=table_metadata,
         metadata_location=f"{table_metadata.location}/uuid.metadata.json",
-        io=load_file_io(location=metadata_location),
+        io=load_file_io(),
         catalog=NoopCatalog("NoopCatalog"),
     )
 
