@@ -50,8 +50,12 @@ from pyiceberg.expressions import (
     BoundNotStartsWith,
     BoundReference,
     BoundStartsWith,
+    EqualTo,
     GreaterThan,
+    IsNull,
     Not,
+    NotEqualTo,
+    NotNull,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -2317,3 +2321,66 @@ def test_pyarrow_io_multi_fs() -> None:
 
         # Same PyArrowFileIO instance resolves local file input to LocalFileSystem
         assert isinstance(pyarrow_file_io.new_input("file:///path/to/file")._filesystem, LocalFileSystem)
+
+
+def test_scan_nulls(catalog: InMemoryCatalog, arrow_table_with_null: pa.Table) -> None:
+    import pyarrow.compute as pc
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_scan_nulls",
+        schema=arrow_table_with_null.schema,
+    )
+    table.append(arrow_table_with_null)
+
+    # "string": ["a", None, "z"]
+    assert len(table.scan(row_filter="string is null").to_arrow()) == 1
+    assert len(table.scan(row_filter=IsNull("string")).to_arrow()) == 1
+    assert len(table.scan().to_arrow().filter(pc.field("string").is_null())) == 1
+
+    assert len(table.scan(row_filter="string is not null").to_arrow()) == 2
+    assert len(table.scan(row_filter=NotNull("string")).to_arrow()) == 2
+    assert len(table.scan().to_arrow().filter(pc.field("string").is_valid())) == 2
+
+    assert len(table.scan(row_filter="string == 'a'").to_arrow()) == 1
+    assert len(table.scan(row_filter=EqualTo(term="string", literal=("a"))).to_arrow()) == 1
+    assert len(table.scan().to_arrow().filter(pc.field("string") == "a")) == 1
+
+    # this should be 2
+    assert len(table.scan(row_filter="string != 'a'").to_arrow()) == 1
+    assert len(table.scan(row_filter=NotEqualTo(term="string", literal=("a"))).to_arrow()) == 1
+    assert len(table.scan(row_filter=Not(EqualTo(term="string", literal=("a")))).to_arrow()) == 1
+    assert len(table.scan().to_arrow().filter(pc.field("string") != "a")) == 1
+
+
+def test_scan_kleene(catalog: InMemoryCatalog, arrow_table_with_null: pa.Table) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_scan_nulls",
+        schema=arrow_table_with_null.schema,
+    )
+    table.append(arrow_table_with_null)
+
+    # "string": ["a", None, "z"]
+    assert len(table.scan(row_filter="string is null OR string = 'a'").to_arrow()) == 2  # {null, a}
+    assert len(table.scan(row_filter="string is null AND string = 'a'").to_arrow()) == 0  # {}
+    assert len(table.scan(row_filter="string is not null OR string = 'a'").to_arrow()) == 2  # {a, z}
+    assert len(table.scan(row_filter="string is not null AND string = 'a'").to_arrow()) == 1  # {a}
+
+
+def test_scan_complements(catalog: InMemoryCatalog, arrow_table_with_null: pa.Table) -> None:
+    from pyiceberg.expressions.visitors import bind
+    from pyiceberg.io.pyarrow import _expression_to_complementary_pyarrow
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_scan_complements",
+        schema=arrow_table_with_null.schema,
+    )
+    table.append(arrow_table_with_null)
+
+    string_equal = EqualTo(term="string", literal=("a"))
+    assert len(table.scan(row_filter=string_equal).to_arrow()) == 1
+    bound_string_equal = bind(table.schema(), string_equal, case_sensitive=False)
+    filter_expression = _expression_to_complementary_pyarrow(bound_string_equal)
+    assert len(table.scan().to_arrow().filter(filter_expression)) == 2  # complements handles null correctly
