@@ -19,9 +19,9 @@ from typing import cast
 from unittest.mock import patch
 
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import ManifestContent, ManifestFile
+from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
-from pyiceberg.table.snapshots import Operation, Snapshot
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.table.update.validate import deleted_data_files, validation_history
 
 
@@ -109,3 +109,34 @@ def test_deleted_data_files(
         )
 
         assert result == []
+
+    # modify second to last snapshot to be a delete
+    snapshots = table_v2_with_extensive_snapshots.snapshots()
+    altered_snapshot = snapshots[-2]
+    altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=Operation.DELETE)})
+    snapshots[-2] = altered_snapshot
+
+    table_v2_with_extensive_snapshots.metadata = table_v2_with_extensive_snapshots.metadata.model_copy(
+        update={"snapshots": snapshots},
+    )
+
+    my_entry = ManifestEntry(
+        status=ManifestEntryStatus.DELETED,
+        snapshot_id=altered_snapshot.snapshot_id,
+    )
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", return_value=[my_entry]),
+    ):
+        result = list(
+            deleted_data_files(
+                table=table_v2_with_extensive_snapshots,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+                partition_set=None,
+            )
+        )
+
+        assert result == [my_entry]
