@@ -432,10 +432,14 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
 
 
 def ancestors_between(
-    current_snapshot: Optional[Snapshot], oldest_snapshot: Snapshot, table_metadata: TableMetadata
+    current_snapshot: Snapshot, oldest_snapshot: Optional[Snapshot], table_metadata: TableMetadata
 ) -> Iterable[Snapshot]:
     """Get the ancestors of and including the given snapshot between the latest and oldest snapshot."""
-    for snapshot in ancestors_of(current_snapshot, table_metadata):
-        if snapshot.snapshot_id == oldest_snapshot.snapshot_id:
-            break
-        yield snapshot
+    if oldest_snapshot is not None:
+        for snapshot in ancestors_of(current_snapshot, table_metadata):
+            if snapshot.snapshot_id == oldest_snapshot.snapshot_id:
+                break
+            yield snapshot
+    else:
+        for snapshot in ancestors_of(current_snapshot, table_metadata):
+            yield snapshot
