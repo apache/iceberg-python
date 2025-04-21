@@ -201,8 +201,27 @@ def test_snapshot_summary_collector_with_partition() -> None:
         "changed-partition-count": "2",
     }
 
+
+@pytest.mark.integration
+def test_snapshot_summary_collector_with_partition_limit_in_constructor() -> None:
+    # Given
+    partition_summary_limit = 10
+    ssc = SnapshotSummaryCollector(partition_summary_limit=partition_summary_limit)
+
+    assert ssc.build() == {}
+    schema = Schema(
+        NestedField(field_id=1, name="bool_field", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="string_field", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name="int_field"))
+    data_file_1 = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
+    data_file_2 = DataFile(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(int_field=2))
+
     # When
-    ssc.set_partition_summary_limit(10)
+    ssc.add_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_2, schema=schema, partition_spec=spec)
 
     # Then
     assert ssc.build() == {
