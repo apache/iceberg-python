@@ -45,6 +45,7 @@ from hive_metastore.ttypes import Table as HiveTable
 
 from pyiceberg.catalog import PropertiesUpdateSummary
 from pyiceberg.catalog.hive import (
+    HIVE_KERBEROS_AUTH,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
     LOCK_CHECK_RETRIES,
@@ -1310,7 +1311,7 @@ def test_create_hive_client_with_kerberos(
     properties = {
         "uri": kerberized_hive_metastore_fake_url,
         "ugi": "user",
-        "kerberos_auth": True,
+        HIVE_KERBEROS_AUTH: "true",
     }
     client = HiveCatalog._create_hive_client(properties)
     assert client is not None
