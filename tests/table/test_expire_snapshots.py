@@ -28,7 +28,7 @@ def test_expire_snapshot(table_v2: Table) -> None:
 
     # Expire the snapshot directly without using a transaction
     try:
-        table_v2.manage_snapshots().expire_snapshot_by_id(EXPIRE_SNAPSHOT).commit()
+        table_v2.expire_snapshots().expire_snapshot_by_id(EXPIRE_SNAPSHOT).commit()
     except Exception as e:
         assert False, f"Commit failed with error: {e}"
 

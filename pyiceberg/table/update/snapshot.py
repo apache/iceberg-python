@@ -850,6 +850,18 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         return self._remove_ref_snapshot(ref_name=branch_name)
 
+class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
+    """
+    Expire snapshots by ID or by timestamp.
+    Use table.expire_snapshots().<operation>().commit() to run a specific operation.
+    Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+    Pending changes are applied on commit.
+    """
+
+    _snapshot_ids_to_expire = set()
+    _updates: Tuple[TableUpdate, ...] = ()
+    _requirements: Tuple[TableRequirement, ...] = ()
+
     def _commit(self) -> UpdatesAndRequirements:
         """
         Commit the staged updates and requirements.
@@ -863,7 +875,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._updates += (update,)
         return self._updates, self._requirements
 
-    def expire_snapshot_by_id(self, snapshot_id: int) -> ManageSnapshots:
+    def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
         Expire a snapshot by its ID.
 
@@ -878,7 +890,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         self._snapshot_ids_to_expire.add(snapshot_id)
         return self
 
-    def expire_snapshots_older_than(self, timestamp_ms: int) -> ManageSnapshots:
+    def expire_snapshots_older_than(self, timestamp_ms: int) -> ExpireSnapshots:
         """
         Expire snapshots older than the given timestamp.
 
