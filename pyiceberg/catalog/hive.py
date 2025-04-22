@@ -18,7 +18,6 @@ import getpass
 import logging
 import socket
 import time
-from functools import cached_property
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
@@ -159,7 +158,6 @@ class _HiveClient:
         else:
             return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service="hive")
 
-    @cached_property
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
         client = Client(protocol)
@@ -172,11 +170,11 @@ class _HiveClient:
         if not self._transport.isOpen():
             try:
                 self._transport.open()
-            except TTransport.TTransportException:
+            except (TypeError, TTransport.TTransportException):
                 # reinitialize _transport
                 self._transport = self._init_thrift_transport()
                 self._transport.open()
-        return self._client
+        return self._client()  # recreate the client
 
     def __exit__(
         self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
