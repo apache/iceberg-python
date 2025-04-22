@@ -1095,7 +1095,7 @@ def test_add_required_column(catalog: Catalog) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "iceberg_type, default_value, write_default",
+    "iceberg_type, initial_default, write_default",
     [
         (BooleanType(), True, False),
         (IntegerType(), 123, 456),
@@ -1119,25 +1119,33 @@ def test_add_required_column(catalog: Catalog) -> None:
     ],
 )
 def test_initial_default_all_columns(
-    catalog: Catalog, iceberg_type: PrimitiveType, default_value: Any, write_default: Any
+    catalog: Catalog, iceberg_type: PrimitiveType, initial_default: Any, write_default: Any
 ) -> None:
     # Round trips all the types through the rest catalog to check the serialization
     table = _create_table_with_schema(catalog, Schema(), properties={TableProperties.FORMAT_VERSION: 3})
 
     tx = table.update_schema()
-    tx.add_column(path="data", field_type=iceberg_type, required=True, default_value=default_value)
+    tx.add_column(path="data", field_type=iceberg_type, required=True, default_value=initial_default)
+    tx.add_column(path="nested", field_type=StructType(), required=False)
     tx.commit()
 
-    field = table.schema().find_field(1)
-    assert field.initial_default == default_value
-    assert field.write_default == default_value
+    tx = table.update_schema()
+    tx.add_column(path=("nested", "data"), field_type=iceberg_type, required=True, default_value=initial_default)
+    tx.commit()
+
+    for field_id in [1, 3]:
+        field = table.schema().find_field(field_id)
+        assert field.initial_default == initial_default
+        assert field.write_default == initial_default
 
     with table.update_schema() as tx:
         tx.set_default_value("data", write_default)
+        tx.set_default_value(("nested", "data"), write_default)
 
-    field = table.schema().find_field(1)
-    assert field.initial_default == default_value
-    assert field.write_default == write_default
+    for field_id in [1, 3]:
+        field = table.schema().find_field(field_id)
+        assert field.initial_default == initial_default
+        assert field.write_default == write_default
 
 
 @pytest.mark.integration

@@ -563,14 +563,12 @@ def _(_: StringType, val: str) -> str:
 def _(t: FixedType, val: Union[str, bytes]) -> bytes:
     """JSON hexadecimal encoded string into bytes."""
     if isinstance(val, str):
-        b = codecs.decode(val.encode(UTF8), "hex")
+        val = codecs.decode(val.encode(UTF8), "hex")
 
-        if len(t) != len(b):
-            raise ValueError(f"FixedType has length {len(t)}, which is different from the value: {len(b)}")
+    if len(t) != len(val):
+        raise ValueError(f"FixedType has length {len(t)}, which is different from the value: {len(val)}")
 
-        return b
-    else:
-        return val
+    return val
 
 
 @from_json.register(BinaryType)
