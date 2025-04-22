@@ -19,7 +19,7 @@
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-POETRY_VERSION = 2.0.1
+POETRY_VERSION = 2.1.1
 install-poetry:  ## Ensure Poetry is installed and the correct version is being used.
 	@if ! command -v poetry &> /dev/null; then \
 		echo "Poetry could not be found. Installing..."; \
