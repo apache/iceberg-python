@@ -17,7 +17,6 @@
 # pylint: disable=protected-access,redefined-outer-name
 import base64
 import copy
-import logging
 import struct
 import threading
 import uuid
@@ -221,9 +220,7 @@ class SaslServer(threading.Thread):
                     client.write(self._response)
                     client.flush()
             except Exception:
-                logging.exception(
-                    "An error occurred while responding to client",
-                )
+                pass
 
     @property
     def port(self) -> Optional[int]:
