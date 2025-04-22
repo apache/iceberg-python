@@ -50,7 +50,11 @@ def validation_history(
     for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
         last_snapshot = snapshot
         summary = snapshot.summary
-        if summary is None or summary.operation not in matching_operations:
+        if summary is None:
+            operation = Operation.OVERWRITE
+        else:
+            operation = summary.operation
+        if operation not in matching_operations:
             continue
 
         snapshots.add(snapshot)
