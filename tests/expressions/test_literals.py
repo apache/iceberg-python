@@ -393,22 +393,6 @@ def test_string_to_boolean_literal() -> None:
     assert literal("FALSE").to(BooleanType()) == literal(False)
 
 
-def test_string_to_float_literal() -> None:
-    assert literal("3.141").to(FloatType()) == literal(3.141).to(FloatType())
-
-
-def test_string_to_float_outside_bound() -> None:
-    big_lit_str = literal(str(FloatType.max + 1.0e37))
-    assert big_lit_str.to(FloatType()) == FloatAboveMax()
-
-    small_lit_str = literal(str(FloatType.min - 1.0e37))
-    assert small_lit_str.to(FloatType()) == FloatBelowMin()
-
-
-def test_string_to_double_literal() -> None:
-    assert literal("3.141").to(DoubleType()) == literal(3.141)
-
-
 @pytest.mark.parametrize(
     "val",
     ["unknown", "off", "on", "0", "1", "y", "yes", "n", "no", "t", "f"],

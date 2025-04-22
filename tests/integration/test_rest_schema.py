@@ -154,7 +154,7 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
         NestedField(field_id=4, name="col_integer", field_type=IntegerType(), required=False),
     )
 
-    with pytest.raises(CommitFailedException, match="Requirement failed: current schema id has changed: expected 2, found 3"):
+    with pytest.raises(CommitFailedException) as exc_info:
         with tbl.transaction() as tx:
             # Start a new update
             schema_update = tx.update_schema()
@@ -164,6 +164,8 @@ def test_schema_evolution_via_transaction(catalog: Catalog) -> None:
 
             # stage another update in the transaction
             schema_update.add_column("col_double", DoubleType()).commit()
+
+    assert "Requirement failed: current schema changed: expected id 2 != 3" in str(exc_info.value)
 
     assert tbl.schema() == Schema(
         NestedField(field_id=1, name="col_uuid", field_type=UUIDType(), required=False),
