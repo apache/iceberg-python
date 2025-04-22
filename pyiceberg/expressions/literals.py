@@ -606,6 +606,26 @@ class StringLiteral(Literal[str]):
         else:
             raise ValueError(f"Could not convert {self.value} into a {type_var}")
 
+    @to.register(FloatType)
+    def _(self, type_var: FloatType) -> Literal[float]:
+        try:
+            number = float(self.value)
+            if FloatType.max < number:
+                return FloatAboveMax()
+            elif FloatType.min > number:
+                return FloatBelowMin()
+            return FloatLiteral(number)
+        except ValueError as e:
+            raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
+
+    @to.register(DoubleType)
+    def _(self, type_var: DoubleType) -> Literal[float]:
+        try:
+            number = float(self.value)
+            return DoubleLiteral(number)
+        except ValueError as e:
+            raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
+
     def __repr__(self) -> str:
         """Return the string representation of the StringLiteral class."""
         return f"literal({repr(self.value)})"
