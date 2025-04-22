@@ -316,7 +316,6 @@ class StructReader(Reader):
         "field_readers",
         "create_struct",
         "struct",
-        "_create_with_keyword",
         "_field_reader_functions",
         "_hash",
         "_max_pos",

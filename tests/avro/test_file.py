@@ -346,20 +346,28 @@ def test_all_primitive_types(is_required: bool) -> None:
             return self._data[6]
 
         @property
-        def field_timestamp(self) -> datetime:
+        def field_date(self) -> datetime:
             return self._data[7]
 
         @property
-        def field_timestamptz(self) -> datetime:
+        def field_time(self) -> datetime:
             return self._data[8]
 
         @property
-        def field_string(self) -> str:
+        def field_timestamp(self) -> datetime:
             return self._data[9]
 
         @property
-        def field_uuid(self) -> UUID:
+        def field_timestamptz(self) -> datetime:
             return self._data[10]
+
+        @property
+        def field_string(self) -> str:
+            return self._data[11]
+
+        @property
+        def field_uuid(self) -> UUID:
+            return self._data[12]
 
     record = AllPrimitivesRecord(
         b"\x124Vx\x124Vx\x124Vx\x124Vx",
