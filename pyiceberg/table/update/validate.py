@@ -14,21 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Optional
 
+from pyiceberg.exceptions import ValidationException
 from pyiceberg.manifest import ManifestContent, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
 
 
-class ValidationException(Exception):
-    """Raised when validation fails."""
-
-
 def validation_history(
     table: Table,
     from_snapshot: Snapshot,
-    to_snapshot: Optional[Snapshot],
+    to_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
 ) -> tuple[list[ManifestFile], set[Snapshot]]:
