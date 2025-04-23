@@ -277,6 +277,9 @@ class SnapshotSummaryCollector:
         self.partition_metrics = defaultdict(UpdateMetrics)
         self.max_changed_partitions_for_summaries = partition_summary_limit
 
+    def set_partition_summary_limit(self, limit: int) -> None:
+        self.max_changed_partitions_for_summaries = limit
+
     def add_file(self, data_file: DataFile, schema: Schema, partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC) -> None:
         self.metrics.add_file(data_file)
         if len(data_file.partition) > 0:
