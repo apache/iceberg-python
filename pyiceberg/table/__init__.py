@@ -90,7 +90,7 @@ from pyiceberg.table.name_mapping import (
 from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
-    SnapshotLogEntry,
+    SnapshotLogEntry, Operation,
 )
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -1193,37 +1193,57 @@ class Table:
         )
 
         # get list of rows that exist so we don't have to load the entire target table
-        matched_predicate = upsert_util.create_match_filter(df, join_cols)
-        matched_iceberg_table = self.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
+        # matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        # matched_iceberg_table = self.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
 
         update_row_cnt = 0
         insert_row_cnt = 0
 
         with self.transaction() as tx:
-            if when_matched_update_all:
-                # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
-                # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
-                # this extra step avoids unnecessary IO and writes
-                rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
+            overwrite_mask_predicate = upsert_util.create_match_filter(df, join_cols)
 
-                update_row_cnt = len(rows_to_update)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Delete operation did not match any records")
 
-                if len(rows_to_update) > 0:
-                    # build the match predicate filter
-                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+                tx.overwrite(df, overwrite_filter=overwrite_mask_predicate)
 
-                    tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+            for update_snapshot in tx._updates:
+                if update_snapshot.action == "add-snapshot":
+                    print(update_snapshot)
+                    summary = update_snapshot.snapshot.summary
+                    if summary.operation in (Operation.DELETE, Operation.OVERWRITE):
+                        update_row_cnt = (
+                            int(summary.get('deleted-records') or '0') - int(summary.get('added-records') or '0')
+                        )
 
-            if when_not_matched_insert_all:
-                expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
-                expr_match_bound = bind(self.schema(), expr_match, case_sensitive=case_sensitive)
-                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
-                rows_to_insert = df.filter(~expr_match_arrow)
+            insert_row_cnt = len(df) - update_row_cnt
 
-                insert_row_cnt = len(rows_to_insert)
 
-                if insert_row_cnt > 0:
-                    tx.append(rows_to_insert)
+            #
+            # if when_matched_update_all:
+            #     # function get_rows_to_update is doing a check on non-key columns to see if any of the values have actually changed
+            #     # we don't want to do just a blanket overwrite for matched rows if the actual non-key column data hasn't changed
+            #     # this extra step avoids unnecessary IO and writes
+            #     rows_to_update = upsert_util.get_rows_to_update(df, matched_iceberg_table, join_cols)
+            #
+            #     update_row_cnt = len(rows_to_update)
+            #
+            #     if len(rows_to_update) > 0:
+            #         # build the match predicate filter
+            #         overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+            #
+            #         tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+            #
+            # if when_not_matched_insert_all:
+            #     expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
+            #     expr_match_bound = bind(self.schema(), expr_match, case_sensitive=case_sensitive)
+            #     expr_match_arrow = expression_to_pyarrow(expr_match_bound)
+            #     rows_to_insert = df.filter(~expr_match_arrow)
+            #
+            #     insert_row_cnt = len(rows_to_insert)
+            #
+            #     if insert_row_cnt > 0:
+            #         tx.append(rows_to_insert)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
