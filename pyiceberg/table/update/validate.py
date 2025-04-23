@@ -51,10 +51,8 @@ def validation_history(
         last_snapshot = snapshot
         summary = snapshot.summary
         if summary is None:
-            operation = Operation.OVERWRITE
-        else:
-            operation = summary.operation
-        if operation not in matching_operations:
+            raise ValidationException(f"No summary found for snapshot {snapshot}!")
+        if summary.operation not in matching_operations:
             continue
 
         if snapshot not in snapshots:

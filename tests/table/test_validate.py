@@ -18,6 +18,9 @@
 from typing import cast
 from unittest.mock import patch
 
+import pytest
+
+from pyiceberg.exceptions import ValidationException
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import ManifestContent, ManifestFile
 from pyiceberg.table import Table
@@ -65,3 +68,21 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
         )
 
         assert len(manifests) == expected_manifest_data_counts
+
+    snapshot_with_no_summary = Snapshot(
+        snapshot_id="1234",
+        parent_id="5678",
+        timestamp_ms=0,
+        operation=Operation.APPEND,
+        summary=None,
+        manifest_list="foo/bar",
+    )
+    with patch("pyiceberg.table.update.validate.ancestors_between", return_value=[snapshot_with_no_summary]):
+        with pytest.raises(ValidationException):
+            validation_history(
+                table_v2_with_extensive_snapshots,
+                newest_snapshot,
+                oldest_snapshot,
+                {Operation.APPEND},
+                ManifestContent.DATA,
+            )
