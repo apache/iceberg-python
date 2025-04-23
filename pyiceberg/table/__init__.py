@@ -1796,7 +1796,7 @@ class DataScan(TableScan):
         from pyiceberg.io.pyarrow import ArrowScan
 
         return ArrowScan(
-            self.table_metadata, self.io, self.projection(), self.row_filter, self.case_sensitive, self.limit
+            self.table_metadata, self.io, self.projection(), case_sensitive=self.case_sensitive, limit=self.limit
         ).to_table(self.plan_files())
 
     def to_arrow_batch_reader(self) -> pa.RecordBatchReader:
@@ -1889,7 +1889,6 @@ class DataScan(TableScan):
                     table_metadata=self.table_metadata,
                     io=self.io,
                     projected_schema=self.projection(),
-                    row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
                 )
                 tbl = arrow_scan.to_table([task])

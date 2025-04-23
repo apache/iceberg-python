@@ -972,7 +972,6 @@ def project(
         ),
         io=PyArrowFileIO(),
         projected_schema=schema,
-        row_filter=expr or AlwaysTrue(),
         case_sensitive=True,
     ).to_table(
         tasks=[
