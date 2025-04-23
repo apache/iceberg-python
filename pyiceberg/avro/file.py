@@ -74,10 +74,17 @@ _SCHEMA_KEY = "avro.schema"
 
 
 class AvroFileHeader(Record):
-    __slots__ = ("magic", "meta", "sync")
-    magic: bytes
-    meta: Dict[str, str]
-    sync: bytes
+    @property
+    def magic(self) -> bytes:
+        return self._data[0]
+
+    @property
+    def meta(self) -> Dict[str, str]:
+        return self._data[1]
+
+    @property
+    def sync(self) -> bytes:
+        return self._data[2]
 
     def compression_codec(self) -> Optional[Type[Codec]]:
         """Get the file's compression codec algorithm from the file's metadata.
@@ -271,7 +278,7 @@ class AvroOutputFile(Generic[D]):
     def _write_header(self) -> None:
         json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.file_schema, schema_name=self.schema_name))
         meta = {**self.metadata, _SCHEMA_KEY: json_schema, _CODEC_KEY: "null"}
-        header = AvroFileHeader(magic=MAGIC, meta=meta, sync=self.sync_bytes)
+        header = AvroFileHeader(MAGIC, meta, self.sync_bytes)
         construct_writer(META_SCHEMA).write(self.encoder, header)
 
     def write_block(self, objects: List[D]) -> None:
