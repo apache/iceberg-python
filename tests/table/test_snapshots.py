@@ -143,7 +143,7 @@ def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> No
 
 @pytest.fixture
 def manifest_file() -> ManifestFile:
-    return ManifestFile(
+    return ManifestFile.from_args(
         content=ManifestContent.DATA,
         manifest_length=100,
         added_files_count=1,
@@ -160,7 +160,7 @@ def test_snapshot_summary_collector(table_schema_simple: Schema) -> None:
     ssc = SnapshotSummaryCollector()
 
     assert ssc.build() == {}
-    data_file = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
+    data_file = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record())
     ssc.add_file(data_file, schema=table_schema_simple)
 
     assert ssc.build() == {
@@ -183,8 +183,8 @@ def test_snapshot_summary_collector_with_partition() -> None:
         NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
     )
     spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name="int_field"))
-    data_file_1 = DataFile(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(int_field=1))
-    data_file_2 = DataFile(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(int_field=2))
+    data_file_1 = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(1))
+    data_file_2 = DataFile.from_args(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(2))
     # When
     ssc.add_file(data_file=data_file_1, schema=schema, partition_spec=spec)
     ssc.remove_file(data_file=data_file_1, schema=schema, partition_spec=spec)
@@ -289,7 +289,6 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
             "total-position-deletes": "1",
             "total-records": "1",
         },
-        truncate_full_table=True,
     )
 
     expected = {
@@ -299,18 +298,12 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
         "added-files-size": "4",
         "added-position-deletes": "5",
         "added-records": "6",
-        "total-data-files": "1",
-        "total-records": "6",
-        "total-delete-files": "2",
-        "total-equality-deletes": "3",
-        "total-files-size": "4",
-        "total-position-deletes": "5",
-        "deleted-data-files": "1",
-        "removed-delete-files": "1",
-        "deleted-records": "1",
-        "removed-files-size": "1",
-        "removed-position-deletes": "1",
-        "removed-equality-deletes": "1",
+        "total-data-files": "2",
+        "total-delete-files": "3",
+        "total-records": "7",
+        "total-files-size": "5",
+        "total-position-deletes": "6",
+        "total-equality-deletes": "4",
     }
 
     assert actual.additional_properties == expected
@@ -337,7 +330,6 @@ def test_invalid_type() -> None:
                 },
             ),
             previous_summary={"total-data-files": "abc"},  # should be a number
-            truncate_full_table=True,
         )
 
     assert "Could not parse summary property total-data-files to an int: abc" in str(e.value)

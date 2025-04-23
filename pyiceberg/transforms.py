@@ -111,29 +111,6 @@ def _transform_literal(func: Callable[[L], L], lit: Literal[L]) -> Literal[L]:
     return literal(func(lit.value))
 
 
-def parse_transform(v: Any) -> Any:
-    if isinstance(v, str):
-        if v == IDENTITY:
-            return IdentityTransform()
-        elif v == VOID:
-            return VoidTransform()
-        elif v.startswith(BUCKET):
-            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
-        elif v.startswith(TRUNCATE):
-            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
-        elif v == YEAR:
-            return YearTransform()
-        elif v == MONTH:
-            return MonthTransform()
-        elif v == DAY:
-            return DayTransform()
-        elif v == HOUR:
-            return HourTransform()
-        else:
-            return UnknownTransform(transform=v)
-    return v
-
-
 class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
     """Transform base class for concrete transforms.
 
@@ -218,6 +195,29 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
                 raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
 
         return _transform
+
+
+def parse_transform(v: Any) -> Transform[Any, Any]:
+    if isinstance(v, str):
+        if v == IDENTITY:
+            return IdentityTransform()
+        elif v == VOID:
+            return VoidTransform()
+        elif v.startswith(BUCKET):
+            return BucketTransform(num_buckets=BUCKET_PARSER.match(v))
+        elif v.startswith(TRUNCATE):
+            return TruncateTransform(width=TRUNCATE_PARSER.match(v))
+        elif v == YEAR:
+            return YearTransform()
+        elif v == MONTH:
+            return MonthTransform()
+        elif v == DAY:
+            return DayTransform()
+        elif v == HOUR:
+            return HourTransform()
+        else:
+            return UnknownTransform(transform=v)
+    return v
 
 
 class BucketTransform(Transform[S, int]):
