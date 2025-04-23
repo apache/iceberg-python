@@ -60,9 +60,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     The table is joined on the identifier columns, and then checked if there are any updated rows.
     Those are selected and everything is renamed correctly.
     """
-    all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
-    non_key_cols = all_columns - join_cols_set
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
@@ -71,65 +69,35 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
-    diff_expr = functools.reduce(
-        operator.or_,
-        [
-            pc.or_kleene(
-                pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs")),
-                pc.is_null(pc.not_equal(pc.field(f"{col}-lhs"), pc.field(f"{col}-rhs"))),
-            )
-            for col in non_key_cols
-        ],
+    # When we are not able to compare (e.g. due to unsupported types),
+    # fall back to selecting only rows in the source table that do NOT already exist in the target.
+    # See: https://github.com/apache/arrow/issues/35785
+    MARKER_COLUMN_NAME = "__from_target"
+    INDEX_COLUMN_NAME = "__source_index"
+
+    if MARKER_COLUMN_NAME in join_cols or INDEX_COLUMN_NAME in join_cols:
+        raise ValueError(
+            f"{MARKER_COLUMN_NAME} and {INDEX_COLUMN_NAME} are reserved for joining "
+            f"DataFrames, and cannot be used as column names"
+        ) from None
+
+    # Step 1: Prepare source index with join keys and a marker index
+    # Cast to target table schema, so we can do the join
+    # See: https://github.com/apache/arrow/issues/37542
+    source_index = (
+        source_table.cast(target_table.schema)
+        .select(join_cols_set)
+        .append_column(INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
     )
 
-    try:
-        return (
-            source_table
-            # We already know that the schema is compatible, this is to fix large_ types
-            .cast(target_table.schema)
-            .join(target_table, keys=list(join_cols_set), join_type="inner", left_suffix="-lhs", right_suffix="-rhs")
-            .filter(diff_expr)
-            .drop_columns([f"{col}-rhs" for col in non_key_cols])
-            .rename_columns({f"{col}-lhs" if col not in join_cols else col: col for col in source_table.column_names})
-            # Finally cast to the original schema since it doesn't carry nullability:
-            # https://github.com/apache/arrow/issues/45557
-        ).cast(target_table.schema)
-    except pa.ArrowInvalid:
-        # When we are not able to compare (e.g. due to unsupported types),
-        # fall back to selecting only rows in the source table that do NOT already exist in the target.
-        # See: https://github.com/apache/arrow/issues/35785
-        MARKER_COLUMN_NAME = "__from_target"
-        INDEX_COLUMN_NAME = "__source_index"
+    # Step 2: Prepare target index with join keys and a marker
+    target_index = target_table.select(join_cols_set).append_column(MARKER_COLUMN_NAME, pa.repeat(True, len(target_table)))
 
-        if MARKER_COLUMN_NAME in join_cols_set or INDEX_COLUMN_NAME in join_cols_set:
-            raise ValueError(
-                f"{MARKER_COLUMN_NAME} and {INDEX_COLUMN_NAME} are reserved for joining "
-                f"DataFrames, and cannot be used as column names"
-            ) from None
+    # Step 3: Perform a left outer join to find which rows from source exist in target
+    joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
 
-        # Step 1: Prepare source index with join keys and a marker index
-        # Cast to target table schema, so we can do the join
-        # See: https://github.com/apache/arrow/issues/37542
-        source_index = (
-            source_table.cast(target_table.schema)
-            .select(join_cols_set)
-            .append_column(INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
-        )
+    # Step 4: Create indices for rows that do exist in the target i.e., where marker column is true after the join
+    to_update_indices = joined.filter(pc.field(MARKER_COLUMN_NAME))[INDEX_COLUMN_NAME]
 
-        # Step 2: Prepare target index with join keys and a marker
-        target_index = target_table.select(join_cols_set).append_column(MARKER_COLUMN_NAME, pa.repeat(True, len(target_table)))
-
-        # Step 3: Perform a left outer join to find which rows from source exist in target
-        joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
-
-        # Step 4: Restore original source order
-        joined = joined.sort_by(INDEX_COLUMN_NAME)
-
-        # Step 5: Create a boolean mask for rows that do exist in the target
-        # i.e., where marker column is true after the join
-        to_update_mask = pc.invert(pc.is_null(joined[MARKER_COLUMN_NAME]))
-
-        # Step 6: Filter source table using the mask and cast to target schema
-        filtered = source_table.filter(to_update_mask)
-
-        return filtered
+    # Step 5: Take rows from source table using the indices and cast to target schema
+    return source_table.take(to_update_indices)

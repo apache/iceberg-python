@@ -186,7 +186,7 @@ def test_merge_scenario_skip_upd_row(catalog: Catalog) -> None:
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
-    expected_updated = 1
+    expected_updated = 2
     expected_inserted = 1
 
     assert_upsert_result(res, expected_updated, expected_inserted)
@@ -222,7 +222,7 @@ def test_merge_scenario_date_as_key(catalog: Catalog) -> None:
 
     res = table.upsert(df=source_df, join_cols=["order_date"])
 
-    expected_updated = 1
+    expected_updated = 2
     expected_inserted = 1
 
     assert_upsert_result(res, expected_updated, expected_inserted)
@@ -258,7 +258,7 @@ def test_merge_scenario_string_as_key(catalog: Catalog) -> None:
 
     res = table.upsert(df=source_df, join_cols=["order_id"])
 
-    expected_updated = 1
+    expected_updated = 2
     expected_inserted = 1
 
     assert_upsert_result(res, expected_updated, expected_inserted)
@@ -371,16 +371,25 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
 
     expected_operations = [Operation.APPEND, Operation.OVERWRITE, Operation.APPEND, Operation.APPEND]
 
-    assert upd.rows_updated == 1
+    assert upd.rows_updated == 2
     assert upd.rows_inserted == 1
 
     assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
-    # This should be a no-op
+    # This will update all 3 rows
     upd = tbl.upsert(df)
 
-    assert upd.rows_updated == 0
+    assert upd.rows_updated == 3
     assert upd.rows_inserted == 0
+    expected_operations = [
+        Operation.APPEND,
+        Operation.OVERWRITE,
+        Operation.APPEND,
+        Operation.APPEND,
+        Operation.DELETE,
+        Operation.OVERWRITE,
+        Operation.APPEND,
+    ]
 
     assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
@@ -552,7 +561,7 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
         [
             {
                 "id": 1,
-                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+                "nested_type": {"sub1": "1_sub1_init", "sub2": "1sub2_init"},
             }
         ],
         schema=arrow_schema,
@@ -563,12 +572,17 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
         [
             {
                 "id": 2,
-                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+                "nested_type": {"sub1": "2_sub1_new", "sub2": "2_sub2_new"},
             },
             {
                 "id": 1,
-                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+                "nested_type": {"sub1": "1sub1_init", "sub2": "1sub2_new"},
             },
+            # TODO: struct changes should cause _check_pyarrow_schema_compatible to fail. Introduce a new `sub3` attribute
+            # {
+            #     "id": 1,
+            #     "nested_type": {"sub3": "1sub3_init", "sub2": "1sub2_new"},
+            # },
         ],
         schema=arrow_schema,
     )
@@ -579,6 +593,11 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
     # When pyarrow isn't able to compare rows, just update everything
     assert upd.rows_updated == 1
     assert upd.rows_inserted == 1
+
+    assert tbl.scan().to_arrow().to_pylist() == [
+        {"id": 2, "nested_type": {"sub1": "2_sub1_new", "sub2": "2_sub2_new"}},
+        {"id": 1, "nested_type": {"sub1": "1sub1_init", "sub2": "1sub2_new"}},
+    ]
 
 
 def test_upsert_with_nulls(catalog: Catalog) -> None:
