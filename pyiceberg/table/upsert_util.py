@@ -76,13 +76,12 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     # 1. Cannot do a join when non-join columns have complex types
     # 2. Cannot compare columns with complex types
     # See: https://github.com/apache/arrow/issues/35785
-    MARKER_COLUMN_NAME = "__from_target"
     SOURCE_INDEX_COLUMN_NAME = "__source_index"
     TARGET_INDEX_COLUMN_NAME = "__target_index"
 
-    if MARKER_COLUMN_NAME in join_cols or SOURCE_INDEX_COLUMN_NAME in join_cols or TARGET_INDEX_COLUMN_NAME in join_cols:
+    if SOURCE_INDEX_COLUMN_NAME in join_cols or TARGET_INDEX_COLUMN_NAME in join_cols:
         raise ValueError(
-            f"{MARKER_COLUMN_NAME}, {SOURCE_INDEX_COLUMN_NAME} and {TARGET_INDEX_COLUMN_NAME} are reserved for joining "
+            f"{SOURCE_INDEX_COLUMN_NAME} and {TARGET_INDEX_COLUMN_NAME} are reserved for joining "
             f"DataFrames, and cannot be used as column names"
         ) from None
 
@@ -96,19 +95,12 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     )
 
     # Step 2: Prepare target index with join keys and a marker
-    target_index = (
-        target_table.select(join_cols_set)
-        .append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
-        .append_column(MARKER_COLUMN_NAME, pa.repeat(True, len(target_table)))
-    )
+    target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
 
-    # Step 3: Perform a left outer join to find which rows from source exist in target
-    joined = source_index.join(target_index, keys=list(join_cols_set), join_type="left outer")
+    # Step 3: Perform an inner join to find which rows from source exist in target
+    matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
 
-    # Step 4: Create indices for rows that do exist in the target i.e., where marker column is true after the join
-    matching_indices = joined.filter(pc.field(MARKER_COLUMN_NAME))
-
-    # Step 5: Compare all rows using Python
+    # Step 4: Compare all rows using Python
     to_update_indices = []
     for source_idx, target_idx in zip(
         matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist(), matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist()
@@ -123,7 +115,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
                 to_update_indices.append(source_idx)
                 break
 
-    # Step 6: Take rows from source table using the indices and cast to target schema
+    # Step 5: Take rows from source table using the indices and cast to target schema
     if to_update_indices:
         return source_table.take(to_update_indices)
     else:
