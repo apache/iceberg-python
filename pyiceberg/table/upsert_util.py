@@ -72,6 +72,9 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
+    # We need to compare non_key_cols in Python as PyArrow
+    # 1. Cannot do a join when non-join columns have complex types
+    # 2. Cannot compare columns with complex types
     # See: https://github.com/apache/arrow/issues/35785
     MARKER_COLUMN_NAME = "__from_target"
     SOURCE_INDEX_COLUMN_NAME = "__source_index"
