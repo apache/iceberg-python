@@ -57,6 +57,7 @@ def validation_history(
 
         if snapshot not in snapshots:
             snapshots.add(snapshot.snapshot_id)
+        # TODO: Maybe do the IO in a separate thread at some point, and collect at the bottom (we can easily merge the sets 🤤 
         manifests_files.extend(
             [
                 manifest
