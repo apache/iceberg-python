@@ -520,7 +520,6 @@ def test_upsert_struct_field_fails_in_join(catalog: Catalog) -> None:
         NestedField(
             2,
             "nested_type",
-            # Struct<type: string, coordinates: list<double>>
             StructType(
                 NestedField(3, "sub1", StringType(), required=True),
                 NestedField(4, "sub2", StringType(), required=True),

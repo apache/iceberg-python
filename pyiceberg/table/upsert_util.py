@@ -72,8 +72,6 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
-    # When we are not able to compare (e.g. due to unsupported types),
-    # fall back to selecting only rows in the source table that do NOT already exist in the target.
     # See: https://github.com/apache/arrow/issues/35785
     MARKER_COLUMN_NAME = "__from_target"
     SOURCE_INDEX_COLUMN_NAME = "__source_index"
