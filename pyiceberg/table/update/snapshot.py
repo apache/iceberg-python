@@ -88,7 +88,6 @@ if TYPE_CHECKING:
 
 
 from pyiceberg.table.metadata import Snapshot, TableMetadata
-from pyiceberg.table.snapshots import Snapshot
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -244,7 +243,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
         )
 
-    def _commit(self, base_metadata: TableMetadata) -> UpdatesAndRequirements:
+    def _commit(self) -> UpdatesAndRequirements:
         new_manifests = self._manifests()
         next_sequence_number = self._transaction.table_metadata.next_sequence_number()
 
@@ -750,6 +749,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     _requirements: Tuple[TableRequirement, ...] = ()
 
     def _commit(self) -> UpdatesAndRequirements:
+        """Apply the pending changes and commit."""
         return self._updates, self._requirements
 
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
@@ -852,7 +852,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     """
-    Expire snapshots by ID or by timestamp.
+    Expire snapshots by ID.
     Use table.expire_snapshots().<operation>().commit() to run a specific operation.
     Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
     Pending changes are applied on commit.
@@ -888,25 +888,4 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         if self._transaction.table_metadata.snapshot_by_id(snapshot_id) is None:
             raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
         self._snapshot_ids_to_expire.add(snapshot_id)
-        return self
-
-    def expire_snapshots_older_than(self, timestamp_ms: int) -> ExpireSnapshots:
-        """
-        Expire snapshots older than the given timestamp.
-
-        Args:
-            timestamp_ms (int): The timestamp in milliseconds. Snapshots older than this will be expired.
-
-        Returns:
-            This for method chaining.
-        """
-        # Collect IDs of snapshots to be expired
-        snapshots_to_remove = [
-            snapshot.snapshot_id
-            for snapshot in self._transaction.table_metadata.snapshots
-            if snapshot.timestamp_ms < timestamp_ms
-        ]
-        if snapshots_to_remove:
-            for snapshot_id in snapshots_to_remove:
-                self._snapshot_ids_to_expire.add(snapshot_id)
         return self
