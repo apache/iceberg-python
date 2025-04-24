@@ -33,7 +33,7 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
     mock_manifests = {}
 
     for i, snapshot in enumerate(table_v2_with_extensive_snapshots.snapshots()):
-        mock_manifest = ManifestFile(
+        mock_manifest = ManifestFile.from_args(
             manifest_path=f"foo/bar/{i}",
             manifest_length=1,
             partition_spec_id=1,

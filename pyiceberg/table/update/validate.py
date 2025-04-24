@@ -27,7 +27,7 @@ def validation_history(
     from_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
-) -> tuple[list[ManifestFile], list[Snapshot]]:
+) -> tuple[list[ManifestFile], set[int]]:
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
 
     Args:
@@ -41,10 +41,10 @@ def validation_history(
         ValidationException: If no matching snapshot is found or only one snapshot is found
 
     Returns:
-        List of manifest files and set of snapshots matching conditions
+        List of manifest files and set of snapshots ID's matching conditions
     """
     manifests_files: list[ManifestFile] = []
-    snapshots: list[Snapshot] = []
+    snapshots: set[int] = set()
 
     last_snapshot = None
     for snapshot in ancestors_between(to_snapshot, from_snapshot, table.metadata):
@@ -56,7 +56,7 @@ def validation_history(
             continue
 
         if snapshot not in snapshots:
-            snapshots.append(snapshot)
+            snapshots.add(snapshot.snapshot_id)
         manifests_files.extend(
             [
                 manifest
