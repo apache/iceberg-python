@@ -55,8 +55,7 @@ def validation_history(
         if summary.operation not in matching_operations:
             continue
 
-        if snapshot not in snapshots:
-            snapshots.add(snapshot.snapshot_id)
+        snapshots.add(snapshot.snapshot_id)
         # TODO: Maybe do the IO in a separate thread at some point, and collect at the bottom (we can easily merge the sets 🤤 
         manifests_files.extend(
             [
