@@ -30,8 +30,7 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io import FileIO
-from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, schema_to_pyarrow
-from pyiceberg.io.pyarrow import _pyarrow_schema_ensure_large_types
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _pyarrow_schema_ensure_large_types, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
