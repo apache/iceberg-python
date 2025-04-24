@@ -33,13 +33,13 @@ from pytest_mock.plugin import MockerFixture
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.io import FileIO
-from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, _pyarrow_schema_ensure_large_types
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, schema_to_pyarrow
 from pyiceberg.manifest import DataFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadata
-from pyiceberg.transforms import BucketTransform, IdentityTransform, MonthTransform
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, MonthTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
@@ -47,6 +47,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    TimestampType,
     TimestamptzType,
 )
 
@@ -588,11 +589,6 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
             pa.field("foo", pa.string(), nullable=False),
         ]
     )
-    arrow_schema_large = pa.schema(
-        [
-            pa.field("foo", pa.large_string(), nullable=False),
-        ]
-    )
 
     tbl = _create_table(session_catalog, identifier, format_version, schema=iceberg_schema)
 
@@ -614,27 +610,27 @@ def test_add_files_with_large_and_regular_schema(spark: SparkSession, session_ca
     tbl.add_files([file_path])
 
     table_schema = tbl.scan().to_arrow().schema
-    assert table_schema == arrow_schema_large
+    assert table_schema == arrow_schema
 
     file_path_large = f"s3://warehouse/default/unpartitioned_with_large_types/v{format_version}/test-1.parquet"
     _write_parquet(
         tbl.io,
         file_path_large,
-        arrow_schema_large,
+        arrow_schema,
         pa.Table.from_pylist(
             [
                 {
                     "foo": "normal",
                 }
             ],
-            schema=arrow_schema_large,
+            schema=arrow_schema,
         ),
     )
 
     tbl.add_files([file_path_large])
 
     table_schema = tbl.scan().to_arrow().schema
-    assert table_schema == arrow_schema_large
+    assert table_schema == arrow_schema
 
 
 @pytest.mark.integration
@@ -748,8 +744,8 @@ def test_add_files_with_valid_upcast(
         pa.schema(
             (
                 pa.field("long", pa.int64(), nullable=True),
-                pa.field("list", pa.large_list(pa.int64()), nullable=False),
-                pa.field("map", pa.map_(pa.large_string(), pa.int64()), nullable=False),
+                pa.field("list", pa.list_(pa.int64()), nullable=False),
+                pa.field("map", pa.map_(pa.string(), pa.int64()), nullable=False),
                 pa.field("double", pa.float64(), nullable=True),
                 pa.field("uuid", pa.binary(length=16), nullable=True),  # can UUID is read as fixed length binary of length 16
             )
@@ -799,7 +795,7 @@ def test_add_files_subset_of_schema(spark: SparkSession, session_catalog: Catalo
                 "qux": date(2024, 3, 7),
             }
         ],
-        schema=_pyarrow_schema_ensure_large_types(ARROW_SCHEMA),
+        schema=ARROW_SCHEMA,
     )
 
     lhs = spark.table(f"{identifier}").toPandas()
@@ -903,3 +899,30 @@ def test_add_files_that_referenced_by_current_snapshot_with_check_duplicate_file
     with pytest.raises(ValueError) as exc_info:
         tbl.add_files(file_paths=[existing_files_in_table], check_duplicate_files=True)
     assert f"Cannot add files that are already referenced by table, files: {existing_files_in_table}" in str(exc_info.value)
+
+
+@pytest.mark.integration
+def test_add_files_hour_transform(session_catalog: Catalog) -> None:
+    identifier = "default.test_add_files_hour_transform"
+
+    schema = Schema(NestedField(1, "hourly", TimestampType()))
+    schema_arrow = schema_to_pyarrow(schema, include_field_ids=False)
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=HourTransform(), name="spec_hour"))
+
+    tbl = _create_table(session_catalog, identifier, format_version=1, schema=schema, partition_spec=spec)
+
+    file_path = "s3://warehouse/default/test_add_files_hour_transform/test.parquet"
+
+    from pyiceberg.utils.datetime import micros_to_timestamp
+
+    arrow_table = pa.Table.from_pylist(
+        [{"hourly": micros_to_timestamp(1743465600155254)}, {"hourly": micros_to_timestamp(1743469198047855)}],
+        schema=schema_arrow,
+    )
+
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=schema_arrow) as writer:
+            writer.write_table(arrow_table)
+
+    tbl.add_files(file_paths=[file_path])

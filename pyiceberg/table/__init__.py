@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -244,7 +245,6 @@ class TableProperties:
 
 class Transaction:
     _table: Table
-    table_metadata: TableMetadata
     _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
@@ -256,11 +256,14 @@ class Transaction:
             table: The table that will be altered.
             autocommit: Option to automatically commit the changes when they are staged.
         """
-        self.table_metadata = table.metadata
         self._table = table
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
+
+    @property
+    def table_metadata(self) -> TableMetadata:
+        return update_table_metadata(self._table.metadata, self._updates)
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
@@ -286,8 +289,6 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
-
-        self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
         if self._autocommit:
             self.commit_transaction()
@@ -452,6 +453,15 @@ class Transaction:
             A new UpdateSnapshot
         """
         return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
+
+    def update_statistics(self) -> UpdateStatistics:
+        """
+        Create a new UpdateStatistics to update the statistics of the table.
+
+        Returns:
+            A new UpdateStatistics
+        """
+        return UpdateStatistics(transaction=self)
 
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
@@ -1393,7 +1403,26 @@ class StaticTable(Table):
         raise NotImplementedError("To be implemented")
 
     @classmethod
+    def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
+        version_hint_location = os.path.join(metadata_location, "metadata", "version-hint.text")
+        io = load_file_io(properties=properties, location=version_hint_location)
+        file = io.new_input(version_hint_location)
+
+        with file.open() as stream:
+            content = stream.read().decode("utf-8")
+
+        if content.endswith(".metadata.json"):
+            return os.path.join(metadata_location, "metadata", content)
+        elif content.isnumeric():
+            return os.path.join(metadata_location, "metadata", "v%s.metadata.json").format(content)
+        else:
+            return os.path.join(metadata_location, "metadata", "%s.metadata.json").format(content)
+
+    @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:
+        if not metadata_location.endswith(".metadata.json"):
+            metadata_location = StaticTable._metadata_location_from_version_hint(metadata_location, properties)
+
         io = load_file_io(properties=properties, location=metadata_location)
         file = io.new_input(metadata_location)
 
@@ -1808,7 +1837,7 @@ class DataScan(TableScan):
         return pa.RecordBatchReader.from_batches(
             target_schema,
             batches,
-        )
+        ).cast(target_schema)
 
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         """Read a Pandas DataFrame eagerly from this Iceberg table.
