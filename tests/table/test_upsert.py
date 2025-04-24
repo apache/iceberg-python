@@ -574,9 +574,7 @@ def test_upsert_struct_field(catalog: Catalog) -> None:
 
     upd = tbl.upsert(update_data, join_cols=["id"])
 
-    # Row needs to be updated even tho it's not changed.
-    # When pyarrow isn't able to compare rows, just update everything
-    assert upd.rows_updated == 1
+    assert upd.rows_updated == 0
     assert upd.rows_inserted == 1
 
 
