@@ -62,7 +62,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
-    non_key_cols = list(all_columns - join_cols_set)
+    non_key_cols = all_columns - join_cols_set
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
