@@ -511,8 +511,51 @@ def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
         tbl.upsert(df)
 
 
-def test_upsert_struct_field(catalog: Catalog) -> None:
-    identifier = "default.test_upsert_struct_field"
+def test_upsert_with_nulls(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_nulls"
+    _drop_table(catalog, identifier)
+
+    schema = pa.schema(
+        [
+            ("foo", pa.string()),
+            ("bar", pa.int32()),
+            ("baz", pa.bool_()),
+        ]
+    )
+
+    # create table with null value
+    table = catalog.create_table(identifier, schema)
+    data_with_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": None, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+    table.append(data_with_null)
+    assert table.scan().to_arrow()["bar"].is_null()
+
+    # upsert table with non-null value
+    data_without_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+        ],
+        schema=schema,
+    )
+    upd = table.upsert(data_without_null, join_cols=["foo"])
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 0
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+
+
+def test_upsert_with_struct_field(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_struct_field"
     _drop_table(catalog, identifier)
 
     schema = Schema(
@@ -578,44 +621,68 @@ def test_upsert_struct_field(catalog: Catalog) -> None:
     assert upd.rows_inserted == 1
 
 
-def test_upsert_with_nulls(catalog: Catalog) -> None:
-    identifier = "default.test_upsert_with_nulls"
+def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_struct_field_as_join_key"
     _drop_table(catalog, identifier)
 
-    schema = pa.schema(
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "nested_type",
+            StructType(
+                NestedField(3, "sub1", StringType(), required=True),
+                NestedField(4, "sub2", StringType(), required=True),
+            ),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
         [
-            ("foo", pa.string()),
-            ("bar", pa.int32()),
-            ("baz", pa.bool_()),
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field(
+                "nested_type",
+                pa.struct(
+                    [
+                        pa.field("sub1", pa.large_string(), nullable=False),
+                        pa.field("sub2", pa.large_string(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
         ]
     )
 
-    # create table with null value
-    table = catalog.create_table(identifier, schema)
-    data_with_null = pa.Table.from_pylist(
+    initial_data = pa.Table.from_pylist(
         [
-            {"foo": "apple", "bar": None, "baz": False},
-            {"foo": "banana", "bar": None, "baz": False},
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
         ],
-        schema=schema,
+        schema=arrow_schema,
     )
-    table.append(data_with_null)
-    assert table.scan().to_arrow()["bar"].is_null()
+    tbl.append(initial_data)
 
-    # upsert table with non-null value
-    data_without_null = pa.Table.from_pylist(
+    update_data = pa.Table.from_pylist(
         [
-            {"foo": "apple", "bar": 7, "baz": False},
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
         ],
-        schema=schema,
+        schema=arrow_schema,
     )
-    upd = table.upsert(data_without_null, join_cols=["foo"])
-    assert upd.rows_updated == 1
-    assert upd.rows_inserted == 0
-    assert table.scan().to_arrow() == pa.Table.from_pylist(
-        [
-            {"foo": "apple", "bar": 7, "baz": False},
-            {"foo": "banana", "bar": None, "baz": False},
-        ],
-        schema=schema,
-    )
+
+    with pytest.raises(
+        pa.lib.ArrowNotImplementedError, match="Keys of type struct<sub1: large_string not null, sub2: large_string not null>"
+    ):
+        _ = tbl.upsert(update_data, join_cols=["nested_type"])
