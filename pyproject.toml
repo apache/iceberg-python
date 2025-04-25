@@ -16,7 +16,7 @@
 # under the License.
 [tool.poetry]
 name = "pyiceberg"
-version = "0.9.0"
+version = "0.9.1"
 readme = "README.md"
 homepage = "https://py.iceberg.apache.org/"
 repository = "https://github.com/apache/iceberg-python"
