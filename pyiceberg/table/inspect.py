@@ -523,9 +523,11 @@ class InspectTable:
 
         return pa.Table.from_pylist(history, schema=history_schema)
 
-    def _files_by_manifest(
+    def _get_files_from_manifest(
         self, manifest_list: ManifestFile, data_file_filter: Optional[Set[DataFileContent]] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> "pa.Table":
+        import pyarrow as pa
+
         files: list[dict[str, Any]] = []
         schema = self.tbl.metadata.schema()
         io = self.tbl.io
@@ -576,7 +578,10 @@ class InspectTable:
                     "readable_metrics": readable_metrics,
                 }
             )
-        return files
+        return pa.Table.from_pylist(
+            files,
+            schema=self._get_files_schema(),
+        )
 
     def _get_files_schema(self) -> "pa.Schema":
         import pyarrow as pa
@@ -630,23 +635,20 @@ class InspectTable:
     def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        files: list[dict[str, Any]] = []
+        files_table: list[pa.Table] = []
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
             return pa.Table.from_pylist(
-                files,
+                [],
                 schema=self._get_files_schema(),
             )
         snapshot = self._get_snapshot(snapshot_id)
 
         io = self.tbl.io
         for manifest_list in snapshot.manifests(io):
-            files.extend(self._files_by_manifest(manifest_list, data_file_filter))
+            files_table.append(self._get_files_from_manifest(manifest_list, data_file_filter))
 
-        return pa.Table.from_pylist(
-            files,
-            schema=self._get_files_schema(),
-        )
+        return pa.concat_tables(files_table)
 
     def files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id)
@@ -678,20 +680,15 @@ class InspectTable:
             return pa.Table.from_pylist([], schema=self._get_files_schema())
 
         executor = ExecutorFactory.get_or_create()
-        all_manifest_files_by_snapshot: Iterator[List[ManifestFile]] = executor.map(
-            lambda args: args[0].manifests(self.tbl.io), [(snapshot,) for snapshot in snapshots]
+        manifest_lists = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io), snapshots)
+
+        unique_manifests = {(manifest.manifest_path, manifest) for manifest_list in manifest_lists for manifest in manifest_list}
+
+        file_lists = executor.map(
+            lambda args: self._get_files_from_manifest(*args), [(manifest, data_file_filter) for _, manifest in unique_manifests]
         )
-        all_manifest_files = list(
-            {(manifest.manifest_path, manifest) for manifest_list in all_manifest_files_by_snapshot for manifest in manifest_list}
-        )
-        all_files_by_manifest: Iterator[List[Dict[str, Any]]] = executor.map(
-            lambda args: self._files_by_manifest(*args), [(manifest, data_file_filter) for _, manifest in all_manifest_files]
-        )
-        all_files_list = [file for files in all_files_by_manifest for file in files]
-        return pa.Table.from_pylist(
-            all_files_list,
-            schema=self._get_files_schema(),
-        )
+
+        return pa.concat_tables(file_lists)
 
     def all_files(self) -> "pa.Table":
         return self._all_files()
