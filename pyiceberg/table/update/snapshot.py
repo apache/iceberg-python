@@ -55,6 +55,7 @@ from pyiceberg.manifest import (
 from pyiceberg.partitioning import (
     PartitionSpec,
 )
+from pyiceberg.table.refs import SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -857,7 +858,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
     Pending changes are applied on commit.
     """
-
+    
     _snapshot_ids_to_expire = set()
     _updates: Tuple[TableUpdate, ...] = ()
     _requirements: Tuple[TableRequirement, ...] = ()
@@ -875,6 +876,21 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         self._updates += (update,)
         return self._updates, self._requirements
 
+    def _get_protected_snapshot_ids(self):
+        """
+        Get the IDs of protected snapshots. These are the HEAD snapshots of all branches
+        and all tagged snapshots.  These ids are to be excluded from expiration.
+        Returns:
+            Set of protected snapshot IDs to exclude from expiration.
+        """
+        protected_ids = set()
+        
+        for ref in self._transaction.table_metadata.refs.values():
+            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]:
+                protected_ids.add(ref.snapshot_id)
+        
+        return protected_ids
+
     def expire_snapshot_by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
         Expire a snapshot by its ID.
@@ -885,7 +901,13 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             This for method chaining.
         """
+        
         if self._transaction.table_metadata.snapshot_by_id(snapshot_id) is None:
             raise ValueError(f"Snapshot with ID {snapshot_id} does not exist.")
+        
+        if snapshot_id in self._get_protected_snapshot_ids():
+            raise ValueError(f"Snapshot with ID {snapshot_id} is protected and cannot be expired.")
+
         self._snapshot_ids_to_expire.add(snapshot_id)
+
         return self
