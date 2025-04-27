@@ -397,5 +397,5 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
                 )
             )
         )
-        == 1999
+        == 2000
     )

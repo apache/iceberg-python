@@ -28,8 +28,11 @@ from pyiceberg.table.snapshots import Operation, Snapshot
 from pyiceberg.table.update.validate import validation_history
 
 
-def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
-    """Test the validation history function."""
+@pytest.fixture
+def table_v2_with_extensive_snapshots_and_manifests(
+    table_v2_with_extensive_snapshots: Table,
+) -> tuple[Table, dict[int, list[ManifestFile]]]:
+    """Fixture to create a table with extensive snapshots and manifests."""
     mock_manifests = {}
 
     for i, snapshot in enumerate(table_v2_with_extensive_snapshots.snapshots()):
@@ -46,10 +49,17 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
         # Store the manifest for this specific snapshot
         mock_manifests[snapshot.snapshot_id] = [mock_manifest]
 
-    expected_manifest_data_counts = len([m for m in mock_manifests.values() if m[0].content == ManifestContent.DATA]) - 1
+    return table_v2_with_extensive_snapshots, mock_manifests
 
-    oldest_snapshot = table_v2_with_extensive_snapshots.snapshots()[0]
-    newest_snapshot = cast(Snapshot, table_v2_with_extensive_snapshots.current_snapshot())
+
+def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]]) -> None:
+    """Test the validation history function."""
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    expected_manifest_data_counts = len([m for m in mock_manifests.values() if m[0].content == ManifestContent.DATA])
+
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
 
     def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
@@ -60,7 +70,7 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
 
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         manifests, snapshots = validation_history(
-            table_v2_with_extensive_snapshots,
+            table,
             newest_snapshot,
             oldest_snapshot,
             {Operation.APPEND},
@@ -80,7 +90,7 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
     with patch("pyiceberg.table.update.validate.ancestors_between", return_value=[snapshot_with_no_summary]):
         with pytest.raises(ValidationException):
             validation_history(
-                table_v2_with_extensive_snapshots,
+                table,
                 newest_snapshot,
                 oldest_snapshot,
                 {Operation.APPEND},

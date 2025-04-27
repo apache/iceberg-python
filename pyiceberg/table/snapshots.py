@@ -443,8 +443,8 @@ def ancestors_between(
     """Get the ancestors of and including the given snapshot between the to and from snapshots."""
     if from_snapshot is not None:
         for snapshot in ancestors_of(to_snapshot, table_metadata):
+            yield snapshot
             if snapshot == from_snapshot:
                 break
-            yield snapshot
     else:
         yield from ancestors_of(to_snapshot, table_metadata)
