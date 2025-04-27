@@ -65,7 +65,7 @@ def validation_history(
             ]
         )
 
-    if last_snapshot is None or last_snapshot.snapshot_id == from_snapshot.snapshot_id:
+    if last_snapshot is not None and last_snapshot.snapshot_id != from_snapshot.snapshot_id:
         raise ValidationException("No matching snapshot found.")
 
     return manifests_files, snapshots
