@@ -79,6 +79,16 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
 
         assert len(manifests) == expected_manifest_data_counts
 
+
+def test_validation_history_fails_on_snapshot_with_no_summary(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    """Test the validation history function fails on snapshot with no summary."""
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    # Create a snapshot with no summary
     snapshot_with_no_summary = Snapshot(
         snapshot_id="1234",
         parent_id="5678",
