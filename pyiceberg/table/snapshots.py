@@ -272,10 +272,10 @@ class SnapshotSummaryCollector:
     partition_metrics: DefaultDict[str, UpdateMetrics]
     max_changed_partitions_for_summaries: int
 
-    def __init__(self) -> None:
+    def __init__(self, partition_summary_limit: int = 0) -> None:
         self.metrics = UpdateMetrics()
         self.partition_metrics = defaultdict(UpdateMetrics)
-        self.max_changed_partitions_for_summaries = 0
+        self.max_changed_partitions_for_summaries = partition_summary_limit
 
     def set_partition_summary_limit(self, limit: int) -> None:
         self.max_changed_partitions_for_summaries = limit

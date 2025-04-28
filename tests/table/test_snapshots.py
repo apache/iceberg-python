@@ -218,6 +218,41 @@ def test_snapshot_summary_collector_with_partition() -> None:
     }
 
 
+@pytest.mark.integration
+def test_snapshot_summary_collector_with_partition_limit_in_constructor() -> None:
+    # Given
+    partition_summary_limit = 10
+    ssc = SnapshotSummaryCollector(partition_summary_limit=partition_summary_limit)
+
+    assert ssc.build() == {}
+    schema = Schema(
+        NestedField(field_id=1, name="bool_field", field_type=BooleanType(), required=False),
+        NestedField(field_id=2, name="string_field", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="int_field", field_type=IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1001, transform=IdentityTransform(), name="int_field"))
+    data_file_1 = DataFile.from_args(content=DataFileContent.DATA, record_count=100, file_size_in_bytes=1234, partition=Record(1))
+    data_file_2 = DataFile.from_args(content=DataFileContent.DATA, record_count=200, file_size_in_bytes=4321, partition=Record(2))
+
+    # When
+    ssc.add_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_1, schema=schema, partition_spec=spec)
+    ssc.remove_file(data_file=data_file_2, schema=schema, partition_spec=spec)
+
+    # Then
+    assert ssc.build() == {
+        "added-files-size": "1234",
+        "removed-files-size": "5555",
+        "added-data-files": "1",
+        "deleted-data-files": "2",
+        "added-records": "100",
+        "deleted-records": "300",
+        "changed-partition-count": "2",
+        "partitions.int_field=1": "added-files-size=1234,removed-files-size=1234,added-data-files=1,deleted-data-files=1,added-records=100,deleted-records=100",
+        "partitions.int_field=2": "removed-files-size=4321,deleted-data-files=1,deleted-records=200",
+    }
+
+
 def test_merge_snapshot_summaries_empty() -> None:
     assert update_snapshot_summaries(Summary(Operation.APPEND)) == Summary(
         operation=Operation.APPEND,
