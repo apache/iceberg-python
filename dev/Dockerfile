@@ -39,7 +39,7 @@ WORKDIR ${SPARK_HOME}
 # Remember to also update `tests/conftest`'s spark setting
 ENV SPARK_VERSION=3.5.4
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.5_2.12
-ENV ICEBERG_VERSION=1.9.0-SNAPSHOT
+ENV ICEBERG_VERSION=1.8.0
 ENV PYICEBERG_VERSION=0.9.0
 
 RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
@@ -47,12 +47,12 @@ RUN curl --retry 5 -s -C - https://archive.apache.org/dist/spark/spark-${SPARK_V
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
 # Download iceberg spark runtime
-RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.9.0-SNAPSHOT/iceberg-spark-runtime-3.5_2.12-1.9.0-20250408.001846-43.jar \
+RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
       -Lo /opt/spark/jars/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar
 
 
 # Download AWS bundle
-RUN curl --retry 5 -s https://repository.apache.org/content/groups/snapshots/org/apache/iceberg/iceberg-aws-bundle/1.9.0-SNAPSHOT/iceberg-aws-bundle-1.9.0-20250408.002722-86.jar \
+RUN curl --retry 5 -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
       -Lo /opt/spark/jars/iceberg-aws-bundle-${ICEBERG_VERSION}.jar
 
 COPY spark-defaults.conf /opt/spark/conf
