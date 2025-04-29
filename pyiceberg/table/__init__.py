@@ -1382,29 +1382,37 @@ class Table:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For deleting orphaned files PyArrow needs to be installed") from e
 
-        from pyarrow.fs import FileSelector
+        from pyarrow.fs import FileSelector, FileType
+
+        from pyiceberg.io.pyarrow import _fs_from_file_path
+
+        location = self.location()
 
         all_known_files = []
-        snapshot_ids = [snapshot.snapshot_id for snapshot in self.snapshots()]
-        all_manifests_table = self.inspect.all_manifests(snapshot_ids)
+        snapshots = self.snapshots()
+        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
+        all_manifests_table = self.inspect.all_manifests(snapshots)
         all_known_files.extend(all_manifests_table["path"].to_pylist())
 
         executor = ExecutorFactory.get_or_create()
-        files_by_snapshots: Iterator["pa.Table"] = executor.map(lambda args: self.inspect.files(*args), snapshot_ids)
+        files_by_snapshots: Iterator["pa.Table"] = executor.map(lambda snapshot_id: self.inspect.files(snapshot_id), snapshot_ids)
         all_known_files.extend(pa.concat_tables(files_by_snapshots)["file_path"].to_pylist())
 
-        scheme, netloc, path = _parse_location(self.location())
-        fs = self.io.fs_by_scheme(scheme, netloc)
+        fs = _fs_from_file_path(self.io, location)
+
+        _, _, path = _parse_location(location)
         selector = FileSelector(path, recursive=True)
-        all_files = fs.get_file_info(selector)
+        # filter to just files as it may return directories
+        all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File]
 
         orphaned_files = set(all_files).difference(set(all_known_files))
-        logger.info(f"Found {len(orphaned_files)} orphaned files at {self.location()}!")
+        logger.info(f"Found {len(orphaned_files)} orphaned files at {location}!")
 
         if orphaned_files:
             deletes = executor.map(self.io.delete, orphaned_files)
+            # exhaust
             list(deletes)
-            logger.info(f"Deleted {len(orphaned_files)} orphaned files at {self.location()}!")
+            logger.info(f"Deleted {len(orphaned_files)} orphaned files at {location}!")
 
 
 class StaticTable(Table):
