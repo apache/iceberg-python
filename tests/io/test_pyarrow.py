@@ -984,7 +984,8 @@ def project(
                     partition={},
                     record_count=3,
                     file_size_in_bytes=3,
-                )
+                ),
+                residual=expr or AlwaysTrue(),
             )
             for file in files
         ]
