@@ -645,10 +645,10 @@ class InspectTable:
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_manifests(self) -> "pa.Table":
+    def all_manifests(self, snapshot_ids: Optional[list[int]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        snapshots = self.tbl.snapshots()
+        snapshots = snapshot_ids or self.tbl.snapshots()
         if not snapshots:
             return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
 

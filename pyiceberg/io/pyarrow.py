@@ -67,6 +67,7 @@ import pyarrow.parquet as pq
 from pyarrow import ChunkedArray
 from pyarrow.fs import (
     FileInfo,
+    FileSelector,
     FileSystem,
     FileType,
     FSSpecHandler,
@@ -575,6 +576,20 @@ class PyArrowFileIO(FileIO):
             elif e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot delete file, access denied: {location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
+
+    def list_files(self, location: str) -> Iterator[str]:
+        """Recursively list all files in the given location.
+
+        Args:
+            location (str): A URI or a path to a local directory.
+
+        Returns:
+            Iterator[str]: An iterator of file paths.
+        """
+        scheme, netloc, path = self.parse_location(location)
+        fs = self.fs_by_scheme(scheme, netloc)
+        selector = FileSelector(path, recursive=True)
+        return fs.get_file_info(selector)
 
     def __getstate__(self) -> Dict[str, Any]:
         """Create a dictionary of the PyArrowFileIO fields used when pickling."""

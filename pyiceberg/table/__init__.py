@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 import uuid
 import warnings
@@ -31,6 +32,7 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Set,
@@ -62,7 +64,7 @@ from pyiceberg.expressions.visitors import (
     inclusive_projection,
     manifest_evaluator,
 )
-from pyiceberg.io import FileIO, load_file_io
+from pyiceberg.io import FileIO, _parse_location, load_file_io
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -149,6 +151,8 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from pyiceberg.catalog import Catalog
+
+logger = logging.getLogger(__name__)
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -1370,6 +1374,37 @@ class Table:
         import polars as pl
 
         return pl.scan_iceberg(self)
+
+    def delete_orphaned_files(self) -> None:
+        """Delete orphaned files in the table."""
+        try:
+            import pyarrow as pa  # noqa: F401
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For deleting orphaned files PyArrow needs to be installed") from e
+
+        from pyarrow.fs import FileSelector
+
+        all_known_files = []
+        snapshot_ids = [snapshot.snapshot_id for snapshot in self.snapshots()]
+        all_manifests_table = self.inspect.all_manifests(snapshot_ids)
+        all_known_files.extend(all_manifests_table["path"].to_pylist())
+
+        executor = ExecutorFactory.get_or_create()
+        files_by_snapshots: Iterator["pa.Table"] = executor.map(lambda args: self.inspect.files(*args), snapshot_ids)
+        all_known_files.extend(pa.concat_tables(files_by_snapshots)["file_path"].to_pylist())
+
+        scheme, netloc, path = _parse_location(self.location())
+        fs = self.io.fs_by_scheme(scheme, netloc)
+        selector = FileSelector(path, recursive=True)
+        all_files = fs.get_file_info(selector)
+
+        orphaned_files = set(all_files).difference(set(all_known_files))
+        logger.info(f"Found {len(orphaned_files)} orphaned files at {self.location()}!")
+
+        if orphaned_files:
+            deletes = executor.map(self.io.delete, orphaned_files)
+            list(deletes)
+            logger.info(f"Deleted {len(orphaned_files)} orphaned files at {self.location()}!")
 
 
 class StaticTable(Table):
