@@ -106,3 +106,33 @@ def test_validation_history_fails_on_snapshot_with_no_summary(
                 {Operation.APPEND},
                 ManifestContent.DATA,
             )
+
+
+def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    """Test the validation history function fails when from_snapshot doesn't match last_snapshot."""
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        snapshot_id = self.snapshot_id
+        if snapshot_id in mock_manifests:
+            return mock_manifests[snapshot_id]
+        return []
+
+    missing_oldest_snapshot = table.snapshots()[1:]
+
+    with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
+        with patch("pyiceberg.table.update.validate.ancestors_between", return_value=missing_oldest_snapshot):
+            with pytest.raises(ValidationException):
+                validation_history(
+                    table,
+                    newest_snapshot,
+                    oldest_snapshot,
+                    {Operation.APPEND},
+                    ManifestContent.DATA,
+                )
