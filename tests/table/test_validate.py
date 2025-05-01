@@ -18,19 +18,25 @@
 from typing import cast
 from unittest.mock import patch
 
+import pytest
+
+from pyiceberg.exceptions import ValidationException
 from pyiceberg.io import FileIO
-from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
+from pyiceberg.manifest import ManifestContent, ManifestFile
 from pyiceberg.table import Table
-from pyiceberg.table.snapshots import Operation, Snapshot, Summary
-from pyiceberg.table.update.validate import deleted_data_files, validation_history
+from pyiceberg.table.snapshots import Operation, Snapshot
+from pyiceberg.table.update.validate import validation_history
 
 
-def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
-    """Test the validation history function."""
+@pytest.fixture
+def table_v2_with_extensive_snapshots_and_manifests(
+    table_v2_with_extensive_snapshots: Table,
+) -> tuple[Table, dict[int, list[ManifestFile]]]:
+    """Fixture to create a table with extensive snapshots and manifests."""
     mock_manifests = {}
 
     for i, snapshot in enumerate(table_v2_with_extensive_snapshots.snapshots()):
-        mock_manifest = ManifestFile(
+        mock_manifest = ManifestFile.from_args(
             manifest_path=f"foo/bar/{i}",
             manifest_length=1,
             partition_spec_id=1,
@@ -43,10 +49,17 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
         # Store the manifest for this specific snapshot
         mock_manifests[snapshot.snapshot_id] = [mock_manifest]
 
-    expected_manifest_data_counts = len([m for m in mock_manifests.values() if m[0].content == ManifestContent.DATA]) - 1
+    return table_v2_with_extensive_snapshots, mock_manifests
 
-    oldest_snapshot = table_v2_with_extensive_snapshots.snapshots()[0]
-    newest_snapshot = cast(Snapshot, table_v2_with_extensive_snapshots.current_snapshot())
+
+def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]]) -> None:
+    """Test the validation history function."""
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    expected_manifest_data_counts = len([m for m in mock_manifests.values() if m[0].content == ManifestContent.DATA])
+
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
 
     def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
@@ -57,7 +70,7 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
 
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         manifests, snapshots = validation_history(
-            table_v2_with_extensive_snapshots,
+            table,
             newest_snapshot,
             oldest_snapshot,
             {Operation.APPEND},
@@ -67,27 +80,42 @@ def test_validation_history(table_v2_with_extensive_snapshots: Table) -> None:
         assert len(manifests) == expected_manifest_data_counts
 
 
-def test_deleted_data_files(
-    table_v2_with_extensive_snapshots: Table,
+def test_validation_history_fails_on_snapshot_with_no_summary(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
 ) -> None:
-    mock_manifests = {}
+    """Test the validation history function fails on snapshot with no summary."""
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
 
-    for i, snapshot in enumerate(table_v2_with_extensive_snapshots.snapshots()):
-        mock_manifest = ManifestFile(
-            manifest_path=f"foo/bar/{i}",
-            manifest_length=1,
-            partition_spec_id=1,
-            content=ManifestContent.DATA if i % 2 == 0 else ManifestContent.DELETES,
-            sequence_number=1,
-            min_sequence_number=1,
-            added_snapshot_id=snapshot.snapshot_id,
-        )
+    # Create a snapshot with no summary
+    snapshot_with_no_summary = Snapshot(
+        snapshot_id="1234",
+        parent_id="5678",
+        timestamp_ms=0,
+        operation=Operation.APPEND,
+        summary=None,
+        manifest_list="foo/bar",
+    )
+    with patch("pyiceberg.table.update.validate.ancestors_between", return_value=[snapshot_with_no_summary]):
+        with pytest.raises(ValidationException):
+            validation_history(
+                table,
+                newest_snapshot,
+                oldest_snapshot,
+                {Operation.APPEND},
+                ManifestContent.DATA,
+            )
 
-        # Store the manifest for this specific snapshot
-        mock_manifests[snapshot.snapshot_id] = [mock_manifest]
 
-    oldest_snapshot = table_v2_with_extensive_snapshots.snapshots()[0]
-    newest_snapshot = cast(Snapshot, table_v2_with_extensive_snapshots.current_snapshot())
+def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    """Test the validation history function fails when from_snapshot doesn't match last_snapshot."""
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
 
     def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
@@ -96,47 +124,15 @@ def test_deleted_data_files(
             return mock_manifests[snapshot_id]
         return []
 
-    # every snapshot is an append, so we should get nothing!
+    missing_oldest_snapshot = table.snapshots()[1:]
+
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
-        result = list(
-            deleted_data_files(
-                table=table_v2_with_extensive_snapshots,
-                starting_snapshot=newest_snapshot,
-                data_filter=None,
-                parent_snapshot=oldest_snapshot,
-                partition_set=None,
-            )
-        )
-
-        assert result == []
-
-    # modify second to last snapshot to be a delete
-    snapshots = table_v2_with_extensive_snapshots.snapshots()
-    altered_snapshot = snapshots[-2]
-    altered_snapshot = altered_snapshot.model_copy(update={"summary": Summary(operation=Operation.DELETE)})
-    snapshots[-2] = altered_snapshot
-
-    table_v2_with_extensive_snapshots.metadata = table_v2_with_extensive_snapshots.metadata.model_copy(
-        update={"snapshots": snapshots},
-    )
-
-    my_entry = ManifestEntry(
-        status=ManifestEntryStatus.DELETED,
-        snapshot_id=altered_snapshot.snapshot_id,
-    )
-
-    with (
-        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
-        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", return_value=[my_entry]),
-    ):
-        result = list(
-            deleted_data_files(
-                table=table_v2_with_extensive_snapshots,
-                starting_snapshot=newest_snapshot,
-                data_filter=None,
-                parent_snapshot=oldest_snapshot,
-                partition_set=None,
-            )
-        )
-
-        assert result == [my_entry]
+        with patch("pyiceberg.table.update.validate.ancestors_between", return_value=missing_oldest_snapshot):
+            with pytest.raises(ValidationException):
+                validation_history(
+                    table,
+                    newest_snapshot,
+                    oldest_snapshot,
+                    {Operation.APPEND},
+                    ManifestContent.DATA,
+                )

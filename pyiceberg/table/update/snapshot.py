@@ -157,7 +157,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 ) as writer:
                     for data_file in self._added_data_files:
                         writer.add(
-                            ManifestEntry(
+                            ManifestEntry.from_args(
                                 status=ManifestEntryStatus.ADDED,
                                 snapshot_id=self._snapshot_id,
                                 sequence_number=None,
@@ -203,13 +203,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
-        ssc = SnapshotSummaryCollector()
         partition_summary_limit = int(
             self._transaction.table_metadata.properties.get(
                 TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
             )
         )
-        ssc.set_partition_summary_limit(partition_summary_limit)
+        ssc = SnapshotSummaryCollector(partition_summary_limit=partition_summary_limit)
 
         for data_file in self._added_data_files:
             ssc.add_file(
@@ -236,7 +235,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return update_snapshot_summaries(
             summary=Summary(operation=self._operation, **ssc.build(), **snapshot_properties),
             previous_summary=previous_snapshot.summary if previous_snapshot is not None else None,
-            truncate_full_table=self._operation == Operation.OVERWRITE,
         )
 
     def _commit(self) -> UpdatesAndRequirements:
@@ -368,7 +366,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         schema = self._transaction.table_metadata.schema()
 
         def _copy_with_new_status(entry: ManifestEntry, status: ManifestEntryStatus) -> ManifestEntry:
-            return ManifestEntry(
+            return ManifestEntry.from_args(
                 status=status,
                 snapshot_id=entry.snapshot_id,
                 sequence_number=entry.sequence_number,
@@ -555,7 +553,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                         ) as writer:
                             [
                                 writer.add_entry(
-                                    ManifestEntry(
+                                    ManifestEntry.from_args(
                                         status=ManifestEntryStatus.EXISTING,
                                         snapshot_id=entry.snapshot_id,
                                         sequence_number=entry.sequence_number,
@@ -586,7 +584,7 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 
             def _get_entries(manifest: ManifestFile) -> List[ManifestEntry]:
                 return [
-                    ManifestEntry(
+                    ManifestEntry.from_args(
                         status=ManifestEntryStatus.DELETED,
                         snapshot_id=entry.snapshot_id,
                         sequence_number=entry.sequence_number,

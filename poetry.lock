@@ -1970,14 +1970,14 @@ test = ["objgraph", "psutil"]
 
 [[package]]
 name = "griffe"
-version = "1.7.2"
+version = "1.7.3"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
 optional = false
 python-versions = ">=3.9"
 groups = ["docs"]
 files = [
-    {file = "griffe-1.7.2-py3-none-any.whl", hash = "sha256:1ed9c2e338a75741fc82083fe5a1bc89cb6142efe126194cc313e34ee6af5423"},
-    {file = "griffe-1.7.2.tar.gz", hash = "sha256:98d396d803fab3b680c2608f300872fd57019ed82f0672f5b5323a9ad18c540c"},
+    {file = "griffe-1.7.3-py3-none-any.whl", hash = "sha256:c6b3ee30c2f0f17f30bcdef5068d6ab7a2a4f1b8bf1a3e74b56fffd21e1c5f75"},
+    {file = "griffe-1.7.3.tar.gz", hash = "sha256:52ee893c6a3a968b639ace8015bec9d36594961e156e23315c8e8e51401fa50b"},
 ]
 
 [package.dependencies]
@@ -2278,6 +2278,21 @@ markers = {main = "extra == \"ray\""}
 referencing = ">=0.31.0"
 
 [[package]]
+name = "kerberos"
+version = "1.3.1"
+description = "Kerberos high-level interface"
+optional = true
+python-versions = "*"
+groups = ["main"]
+markers = "extra == \"hive-kerberos\""
+files = [
+    {file = "kerberos-1.3.1-cp27-cp27m-macosx_11_1_x86_64.whl", hash = "sha256:98a695c072efef535cb2b5f98e474d00671588859a94ec96c2c1508a113ff3aa"},
+    {file = "kerberos-1.3.1-cp38-cp38-macosx_10_15_x86_64.whl", hash = "sha256:2e03c6a9d201d4aab5f899bfb8150de15335955bfce8ca43bfe9a41d7aae54dc"},
+    {file = "kerberos-1.3.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:2002b3b1541fc51e2c081ee7048f55e5d9ca63dd09f0d7b951c263920db3a0bb"},
+    {file = "kerberos-1.3.1.tar.gz", hash = "sha256:cdd046142a4e0060f96a00eb13d82a5d9ebc0f2d7934393ed559bac773460a2c"},
+]
+
+[[package]]
 name = "lazy-object-proxy"
 version = "1.10.0"
 description = "A fast and thorough lazy object proxy."
@@ -2562,14 +2577,14 @@ mkdocs = ">=1.4.1"
 
 [[package]]
 name = "mkdocs-material"
-version = "9.6.11"
+version = "9.6.12"
 description = "Documentation that simply works"
 optional = false
 python-versions = ">=3.8"
 groups = ["docs"]
 files = [
-    {file = "mkdocs_material-9.6.11-py3-none-any.whl", hash = "sha256:47f21ef9cbf4f0ebdce78a2ceecaa5d413581a55141e4464902224ebbc0b1263"},
-    {file = "mkdocs_material-9.6.11.tar.gz", hash = "sha256:0b7f4a0145c5074cdd692e4362d232fb25ef5b23328d0ec1ab287af77cc0deff"},
+    {file = "mkdocs_material-9.6.12-py3-none-any.whl", hash = "sha256:92b4fbdc329e4febc267ca6e2c51e8501fa97b2225c5f4deb4d4e43550f8e61e"},
+    {file = "mkdocs_material-9.6.12.tar.gz", hash = "sha256:add6a6337b29f9ea7912cb1efc661de2c369060b040eb5119855d794ea85b473"},
 ]
 
 [package.dependencies]
@@ -2762,14 +2777,14 @@ type = ["mypy (==1.14.1)"]
 
 [[package]]
 name = "moto"
-version = "5.1.3"
+version = "5.1.4"
 description = "A library that allows you to easily mock out tests based on AWS infrastructure"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "moto-5.1.3-py3-none-any.whl", hash = "sha256:6355b4c7208bd8d884354127824989034f1979da7b96d6e9789a0f934c0f7d6c"},
-    {file = "moto-5.1.3.tar.gz", hash = "sha256:078e73f6fe27a76283f82c6c5507b9c32c0d5cfe32ad4a3d1434f62798da6166"},
+    {file = "moto-5.1.4-py3-none-any.whl", hash = "sha256:9a19d7a64c3f03824389cfbd478b64c82bd4d8da21b242a34259360d66cd108b"},
+    {file = "moto-5.1.4.tar.gz", hash = "sha256:b339c3514f2986ebefa465671b688bdbf51796705702214b1bad46490b68507a"},
 ]
 
 [package.dependencies]
@@ -3061,15 +3076,15 @@ typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.37.31"
-description = "Type annotations for boto3 Glue 1.37.31 service generated with mypy-boto3-builder 8.10.1"
+version = "1.38.0"
+description = "Type annotations for boto3 Glue 1.38.0 service generated with mypy-boto3-builder 8.10.1"
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "extra == \"glue\""
 files = [
-    {file = "mypy_boto3_glue-1.37.31-py3-none-any.whl", hash = "sha256:a0c708c96ce0a129c795dca7825499926e67c462dcc144eb41f0b65bdc5c32e1"},
-    {file = "mypy_boto3_glue-1.37.31.tar.gz", hash = "sha256:c14a1f6f3afc268c6b6ecc5582239315d64139bc4b9a5eb23aa4d522d57bdde1"},
+    {file = "mypy_boto3_glue-1.38.0-py3-none-any.whl", hash = "sha256:a13e967ac8cc235b26d94dbc24b8dcc4a34eb5d472fda4a3db07122f8e570a57"},
+    {file = "mypy_boto3_glue-1.38.0.tar.gz", hash = "sha256:27a79279586168d9ad4aac6f43bc3717911f5691ac9622a7ef7010486a37eb59"},
 ]
 
 [package.dependencies]
@@ -3485,20 +3500,20 @@ files = [
 
 [[package]]
 name = "polars"
-version = "1.27.1"
+version = "1.28.1"
 description = "Blazingly fast DataFrame library"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"polars\""
 files = [
-    {file = "polars-1.27.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ba7ad4f8046d00dd97c1369e46a4b7e00ffcff5d38c0f847ee4b9b1bb182fb18"},
-    {file = "polars-1.27.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:339e3948748ad6fa7a42e613c3fb165b497ed797e93fce1aa2cddf00fbc16cac"},
-    {file = "polars-1.27.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f801e0d9da198eb97cfb4e8af4242b8396878ff67b655c71570b7e333102b72b"},
-    {file = "polars-1.27.1-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:4d18a29c65222451818b63cd397b2e95c20412ea0065d735a20a4a79a7b26e8a"},
-    {file = "polars-1.27.1-cp39-abi3-win_amd64.whl", hash = "sha256:a4f832cf478b282d97f8bf86eeae2df66fa1384de1c49bc61f7224a10cc6a5df"},
-    {file = "polars-1.27.1-cp39-abi3-win_arm64.whl", hash = "sha256:4f238ee2e3c5660345cb62c0f731bbd6768362db96c058098359ecffa42c3c6c"},
-    {file = "polars-1.27.1.tar.gz", hash = "sha256:94fcb0216b56cd0594aa777db1760a41ad0dfffed90d2ca446cf9294d2e97f02"},
+    {file = "polars-1.28.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:8f88d2ba73a4e831eb39433fcf9c84619f8c21a3d83ce9db465b822b4321bb95"},
+    {file = "polars-1.28.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:36a199344e2b6b9d5fa30d2835830965f8c7677b38a9e96b1f9be482c31c18c6"},
+    {file = "polars-1.28.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f37a14458a7336351ae32f199a566e784bd0b25895d0f83c6c02bd0f0c25c57d"},
+    {file = "polars-1.28.1-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:c0d209295627fbca45ebb2fa3279df291b1360685ce3f12e24f8327a79b3d384"},
+    {file = "polars-1.28.1-cp39-abi3-win_amd64.whl", hash = "sha256:b1a17108e0ed3844a2e55da3a674414523aaab29299a2956cb691cdfc0db6246"},
+    {file = "polars-1.28.1-cp39-abi3-win_arm64.whl", hash = "sha256:35ca8ab1937e5c72496789968a53e138796e1f5156c832d52f846ef7332149d7"},
+    {file = "polars-1.28.1.tar.gz", hash = "sha256:cdc0a62a1452e2daf1777e36fcf9351424cba2a588827cc32550fe0fa79dec82"},
 ]
 
 [package.extras]
@@ -5918,7 +5933,7 @@ dynamodb = ["boto3"]
 gcsfs = ["gcsfs"]
 glue = ["boto3", "mypy-boto3-glue"]
 hive = ["thrift"]
-hive-kerberos = ["thrift", "thrift-sasl"]
+hive-kerberos = ["kerberos", "thrift", "thrift-sasl"]
 pandas = ["pandas", "pyarrow"]
 polars = ["polars"]
 pyarrow = ["pyarrow"]
@@ -5934,4 +5949,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "e2787da0077dd210acfcd5b5403cd9c1d723acabf0fe65b459e306cfaf499cf1"
+content-hash = "db80162ff8c6cfb03dad512d45c39ee656bcde7ca90fc3ac1235ff7adf37cee1"
