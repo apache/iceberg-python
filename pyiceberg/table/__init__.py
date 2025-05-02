@@ -24,6 +24,7 @@ import uuid
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
@@ -1375,10 +1376,10 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def delete_orphaned_files(self) -> None:
+    def delete_orphaned_files(self, older_than: Optional[timedelta] = timedelta(days=3), dry_run: bool = False) -> None:
         """Delete orphaned files in the table."""
         location = self.location()
-        orphaned_files = self.inspect.orphaned_files(location)
+        orphaned_files = self.inspect.orphaned_files(location, older_than)
         logger.info(f"Found {len(orphaned_files)} orphaned files at {location}!")
 
         def _delete(file: str) -> None:
@@ -1388,11 +1389,14 @@ class Table:
                 self.io.delete(file)
 
         if orphaned_files:
-            executor = ExecutorFactory.get_or_create()
-            deletes = executor.map(_delete, orphaned_files)
-            # exhaust
-            list(deletes)
-            logger.info(f"Deleted {len(orphaned_files)} orphaned files at {location}!")
+            if dry_run:
+                logger.info(f"(Dry Run) Deleted {len(orphaned_files)} orphaned files at {location}!")
+            else:
+                executor = ExecutorFactory.get_or_create()
+                deletes = executor.map(_delete, orphaned_files)
+                # exhaust
+                list(deletes)
+                logger.info(f"Deleted {len(orphaned_files)} orphaned files at {location}!")
 
 
 class StaticTable(Table):

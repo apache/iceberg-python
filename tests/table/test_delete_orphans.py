@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import os
+from datetime import datetime, timedelta
 from pathlib import Path, PosixPath
 from unittest.mock import PropertyMock, patch
 
@@ -66,8 +68,13 @@ def test_delete_orphaned_files(catalog: Catalog) -> None:
     orphaned_file.touch()
     assert orphaned_file.exists()
 
+    # should not delete because it was just created...
     tbl.delete_orphaned_files()
-    assert not orphaned_file.exists()
+    assert orphaned_file.exists()
+
+    # modify creation date to be older than 3 days
+    five_days_ago = (datetime.now() - timedelta(days=5)).timestamp()
+    os.utime(orphaned_file, (five_days_ago, five_days_ago))
 
 
 def test_delete_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) -> None:
@@ -100,7 +107,7 @@ def test_delete_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) 
 
     file_that_does_not_exist = "foo/bar.baz"
     with patch.object(type(tbl), "inspect", new_callable=PropertyMock) as mock_inspect:
-        mock_inspect.return_value.orphaned_files = lambda x: {file_that_does_not_exist}
+        mock_inspect.return_value.orphaned_files = lambda location, older_than: {file_that_does_not_exist}
         with patch.object(tbl.io, "delete", wraps=tbl.io.delete) as mock_delete:
             tbl.delete_orphaned_files()
             mock_delete.assert_called_with(file_that_does_not_exist)

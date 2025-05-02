@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import reduce
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union, cast
 
@@ -666,7 +666,7 @@ class InspectTable:
         )
         return pa.concat_tables(manifests_by_snapshots)
 
-    def orphaned_files(self, location: str) -> Set[str]:
+    def orphaned_files(self, location: str, older_than: Optional[timedelta] = timedelta(days=3)) -> Set[str]:
         try:
             import pyarrow as pa  # noqa: F401
         except ModuleNotFoundError as e:
@@ -692,9 +692,10 @@ class InspectTable:
 
         _, _, path = _parse_location(location)
         selector = FileSelector(path, recursive=True)
-        # filter to just files as it may return directories
-        all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File]
+        # filter to just files as it may return directories, and filter on time
+        as_of = datetime.now(timezone.utc) - older_than if older_than else None
+        all_files = [f for f in fs.get_file_info(selector) if f.type == FileType.File and (as_of is None or (f.mtime < as_of))]
 
-        orphaned_files = set(all_files).difference(set(all_known_files))
+        orphaned_files = set(all_files).difference(all_known_files)
 
         return orphaned_files
