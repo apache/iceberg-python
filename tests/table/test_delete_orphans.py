@@ -68,6 +68,10 @@ def test_delete_orphaned_files(catalog: Catalog) -> None:
     orphaned_file.touch()
     assert orphaned_file.exists()
 
+    # assert no files deleted if dry run...
+    tbl.delete_orphaned_files(dry_run=True)
+    assert orphaned_file.exists()
+
     # should not delete because it was just created...
     tbl.delete_orphaned_files()
     assert orphaned_file.exists()
