@@ -1122,6 +1122,22 @@ def example_table_metadata_v3() -> Dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
+def table_location(tmp_path_factory: pytest.TempPathFactory) -> str:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    metadata_filename = f"{uuid.uuid4()}.metadata.json"
+    metadata_location = str(tmp_path_factory.getbasetemp() / "metadata" / metadata_filename)
+    version_hint_location = str(tmp_path_factory.getbasetemp() / "metadata" / "version-hint.text")
+    metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
+    ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
+
+    with PyArrowFileIO().new_output(location=version_hint_location).create(overwrite=True) as s:
+        s.write(metadata_filename.encode("utf-8"))
+
+    return str(tmp_path_factory.getbasetemp())
+
+
+@pytest.fixture(scope="session")
 def metadata_location(tmp_path_factory: pytest.TempPathFactory) -> str:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -2293,7 +2309,7 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
     return FileScanTask(
-        data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
     )
 
 
@@ -2418,7 +2434,7 @@ def spark() -> "SparkSession":
     # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
-    iceberg_version = "1.8.0"
+    iceberg_version = "1.9.0"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"

@@ -28,6 +28,7 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     from pyiceberg.table.metadata import TableMetadata
@@ -271,10 +272,10 @@ class SnapshotSummaryCollector:
     partition_metrics: DefaultDict[str, UpdateMetrics]
     max_changed_partitions_for_summaries: int
 
-    def __init__(self) -> None:
+    def __init__(self, partition_summary_limit: int = 0) -> None:
         self.metrics = UpdateMetrics()
         self.partition_metrics = defaultdict(UpdateMetrics)
-        self.max_changed_partitions_for_summaries = 0
+        self.max_changed_partitions_for_summaries = partition_summary_limit
 
     def set_partition_summary_limit(self, limit: int) -> None:
         self.max_changed_partitions_for_summaries = limit
@@ -356,6 +357,11 @@ def update_snapshot_summaries(
         raise ValueError(f"Operation not implemented: {summary.operation}")
 
     if truncate_full_table and summary.operation == Operation.OVERWRITE and previous_summary is not None:
+        deprecation_message(
+            deprecated_in="0.10.0",
+            removed_in="0.11.0",
+            help_message="The truncate-full-table shouldn't be used.",
+        )
         summary = _truncate_table_summary(summary, previous_summary)
 
     if not previous_summary:
@@ -429,3 +435,16 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         if snapshot.parent_snapshot_id is None:
             break
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
+
+
+def ancestors_between(
+    from_snapshot: Optional[Snapshot], to_snapshot: Snapshot, table_metadata: TableMetadata
+) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given snapshot between the to and from snapshots."""
+    if from_snapshot is not None:
+        for snapshot in ancestors_of(to_snapshot, table_metadata):
+            yield snapshot
+            if snapshot == from_snapshot:
+                break
+    else:
+        yield from ancestors_of(to_snapshot, table_metadata)
