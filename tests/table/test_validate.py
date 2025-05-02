@@ -71,8 +71,8 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         manifests, snapshots = validation_history(
             table,
-            newest_snapshot,
             oldest_snapshot,
+            newest_snapshot,
             {Operation.APPEND},
             ManifestContent.DATA,
         )
@@ -101,8 +101,8 @@ def test_validation_history_fails_on_snapshot_with_no_summary(
         with pytest.raises(ValidationException):
             validation_history(
                 table,
-                newest_snapshot,
                 oldest_snapshot,
+                newest_snapshot,
                 {Operation.APPEND},
                 ManifestContent.DATA,
             )
@@ -131,8 +131,8 @@ def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
             with pytest.raises(ValidationException):
                 validation_history(
                     table,
-                    newest_snapshot,
                     oldest_snapshot,
+                    newest_snapshot,
                     {Operation.APPEND},
                     ManifestContent.DATA,
                 )
