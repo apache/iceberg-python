@@ -773,13 +773,15 @@ class Transaction:
                 updates=self._updates,
                 requirements=self._requirements,
             )
+            self._updates = ()
+            self._requirements = ()
             return self._table
         else:
             return self._table
 
 
 class CreateTableTransaction(Transaction):
-    """A transaction that involves the creation of a a new table."""
+    """A transaction that involves the creation of a new table."""
 
     def _initial_changes(self, table_metadata: TableMetadata) -> None:
         """Set the initial changes that can reconstruct the initial table metadata when creating the CreateTableTransaction."""

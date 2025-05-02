@@ -1684,3 +1684,13 @@ def test_write_optional_list(session_catalog: Catalog) -> None:
     session_catalog.load_table(identifier).append(df_2)
 
     assert len(session_catalog.load_table(identifier).scan().to_arrow()) == 4
+
+
+@pytest.mark.integration
+def test_double_commit_transaction(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.arrow_data_files"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "1"}, [])
+
+    with tbl.transaction() as tx:
+        tx.append(arrow_table_with_null)
+        tx.commit_transaction()
