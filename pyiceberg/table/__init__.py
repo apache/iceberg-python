@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import contextlib
 import itertools
 import logging
 import os
@@ -32,7 +33,6 @@ from typing import (
     Callable,
     Dict,
     Iterable,
-    Iterator,
     List,
     Optional,
     Set,
@@ -64,7 +64,7 @@ from pyiceberg.expressions.visitors import (
     inclusive_projection,
     manifest_evaluator,
 )
-from pyiceberg.io import FileIO, _parse_location, load_file_io
+from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -1377,39 +1377,19 @@ class Table:
 
     def delete_orphaned_files(self) -> None:
         """Delete orphaned files in the table."""
-        try:
-            import pyarrow as pa  # noqa: F401
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError("For deleting orphaned files PyArrow needs to be installed") from e
-
-        from pyarrow.fs import FileSelector, FileType
-
-        from pyiceberg.io.pyarrow import _fs_from_file_path
-
         location = self.location()
-
-        all_known_files = []
-        snapshots = self.snapshots()
-        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
-        all_manifests_table = self.inspect.all_manifests(snapshots)
-        all_known_files.extend(all_manifests_table["path"].to_pylist())
-
-        executor = ExecutorFactory.get_or_create()
-        files_by_snapshots: Iterator["pa.Table"] = executor.map(lambda snapshot_id: self.inspect.files(snapshot_id), snapshot_ids)
-        all_known_files.extend(pa.concat_tables(files_by_snapshots)["file_path"].to_pylist())
-
-        fs = _fs_from_file_path(self.io, location)
-
-        _, _, path = _parse_location(location)
-        selector = FileSelector(path, recursive=True)
-        # filter to just files as it may return directories
-        all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File]
-
-        orphaned_files = set(all_files).difference(set(all_known_files))
+        orphaned_files = self.inspect.orphaned_files(location)
         logger.info(f"Found {len(orphaned_files)} orphaned files at {location}!")
 
+        def _delete(file: str) -> None:
+            # don't error if the file doesn't exist
+            # still catch ctrl-c, etc.
+            with contextlib.suppress(Exception):
+                self.io.delete(file)
+
         if orphaned_files:
-            deletes = executor.map(self.io.delete, orphaned_files)
+            executor = ExecutorFactory.get_or_create()
+            deletes = executor.map(_delete, orphaned_files)
             # exhaust
             list(deletes)
             logger.info(f"Deleted {len(orphaned_files)} orphaned files at {location}!")

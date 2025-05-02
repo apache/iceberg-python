@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
+from functools import reduce
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple, Union, cast
 
 from pyiceberg.conversions import from_bytes
+from pyiceberg.io import _parse_location
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
@@ -645,10 +647,16 @@ class InspectTable:
     def delete_files(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         return self._files(snapshot_id, {DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-    def all_manifests(self, snapshots: Optional[list[Snapshot]] = None) -> "pa.Table":
+    def all_manifests(self, snapshots: Optional[Union[list[Snapshot], list[int]]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        snapshots = snapshots or self.tbl.snapshots()
+        # coerce into snapshot objects if users passes in snapshot ids
+        if snapshots is not None:
+            if isinstance(snapshots[0], int):
+                snapshots = cast(list[Snapshot], [self.tbl.metadata.snapshot_by_id(snapshot_id) for snapshot_id in snapshots])
+        else:
+            snapshots = self.tbl.snapshots()
+
         if not snapshots:
             return pa.Table.from_pylist([], schema=self._get_all_manifests_schema())
 
@@ -657,3 +665,36 @@ class InspectTable:
             lambda args: self._generate_manifests_table(*args), [(snapshot, True) for snapshot in snapshots]
         )
         return pa.concat_tables(manifests_by_snapshots)
+
+    def orphaned_files(self, location: str) -> Set[str]:
+        try:
+            import pyarrow as pa  # noqa: F401
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For deleting orphaned files PyArrow needs to be installed") from e
+
+        from pyarrow.fs import FileSelector, FileType
+
+        from pyiceberg.io.pyarrow import _fs_from_file_path
+
+        all_known_files = set()
+        snapshots = self.tbl.snapshots()
+        manifests_paths = self.all_manifests(snapshots)["path"].to_pylist()
+        all_known_files.update(manifests_paths)
+
+        executor = ExecutorFactory.get_or_create()
+        files_by_snapshots: Iterator[Set[str]] = executor.map(
+            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist())
+        )
+        datafile_paths: set[str] = reduce(set.union, files_by_snapshots, set())
+        all_known_files.update(datafile_paths)
+
+        fs = _fs_from_file_path(self.tbl.io, location)
+
+        _, _, path = _parse_location(location)
+        selector = FileSelector(path, recursive=True)
+        # filter to just files as it may return directories
+        all_files = [f.path for f in fs.get_file_info(selector) if f.type == FileType.File]
+
+        orphaned_files = set(all_files).difference(set(all_known_files))
+
+        return orphaned_files

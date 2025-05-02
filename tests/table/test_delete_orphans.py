@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from pathlib import Path, PosixPath
+from unittest.mock import PropertyMock, patch
 
 import pyarrow as pa
 import pytest
@@ -67,3 +68,39 @@ def test_delete_orphaned_files(catalog: Catalog) -> None:
 
     tbl.delete_orphaned_files()
     assert not orphaned_file.exists()
+
+
+def test_delete_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) -> None:
+    identifier = "default.test_delete_orphaned_files"
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Drachten", "inhabitants": 45019},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+
+    file_that_does_not_exist = "foo/bar.baz"
+    with patch.object(type(tbl), "inspect", new_callable=PropertyMock) as mock_inspect:
+        mock_inspect.return_value.orphaned_files = lambda x: {file_that_does_not_exist}
+        with patch.object(tbl.io, "delete", wraps=tbl.io.delete) as mock_delete:
+            tbl.delete_orphaned_files()
+            mock_delete.assert_called_with(file_that_does_not_exist)
