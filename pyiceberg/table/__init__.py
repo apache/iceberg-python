@@ -291,8 +291,6 @@ class Transaction:
 
         if self._autocommit:
             self.commit_transaction()
-            self._updates = ()
-            self._requirements = ()
 
         return self
 
@@ -774,11 +772,11 @@ class Transaction:
                 updates=self._updates,
                 requirements=self._requirements,
             )
-            self._updates = ()
-            self._requirements = ()
-            return self._table
-        else:
-            return self._table
+
+        self._updates = ()
+        self._requirements = ()
+
+        return self._table
 
 
 class CreateTableTransaction(Transaction):
