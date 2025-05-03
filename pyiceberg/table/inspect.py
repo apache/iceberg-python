@@ -678,12 +678,13 @@ class InspectTable:
 
         all_known_files = set()
         snapshots = self.tbl.snapshots()
+        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
         manifests_paths = self.all_manifests(snapshots)["path"].to_pylist()
         all_known_files.update(manifests_paths)
 
         executor = ExecutorFactory.get_or_create()
         files_by_snapshots: Iterator[Set[str]] = executor.map(
-            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist())
+            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist()), snapshot_ids
         )
         datafile_paths: set[str] = reduce(set.union, files_by_snapshots, set())
         all_known_files.update(datafile_paths)
