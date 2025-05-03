@@ -79,6 +79,14 @@ def test_delete_orphaned_files(catalog: Catalog) -> None:
     # modify creation date to be older than 3 days
     five_days_ago = (datetime.now() - timedelta(days=5)).timestamp()
     os.utime(orphaned_file, (five_days_ago, five_days_ago))
+    tbl.delete_orphaned_files()
+    assert not orphaned_file.exists()
+
+    # assert that all known files still exist...
+    all_known_files = tbl.inspect.all_known_files()
+    for files in all_known_files.values():
+        for file in files:
+            assert Path(file).exists()
 
 
 def test_delete_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) -> None:
