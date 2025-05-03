@@ -679,8 +679,8 @@ class InspectTable:
         _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
         _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
 
-        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
         executor = ExecutorFactory.get_or_create()
+        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
         files_by_snapshots: Iterator[Set[str]] = executor.map(
             lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist()), snapshot_ids
         )
