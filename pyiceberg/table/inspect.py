@@ -679,8 +679,10 @@ class InspectTable:
         all_known_files = set()
         snapshots = self.tbl.snapshots()
         snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
-        manifests_paths = self.all_manifests(snapshots)["path"].to_pylist()
-        all_known_files.update(manifests_paths)
+
+        all_known_files.update(self.all_manifests(snapshots)["path"].to_pylist())
+        all_known_files.update([snapshot.manifest_list for snapshot in snapshots])
+        all_known_files.update([statistic.statistics_path for statistic in self.tbl.metadata.statistics])
 
         executor = ExecutorFactory.get_or_create()
         files_by_snapshots: Iterator[Set[str]] = executor.map(
