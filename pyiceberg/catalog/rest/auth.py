@@ -56,20 +56,25 @@ class BasicAuthManager(AuthManager):
 
 
 class LegacyOAuth2AuthManager(AuthManager):
+    _session: Session
+    _auth_url: Optional[str]
+    _token: Optional[str]
+    _credential: Optional[str]
+    _optional_oauth_params: Optional[Dict[str, str]]
+
     def __init__(
         self,
         session: Session,
-        auth_url: str,
+        auth_url: Optional[str] = None,
         credential: Optional[str] = None,
         initial_token: Optional[str] = None,
         optional_oauth_params: Optional[Dict[str, str]] = None,
     ):
-        self._token: Optional[str] = None
-        self._initial_token = initial_token
-        self._credential = credential
-        self._auth_url = auth_url
-        self._optional_oauth_params = optional_oauth_params
         self._session = session
+        self._auth_url = auth_url
+        self._token = initial_token
+        self._credential = credential
+        self._optional_oauth_params = optional_oauth_params
         self._refresh_token()
 
     def _fetch_access_token(self, credential: str) -> str:
@@ -83,6 +88,9 @@ class LegacyOAuth2AuthManager(AuthManager):
         if self._optional_oauth_params:
             data.update(self._optional_oauth_params)
 
+        if self._auth_url is None:
+            raise ValueError("Cannot fetch access token from undefined auth_url")
+
         response = self._session.post(
             url=self._auth_url, data=data, headers={**self._session.headers, "Content-type": "application/x-www-form-urlencoded"}
         )
@@ -94,9 +102,7 @@ class LegacyOAuth2AuthManager(AuthManager):
         return TokenResponse.model_validate_json(response.text).access_token
 
     def _refresh_token(self) -> None:
-        if self._initial_token is not None:
-            self._token = self._initial_token
-        elif self._credential:
+        if self._credential is not None:
             self._token = self._fetch_access_token(self._credential)
 
     def auth_header(self) -> str:
@@ -140,14 +146,21 @@ class AuthManagerFactory:
     _registry: Dict[str, Type["AuthManager"]] = {}
 
     @classmethod
-    def register(cls, name: str, manager_cls: Type["AuthManager"]) -> None:
+    def register(cls, name: str, auth_manager_class: Type["AuthManager"]) -> None:
         """
         Register a string name to a known AuthManager class.
+
+        Args:
+            name (str): unique name like 'oauth2' to register the AuthManager with
+            auth_manager_class (Type["AuthManager"]): Implementation of AuthManager
+
+        Returns:
+            None
         """
-        cls._registry[name] = manager_cls
+        cls._registry[name] = auth_manager_class
 
     @classmethod
-    def create(cls, class_or_name: str, config: Dict[str, Any]) -> "AuthManager":
+    def create(cls, class_or_name: str, config: Dict[str, Any]) -> AuthManager:
         """
         Create an AuthManager by name or fully-qualified class path.
 

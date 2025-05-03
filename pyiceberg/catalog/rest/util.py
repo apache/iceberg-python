@@ -14,31 +14,24 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from requests import HTTPError
 from json import JSONDecodeError
-from pyiceberg.typedef import IcebergBaseModel
-from pydantic import Field
-from typing import Dict, Type, Optional, Literal
+from typing import Dict, Literal, Optional, Type
+
+from pydantic import Field, ValidationError
+from requests import HTTPError
+
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     BadRequestError,
-    CommitFailedException,
-    CommitStateUnknownException,
     ForbiddenError,
-    NamespaceAlreadyExistsError,
-    NamespaceNotEmptyError,
-    NoSuchIdentifierError,
-    NoSuchNamespaceError,
-    NoSuchTableError,
-    NoSuchViewError,
     OAuthError,
     RESTError,
     ServerError,
     ServiceUnavailableError,
-    TableAlreadyExistsError,
     UnauthorizedError,
-    ValidationError
 )
+from pyiceberg.typedef import IcebergBaseModel
+
 
 class TokenResponse(IcebergBaseModel):
     access_token: str = Field()
@@ -47,6 +40,7 @@ class TokenResponse(IcebergBaseModel):
     issued_token_type: Optional[str] = Field(default=None)
     refresh_token: Optional[str] = Field(default=None)
     scope: Optional[str] = Field(default=None)
+
 
 class ErrorResponseMessage(IcebergBaseModel):
     message: str = Field()
@@ -112,8 +106,6 @@ def _handle_non_200_response(exc: HTTPError, error_handler: Dict[int, Type[Excep
     except ValidationError as e:
         # In the case we don't have a proper response
         errs = ", ".join(err["msg"] for err in e.errors())
-        response = (
-            f"RESTError {exc.response.status_code}: Received unexpected JSON Payload: {exc.response.text}, errors: {errs}"
-        )
+        response = f"RESTError {exc.response.status_code}: Received unexpected JSON Payload: {exc.response.text}, errors: {errs}"
 
     raise exception(response) from exc

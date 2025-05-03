@@ -38,7 +38,7 @@ from pyiceberg.catalog import (
     Catalog,
     PropertiesUpdateSummary,
 )
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
+from pyiceberg.catalog.rest.auth import AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
 from pyiceberg.catalog.rest.util import _handle_non_200_response
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -244,15 +244,7 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        auth_config = {
-            "session": self._session,
-            "credential": self.properties.get(CREDENTIAL),
-            "initial_token": self.properties.get(TOKEN),
-            "optional_oauth_params": self._extract_optional_oauth_params(),
-        }
-
-        auth_manager = AuthManagerFactory.create("legacyoauth2", auth_config)
-        session.auth = AuthManagerAdapter(auth_manager)
+        session.auth = AuthManagerAdapter(self._create_legacy_oauth2_auth_manager(session))
         # Set HTTP headers
         self._config_headers(session)
 
@@ -261,6 +253,26 @@ class RestCatalog(Catalog):
             self._init_sigv4(session)
 
         return session
+
+    def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
+        """Create the LegacyOAuth2AuthManager by fetching required properties.
+
+        This will be deprecated in PyIceberg 1.0
+        """
+        client_credentials = self.properties.get(CREDENTIAL)
+        # We want to call `self.auth_url` only when we are using CREDENTIAL
+        # with the legacy OAUTH2 flow as it will raise a DeprecationWarning
+        auth_url = self.auth_url if client_credentials is not None else None
+
+        auth_config = {
+            "session": session,
+            "auth_url": auth_url,
+            "credential": client_credentials,
+            "initial_token": self.properties.get(TOKEN),
+            "optional_oauth_params": self._extract_optional_oauth_params(),
+        }
+
+        return AuthManagerFactory.create("legacyoauth2", auth_config)
 
     def _check_valid_namespace_identifier(self, identifier: Union[str, Identifier]) -> Identifier:
         """Check if the identifier has at least one element."""
@@ -437,8 +449,9 @@ class RestCatalog(Catalog):
         # Reactive token refresh is atypical - we should proactively refresh tokens in a separate thread
         # instead of retrying on Auth Exceptions. Keeping refresh behavior for the LegacyOAuth2AuthManager
         # for backward compatibility
-        if isinstance(self._session.auth.auth_manager, LegacyOAuth2AuthManager):
-            self._session.auth.auth_manager._refresh_token()
+        auth_manager = self._session.auth.auth_manager  # type: ignore[union-attr]
+        if isinstance(auth_manager, LegacyOAuth2AuthManager):
+            auth_manager._refresh_token()
 
     def _config_headers(self, session: Session) -> None:
         header_properties = get_header_properties(self.properties)
