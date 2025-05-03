@@ -666,7 +666,39 @@ class InspectTable:
         )
         return pa.concat_tables(manifests_by_snapshots)
 
+    def all_known_files(self) -> dict[str, set[str]]:
+        """Get all the known files in the table.
+
+        Returns:
+            dict of {file_type: list of file paths} for each file type.
+        """
+        snapshots = self.tbl.snapshots()
+
+        _all_known_files = {}
+        _all_known_files["manifests"] = set(self.all_manifests(snapshots)["path"].to_pylist())
+        _all_known_files["manifest_lists"] = {snapshot.manifest_list for snapshot in snapshots}
+        _all_known_files["statistics"] = {statistic.statistics_path for statistic in self.tbl.metadata.statistics}
+
+        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
+        executor = ExecutorFactory.get_or_create()
+        files_by_snapshots: Iterator[Set[str]] = executor.map(
+            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist()), snapshot_ids
+        )
+        _all_known_files["datafiles"] = reduce(set.union, files_by_snapshots, set())
+
+        return _all_known_files
+
     def orphaned_files(self, location: str, older_than: Optional[timedelta] = timedelta(days=3)) -> Set[str]:
+        """Get all the orphaned files in the table.
+
+        Args:
+            location: The location to check for orphaned files.
+            older_than: The time period to check for orphaned files. Defaults to 3 days.
+
+        Returns:
+            A set of orphaned file paths.
+
+        """
         try:
             import pyarrow as pa  # noqa: F401
         except ModuleNotFoundError as e:
@@ -676,20 +708,8 @@ class InspectTable:
 
         from pyiceberg.io.pyarrow import _fs_from_file_path
 
-        all_known_files = set()
-        snapshots = self.tbl.snapshots()
-        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
-
-        all_known_files.update(self.all_manifests(snapshots)["path"].to_pylist())
-        all_known_files.update([snapshot.manifest_list for snapshot in snapshots])
-        all_known_files.update([statistic.statistics_path for statistic in self.tbl.metadata.statistics])
-
-        executor = ExecutorFactory.get_or_create()
-        files_by_snapshots: Iterator[Set[str]] = executor.map(
-            lambda snapshot_id: set(self.files(snapshot_id)["file_path"].to_pylist()), snapshot_ids
-        )
-        datafile_paths: set[str] = reduce(set.union, files_by_snapshots, set())
-        all_known_files.update(datafile_paths)
+        all_known_files = self.all_known_files()
+        flat_known_files: set[str] = reduce(set.union, all_known_files.values(), set())
 
         fs = _fs_from_file_path(self.tbl.io, location)
 
@@ -701,6 +721,6 @@ class InspectTable:
             f.path for f in fs.get_file_info(selector) if f.type == FileType.File and (as_of is None or (f.mtime < as_of))
         ]
 
-        orphaned_files = set(all_files).difference(all_known_files)
+        orphaned_files = set(all_files).difference(flat_known_files)
 
         return orphaned_files
