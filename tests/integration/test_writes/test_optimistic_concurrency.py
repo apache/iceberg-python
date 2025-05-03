@@ -66,7 +66,7 @@ def test_conflict_append_delete(
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
-    tbl1.delete("string == 'z'")
+    tbl1.append(arrow_table_with_null)
 
     with pytest.raises(CommitFailedException, match="(branch main has changed: expected id ).*"):
         # tbl2 isn't aware of the commit by tbl1
