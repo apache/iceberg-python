@@ -670,7 +670,7 @@ class InspectTable:
         """Get all the known files in the table.
 
         Returns:
-            dict of {file_type: list of file paths} for each file type.
+            dict of {file_type: set of file paths} for each file type.
         """
         snapshots = self.tbl.snapshots()
 
