@@ -24,7 +24,7 @@ In the case where the fixture must be used in a pytest.mark.parametrize decorato
 and the built-in pytest fixture request should be used as an additional argument in the function. The fixture can then be
 retrieved using `request.getfixturevalue(fixture_name)`.
 """
-import json
+
 import os
 import re
 import socket
@@ -61,7 +61,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.manifest import DataFile, FileFormat
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, PartitionField
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import FileScanTask, Table
@@ -1850,9 +1850,8 @@ def simple_map() -> MapType:
 
 @pytest.fixture(scope="session")
 def test_schema() -> Schema:
-    return Schema(
-        NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", IntegerType(), False)
-    )
+    return Schema(NestedField(1, "VendorID", IntegerType(), False), NestedField(2, "tpep_pickup_datetime", IntegerType(), False))
+
 
 @pytest.fixture(scope="session")
 def test_partition_spec() -> Schema:
@@ -1861,8 +1860,11 @@ def test_partition_spec() -> Schema:
         PartitionField(2, 1001, IdentityTransform(), "tpep_pickup_datetime"),
     )
 
+
 @pytest.fixture(scope="session")
-def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec) -> Generator[str, None, None]:
+def generated_manifest_entry_file(
+    avro_schema_manifest_entry: Dict[str, Any], test_schema: Schema, test_partition_spec: PartitionSpec
+) -> Generator[str, None, None]:
     from fastavro import parse_schema, writer
 
     parsed_schema = parse_schema(avro_schema_manifest_entry)
@@ -1870,7 +1872,15 @@ def generated_manifest_entry_file(avro_schema_manifest_entry: Dict[str, Any], te
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/manifest.avro"
         with open(tmp_avro_file, "wb") as out:
-            writer(out, parsed_schema, manifest_entry_records, metadata={'schema': test_schema.model_dump_json(), 'partition-spec': test_partition_spec.fields,})
+            writer(
+                out,
+                parsed_schema,
+                manifest_entry_records,
+                metadata={
+                    "schema": test_schema.model_dump_json(),
+                    "partition-spec": test_partition_spec.fields,
+                },
+            )
         yield tmp_avro_file
 
 

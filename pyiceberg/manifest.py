@@ -705,6 +705,7 @@ class ManifestFile(Record):
             An Iterator of manifest entries.
         """
         from pyiceberg_core import manifest
+
         bs = io.new_input(self.manifest_path).open().read()
         manifest = manifest.read_manifest_entries(bs)
 
@@ -745,7 +746,6 @@ class ManifestFile(Record):
             for entry in manifest.entries()
             if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
         ]
-
 
 
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
