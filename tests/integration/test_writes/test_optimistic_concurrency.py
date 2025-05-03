@@ -30,7 +30,7 @@ def test_conflict_delete_delete(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.delete("string == 'z'")
@@ -46,7 +46,7 @@ def test_conflict_delete_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     # This is allowed
@@ -63,7 +63,7 @@ def test_conflict_append_delete(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.delete("string == 'z'")
@@ -79,7 +79,7 @@ def test_conflict_append_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     identifier = "default.test_conflict"
-    tbl1 = _create_table(session_catalog, identifier, {"format-version": "1"}, [arrow_table_with_null])
+    tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
 
     tbl1.append(arrow_table_with_null)
