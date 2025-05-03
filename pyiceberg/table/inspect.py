@@ -694,7 +694,9 @@ class InspectTable:
         selector = FileSelector(path, recursive=True)
         # filter to just files as it may return directories, and filter on time
         as_of = datetime.now(timezone.utc) - older_than if older_than else None
-        all_files = [f for f in fs.get_file_info(selector) if f.type == FileType.File and (as_of is None or (f.mtime < as_of))]
+        all_files = [
+            f.path for f in fs.get_file_info(selector) if f.type == FileType.File and (as_of is None or (f.mtime < as_of))
+        ]
 
         orphaned_files = set(all_files).difference(all_known_files)
 
