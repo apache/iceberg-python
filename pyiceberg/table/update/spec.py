@@ -16,15 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-)
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 from pyiceberg.expressions import (
     Reference,
@@ -47,7 +39,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform
+from pyiceberg.transforms import IdentityTransform, TimeTransform, Transform, VoidTransform, parse_transform
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
@@ -85,11 +77,13 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     def add_field(
         self,
         source_column_name: str,
-        transform: Transform[Any, Any],
+        transform: Union[str, Transform[Any, Any]],
         partition_field_name: Optional[str] = None,
     ) -> UpdateSpec:
         ref = Reference(source_column_name)
         bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
+        if isinstance(transform, str):
+            transform = parse_transform(transform)
         # verify transform can actually bind it
         output_type = bound_ref.field.field_type
         if not transform.can_transform(output_type):

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -62,7 +63,6 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow, schema_to_pyarrow
 from pyiceberg.manifest import (
     POSITIONAL_DELETE_SCHEMA,
     DataFile,
@@ -203,7 +203,7 @@ class TableProperties:
     WRITE_PY_LOCATION_PROVIDER_IMPL = "write.py-location-provider.impl"
 
     OBJECT_STORE_ENABLED = "write.object-storage.enabled"
-    OBJECT_STORE_ENABLED_DEFAULT = True
+    OBJECT_STORE_ENABLED_DEFAULT = False
 
     WRITE_OBJECT_STORE_PARTITIONED_PATHS = "write.object-storage.partitioned-paths"
     WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT = True
@@ -244,7 +244,6 @@ class TableProperties:
 
 class Transaction:
     _table: Table
-    table_metadata: TableMetadata
     _autocommit: bool
     _updates: Tuple[TableUpdate, ...]
     _requirements: Tuple[TableRequirement, ...]
@@ -256,11 +255,14 @@ class Transaction:
             table: The table that will be altered.
             autocommit: Option to automatically commit the changes when they are staged.
         """
-        self.table_metadata = table.metadata
         self._table = table
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
+
+    @property
+    def table_metadata(self) -> TableMetadata:
+        return update_table_metadata(self._table.metadata, self._updates)
 
     def __enter__(self) -> Transaction:
         """Start a transaction to update the table."""
@@ -286,8 +288,6 @@ class Transaction:
         for new_requirement in requirements:
             if type(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
-
-        self.table_metadata = update_table_metadata(self.table_metadata, updates)
 
         if self._autocommit:
             self.commit_transaction()
@@ -439,6 +439,15 @@ class Transaction:
         """
         return UpdateSnapshot(self, io=self._table.io, snapshot_properties=snapshot_properties)
 
+    def update_statistics(self) -> UpdateStatistics:
+        """
+        Create a new UpdateStatistics to update the statistics of the table.
+
+        Returns:
+            A new UpdateStatistics
+        """
+        return UpdateStatistics(transaction=self)
+
     def append(self, df: pa.Table, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> None:
         """
         Shorthand API for appending a PyArrow table to a table transaction.
@@ -579,7 +588,9 @@ class Transaction:
             self.table_metadata.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
         )
 
-        self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
+        if overwrite_filter != AlwaysFalse():
+            # Only delete when the filter is != AlwaysFalse
+            self.delete(delete_filter=overwrite_filter, case_sensitive=case_sensitive, snapshot_properties=snapshot_properties)
 
         with self._append_snapshot_producer(snapshot_properties) as append_files:
             # skip writing data files if the dataframe is empty
@@ -1148,6 +1159,12 @@ class Table:
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
         """
+        try:
+            import pyarrow as pa  # noqa: F401
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
+
+        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -1159,11 +1176,21 @@ class Table:
                 else:
                     raise ValueError(f"Field-ID could not be found: {join_cols}")
 
+        if len(join_cols) == 0:
+            raise ValueError("Join columns could not be found, please set identifier-field-ids or pass in explicitly.")
+
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
 
         if upsert_util.has_duplicate_rows(df, join_cols):
             raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+
+        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        _check_pyarrow_schema_compatible(
+            self.schema(), provided_schema=df.schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        )
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
@@ -1181,10 +1208,11 @@ class Table:
 
                 update_row_cnt = len(rows_to_update)
 
-                # build the match predicate filter
-                overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+                if len(rows_to_update) > 0:
+                    # build the match predicate filter
+                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
 
-                tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
+                    tx.overwrite(rows_to_update, overwrite_filter=overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
                 expr_match = upsert_util.create_match_filter(matched_iceberg_table, join_cols)
@@ -1194,7 +1222,8 @@ class Table:
 
                 insert_row_cnt = len(rows_to_insert)
 
-                tx.append(rows_to_insert)
+                if insert_row_cnt > 0:
+                    tx.append(rows_to_insert)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
@@ -1351,7 +1380,26 @@ class StaticTable(Table):
         raise NotImplementedError("To be implemented")
 
     @classmethod
+    def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
+        version_hint_location = os.path.join(metadata_location, "metadata", "version-hint.text")
+        io = load_file_io(properties=properties, location=version_hint_location)
+        file = io.new_input(version_hint_location)
+
+        with file.open() as stream:
+            content = stream.read().decode("utf-8")
+
+        if content.endswith(".metadata.json"):
+            return os.path.join(metadata_location, "metadata", content)
+        elif content.isnumeric():
+            return os.path.join(metadata_location, "metadata", "v%s.metadata.json").format(content)
+        else:
+            return os.path.join(metadata_location, "metadata", "%s.metadata.json").format(content)
+
+    @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:
+        if not metadata_location.endswith(".metadata.json"):
+            metadata_location = StaticTable._metadata_location_from_version_hint(metadata_location, properties)
+
         io = load_file_io(properties=properties, location=metadata_location)
         file = io.new_input(metadata_location)
 
@@ -1532,7 +1580,6 @@ def _open_manifest(
     io: FileIO,
     manifest: ManifestFile,
     partition_filter: Callable[[DataFile], bool],
-    residual_evaluator: Callable[[Record], BooleanExpression],
     metrics_evaluator: Callable[[DataFile], bool],
 ) -> List[ManifestEntry]:
     """Open a manifest file and return matching manifest entries.
@@ -1699,7 +1746,6 @@ class DataScan(TableScan):
                         self.io,
                         manifest,
                         partition_evaluators[manifest.partition_spec_id],
-                        residual_evaluators[manifest.partition_spec_id],
                         self._build_metrics_evaluator(),
                     )
                     for manifest in manifests
@@ -1758,7 +1804,7 @@ class DataScan(TableScan):
         """
         import pyarrow as pa
 
-        from pyiceberg.io.pyarrow import ArrowScan
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
         target_schema = schema_to_pyarrow(self.projection())
         batches = ArrowScan(
@@ -1768,7 +1814,7 @@ class DataScan(TableScan):
         return pa.RecordBatchReader.from_batches(
             target_schema,
             batches,
-        )
+        ).cast(target_schema)
 
     def to_pandas(self, **kwargs: Any) -> pd.DataFrame:
         """Read a Pandas DataFrame eagerly from this Iceberg table.
@@ -1816,6 +1862,8 @@ class DataScan(TableScan):
         return result
 
     def count(self) -> int:
+        from pyiceberg.io.pyarrow import ArrowScan
+
         # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
         res = 0
         # every task is a FileScanTask
@@ -1872,6 +1920,9 @@ def _parquet_files_to_data_files(table_metadata: TableMetadata, file_paths: List
     Returns:
         An iterable that supplies DataFiles that describe the parquet files.
     """
-    from pyiceberg.io.pyarrow import parquet_files_to_data_files
+    from pyiceberg.io.pyarrow import parquet_file_to_data_file
 
-    yield from parquet_files_to_data_files(io=io, table_metadata=table_metadata, file_paths=iter(file_paths))
+    executor = ExecutorFactory.get_or_create()
+    futures = [executor.submit(parquet_file_to_data_file, io, table_metadata, file_path) for file_path in file_paths]
+
+    return [f.result() for f in futures if f.result()]

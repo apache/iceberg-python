@@ -360,7 +360,8 @@ def _(update: SetCurrentSchemaUpdate, base_metadata: TableMetadata, context: _Ta
 @_apply_table_update.register(AddPartitionSpecUpdate)
 def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     for spec in base_metadata.partition_specs:
-        if spec.spec_id == update.spec.spec_id:
+        # Only raise in case of a discrepancy
+        if spec.spec_id == update.spec.spec_id and spec != update.spec:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
 
     metadata_updates: Dict[str, Any] = {
@@ -525,6 +526,11 @@ def _(update: RemoveSnapshotRefUpdate, base_metadata: TableMetadata, context: _T
 
 @_apply_table_update.register(AddSortOrderUpdate)
 def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    for sort in base_metadata.sort_orders:
+        # Only raise in case of a discrepancy
+        if sort.order_id == update.sort_order.order_id and sort != update.sort_order:
+            raise ValueError(f"Sort-order with id {sort.order_id} already exists: {sort}")
+
     context.add_update(update)
     return base_metadata.model_copy(
         update={

@@ -23,9 +23,14 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions.literals import LongLiteral
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import UpsertResult
-from pyiceberg.types import IntegerType, NestedField, StringType
+from pyiceberg.table.snapshots import Operation
+from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.types import IntegerType, NestedField, StringType, StructType
 from tests.catalog.test_base import InMemoryCatalog, Table
 
 
@@ -325,6 +330,67 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
 
     schema = Schema(
         NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 921402},
+            {"city": "San Francisco", "population": 808988},
+            {"city": "Drachten", "population": 45019},
+            {"city": "Paris", "population": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(df)
+
+    df = pa.Table.from_pylist(
+        [
+            # Will be updated, the population has been updated
+            {"city": "Drachten", "population": 45505},
+            # New row, will be inserted
+            {"city": "Berlin", "population": 3432000},
+            # Ignored, already exists in the table
+            {"city": "Paris", "population": 2103000},
+        ],
+        schema=arrow_schema,
+    )
+    upd = tbl.upsert(df)
+
+    expected_operations = [Operation.APPEND, Operation.OVERWRITE, Operation.APPEND, Operation.APPEND]
+
+    assert upd.rows_updated == 1
+    assert upd.rows_inserted == 1
+
+    assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
+
+    # This should be a no-op
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 0
+
+    assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
+
+
+def test_upsert_into_empty_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_into_empty_table"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
         NestedField(2, "inhabitants", IntegerType(), required=True),
         # Mark City as the identifier field, also known as the primary-key
         identifier_field_ids=[1],
@@ -349,20 +415,297 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
         ],
         schema=arrow_schema,
     )
+    upd = tbl.upsert(df)
+
+    assert upd.rows_updated == 0
+    assert upd.rows_inserted == 4
+
+
+def test_create_match_filter_single_condition() -> None:
+    """
+    Test create_match_filter with a composite key where the source yields exactly one unique key.
+    Expected: The function returns the single And condition directly.
+    """
+
+    data = [
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},
+        {"order_id": 101, "order_line_id": 1, "extra": "x"},  # duplicate
+    ]
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
+    table = pa.Table.from_pylist(data, schema=schema)
+    expr = create_match_filter(table, ["order_id", "order_line_id"])
+    assert expr == And(
+        EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
+        EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
+    )
+
+
+def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_duplicate_rows_in_table"
+
+    _drop_table(catalog, identifier)
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "inhabitants", IntegerType(), required=True),
+        # Mark City as the identifier field, also known as the primary-key
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("inhabitants", pa.int32(), nullable=False),
+        ]
+    )
+
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Drachten", "inhabitants": 45019},
+            {"city": "Drachten", "inhabitants": 45019},
+        ],
+        schema=arrow_schema,
+    )
     tbl.append(df)
 
     df = pa.Table.from_pylist(
         [
             # Will be updated, the inhabitants has been updated
             {"city": "Drachten", "inhabitants": 45505},
-            # New row, will be inserted
-            {"city": "Berlin", "inhabitants": 3432000},
-            # Ignored, already exists in the table
-            {"city": "Paris", "inhabitants": 2103000},
         ],
         schema=arrow_schema,
     )
-    upd = tbl.upsert(df)
 
+    with pytest.raises(ValueError, match="Target table has duplicate rows, aborting upsert"):
+        _ = tbl.upsert(df)
+
+
+def test_upsert_without_identifier_fields(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_without_identifier_fields"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        # No identifier field :o
+        identifier_field_ids=[],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+    # Write some data
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 921402},
+            {"city": "San Francisco", "population": 808988},
+            {"city": "Drachten", "population": 45019},
+            {"city": "Paris", "population": 2103000},
+        ],
+        schema=schema_to_pyarrow(schema),
+    )
+
+    with pytest.raises(
+        ValueError, match="Join columns could not be found, please set identifier-field-ids or pass in explicitly."
+    ):
+        tbl.upsert(df)
+
+
+def test_upsert_with_struct_field_as_non_join_key(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_struct_field_fails"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "nested_type",
+            StructType(
+                NestedField(3, "sub1", StringType(), required=True),
+                NestedField(4, "sub2", StringType(), required=True),
+            ),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field(
+                "nested_type",
+                pa.struct(
+                    [
+                        pa.field("sub1", pa.large_string(), nullable=False),
+                        pa.field("sub2", pa.large_string(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla2"},
+            },
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(update_data, join_cols=["id"])
+
+    expected_updated = 1
+    expected_inserted = 1
+
+    assert_upsert_result(res, expected_updated, expected_inserted)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla2"},
+            },
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(update_data, join_cols=["id"])
+
+    expected_updated = 0
+    expected_inserted = 0
+
+    assert_upsert_result(res, expected_updated, expected_inserted)
+
+
+def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_struct_field_as_join_key"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(
+            2,
+            "nested_type",
+            StructType(
+                NestedField(3, "sub1", StringType(), required=True),
+                NestedField(4, "sub2", StringType(), required=True),
+            ),
+            required=False,
+        ),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field(
+                "nested_type",
+                pa.struct(
+                    [
+                        pa.field("sub1", pa.large_string(), nullable=False),
+                        pa.field("sub2", pa.large_string(), nullable=False),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    initial_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            }
+        ],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_data)
+
+    update_data = pa.Table.from_pylist(
+        [
+            {
+                "id": 2,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+            {
+                "id": 1,
+                "nested_type": {"sub1": "bla1", "sub2": "bla"},
+            },
+        ],
+        schema=arrow_schema,
+    )
+
+    with pytest.raises(
+        pa.lib.ArrowNotImplementedError, match="Keys of type struct<sub1: large_string not null, sub2: large_string not null>"
+    ):
+        _ = tbl.upsert(update_data, join_cols=["nested_type"])
+
+
+def test_upsert_with_nulls(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_nulls"
+    _drop_table(catalog, identifier)
+
+    schema = pa.schema(
+        [
+            ("foo", pa.string()),
+            ("bar", pa.int32()),
+            ("baz", pa.bool_()),
+        ]
+    )
+
+    # create table with null value
+    table = catalog.create_table(identifier, schema)
+    data_with_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": None, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )
+    table.append(data_with_null)
+    assert table.scan().to_arrow()["bar"].is_null()
+
+    # upsert table with non-null value
+    data_without_null = pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+        ],
+        schema=schema,
+    )
+    upd = table.upsert(data_without_null, join_cols=["foo"])
     assert upd.rows_updated == 1
-    assert upd.rows_inserted == 1
+    assert upd.rows_inserted == 0
+    assert table.scan().to_arrow() == pa.Table.from_pylist(
+        [
+            {"foo": "apple", "bar": 7, "baz": False},
+            {"foo": "banana", "bar": None, "baz": False},
+        ],
+        schema=schema,
+    )

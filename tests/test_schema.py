@@ -21,12 +21,13 @@ from typing import Any, Dict, List
 import pyarrow as pa
 import pytest
 
-from pyiceberg import schema
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.schema import (
     Accessor,
     Schema,
     build_position_accessors,
+    index_by_id,
+    index_by_name,
     promote,
     prune_columns,
     sanitize_column_names,
@@ -90,7 +91,7 @@ def test_schema_str(table_schema_simple: Schema) -> None:
 
 def test_schema_repr_single_field() -> None:
     """Test schema representation"""
-    actual = repr(schema.Schema(NestedField(field_id=1, name="foo", field_type=StringType()), schema_id=1))
+    actual = repr(Schema(NestedField(field_id=1, name="foo", field_type=StringType()), schema_id=1))
     expected = "Schema(NestedField(field_id=1, name='foo', field_type=StringType(), required=False), schema_id=1, identifier_field_ids=[])"
     assert expected == actual
 
@@ -98,7 +99,7 @@ def test_schema_repr_single_field() -> None:
 def test_schema_repr_two_fields() -> None:
     """Test schema representation"""
     actual = repr(
-        schema.Schema(
+        Schema(
             NestedField(field_id=1, name="foo", field_type=StringType()),
             NestedField(field_id=2, name="bar", field_type=IntegerType(), required=False),
             schema_id=1,
@@ -111,7 +112,7 @@ def test_schema_repr_two_fields() -> None:
 def test_schema_raise_on_duplicate_names() -> None:
     """Test schema representation"""
     with pytest.raises(ValueError) as exc_info:
-        schema.Schema(
+        Schema(
             NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
             NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
             NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -125,7 +126,7 @@ def test_schema_raise_on_duplicate_names() -> None:
 
 def test_schema_index_by_id_visitor(table_schema_nested: Schema) -> None:
     """Test index_by_id visitor function"""
-    index = schema.index_by_id(table_schema_nested)
+    index = index_by_id(table_schema_nested)
     assert index == {
         1: NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         2: NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
@@ -198,7 +199,7 @@ def test_schema_index_by_id_visitor(table_schema_nested: Schema) -> None:
 
 def test_schema_index_by_name_visitor(table_schema_nested: Schema) -> None:
     """Test index_by_name visitor function"""
-    table_schema_nested = schema.Schema(
+    table_schema_nested = Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -245,7 +246,7 @@ def test_schema_index_by_name_visitor(table_schema_nested: Schema) -> None:
         schema_id=1,
         identifier_field_ids=[2],
     )
-    index = schema.index_by_name(table_schema_nested)
+    index = index_by_name(table_schema_nested)
     assert index == {
         "foo": 1,
         "bar": 2,
@@ -301,7 +302,7 @@ def test_schema_find_column_name_by_id(table_schema_simple: Schema) -> None:
 
 def test_schema_find_field_by_id(table_schema_simple: Schema) -> None:
     """Test finding a column using its field ID"""
-    index = schema.index_by_id(table_schema_simple)
+    index = index_by_id(table_schema_simple)
 
     column1 = index[1]
     assert isinstance(column1, NestedField)
@@ -324,7 +325,7 @@ def test_schema_find_field_by_id(table_schema_simple: Schema) -> None:
 
 def test_schema_find_field_by_id_raise_on_unknown_field(table_schema_simple: Schema) -> None:
     """Test raising when the field ID is not found among columns"""
-    index = schema.index_by_id(table_schema_simple)
+    index = index_by_id(table_schema_simple)
     with pytest.raises(Exception) as exc_info:
         _ = index[4]
     assert str(exc_info.value) == "4"
@@ -332,7 +333,7 @@ def test_schema_find_field_by_id_raise_on_unknown_field(table_schema_simple: Sch
 
 def test_schema_find_field_type_by_id(table_schema_simple: Schema) -> None:
     """Test retrieving a columns' type using its field ID"""
-    index = schema.index_by_id(table_schema_simple)
+    index = index_by_id(table_schema_simple)
     assert index[1] == NestedField(field_id=1, name="foo", field_type=StringType(), required=False)
     assert index[2] == NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True)
     assert index[3] == NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False)
@@ -341,7 +342,7 @@ def test_schema_find_field_type_by_id(table_schema_simple: Schema) -> None:
 def test_index_by_id_schema_visitor_raise_on_unregistered_type() -> None:
     """Test raising a NotImplementedError when an invalid type is provided to the index_by_id function"""
     with pytest.raises(NotImplementedError) as exc_info:
-        schema.index_by_id("foo")  # type: ignore
+        index_by_id("foo")  # type: ignore
     assert "Cannot visit non-type: foo" in str(exc_info.value)
 
 
@@ -398,6 +399,7 @@ def test_build_position_accessors(table_schema_nested: Schema) -> None:
         4: Accessor(position=3, inner=None),
         6: Accessor(position=4, inner=None),
         11: Accessor(position=5, inner=None),
+        15: Accessor(position=6, inner=None),
         16: Accessor(position=6, inner=Accessor(position=0, inner=None)),
         17: Accessor(position=6, inner=Accessor(position=1, inner=None)),
     }
@@ -925,7 +927,7 @@ def primitive_fields() -> List[NestedField]:
     ]
 
 
-def test_add_top_level_primitives(primitive_fields: NestedField) -> None:
+def test_add_top_level_primitives(primitive_fields: List[NestedField]) -> None:
     for primitive_field in primitive_fields:
         new_schema = Schema(primitive_field)
         applied = UpdateSchema(transaction=None, schema=Schema()).union_by_name(new_schema)._apply()  # type: ignore
