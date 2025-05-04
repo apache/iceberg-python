@@ -16,7 +16,6 @@
 # under the License.
 from __future__ import annotations
 
-import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import reduce
@@ -89,12 +88,17 @@ class OptimizeTable:
         location = self.tbl.location()
         orphaned_files = self.orphaned_files(location, older_than)
         logger.info(f"Found {len(orphaned_files)} orphaned files at {location}!")
+        deleted_files = set()
+        failed_to_delete_files = set()
 
         def _delete(file: str) -> None:
             # don't error if the file doesn't exist
             # still catch ctrl-c, etc.
-            with contextlib.suppress(Exception):
+            try:
                 self.tbl.io.delete(file)
+                deleted_files.add(file)
+            except Exception:
+                failed_to_delete_files.add(file)
 
         if orphaned_files:
             if dry_run:
@@ -104,4 +108,10 @@ class OptimizeTable:
                 deletes = executor.map(_delete, orphaned_files)
                 # exhaust
                 list(deletes)
-                logger.info(f"Deleted {len(orphaned_files)} orphaned files at {location}!")
+                logger.info(f"Deleted {len(deleted_files)} orphaned files at {location}!")
+                logger.info(f"Files:\n{deleted_files}")
+                if failed_to_delete_files:
+                    logger.warning(f"Failed to delete {len(failed_to_delete_files)} orphaned files at {location}!")
+                    logger.warning(f"Files:\n{failed_to_delete_files}")
+        else:
+            logger.info(f"No orphaned files found at {location}!")
