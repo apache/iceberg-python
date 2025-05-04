@@ -17,7 +17,7 @@
 import os
 from datetime import datetime, timedelta
 from pathlib import Path, PosixPath
-from unittest.mock import PropertyMock, patch
+from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
@@ -35,8 +35,8 @@ def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
     return catalog
 
 
-def test_delete_orphaned_files(catalog: Catalog) -> None:
-    identifier = "default.test_delete_orphaned_files"
+def test_remove_orphaned_files(catalog: Catalog) -> None:
+    identifier = "default.test_remove_orphaned_files"
 
     schema = Schema(
         NestedField(1, "city", StringType(), required=True),
@@ -69,17 +69,17 @@ def test_delete_orphaned_files(catalog: Catalog) -> None:
     assert orphaned_file.exists()
 
     # assert no files deleted if dry run...
-    tbl.delete_orphaned_files(dry_run=True)
+    tbl.optimize.remove_orphaned_files(dry_run=True)
     assert orphaned_file.exists()
 
     # should not delete because it was just created...
-    tbl.delete_orphaned_files()
+    tbl.optimize.remove_orphaned_files()
     assert orphaned_file.exists()
 
     # modify creation date to be older than 3 days
     five_days_ago = (datetime.now() - timedelta(days=5)).timestamp()
     os.utime(orphaned_file, (five_days_ago, five_days_ago))
-    tbl.delete_orphaned_files()
+    tbl.optimize.remove_orphaned_files()
     assert not orphaned_file.exists()
 
     # assert that all known files still exist...
@@ -89,8 +89,8 @@ def test_delete_orphaned_files(catalog: Catalog) -> None:
             assert Path(file).exists()
 
 
-def test_delete_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) -> None:
-    identifier = "default.test_delete_orphaned_files"
+def test_remove_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) -> None:
+    identifier = "default.test_remove_orphaned_files"
 
     schema = Schema(
         NestedField(1, "city", StringType(), required=True),
@@ -118,8 +118,7 @@ def test_delete_orphaned_files_with_invalid_file_doesnt_error(catalog: Catalog) 
     tbl.append(df)
 
     file_that_does_not_exist = "foo/bar.baz"
-    with patch.object(type(tbl), "inspect", new_callable=PropertyMock) as mock_inspect:
-        mock_inspect.return_value.orphaned_files = lambda location, older_than: {file_that_does_not_exist}
+    with patch.object(type(tbl.optimize), "orphaned_files", return_value={file_that_does_not_exist}):
         with patch.object(tbl.io, "delete", wraps=tbl.io.delete) as mock_delete:
-            tbl.delete_orphaned_files()
+            tbl.optimize.remove_orphaned_files(timedelta(days=3))
             mock_delete.assert_called_with(file_that_does_not_exist)

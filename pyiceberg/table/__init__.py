@@ -16,15 +16,12 @@
 # under the License.
 from __future__ import annotations
 
-import contextlib
 import itertools
-import logging
 import os
 import uuid
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import timedelta
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
@@ -90,6 +87,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.name_mapping import (
     NameMapping,
 )
+from pyiceberg.table.optimize import OptimizeTable
 from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
@@ -152,8 +150,6 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from pyiceberg.catalog import Catalog
-
-logger = logging.getLogger(__name__)
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -912,6 +908,15 @@ class Table:
         """
         return InspectTable(self)
 
+    @property
+    def optimize(self) -> OptimizeTable:
+        """Return the OptimizeTable object to optimize.
+
+        Returns:
+            OptimizeTable object based on this Table.
+        """
+        return OptimizeTable(self)
+
     def refresh(self) -> Table:
         """Refresh the current table metadata.
 
@@ -1375,28 +1380,6 @@ class Table:
         import polars as pl
 
         return pl.scan_iceberg(self)
-
-    def delete_orphaned_files(self, older_than: timedelta = timedelta(days=3), dry_run: bool = False) -> None:
-        """Delete orphaned files in the table."""
-        location = self.location()
-        orphaned_files = self.inspect.orphaned_files(location, older_than)
-        logger.info(f"Found {len(orphaned_files)} orphaned files at {location}!")
-
-        def _delete(file: str) -> None:
-            # don't error if the file doesn't exist
-            # still catch ctrl-c, etc.
-            with contextlib.suppress(Exception):
-                self.io.delete(file)
-
-        if orphaned_files:
-            if dry_run:
-                logger.info(f"(Dry Run) Deleted {len(orphaned_files)} orphaned files at {location}!")
-            else:
-                executor = ExecutorFactory.get_or_create()
-                deletes = executor.map(_delete, orphaned_files)
-                # exhaust
-                list(deletes)
-                logger.info(f"Deleted {len(orphaned_files)} orphaned files at {location}!")
 
 
 class StaticTable(Table):
