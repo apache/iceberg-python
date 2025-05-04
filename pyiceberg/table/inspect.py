@@ -688,7 +688,7 @@ class InspectTable:
 
         return _all_known_files
 
-    def orphaned_files(self, location: str, older_than: Optional[timedelta] = timedelta(days=3)) -> Set[str]:
+    def orphaned_files(self, location: str, older_than: timedelta = timedelta(days=3)) -> Set[str]:
         """Get all the orphaned files in the table.
 
         Args:
@@ -716,7 +716,7 @@ class InspectTable:
         _, _, path = _parse_location(location)
         selector = FileSelector(path, recursive=True)
         # filter to just files as it may return directories, and filter on time
-        as_of = datetime.now(timezone.utc) - older_than if older_than else None
+        as_of = datetime.now(timezone.utc) - older_than
         all_files = [
             f.path for f in fs.get_file_info(selector) if f.type == FileType.File and (as_of is None or (f.mtime < as_of))
         ]

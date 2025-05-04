@@ -1376,7 +1376,7 @@ class Table:
 
         return pl.scan_iceberg(self)
 
-    def delete_orphaned_files(self, older_than: Optional[timedelta] = timedelta(days=3), dry_run: bool = False) -> None:
+    def delete_orphaned_files(self, older_than: timedelta = timedelta(days=3), dry_run: bool = False) -> None:
         """Delete orphaned files in the table."""
         location = self.location()
         orphaned_files = self.inspect.orphaned_files(location, older_than)
