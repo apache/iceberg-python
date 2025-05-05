@@ -36,6 +36,7 @@ from hive_metastore.ThriftHiveMetastore import Client
 from hive_metastore.ttypes import (
     AlreadyExistsException,
     CheckLockRequest,
+    EnvironmentContext,
     FieldSchema,
     InvalidOperationException,
     LockComponent,
@@ -135,6 +136,8 @@ LOCK_CHECK_RETRIES = "lock-check-retries"
 DEFAULT_LOCK_CHECK_MIN_WAIT_TIME = 0.1  # 100 milliseconds
 DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 60  # 1 min
 DEFAULT_LOCK_CHECK_RETRIES = 4
+DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
+DO_NOT_UPDATE_STATS_DEFAULT = "true"
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +542,12 @@ class HiveCatalog(MetastoreCatalog):
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
                     )
-                    open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
+                    open_client.alter_table_with_environment_context(
+                        dbname=database_name,
+                        tbl_name=table_name,
+                        new_tbl=hive_table,
+                        environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+                    )
                 else:
                     # Table does not exist, create it.
                     hive_table = self._convert_iceberg_into_hive(
@@ -626,7 +634,12 @@ class HiveCatalog(MetastoreCatalog):
                 tbl = open_client.get_table(dbname=from_database_name, tbl_name=from_table_name)
                 tbl.dbName = to_database_name
                 tbl.tableName = to_table_name
-                open_client.alter_table(dbname=from_database_name, tbl_name=from_table_name, new_tbl=tbl)
+                open_client.alter_table_with_environment_context(
+                    dbname=from_database_name,
+                    tbl_name=from_table_name,
+                    new_tbl=tbl,
+                    environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+                )
         except NoSuchObjectException as e:
             raise NoSuchTableError(f"Table does not exist: {from_table_name}") from e
         except InvalidOperationException as e:
