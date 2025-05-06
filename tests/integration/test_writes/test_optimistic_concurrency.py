@@ -29,6 +29,7 @@ from utils import _create_table
 def test_conflict_delete_delete(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
+    """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
@@ -45,6 +46,7 @@ def test_conflict_delete_delete(
 def test_conflict_delete_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
+    """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
@@ -62,6 +64,7 @@ def test_conflict_delete_append(
 def test_conflict_append_delete(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
+    """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
@@ -78,6 +81,7 @@ def test_conflict_append_delete(
 def test_conflict_append_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
+    """This test should start passing once optimistic concurrency control has been implemented."""
     identifier = "default.test_conflict"
     tbl1 = _create_table(session_catalog, identifier, {"format-version": format_version}, [arrow_table_with_null])
     tbl2 = session_catalog.load_table(identifier)
