@@ -65,7 +65,7 @@ jobs:
     - name: Linters
       run: make lint
     - name: Tests
-      run: make test-coverage
+      run: make test-coverage-unit
 
   integration-test:
     runs-on: ubuntu-22.04
@@ -79,7 +79,7 @@ jobs:
     - name: Install
       run: make install
     - name: Run integration tests
-      run: make test-integration
+      run: make test-coverage-integration
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
