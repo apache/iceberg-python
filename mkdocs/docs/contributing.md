@@ -40,15 +40,7 @@ For the development, Poetry is used for packing and dependency management. You c
 make install-poetry
 ```
 
-Make sure you're using an up-to-date environment from venv
-
-```bash
-pip install --upgrade virtualenv pip
-python -m venv ./venv
-source ./venv/bin/activate
-```
-
-To get started, you can run `make install`, which installs all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --no-dev` instead of `make install`.
+To get started, you can run `make install`, which installs all the dependencies of the Iceberg library. This also installs the development dependencies. If you don't want to install the development dependencies, you need to install using `poetry install --without dev` instead of `make install`.
 
 If you want to install the library on the host, you can simply run `pip3 install -e .`. If you wish to use a virtual environment, you can run `poetry shell`. Poetry will open up a virtual environment with all the dependencies set.
 
