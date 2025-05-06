@@ -19,12 +19,14 @@ from __future__ import annotations
 import codecs
 import gzip
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from pyiceberg.io import InputFile, InputStream, OutputFile
-from pyiceberg.table.metadata import TableMetadata, TableMetadataUtil
 from pyiceberg.typedef import UTF8
 from pyiceberg.utils.config import Config
+
+if TYPE_CHECKING:
+    from pyiceberg.table.metadata import TableMetadata
 
 GZIP = "gzip"
 
@@ -79,7 +81,7 @@ class FromByteStream:
     @staticmethod
     def table_metadata(
         byte_stream: InputStream, encoding: str = UTF8, compression: Compressor = NOOP_COMPRESSOR
-    ) -> TableMetadata:
+    ) -> "TableMetadata":
         """Instantiate a TableMetadata object from a byte stream.
 
         Args:
@@ -92,6 +94,8 @@ class FromByteStream:
             json_bytes = reader(byte_stream)
             metadata = json_bytes.read()
 
+        from pyiceberg.table.metadata import TableMetadataUtil
+
         return TableMetadataUtil.parse_raw(metadata)
 
 
@@ -99,7 +103,7 @@ class FromInputFile:
     """A collection of methods that deserialize InputFiles into Iceberg objects."""
 
     @staticmethod
-    def table_metadata(input_file: InputFile, encoding: str = UTF8) -> TableMetadata:
+    def table_metadata(input_file: InputFile, encoding: str = UTF8) -> "TableMetadata":
         """Create a TableMetadata instance from an input file.
 
         Args:
@@ -120,7 +124,7 @@ class ToOutputFile:
     """A collection of methods that serialize Iceberg objects into files given an OutputFile instance."""
 
     @staticmethod
-    def table_metadata(metadata: TableMetadata, output_file: OutputFile, overwrite: bool = False) -> None:
+    def table_metadata(metadata: "TableMetadata", output_file: OutputFile, overwrite: bool = False) -> None:
         """Write a TableMetadata instance to an output file.
 
         Args:

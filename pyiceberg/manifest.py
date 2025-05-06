@@ -37,6 +37,7 @@ from cachetools import LRUCache, cached
 from cachetools.keys import hashkey
 from pydantic_core import to_json
 
+from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ValidationError
@@ -799,8 +800,16 @@ class ManifestWriter(ABC):
     _min_sequence_number: Optional[int]
     _partitions: List[Record]
     _reused_entry_wrapper: ManifestEntry
+    _compression: AvroCompressionCodec
 
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int) -> None:
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+    ) -> None:
         self.closed = False
         self._spec = spec
         self._schema = schema
@@ -815,6 +824,11 @@ class ManifestWriter(ABC):
         self._deleted_rows = 0
         self._min_sequence_number = None
         self._partitions = []
+<<<<<<< Updated upstream
+=======
+        self._reused_entry_wrapper = ManifestEntry()
+        self._compression = avro_compression
+>>>>>>> Stashed changes
 
     def __enter__(self) -> ManifestWriter:
         """Open the writer."""
@@ -850,6 +864,7 @@ class ManifestWriter(ABC):
             "partition-spec": to_json(self._spec.fields).decode("utf-8"),
             "partition-spec-id": str(self._spec.spec_id),
             "format-version": str(self.version),
+            AVRO_CODEC_KEY: self._compression,
         }
 
     def _with_partition(self, format_version: TableVersion) -> Schema:
@@ -961,13 +976,15 @@ class ManifestWriter(ABC):
 
 
 class ManifestWriterV1(ManifestWriter):
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
-        super().__init__(
-            spec,
-            schema,
-            output_file,
-            snapshot_id,
-        )
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
@@ -981,8 +998,15 @@ class ManifestWriterV1(ManifestWriter):
 
 
 class ManifestWriterV2(ManifestWriter):
-    def __init__(self, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int):
-        super().__init__(spec, schema, output_file, snapshot_id)
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
 
     def content(self) -> ManifestContent:
         return ManifestContent.DATA
@@ -1008,12 +1032,17 @@ class ManifestWriterV2(ManifestWriter):
 
 
 def write_manifest(
-    format_version: TableVersion, spec: PartitionSpec, schema: Schema, output_file: OutputFile, snapshot_id: int
+    format_version: TableVersion,
+    spec: PartitionSpec,
+    schema: Schema,
+    output_file: OutputFile,
+    snapshot_id: int,
+    avro_compression: AvroCompressionCodec,
 ) -> ManifestWriter:
     if format_version == 1:
-        return ManifestWriterV1(spec, schema, output_file, snapshot_id)
+        return ManifestWriterV1(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 2:
-        return ManifestWriterV2(spec, schema, output_file, snapshot_id)
+        return ManifestWriterV2(spec, schema, output_file, snapshot_id, avro_compression)
     else:
         raise ValueError(f"Cannot write manifest for table version: {format_version}")
 
@@ -1063,7 +1092,13 @@ class ManifestListWriter(ABC):
 
 
 class ManifestListWriterV1(ManifestListWriter):
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int]):
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        compression: AvroCompressionCodec,
+    ):
         super().__init__(
             format_version=1,
             output_file=output_file,
@@ -1071,6 +1106,7 @@ class ManifestListWriterV1(ManifestListWriter):
                 "snapshot-id": str(snapshot_id),
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "format-version": "1",
+                AVRO_CODEC_KEY: compression,
             },
         )
 
@@ -1084,7 +1120,14 @@ class ManifestListWriterV2(ManifestListWriter):
     _commit_snapshot_id: int
     _sequence_number: int
 
-    def __init__(self, output_file: OutputFile, snapshot_id: int, parent_snapshot_id: Optional[int], sequence_number: int):
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: Optional[int],
+        sequence_number: int,
+        compression: AvroCompressionCodec,
+    ):
         super().__init__(
             format_version=2,
             output_file=output_file,
@@ -1093,6 +1136,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
+                AVRO_CODEC_KEY: compression,
             },
         )
         self._commit_snapshot_id = snapshot_id
@@ -1127,12 +1171,13 @@ def write_manifest_list(
     snapshot_id: int,
     parent_snapshot_id: Optional[int],
     sequence_number: Optional[int],
+    avro_compression: AvroCompressionCodec,
 ) -> ManifestListWriter:
     if format_version == 1:
-        return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id)
+        return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id, avro_compression)
     elif format_version == 2:
         if sequence_number is None:
             raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
-        return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number)
+        return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")
