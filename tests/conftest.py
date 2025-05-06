@@ -48,7 +48,6 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from pyiceberg import schema
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.expressions import BoundReference
@@ -140,7 +139,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.fixture(scope="session")
 def table_schema_simple() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -151,7 +150,7 @@ def table_schema_simple() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_with_full_nested_fields() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(
             field_id=1,
             name="foo",
@@ -180,7 +179,7 @@ def table_schema_with_full_nested_fields() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_nested() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -231,7 +230,7 @@ def table_schema_nested() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_nested_with_struct_key_map() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
         NestedField(field_id=2, name="bar", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
@@ -303,7 +302,7 @@ def table_schema_nested_with_struct_key_map() -> Schema:
 
 @pytest.fixture(scope="session")
 def table_schema_with_all_types() -> Schema:
-    return schema.Schema(
+    return Schema(
         NestedField(field_id=1, name="boolean", field_type=BooleanType(), required=True),
         NestedField(field_id=2, name="integer", field_type=IntegerType(), required=True),
         NestedField(field_id=3, name="long", field_type=LongType(), required=True),
@@ -920,10 +919,9 @@ EXAMPLE_TABLE_METADATA_V3 = {
                 {"id": 1, "name": "x", "required": True, "type": "long"},
                 {"id": 2, "name": "y", "required": True, "type": "long", "doc": "comment"},
                 {"id": 3, "name": "z", "required": True, "type": "long"},
-                # TODO: Add unknown, timestamp(tz)_ns
-                # {"id": 4, "name": "u", "required": True, "type": "unknown"},
-                # {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
-                # {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
+                {"id": 4, "name": "u", "required": True, "type": "unknown"},
+                {"id": 5, "name": "ns", "required": True, "type": "timestamp_ns"},
+                {"id": 6, "name": "nstz", "required": True, "type": "timestamptz_ns"},
             ],
         },
     ],
@@ -1121,6 +1119,22 @@ def table_metadata_v2_with_statistics() -> Dict[str, Any]:
 @pytest.fixture
 def example_table_metadata_v3() -> Dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V3
+
+
+@pytest.fixture(scope="session")
+def table_location(tmp_path_factory: pytest.TempPathFactory) -> str:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    metadata_filename = f"{uuid.uuid4()}.metadata.json"
+    metadata_location = str(tmp_path_factory.getbasetemp() / "metadata" / metadata_filename)
+    version_hint_location = str(tmp_path_factory.getbasetemp() / "metadata" / "version-hint.text")
+    metadata = TableMetadataV2(**EXAMPLE_TABLE_METADATA_V2)
+    ToOutputFile.table_metadata(metadata, PyArrowFileIO().new_output(location=metadata_location), overwrite=True)
+
+    with PyArrowFileIO().new_output(location=version_hint_location).create(overwrite=True) as s:
+        s.write(metadata_filename.encode("utf-8"))
+
+    return str(tmp_path_factory.getbasetemp())
 
 
 @pytest.fixture(scope="session")
@@ -2295,7 +2309,7 @@ def data_file(table_schema_simple: Schema, tmp_path: str) -> str:
 @pytest.fixture
 def example_task(data_file: str) -> FileScanTask:
     return FileScanTask(
-        data_file=DataFile(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
+        data_file=DataFile.from_args(file_path=data_file, file_format=FileFormat.PARQUET, file_size_in_bytes=1925),
     )
 
 
@@ -2420,7 +2434,7 @@ def spark() -> "SparkSession":
     # Remember to also update `dev/Dockerfile`
     spark_version = ".".join(importlib.metadata.version("pyspark").split(".")[:2])
     scala_version = "2.12"
-    iceberg_version = "1.6.0"
+    iceberg_version = "1.9.0"
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = (
         f"--packages org.apache.iceberg:iceberg-spark-runtime-{spark_version}_{scala_version}:{iceberg_version},"
@@ -2433,6 +2447,8 @@ def spark() -> "SparkSession":
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.default.parallelism", "1")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.integration", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.integration.catalog-impl", "org.apache.iceberg.rest.RESTCatalog")

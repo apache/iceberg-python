@@ -225,18 +225,18 @@ def test_pyarrow_timestamp_tz_invalid_tz() -> None:
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
 
 
-def test_pyarrow_string_to_iceberg() -> None:
-    pyarrow_type = pa.large_string()
+@pytest.mark.parametrize("pyarrow_type", [pa.string(), pa.large_string(), pa.string_view()])
+def test_pyarrow_string_to_iceberg(pyarrow_type: pa.DataType) -> None:
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == StringType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.large_string()
 
 
-def test_pyarrow_variable_binary_to_iceberg() -> None:
-    pyarrow_type = pa.large_binary()
+@pytest.mark.parametrize("pyarrow_type", [pa.binary(), pa.large_binary(), pa.binary_view()])
+def test_pyarrow_variable_binary_to_iceberg(pyarrow_type: pa.DataType) -> None:
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == BinaryType()
-    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
 
 
 def test_pyarrow_struct_to_iceberg() -> None:
@@ -836,5 +836,5 @@ def test_expression_to_complementary_pyarrow(
     # Notice an isNan predicate on a str column is automatically converted to always false and removed from Or and thus will not appear in the pc.expr.
     assert (
         repr(result)
-        == """<pyarrow.compute.Expression (((invert((((((string_field == "hello") and (float_field > 100)) or (is_nan(float_field) and (double_field == 0))) or (float_field > 100)) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
+        == """<pyarrow.compute.Expression (((invert(((((string_field == "hello") and (float_field > 100)) or ((is_nan(float_field) and (double_field == 0)) or (float_field > 100))) and invert(is_null(double_field, {nan_is_null=false})))) or is_null(float_field, {nan_is_null=false})) or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"""
     )

@@ -79,7 +79,7 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, property_as_bool
+from pyiceberg.utils.properties import get_header_properties, property_as_bool
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -137,9 +137,7 @@ SSL = "ssl"
 SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
-AUTH_URL = "rest.authorization-url"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
-HEADER_PREFIX = "header."
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -150,7 +148,7 @@ def _retry_hook(retry_state: RetryCallState) -> None:
 
 
 _RETRY_ARGS = {
-    "retry": retry_if_exception_type(AuthorizationExpiredError),
+    "retry": retry_if_exception_type((AuthorizationExpiredError, UnauthorizedError)),
     "stop": stop_after_attempt(2),
     "before_sleep": _retry_hook,
     "reraise": True,
@@ -319,16 +317,9 @@ class RestCatalog(Catalog):
 
     @property
     def auth_url(self) -> str:
-        if self.properties.get(AUTH_URL):
-            deprecation_message(
-                deprecated_in="0.8.0",
-                removed_in="0.9.0",
-                help_message=f"The property {AUTH_URL} is deprecated. Please use {OAUTH2_SERVER_URI} instead",
-            )
-
         self._warn_oauth_tokens_deprecation()
 
-        if url := get_first_property_value(self.properties, AUTH_URL, OAUTH2_SERVER_URI):
+        if url := self.properties.get(OAUTH2_SERVER_URI):
             return url
         else:
             return self.url(Endpoints.get_token, prefixed=False)
@@ -379,7 +370,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {400: OAuthError, 401: OAuthError})
 
-        return TokenResponse(**response.json()).access_token
+        return TokenResponse.model_validate_json(response.text).access_token
 
     def _fetch_config(self) -> None:
         params = {}
@@ -392,7 +383,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
-        config_response = ConfigResponse(**response.json())
+        config_response = ConfigResponse.model_validate_json(response.text)
 
         config = config_response.defaults
         config.update(self.properties)
@@ -452,14 +443,14 @@ class RestCatalog(Catalog):
         try:
             if exception == OAuthError:
                 # The OAuthErrorResponse has a different format
-                error = OAuthErrorResponse(**exc.response.json())
+                error = OAuthErrorResponse.model_validate_json(exc.response.text)
                 response = str(error.error)
                 if description := error.error_description:
                     response += f": {description}"
                 if uri := error.error_uri:
                     response += f" ({uri})"
             else:
-                error = ErrorResponse(**exc.response.json()).error
+                error = ErrorResponse.model_validate_json(exc.response.text).error
                 response = f"{error.type}: {error.message}"
         except JSONDecodeError:
             # In the case we don't have a proper response
@@ -554,15 +545,12 @@ class RestCatalog(Catalog):
             session.headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {token}"
 
     def _config_headers(self, session: Session) -> None:
-        header_properties = self._extract_headers_from_properties()
+        header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
         session.headers["X-Client-Version"] = ICEBERG_REST_SPEC_VERSION
         session.headers["User-Agent"] = f"PyIceberg/{__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
-
-    def _extract_headers_from_properties(self) -> Dict[str, str]:
-        return {key[len(HEADER_PREFIX) :]: value for key, value in self.properties.items() if key.startswith(HEADER_PREFIX)}
 
     def _create_table(
         self,
@@ -600,7 +588,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
-        return TableResponse(**response.json())
+        return TableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
     def create_table(
@@ -674,7 +662,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {409: TableAlreadyExistsError})
 
-        table_response = TableResponse(**response.json())
+        table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
@@ -686,7 +674,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*table.namespace, table.name) for table in ListTablesResponse(**response.json()).identifiers]
+        return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
@@ -696,7 +684,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchTableError})
 
-        table_response = TableResponse(**response.json())
+        table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @retry(**_RETRY_ARGS)
@@ -747,7 +735,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*view.namespace, view.name) for view in ListViewsResponse(**response.json()).identifiers]
+        return [(*view.namespace, view.name) for view in ListViewsResponse.model_validate_json(response.text).identifiers]
 
     @retry(**_RETRY_ARGS)
     def commit_table(
@@ -793,7 +781,7 @@ class RestCatalog(Catalog):
                     504: CommitStateUnknownException,
                 },
             )
-        return CommitTableResponse(**response.json())
+        return CommitTableResponse.model_validate_json(response.text)
 
     @retry(**_RETRY_ARGS)
     def create_namespace(self, namespace: Union[str, Identifier], properties: Properties = EMPTY_DICT) -> None:
@@ -830,7 +818,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {})
 
-        return ListNamespaceResponse(**response.json()).namespaces
+        return ListNamespaceResponse.model_validate_json(response.text).namespaces
 
     @retry(**_RETRY_ARGS)
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
@@ -842,7 +830,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
-        return NamespaceResponse(**response.json()).properties
+        return NamespaceResponse.model_validate_json(response.text).properties
 
     @retry(**_RETRY_ARGS)
     def update_namespace_properties(
@@ -856,7 +844,7 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        parsed_response = UpdateNamespacePropertiesResponse(**response.json())
+        parsed_response = UpdateNamespacePropertiesResponse.model_validate_json(response.text)
         return PropertiesUpdateSummary(
             removed=parsed_response.removed,
             updated=parsed_response.updated,

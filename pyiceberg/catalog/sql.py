@@ -62,6 +62,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
 from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
@@ -207,7 +208,8 @@ class SqlCatalog(MetastoreCatalog):
 
         namespace = Catalog.namespace_to_string(namespace_identifier)
         location = self._resolve_table_location(location, namespace, table_name)
-        metadata_location = self._get_metadata_location(location=location)
+        location_provider = load_location_provider(table_location=location, table_properties=properties)
+        metadata_location = location_provider.new_table_metadata_file_location()
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
@@ -495,10 +497,16 @@ class SqlCatalog(MetastoreCatalog):
     def _namespace_exists(self, identifier: Union[str, Identifier]) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
+        namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"
+
         with Session(self.engine) as session:
             stmt = (
                 select(IcebergTables)
-                .where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
+                .where(
+                    IcebergTables.catalog_name == self.name,
+                    (IcebergTables.table_namespace == namespace)
+                    | (IcebergTables.table_namespace.like(namespace_starts_with, escape="!")),
+                )
                 .limit(1)
             )
             result = session.execute(stmt).all()
@@ -508,7 +516,8 @@ class SqlCatalog(MetastoreCatalog):
                 select(IcebergNamespaceProperties)
                 .where(
                     IcebergNamespaceProperties.catalog_name == self.name,
-                    IcebergNamespaceProperties.namespace == namespace,
+                    (IcebergNamespaceProperties.namespace == namespace)
+                    | (IcebergNamespaceProperties.namespace.like(namespace_starts_with, escape="!")),
                 )
                 .limit(1)
             )
@@ -610,15 +619,28 @@ class SqlCatalog(MetastoreCatalog):
         table_stmt = select(IcebergTables.table_namespace).where(IcebergTables.catalog_name == self.name)
         namespace_stmt = select(IcebergNamespaceProperties.namespace).where(IcebergNamespaceProperties.catalog_name == self.name)
         if namespace:
-            namespace_str = Catalog.namespace_to_string(namespace, NoSuchNamespaceError)
-            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_str))
-            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_str))
+            namespace_like = Catalog.namespace_to_string(namespace, NoSuchNamespaceError) + "%"
+            table_stmt = table_stmt.where(IcebergTables.table_namespace.like(namespace_like))
+            namespace_stmt = namespace_stmt.where(IcebergNamespaceProperties.namespace.like(namespace_like))
         stmt = union(
             table_stmt,
             namespace_stmt,
         )
         with Session(self.engine) as session:
-            return [Catalog.identifier_to_tuple(namespace_col) for namespace_col in session.execute(stmt).scalars()]
+            namespace_tuple = Catalog.identifier_to_tuple(namespace)
+            sub_namespaces_level_length = len(namespace_tuple) + 1
+
+            namespaces = list(
+                {  # only get distinct namespaces
+                    ns[:sub_namespaces_level_length]  # truncate to the required level
+                    for ns in {Catalog.identifier_to_tuple(ns) for ns in session.execute(stmt).scalars()}
+                    if len(ns) >= sub_namespaces_level_length  # only get sub namespaces/children
+                    and ns[: sub_namespaces_level_length - 1] == namespace_tuple
+                    # exclude fuzzy matches when `namespace` contains `%` or `_`
+                }
+            )
+
+            return namespaces
 
     def load_namespace_properties(self, namespace: Union[str, Identifier]) -> Properties:
         """Get properties for a namespace.

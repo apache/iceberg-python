@@ -393,6 +393,22 @@ def test_string_to_boolean_literal() -> None:
     assert literal("FALSE").to(BooleanType()) == literal(False)
 
 
+def test_string_to_float_literal() -> None:
+    assert literal("3.141").to(FloatType()) == literal(3.141).to(FloatType())
+
+
+def test_string_to_float_outside_bound() -> None:
+    big_lit_str = literal(str(FloatType.max + 1.0e37))
+    assert big_lit_str.to(FloatType()) == FloatAboveMax()
+
+    small_lit_str = literal(str(FloatType.min - 1.0e37))
+    assert small_lit_str.to(FloatType()) == FloatBelowMin()
+
+
+def test_string_to_double_literal() -> None:
+    assert literal("3.141").to(DoubleType()) == literal(3.141)
+
+
 @pytest.mark.parametrize(
     "val",
     ["unknown", "off", "on", "0", "1", "y", "yes", "n", "no", "t", "f"],
@@ -744,7 +760,7 @@ def test_invalid_decimal_conversions() -> None:
 def test_invalid_string_conversions() -> None:
     assert_invalid_conversions(
         literal("abc"),
-        [FloatType(), DoubleType(), FixedType(1), BinaryType()],
+        [FixedType(1), BinaryType()],
     )
 
 
@@ -908,6 +924,10 @@ def test_uuid_to_binary() -> None:
 
 def test_literal_from_datetime() -> None:
     assert isinstance(literal(datetime.datetime.now()), TimestampLiteral)
+
+
+def test_literal_from_date() -> None:
+    assert isinstance(literal(datetime.date.today()), DateLiteral)
 
 
 #   __  __      ___

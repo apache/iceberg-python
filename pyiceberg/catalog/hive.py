@@ -36,6 +36,7 @@ from hive_metastore.ThriftHiveMetastore import Client
 from hive_metastore.ttypes import (
     AlreadyExistsException,
     CheckLockRequest,
+    EnvironmentContext,
     FieldSchema,
     InvalidOperationException,
     LockComponent,
@@ -110,6 +111,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.properties import property_as_bool, property_as_float
@@ -125,12 +127,17 @@ OWNER = "owner"
 HIVE2_COMPATIBLE = "hive.hive2-compatible"
 HIVE2_COMPATIBLE_DEFAULT = False
 
+HIVE_KERBEROS_AUTH = "hive.kerberos-authentication"
+HIVE_KERBEROS_AUTH_DEFAULT = False
+
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
 LOCK_CHECK_RETRIES = "lock-check-retries"
 DEFAULT_LOCK_CHECK_MIN_WAIT_TIME = 0.1  # 100 milliseconds
 DEFAULT_LOCK_CHECK_MAX_WAIT_TIME = 60  # 1 min
 DEFAULT_LOCK_CHECK_RETRIES = 4
+DO_NOT_UPDATE_STATS = "DO_NOT_UPDATE_STATS"
+DO_NOT_UPDATE_STATS_DEFAULT = "true"
 
 logger = logging.getLogger(__name__)
 
@@ -139,28 +146,46 @@ class _HiveClient:
     """Helper class to nicely open and close the transport."""
 
     _transport: TTransport
-    _client: Client
     _ugi: Optional[List[str]]
 
-    def __init__(self, uri: str, ugi: Optional[str] = None):
-        url_parts = urlparse(uri)
-        transport = TSocket.TSocket(url_parts.hostname, url_parts.port)
-        self._transport = TTransport.TBufferedTransport(transport)
-        protocol = TBinaryProtocol.TBinaryProtocol(transport)
-
-        self._client = Client(protocol)
+    def __init__(self, uri: str, ugi: Optional[str] = None, kerberos_auth: Optional[bool] = HIVE_KERBEROS_AUTH_DEFAULT):
+        self._uri = uri
+        self._kerberos_auth = kerberos_auth
         self._ugi = ugi.split(":") if ugi else None
+        self._transport = self._init_thrift_transport()
+
+    def _init_thrift_transport(self) -> TTransport:
+        url_parts = urlparse(self._uri)
+        socket = TSocket.TSocket(url_parts.hostname, url_parts.port)
+        if not self._kerberos_auth:
+            return TTransport.TBufferedTransport(socket)
+        else:
+            return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service="hive")
+
+    def _client(self) -> Client:
+        protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
+        client = Client(protocol)
+        if self._ugi:
+            client.set_ugi(*self._ugi)
+        return client
 
     def __enter__(self) -> Client:
-        self._transport.open()
-        if self._ugi:
-            self._client.set_ugi(*self._ugi)
-        return self._client
+        """Make sure the transport is initialized and open."""
+        if not self._transport.isOpen():
+            try:
+                self._transport.open()
+            except (TypeError, TTransport.TTransportException):
+                # reinitialize _transport
+                self._transport = self._init_thrift_transport()
+                self._transport.open()
+        return self._client()  # recreate the client
 
     def __exit__(
         self, exctype: Optional[Type[BaseException]], excinst: Optional[BaseException], exctb: Optional[TracebackType]
     ) -> None:
-        self._transport.close()
+        """Close transport if it was opened."""
+        if self._transport.isOpen():
+            self._transport.close()
 
 
 def _construct_hive_storage_descriptor(
@@ -221,6 +246,7 @@ HIVE_PRIMITIVE_TYPES = {
     UUIDType: "string",
     BinaryType: "binary",
     FixedType: "binary",
+    UnknownType: "void",
 }
 
 
@@ -276,7 +302,11 @@ class HiveCatalog(MetastoreCatalog):
         last_exception = None
         for uri in properties["uri"].split(","):
             try:
-                return _HiveClient(uri, properties.get("ugi"))
+                return _HiveClient(
+                    uri,
+                    properties.get("ugi"),
+                    property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
+                )
             except BaseException as e:
                 last_exception = e
         if last_exception is not None:
@@ -512,7 +542,12 @@ class HiveCatalog(MetastoreCatalog):
                         metadata_location=updated_staged_table.metadata_location,
                         previous_metadata_location=current_table.metadata_location,
                     )
-                    open_client.alter_table(dbname=database_name, tbl_name=table_name, new_tbl=hive_table)
+                    open_client.alter_table_with_environment_context(
+                        dbname=database_name,
+                        tbl_name=table_name,
+                        new_tbl=hive_table,
+                        environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+                    )
                 else:
                     # Table does not exist, create it.
                     hive_table = self._convert_iceberg_into_hive(
@@ -599,7 +634,12 @@ class HiveCatalog(MetastoreCatalog):
                 tbl = open_client.get_table(dbname=from_database_name, tbl_name=from_table_name)
                 tbl.dbName = to_database_name
                 tbl.tableName = to_table_name
-                open_client.alter_table(dbname=from_database_name, tbl_name=from_table_name, new_tbl=tbl)
+                open_client.alter_table_with_environment_context(
+                    dbname=from_database_name,
+                    tbl_name=from_table_name,
+                    new_tbl=tbl,
+                    environment_context=EnvironmentContext(properties={DO_NOT_UPDATE_STATS: DO_NOT_UPDATE_STATS_DEFAULT}),
+                )
         except NoSuchObjectException as e:
             raise NoSuchTableError(f"Table does not exist: {from_table_name}") from e
         except InvalidOperationException as e:

@@ -390,18 +390,20 @@ class PartitionKey:
 
     @cached_property
     def partition(self) -> Record:  # partition key transformed with iceberg internal representation as input
-        iceberg_typed_key_values = {}
+        iceberg_typed_key_values = []
         for raw_partition_field_value in self.field_values:
             partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
             if len(partition_fields) != 1:
                 raise ValueError(f"Cannot have redundant partitions: {partition_fields}")
             partition_field = partition_fields[0]
-            iceberg_typed_key_values[partition_field.name] = partition_record_value(
-                partition_field=partition_field,
-                value=raw_partition_field_value.value,
-                schema=self.schema,
+            iceberg_typed_key_values.append(
+                partition_record_value(
+                    partition_field=partition_field,
+                    value=raw_partition_field_value.value,
+                    schema=self.schema,
+                )
             )
-        return Record(**iceberg_typed_key_values)
+        return Record(*iceberg_typed_key_values)
 
     def to_path(self) -> str:
         return self.partition_spec.partition_to_path(self.partition, self.schema)
@@ -444,7 +446,7 @@ def _(type: IcebergType, value: Optional[Union[int, datetime]]) -> Optional[int]
     elif isinstance(value, datetime):
         return datetime_to_micros(value)
     else:
-        raise ValueError(f"Unknown type: {value}")
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(DateType)
@@ -456,7 +458,7 @@ def _(type: IcebergType, value: Optional[Union[int, date]]) -> Optional[int]:
     elif isinstance(value, date):
         return date_to_days(value)
     else:
-        raise ValueError(f"Unknown type: {value}")
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(TimeType)

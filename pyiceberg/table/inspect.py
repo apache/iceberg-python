@@ -161,7 +161,7 @@ class InspectTable:
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
         for manifest in snapshot.manifests(self.tbl.io):
-            for entry in manifest.fetch_manifest_entry(io=self.tbl.io):
+            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=False):
                 column_sizes = entry.data_file.column_sizes or {}
                 value_counts = entry.data_file.value_counts or {}
                 null_value_counts = entry.data_file.null_value_counts or {}
@@ -205,9 +205,9 @@ class InspectTable:
                             "record_count": entry.data_file.record_count,
                             "file_size_in_bytes": entry.data_file.file_size_in_bytes,
                             "column_sizes": dict(entry.data_file.column_sizes),
-                            "value_counts": dict(entry.data_file.value_counts),
-                            "null_value_counts": dict(entry.data_file.null_value_counts),
-                            "nan_value_counts": dict(entry.data_file.nan_value_counts),
+                            "value_counts": dict(entry.data_file.value_counts or {}),
+                            "null_value_counts": dict(entry.data_file.null_value_counts or {}),
+                            "nan_value_counts": dict(entry.data_file.nan_value_counts or {}),
                             "lower_bounds": entry.data_file.lower_bounds,
                             "upper_bounds": entry.data_file.upper_bounds,
                             "key_metadata": entry.data_file.key_metadata,
