@@ -1605,19 +1605,19 @@ gcsfuse = ["fusepy"]
 
 [[package]]
 name = "getdaft"
-version = "0.4.10"
+version = "0.4.13"
 description = "Distributed Dataframes for Multimodal Data"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"daft\""
 files = [
-    {file = "getdaft-0.4.10-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a70bb11606057f59aab873806b60512ec02162507665addc7c8626438e8e2fea"},
-    {file = "getdaft-0.4.10-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:2a7fe144ea9d4d74d812e04066c2b9960999fa3eaefdad30bb8524987936ed9a"},
-    {file = "getdaft-0.4.10-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:286989803ba0b82f1ac8e953fa08e88f76ef2421cb31bfd8d12c3f655afa4fde"},
-    {file = "getdaft-0.4.10-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:4e855aaa423c4942ac11b4741e05aa7c537e2a629a05e52ce45f2b827ff77fe3"},
-    {file = "getdaft-0.4.10-cp39-abi3-win_amd64.whl", hash = "sha256:e9c4265a3de7f9cb9e762796a9bd22fd80cf21f00d1687fac2b51b13e3a173cd"},
-    {file = "getdaft-0.4.10.tar.gz", hash = "sha256:2b9ed71bf5f039e9c325e47660431921156177aafde8785eb4c47286fe463643"},
+    {file = "getdaft-0.4.13-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:060c6736213bb231d14575d233c9c7c123592269c11e86e11ef229191ccabbf9"},
+    {file = "getdaft-0.4.13-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:b9e40d37e13592ec8bf9b28c2a44de2c4902529035ee5b4acf02634d9718cb24"},
+    {file = "getdaft-0.4.13-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:bca5a02a743d775481ec0836be3c252c0e9c43f94b023e00573292e7bffc1840"},
+    {file = "getdaft-0.4.13-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:bd8ddab4b153a9c0cbb5f6527f474e5e19040ed88d27822c8c729bc12f6b2808"},
+    {file = "getdaft-0.4.13-cp39-abi3-win_amd64.whl", hash = "sha256:9ffaea41f4da01964bbdbc8fb8d4a126b6c19f36a29898b4c9c474930e3d60c5"},
+    {file = "getdaft-0.4.13.tar.gz", hash = "sha256:d70c3518bccc090ea34455499c63ba4e377ab0afffa47bc75658940cb433cb28"},
 ]
 
 [package.dependencies]
@@ -1638,7 +1638,7 @@ numpy = ["numpy"]
 pandas = ["pandas"]
 ray = ["packaging", "ray[client,data] (>=2.0.0) ; platform_system != \"Windows\"", "ray[client,data] (>=2.10.0) ; platform_system == \"Windows\""]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
-unity = ["unitycatalog"]
+unity = ["httpx (<=0.27.2)", "unitycatalog"]
 
 [[package]]
 name = "ghp-import"
