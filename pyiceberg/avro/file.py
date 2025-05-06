@@ -284,14 +284,9 @@ class AvroOutputFile(Generic[D]):
             codec = "deflate"
 
         json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.file_schema, schema_name=self.schema_name))
-<<<<<<< Updated upstream
-        meta = {**self.metadata, _SCHEMA_KEY: json_schema, _CODEC_KEY: "null"}
+
+        meta = {**self.metadata, _SCHEMA_KEY: json_schema, AVRO_CODEC_KEY: codec}
         header = AvroFileHeader(MAGIC, meta, self.sync_bytes)
-=======
-        header = AvroFileHeader(
-            magic=MAGIC, meta={**self.metadata, _SCHEMA_KEY: json_schema, AVRO_CODEC_KEY: codec}, sync=self.sync_bytes
-        )
->>>>>>> Stashed changes
         construct_writer(META_SCHEMA).write(self.encoder, header)
 
     def compression_codec(self) -> Optional[Type[Codec]]:

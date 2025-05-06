@@ -799,7 +799,6 @@ class ManifestWriter(ABC):
     _deleted_rows: int
     _min_sequence_number: Optional[int]
     _partitions: List[Record]
-    _reused_entry_wrapper: ManifestEntry
     _compression: AvroCompressionCodec
 
     def __init__(
@@ -824,11 +823,7 @@ class ManifestWriter(ABC):
         self._deleted_rows = 0
         self._min_sequence_number = None
         self._partitions = []
-<<<<<<< Updated upstream
-=======
-        self._reused_entry_wrapper = ManifestEntry()
         self._compression = avro_compression
->>>>>>> Stashed changes
 
     def __enter__(self) -> ManifestWriter:
         """Open the writer."""
