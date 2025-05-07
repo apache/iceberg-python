@@ -100,10 +100,8 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
             assert isinstance(value.as_py(), int)
 
     for split_offsets in df["split_offsets"]:
-        assert isinstance(split_offsets.as_py(), list)
-
-    for file_format in df["file_format"]:
-        assert file_format.as_py() == "PARQUET"
+        if split_offsets.as_py() is not None:
+            assert isinstance(split_offsets.as_py(), list)
 
     for file_path in df["file_path"]:
         assert file_path.as_py().startswith("s3://")
@@ -981,6 +979,52 @@ def test_inspect_all_files(
     all_files_df = tbl.inspect.all_files()
     all_data_files_df = tbl.inspect.all_data_files()
     all_delete_files_df = tbl.inspect.all_delete_files()
+
+    _inspect_files_asserts(all_files_df, spark.table(f"{identifier}.all_files"))
+    _inspect_files_asserts(all_data_files_df, spark.table(f"{identifier}.all_data_files"))
+    _inspect_files_asserts(all_delete_files_df, spark.table(f"{identifier}.all_delete_files"))
+
+
+@pytest.mark.integration
+def test_inspect_files_format_version_3(spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    identifier = "default.table_metadata_files"
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        properties={
+            "format-version": "3",
+            "write.delete.mode": "merge-on-read",
+            "write.update.mode": "merge-on-read",
+            "write.merge.mode": "merge-on-read",
+        },
+    )
+
+    insert_data_sql = f"""INSERT INTO {identifier} VALUES
+        (false, 'a', 'aaaaaaaaaaaaaaaaaaaaaa', 1, 1, 0.0, 0.0, TIMESTAMP('2023-01-01 19:25:00'), TIMESTAMP('2023-01-01 19:25:00+00:00'), DATE('2023-01-01'), X'01', X'00000000000000000000000000000000'),
+        (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+        (true, 'z', 'zzzzzzzzzzzzzzzzzzzzzz', 9, 9, 0.9, 0.9, TIMESTAMP('2023-03-01 19:25:00'), TIMESTAMP('2023-03-01 19:25:00+00:00'), DATE('2023-03-01'), X'12', X'11111111111111111111111111111111');
+    """
+
+    spark.sql(insert_data_sql)
+    spark.sql(insert_data_sql)
+    spark.sql(f"UPDATE {identifier} SET int = 2 WHERE int = 1")
+    spark.sql(f"DELETE FROM {identifier} WHERE int = 9")
+    spark.table(identifier).show(20, False)
+
+    tbl.refresh()
+
+    files_df = tbl.inspect.files()
+    data_files_df = tbl.inspect.data_files()
+    delete_files_df = tbl.inspect.delete_files()
+
+    all_files_df = tbl.inspect.all_files()
+    all_data_files_df = tbl.inspect.all_data_files()
+    all_delete_files_df = tbl.inspect.all_delete_files()
+
+    _inspect_files_asserts(files_df, spark.table(f"{identifier}.files"))
+    _inspect_files_asserts(data_files_df, spark.table(f"{identifier}.data_files"))
+    _inspect_files_asserts(delete_files_df, spark.table(f"{identifier}.delete_files"))
 
     _inspect_files_asserts(all_files_df, spark.table(f"{identifier}.all_files"))
     _inspect_files_asserts(all_data_files_df, spark.table(f"{identifier}.all_data_files"))

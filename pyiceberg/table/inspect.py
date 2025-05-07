@@ -635,16 +635,12 @@ class InspectTable:
     def _files(self, snapshot_id: Optional[int] = None, data_file_filter: Optional[Set[DataFileContent]] = None) -> "pa.Table":
         import pyarrow as pa
 
-        files_table: list[pa.Table] = []
-
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
-            return pa.Table.from_pylist(
-                [],
-                schema=self._get_files_schema(),
-            )
-        snapshot = self._get_snapshot(snapshot_id)
+            return self._get_files_schema().empty_table()
 
+        snapshot = self._get_snapshot(snapshot_id)
         io = self.tbl.io
+        files_table: list[pa.Table] = []
         for manifest_list in snapshot.manifests(io):
             files_table.append(self._get_files_from_manifest(manifest_list, data_file_filter))
 
