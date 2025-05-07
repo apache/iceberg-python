@@ -933,6 +933,7 @@ class Table:
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
         snapshot_id: Optional[int] = None,
+        ref_name: Optional[str] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ) -> DataScan:
@@ -950,10 +951,13 @@ class Table:
                 A tuple of strings representing the column names
                 to return in the output dataframe.
             case_sensitive:
-                If True column matching is case sensitive
+                If True column matching is case-sensitive.
             snapshot_id:
                 Optional Snapshot ID to time travel to. If None,
                 scans the table as of the current snapshot ID.
+            ref_name:
+                Optional name of a branch or tag to read from.
+                If None, defaults to the main branch.
             options:
                 Additional Table properties as a dictionary of
                 string key value pairs to use for this scan.
@@ -972,6 +976,7 @@ class Table:
             selected_fields=selected_fields,
             case_sensitive=case_sensitive,
             snapshot_id=snapshot_id,
+            ref_name=ref_name,
             options=options,
             limit=limit,
         )
@@ -1428,6 +1433,7 @@ class StagedTable(Table):
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
         snapshot_id: Optional[int] = None,
+        ref_name: Optional[str] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ) -> DataScan:
@@ -1460,6 +1466,7 @@ class TableScan(ABC):
     selected_fields: Tuple[str, ...]
     case_sensitive: bool
     snapshot_id: Optional[int]
+    ref_name: Optional[str]
     options: Properties
     limit: Optional[int]
 
@@ -1471,6 +1478,7 @@ class TableScan(ABC):
         selected_fields: Tuple[str, ...] = ("*",),
         case_sensitive: bool = True,
         snapshot_id: Optional[int] = None,
+        ref_name: Optional[str] = None,
         options: Properties = EMPTY_DICT,
         limit: Optional[int] = None,
     ):
@@ -1480,12 +1488,20 @@ class TableScan(ABC):
         self.selected_fields = selected_fields
         self.case_sensitive = case_sensitive
         self.snapshot_id = snapshot_id
+        self.ref_name = ref_name
         self.options = options
         self.limit = limit
 
     def snapshot(self) -> Optional[Snapshot]:
+        if self.snapshot_id and self.ref_name is not None:
+            raise ValueError("Cannot specify both snapshot_id and ref_name.")
         if self.snapshot_id:
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
+        if self.ref_name is not None:
+            if snapshot := self.table_metadata.snapshot_by_name(self.ref_name):
+                return snapshot
+            else:
+                raise ValueError(f"Cannot scan unknown ref={self.ref_name}")
         return self.table_metadata.current_snapshot()
 
     def projection(self) -> Schema:
@@ -1525,12 +1541,7 @@ class TableScan(ABC):
         return type(self)(**{**self.__dict__, **overrides})
 
     def use_ref(self: S, name: str) -> S:
-        if self.snapshot_id:
-            raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
-        if snapshot := self.table_metadata.snapshot_by_name(name):
-            return self.update(snapshot_id=snapshot.snapshot_id)
-
-        raise ValueError(f"Cannot scan unknown ref={name}")
+        return self.update(ref_name=name)
 
     def select(self: S, *field_names: str) -> S:
         if "*" in self.selected_fields:
