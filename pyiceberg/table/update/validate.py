@@ -23,8 +23,8 @@ from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
 
 def validation_history(
     table: Table,
-    to_snapshot: Snapshot,
     from_snapshot: Snapshot,
+    to_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
 ) -> tuple[list[ManifestFile], set[int]]:
@@ -32,8 +32,8 @@ def validation_history(
 
     Args:
         table: Table to get the history from
-        to_snapshot: Starting snapshot
         from_snapshot: Parent snapshot to get the history from
+        to_snapshot: Starting snapshot
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
 
@@ -47,7 +47,7 @@ def validation_history(
     snapshots: set[int] = set()
 
     last_snapshot = None
-    for snapshot in ancestors_between(to_snapshot, from_snapshot, table.metadata):
+    for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
         last_snapshot = snapshot
         summary = snapshot.summary
         if summary is None:
