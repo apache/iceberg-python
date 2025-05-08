@@ -78,6 +78,7 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
         "content",
         "file_path",
         "file_format",
+        "partition",
         "spec_id",
         "record_count",
         "file_size_in_bytes",
@@ -141,6 +142,9 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
     assert_frame_equal(lhs_subset, rhs_subset, check_dtype=False, check_categorical=False)
 
     for column in df.column_names:
+        if column == "partition":
+            # Spark leaves out the partition if the table is unpartitioned
+            continue
         for left, right in zip(lhs[column].to_list(), rhs[column].to_list()):
             if isinstance(left, float) and math.isnan(left) and isinstance(right, float) and math.isnan(right):
                 # NaN != NaN in Python
@@ -833,6 +837,7 @@ def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog
             "content",
             "file_path",
             "file_format",
+            "partition",
             "spec_id",
             "record_count",
             "file_size_in_bytes",
@@ -1010,7 +1015,6 @@ def test_inspect_files_format_version_3(spark: SparkSession, session_catalog: Ca
     spark.sql(insert_data_sql)
     spark.sql(f"UPDATE {identifier} SET int = 2 WHERE int = 1")
     spark.sql(f"DELETE FROM {identifier} WHERE int = 9")
-    spark.table(identifier).show(20, False)
 
     tbl.refresh()
 
@@ -1029,3 +1033,71 @@ def test_inspect_files_format_version_3(spark: SparkSession, session_catalog: Ca
     _inspect_files_asserts(all_files_df, spark.table(f"{identifier}.all_files"))
     _inspect_files_asserts(all_data_files_df, spark.table(f"{identifier}.all_data_files"))
     _inspect_files_asserts(all_delete_files_df, spark.table(f"{identifier}.all_delete_files"))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("format_version", [1, 2, 3])
+def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
+    from pandas.testing import assert_frame_equal
+
+    identifier = "default.table_metadata_files_partitioned"
+    try:
+        session_catalog.drop_table(identifier=identifier)
+    except NoSuchTableError:
+        pass
+
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (
+            dt date,
+            int_data int
+        )
+        PARTITIONED BY (months(dt))
+        TBLPROPERTIES ('format-version'='{format_version}')
+    """
+    )
+
+    if format_version > 1:
+        spark.sql(
+            f"""
+            ALTER TABLE {identifier} SET TBLPROPERTIES(
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read')
+        """
+        )
+
+    spark.sql(f"""
+        INSERT INTO {identifier} VALUES (CAST('2025-01-01' AS date), 1), (CAST('2025-01-01' AS date), 2)
+    """)
+
+    spark.sql(
+        f"""
+        ALTER TABLE {identifier}
+        REPLACE PARTITION FIELD dt_month WITH days(dt)
+    """
+    )
+
+    spark.sql(
+        f"""
+            INSERT INTO {identifier} VALUES (CAST('2025-01-02' AS date), 2)
+        """
+    )
+
+    spark.sql(
+        f"""
+            DELETE FROM {identifier} WHERE int_data = 1
+        """
+    )
+
+    tbl = session_catalog.load_table(identifier)
+    files_df = tbl.inspect.files()
+    lhs = files_df.to_pandas()[["file_path", "partition"]].sort_values("file_path", ignore_index=True).reset_index()
+    rhs = (
+        spark.table(f"{identifier}.files")
+        .select(["file_path", "partition"])
+        .toPandas()
+        .sort_values("file_path", ignore_index=True)
+        .reset_index()
+    )
+    assert_frame_equal(lhs, rhs, check_dtype=False)

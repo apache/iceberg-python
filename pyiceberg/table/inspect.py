@@ -557,11 +557,17 @@ class InspectTable:
                 }
                 for field in self.tbl.metadata.schema().fields
             }
+            partition = data_file.partition
+            partition_record_dict = {
+                field.name: partition[pos]
+                for pos, field in enumerate(self.tbl.metadata.specs()[manifest_list.partition_spec_id].fields)
+            }
             files.append(
                 {
                     "content": data_file.content,
                     "file_path": data_file.file_path,
                     "file_format": data_file.file_format,
+                    "partition": partition_record_dict,
                     "spec_id": data_file.spec_id,
                     "record_count": data_file.record_count,
                     "file_size_in_bytes": data_file.file_size_in_bytes,
@@ -604,6 +610,9 @@ class InspectTable:
                 ]
             )
 
+        partition_record = self.tbl.metadata.specs_struct()
+        pa_record_struct = schema_to_pyarrow(partition_record)
+
         for field in self.tbl.metadata.schema().fields:
             readable_metrics_struct.append(
                 pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
@@ -614,6 +623,7 @@ class InspectTable:
                 pa.field("content", pa.int8(), nullable=False),
                 pa.field("file_path", pa.string(), nullable=False),
                 pa.field("file_format", pa.dictionary(pa.int32(), pa.string()), nullable=False),
+                pa.field("partition", pa_record_struct, nullable=False),
                 pa.field("spec_id", pa.int32(), nullable=False),
                 pa.field("record_count", pa.int64(), nullable=False),
                 pa.field("file_size_in_bytes", pa.int64(), nullable=False),
