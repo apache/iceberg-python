@@ -602,6 +602,10 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
         status_code=200,
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, credential=TEST_CREDENTIALS)
+    # LegacyOAuth2AuthManager is created twice through `_create_session()`
+    # which results in the token being refreshed twice when the RestCatalog is initialized.
+    assert tokens.call_count == 2
+
     assert catalog.list_namespaces() == [
         ("default",),
         ("examples",),
@@ -609,7 +613,7 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
         ("system",),
     ]
     assert namespaces.call_count == 2
-    assert tokens.call_count == 1
+    assert tokens.call_count == 3
 
     assert catalog.list_namespaces() == [
         ("default",),
@@ -618,7 +622,7 @@ def test_list_namespaces_token_expired_success_on_retries(rest_mock: Mocker, sta
         ("system",),
     ]
     assert namespaces.call_count == 3
-    assert tokens.call_count == 1
+    assert tokens.call_count == 3
 
 
 def test_create_namespace_200(rest_mock: Mocker) -> None:
