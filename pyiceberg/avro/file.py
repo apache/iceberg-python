@@ -35,7 +35,7 @@ from typing import (
     TypeVar,
 )
 
-from pyiceberg.avro.codecs import AVRO_CODEC_KEY, KNOWN_CODECS
+from pyiceberg.avro.codecs import AVRO_CODEC_KEY, CODEC_MAPPING_ICEBERG_TO_AVRO, KNOWN_CODECS
 from pyiceberg.avro.codecs.codec import Codec
 from pyiceberg.avro.decoder import BinaryDecoder, new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
@@ -279,13 +279,13 @@ class AvroOutputFile(Generic[D]):
     def _write_header(self) -> None:
         from pyiceberg.table import TableProperties
 
-        codec = self.metadata.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
-        if codec == "gzip":
-            codec = "deflate"
+        codec_name = self.metadata.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
+        if avro_codec_name := CODEC_MAPPING_ICEBERG_TO_AVRO.get(codec_name):
+            codec_name = avro_codec_name
 
         json_schema = json.dumps(AvroSchemaConversion().iceberg_to_avro(self.file_schema, schema_name=self.schema_name))
 
-        meta = {**self.metadata, _SCHEMA_KEY: json_schema, AVRO_CODEC_KEY: codec}
+        meta = {**self.metadata, _SCHEMA_KEY: json_schema, AVRO_CODEC_KEY: codec_name}
         header = AvroFileHeader(MAGIC, meta, self.sync_bytes)
         construct_writer(META_SCHEMA).write(self.encoder, header)
 
@@ -299,8 +299,8 @@ class AvroOutputFile(Generic[D]):
 
         codec_name = self.metadata.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
 
-        if codec_name == "gzip":
-            codec_name = "deflate"
+        if avro_codec_name := CODEC_MAPPING_ICEBERG_TO_AVRO.get(codec_name):
+            codec_name = avro_codec_name
 
         if codec_name not in KNOWN_CODECS:
             raise ValueError(f"Unsupported codec: {codec_name}")

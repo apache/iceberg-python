@@ -47,3 +47,6 @@ KNOWN_CODECS: Dict[AvroCompressionCodec, Optional[Type[Codec]]] = {
     "zstandard": ZStandardCodec,
     "deflate": DeflateCodec,
 }
+
+# Map to convert the naming from Iceberg to Avro
+CODEC_MAPPING_ICEBERG_TO_AVRO: Dict[str, str] = {"gzip": "deflate", "zstd": "zstandard"}
