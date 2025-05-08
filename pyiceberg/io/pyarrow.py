@@ -409,6 +409,7 @@ class PyArrowFileIO(FileIO):
             "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
             "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
+            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
         }
 
         if proxy_uri := self.properties.get(S3_PROXY_URI):
@@ -425,9 +426,6 @@ class PyArrowFileIO(FileIO):
 
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
-
-        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
 
         return S3FileSystem(**client_kwargs)
 
@@ -472,8 +470,8 @@ class PyArrowFileIO(FileIO):
         if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
-        if force_virtual_addressing := self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, force_virtual_addressing, False)
+        if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
+            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
         return S3FileSystem(**client_kwargs)
 
@@ -2249,32 +2247,39 @@ class DataFileStatistics:
         if partition_field.source_id not in self.column_aggregates:
             return None
 
-        if not partition_field.transform.preserves_order:
+        source_field = schema.find_field(partition_field.source_id)
+        iceberg_transform = partition_field.transform
+
+        if not iceberg_transform.preserves_order:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata for a non-linear Partition Field: {partition_field.name} with transform {partition_field.transform}"
             )
 
-        lower_value = partition_record_value(
-            partition_field=partition_field,
-            value=self.column_aggregates[partition_field.source_id].current_min,
-            schema=schema,
+        transform_func = iceberg_transform.transform(source_field.field_type)
+
+        lower_value = transform_func(
+            partition_record_value(
+                partition_field=partition_field,
+                value=self.column_aggregates[partition_field.source_id].current_min,
+                schema=schema,
+            )
         )
-        upper_value = partition_record_value(
-            partition_field=partition_field,
-            value=self.column_aggregates[partition_field.source_id].current_max,
-            schema=schema,
+        upper_value = transform_func(
+            partition_record_value(
+                partition_field=partition_field,
+                value=self.column_aggregates[partition_field.source_id].current_max,
+                schema=schema,
+            )
         )
         if lower_value != upper_value:
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"
             )
 
-        source_field = schema.find_field(partition_field.source_id)
-        transform = partition_field.transform.transform(source_field.field_type)
-        return transform(lower_value)
+        return lower_value
 
     def partition(self, partition_spec: PartitionSpec, schema: Schema) -> Record:
-        return Record(**{field.name: self._partition_value(field, schema) for field in partition_spec.fields})
+        return Record(*[self._partition_value(field, schema) for field in partition_spec.fields])
 
     def to_serialized_dict(self) -> Dict[str, Any]:
         lower_bounds = {}
@@ -2454,7 +2459,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
-        data_file = DataFile(
+        data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
@@ -2545,7 +2550,7 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
-    data_file = DataFile(
+    data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_path,
         file_format=FileFormat.PARQUET,
