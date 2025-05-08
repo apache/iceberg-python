@@ -638,7 +638,13 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(len(fixed_type))
 
     def visit_decimal(self, decimal_type: DecimalType) -> pa.DataType:
-        return pa.decimal128(decimal_type.precision, decimal_type.scale)
+        return (
+            pa.decimal32(decimal_type.precision, decimal_type.scale)
+            if decimal_type.precision <= 9
+            else pa.decimal64(decimal_type.precision, decimal_type.scale)
+            if decimal_type.precision <= 18
+            else pa.decimal128(decimal_type.precision, decimal_type.scale)
+        )
 
     def visit_boolean(self, _: BooleanType) -> pa.DataType:
         return pa.bool_()
@@ -1749,6 +1755,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, Optional[pa.Arra
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+                else:
+                    pass
         return values
 
     def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
@@ -2437,7 +2445,9 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         )
         fo = io.new_output(file_path)
         with fo.create(overwrite=True) as fos:
-            with pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer:
+            with pq.ParquetWriter(
+                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
+            ) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=writer.writer.metadata,
