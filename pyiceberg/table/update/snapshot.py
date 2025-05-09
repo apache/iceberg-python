@@ -299,7 +299,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         # Define allowed operations for each type of operation
         allowed_operations = {
             Operation.APPEND: {Operation.APPEND, Operation.REPLACE, Operation.OVERWRITE, Operation.DELETE},
-            Operation.REPLACE: {Operation.APPEND},
+            Operation.REPLACE: {},
             Operation.OVERWRITE: set(),
             Operation.DELETE: set(),
         }
