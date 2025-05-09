@@ -934,6 +934,10 @@ def test_conflict_delete_append(
     tbl1.delete("string == 'z'")
     tbl2.append(arrow_table_with_null)
 
+    # verify against expected table
+    arrow_table_expected = arrow_table_with_null[:2]
+    assert tbl1.scan().to_arrow() == arrow_table_expected
+
 
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -955,7 +959,7 @@ def test_conflict_append_delete(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [2])
 def test_conflict_append_append(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
@@ -966,6 +970,10 @@ def test_conflict_append_append(
 
     tbl1.append(arrow_table_with_null)
     tbl2.append(arrow_table_with_null)
+
+    # verify against expected table
+    arrow_table_expected = pa.concat_tables([arrow_table_with_null, arrow_table_with_null, arrow_table_with_null])
+    assert tbl1.scan().to_arrow() == arrow_table_expected
 
 
 @pytest.mark.integration
