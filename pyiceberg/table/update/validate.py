@@ -81,7 +81,7 @@ def _deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: Optional[BooleanExpression],
-    partition_set: Optional[set[Record]],
+    partition_set: Optional[dict[int, set[Record]]],
     parent_snapshot: Optional[Snapshot],
 ) -> Iterator[ManifestEntry]:
     """Find deleted data files matching a filter since a starting snapshot.
@@ -90,7 +90,7 @@ def _deleted_data_files(
         table: Table to validate
         starting_snapshot: Snapshot current at the start of the operation
         data_filter: Expression used to find deleted data files
-        partition_set: a set of partitions to find deleted data files
+        partition_set: dict of {spec_id: set[partition]} to filter on
         parent_snapshot: Ending snapshot on the branch being validated
 
     Returns:
@@ -122,8 +122,11 @@ def _deleted_data_files(
             if data_filter is not None and evaluator(entry.data_file) is ROWS_CANNOT_MATCH:
                 continue
 
-            if partition_set is not None and (entry.data_file.spec_id, entry.data_file.partition) not in partition_set:
-                continue
+            if partition_set is not None:
+                spec_id = entry.data_file.spec_id
+                partition = entry.data_file.partition
+                if spec_id not in partition_set or partition not in partition_set[spec_id]:
+                    continue
 
             yield entry
 
