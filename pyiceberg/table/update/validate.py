@@ -102,8 +102,8 @@ def _deleted_data_files(
 
     manifests, snapshot_ids = validation_history(
         table,
-        starting_snapshot,
         parent_snapshot,
+        starting_snapshot,
         VALIDATE_DATA_FILES_EXIST_OPERATIONS,
         ManifestContent.DATA,
     )
