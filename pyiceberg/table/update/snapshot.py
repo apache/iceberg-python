@@ -84,10 +84,6 @@ from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
-if TYPE_CHECKING:
-    pass
-
-
 from pyiceberg.table.metadata import Snapshot, TableMetadata
 
 
