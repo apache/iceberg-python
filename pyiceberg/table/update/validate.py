@@ -94,7 +94,7 @@ def _deleted_data_files(
         parent_snapshot: Ending snapshot on the branch being validated
 
     Returns:
-        List of deleted data files matching the filter
+        List of conflicting manifest-entries
     """
     # if there is no current table state, no files have been deleted
     if parent_snapshot is None:
