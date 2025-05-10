@@ -81,8 +81,8 @@ def deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: Optional[BooleanExpression],
-    parent_snapshot: Optional[Snapshot],
     partition_set: Optional[set[Record]],
+    parent_snapshot: Optional[Snapshot],
 ) -> Iterator[ManifestEntry]:
     """Find deleted data files matching a filter since a starting snapshot.
 
