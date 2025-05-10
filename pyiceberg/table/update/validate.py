@@ -18,7 +18,7 @@ from typing import Iterator, Optional
 
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions import BooleanExpression
-from pyiceberg.expressions.visitors import _StrictMetricsEvaluator
+from pyiceberg.expressions.visitors import ROWS_CANNOT_MATCH, _InclusiveMetricsEvaluator
 from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
@@ -109,7 +109,7 @@ def _deleted_data_files(
     )
 
     if data_filter is not None:
-        evaluator = _StrictMetricsEvaluator(table.schema(), data_filter).eval
+        evaluator = _InclusiveMetricsEvaluator(table.schema(), data_filter).eval
 
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False):
@@ -119,7 +119,7 @@ def _deleted_data_files(
             if entry.status != ManifestEntryStatus.DELETED:
                 continue
 
-            if data_filter is not None and not evaluator(entry.data_file):
+            if data_filter is not None and evaluator(entry.data_file) is ROWS_CANNOT_MATCH:
                 continue
 
             if partition_set is not None and (entry.data_file.spec_id, entry.data_file.partition) not in partition_set:
