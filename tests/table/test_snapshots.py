@@ -15,12 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name,eval-used
+from typing import cast
+
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotSummaryCollector, Summary, update_snapshot_summaries
+from pyiceberg.table import Table
+from pyiceberg.table.snapshots import (
+    Operation,
+    Snapshot,
+    SnapshotSummaryCollector,
+    Summary,
+    ancestors_between,
+    ancestors_of,
+    update_snapshot_summaries,
+)
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -368,3 +379,58 @@ def test_invalid_type() -> None:
         )
 
     assert "Could not parse summary property total-data-files to an int: abc" in str(e.value)
+
+
+def test_ancestors_of(table_v2: Table) -> None:
+    assert list(ancestors_of(table_v2.current_snapshot(), table_v2.metadata)) == [
+        Snapshot(
+            snapshot_id=3055729675574597004,
+            parent_snapshot_id=3051729675574597004,
+            sequence_number=1,
+            timestamp_ms=1555100955770,
+            manifest_list="s3://a/b/2.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=1,
+        ),
+        Snapshot(
+            snapshot_id=3051729675574597004,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            timestamp_ms=1515100955770,
+            manifest_list="s3://a/b/1.avro",
+            summary=Summary(Operation.APPEND),
+            schema_id=None,
+        ),
+    ]
+
+
+def test_ancestors_of_recursive_error(table_v2_with_extensive_snapshots: Table) -> None:
+    # Test RecursionError: maximum recursion depth exceeded
+    assert (
+        len(
+            list(
+                ancestors_of(
+                    table_v2_with_extensive_snapshots.current_snapshot(),
+                    table_v2_with_extensive_snapshots.metadata,
+                )
+            )
+        )
+        == 2000
+    )
+
+
+def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
+    oldest_snapshot = table_v2_with_extensive_snapshots.snapshots()[0]
+    current_snapshot = cast(Snapshot, table_v2_with_extensive_snapshots.current_snapshot())
+    assert (
+        len(
+            list(
+                ancestors_between(
+                    oldest_snapshot,
+                    current_snapshot,
+                    table_v2_with_extensive_snapshots.metadata,
+                )
+            )
+        )
+        == 2000
+    )

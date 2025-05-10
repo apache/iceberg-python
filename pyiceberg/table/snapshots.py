@@ -435,3 +435,16 @@ def ancestors_of(current_snapshot: Optional[Snapshot], table_metadata: TableMeta
         if snapshot.parent_snapshot_id is None:
             break
         snapshot = table_metadata.snapshot_by_id(snapshot.parent_snapshot_id)
+
+
+def ancestors_between(
+    from_snapshot: Optional[Snapshot], to_snapshot: Snapshot, table_metadata: TableMetadata
+) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given snapshot between the to and from snapshots."""
+    if from_snapshot is not None:
+        for snapshot in ancestors_of(to_snapshot, table_metadata):
+            yield snapshot
+            if snapshot == from_snapshot:
+                break
+    else:
+        yield from ancestors_of(to_snapshot, table_metadata)
