@@ -306,13 +306,13 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # APPEND
     assert summaries[0] == {
         "added-data-files": "3",
-        "added-files-size": "2570",
+        "added-files-size": "2618",
         "added-records": "5",
         "changed-partition-count": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2570",
+        "total-files-size": "2618",
         "total-position-deletes": "0",
         "total-records": "5",
     }
@@ -341,16 +341,16 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     assert len(files) == 3
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "859",
+        "added-files-size": "875",
         "added-records": "2",
         "changed-partition-count": "1",
         "deleted-data-files": "1",
         "deleted-records": "3",
-        "removed-files-size": "866",
+        "removed-files-size": "882",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2563",
+        "total-files-size": "2611",
         "total-position-deletes": "0",
         "total-records": "4",
     }
