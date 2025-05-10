@@ -203,13 +203,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
 
-        ssc = SnapshotSummaryCollector()
         partition_summary_limit = int(
             self._transaction.table_metadata.properties.get(
                 TableProperties.WRITE_PARTITION_SUMMARY_LIMIT, TableProperties.WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT
             )
         )
-        ssc.set_partition_summary_limit(partition_summary_limit)
+        ssc = SnapshotSummaryCollector(partition_summary_limit=partition_summary_limit)
 
         for data_file in self._added_data_files:
             ssc.add_file(

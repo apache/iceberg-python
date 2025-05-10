@@ -52,13 +52,17 @@ test-s3: # Run tests marked with s3, can add arguments with PYTEST_ARGS="-vv"
 	sh ./dev/run-minio.sh
 	poetry run pytest tests/ -m s3 ${PYTEST_ARGS}
 
-test-integration: ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
+test-integration: | test-integration-setup test-integration-exec ## Run all integration tests, can add arguments with PYTEST_ARGS="-vv"
+
+test-integration-setup: # Prepare the environment for integration
 	docker compose -f dev/docker-compose-integration.yml kill
 	docker compose -f dev/docker-compose-integration.yml rm -f
 	docker compose -f dev/docker-compose-integration.yml up -d
 	sleep 10
 	docker compose -f dev/docker-compose-integration.yml cp ./dev/provision.py spark-iceberg:/opt/spark/provision.py
 	docker compose -f dev/docker-compose-integration.yml exec -T spark-iceberg ipython ./provision.py
+
+test-integration-exec:  # Execute integration tests, can add arguments with PYTEST_ARGS="-vv"
 	poetry run pytest tests/ -v -m integration ${PYTEST_ARGS}
 
 test-integration-rebuild:
