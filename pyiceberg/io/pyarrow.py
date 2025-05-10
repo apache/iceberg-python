@@ -636,13 +636,14 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(len(fixed_type))
 
     def visit_decimal(self, decimal_type: DecimalType) -> pa.DataType:
-        return (
-            pa.decimal32(decimal_type.precision, decimal_type.scale)
-            if decimal_type.precision <= 9
-            else pa.decimal64(decimal_type.precision, decimal_type.scale)
-            if decimal_type.precision <= 18
-            else pa.decimal128(decimal_type.precision, decimal_type.scale)
-        )
+        if decimal_type.precision <= 9:
+            return pa.decimal32(decimal_type.precision, decimal_type.scale)
+        elif decimal_type.precision <= 18:
+            return pa.decimal64(decimal_type.precision, decimal_type.scale)
+        elif decimal_type.precision <= 38:
+            return pa.decimal128(decimal_type.precision, decimal_type.scale)
+        else:
+            raise ValueError(f"Precision above 38 is not supported: {decimal_type.precision}")
 
     def visit_boolean(self, _: BooleanType) -> pa.DataType:
         return pa.bool_()
