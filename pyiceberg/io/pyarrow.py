@@ -636,14 +636,13 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         return pa.binary(len(fixed_type))
 
     def visit_decimal(self, decimal_type: DecimalType) -> pa.DataType:
-        if decimal_type.precision <= 9:
-            return pa.decimal32(decimal_type.precision, decimal_type.scale)
-        elif decimal_type.precision <= 18:
-            return pa.decimal64(decimal_type.precision, decimal_type.scale)
-        elif decimal_type.precision <= 38:
-            return pa.decimal128(decimal_type.precision, decimal_type.scale)
-        else:
-            raise ValueError(f"Precision above 38 is not supported: {decimal_type.precision}")
+        # It looks like decimal{32,64} is not fully implemented:
+        # https://github.com/apache/arrow/issues/25483
+        # https://github.com/apache/arrow/issues/43956
+        # However, if we keep it as 128 in memory, and based on the
+        # precision/scale Arrow will map it to INT{32,64}
+        # https://github.com/apache/arrow/blob/598938711a8376cbfdceaf5c77ab0fd5057e6c02/cpp/src/parquet/arrow/schema.cc#L380-L392
+        return pa.decimal128(decimal_type.precision, decimal_type.scale)
 
     def visit_boolean(self, _: BooleanType) -> pa.DataType:
         return pa.bool_()
