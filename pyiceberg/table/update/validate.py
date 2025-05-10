@@ -77,7 +77,7 @@ def validation_history(
     return manifests_files, snapshots
 
 
-def deleted_data_files(
+def _deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: Optional[BooleanExpression],
@@ -143,6 +143,6 @@ def validate_deleted_data_files(
         parent_snapshot: Ending snapshot on the branch being validated
 
     """
-    conflicting_entries = deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
+    conflicting_entries = _deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
     if any(conflicting_entries):
         raise ValidationException("Deleted data files were found matching the filter.")

@@ -25,7 +25,7 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
-from pyiceberg.table.update.validate import deleted_data_files, validation_history
+from pyiceberg.table.update.validate import _deleted_data_files, validation_history
 
 
 @pytest.fixture
@@ -156,7 +156,7 @@ def test_deleted_data_files(
     # every snapshot is an append, so we should get nothing!
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         result = list(
-            deleted_data_files(
+            _deleted_data_files(
                 table=table,
                 starting_snapshot=newest_snapshot,
                 data_filter=None,
@@ -187,7 +187,7 @@ def test_deleted_data_files(
         patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", return_value=[my_entry]),
     ):
         result = list(
-            deleted_data_files(
+            _deleted_data_files(
                 table=table,
                 starting_snapshot=newest_snapshot,
                 data_filter=None,
