@@ -65,4 +65,22 @@ jobs:
     - name: Linters
       run: make lint
     - name: Tests
-      run: make test-coverage
+      run: make test-coverage-unit
+
+  integration-test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
+    - name: Install
+      run: make install
+    - name: Run integration tests
+      run: make test-coverage-integration
+    - name: Show debug logs
+      if: ${{ failure() }}
+      run: docker compose -f dev/docker-compose.yml logs

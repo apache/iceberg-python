@@ -426,8 +426,8 @@ def test_ancestors_between(table_v2_with_extensive_snapshots: Table) -> None:
         len(
             list(
                 ancestors_between(
-                    current_snapshot,
                     oldest_snapshot,
+                    current_snapshot,
                     table_v2_with_extensive_snapshots.metadata,
                 )
             )

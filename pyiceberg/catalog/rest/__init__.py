@@ -816,7 +816,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            self._handle_non_200_response(exc, {})
+            self._handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
         return ListNamespaceResponse.model_validate_json(response.text).namespaces
 
