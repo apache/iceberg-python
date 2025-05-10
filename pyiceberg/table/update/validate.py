@@ -145,4 +145,5 @@ def validate_deleted_data_files(
     """
     conflicting_entries = _deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
     if any(conflicting_entries):
-        raise ValidationException("Deleted data files were found matching the filter.")
+        conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries}
+        raise ValidationException(f"Deleted data files were found matching the filter for snapshots {conflicting_snapshots}!")
