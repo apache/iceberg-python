@@ -62,7 +62,7 @@ pyparsing = ">=3.1.0,<4.0.0"
 zstandard = ">=0.13.0,<1.0.0"
 tenacity = ">=8.2.3,<10.0.0"
 pyroaring = ">=1.0.0,<2.0.0"
-pyarrow = { version = ">=17.0.0,<20.0.0", optional = true }
+pyarrow = { version = ">=17.0.0,<21.0.0", optional = true }
 pandas = { version = ">=1.0.0,<3.0.0", optional = true }
 duckdb = { version = ">=0.5.0,<2.0.0", optional = true }
 ray = [
