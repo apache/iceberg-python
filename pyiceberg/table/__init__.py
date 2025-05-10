@@ -87,6 +87,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.table.name_mapping import (
     NameMapping,
 )
+from pyiceberg.table.optimize import OptimizeTable
 from pyiceberg.table.refs import SnapshotRef
 from pyiceberg.table.snapshots import (
     Snapshot,
@@ -906,6 +907,15 @@ class Table:
             InspectTable object based on this Table.
         """
         return InspectTable(self)
+
+    @property
+    def optimize(self) -> OptimizeTable:
+        """Return the OptimizeTable object to optimize.
+
+        Returns:
+            OptimizeTable object based on this Table.
+        """
+        return OptimizeTable(self)
 
     def refresh(self) -> Table:
         """Refresh the current table metadata.
