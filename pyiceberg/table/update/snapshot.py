@@ -84,7 +84,11 @@ from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.properties import property_as_bool, property_as_int
 
-from pyiceberg.table.metadata import Snapshot, TableMetadata
+if TYPE_CHECKING:
+    from pyiceberg.table import Transaction
+
+from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.snapshots import Snapshot
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
