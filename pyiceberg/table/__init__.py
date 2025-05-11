@@ -119,6 +119,7 @@ from pyiceberg.table.update.snapshot import (
     ManageSnapshots,
     UpdateSnapshot,
     _FastAppendFiles,
+    ExpireSnapshots
 )
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
@@ -1078,6 +1079,15 @@ class Table:
            ms.create_tag(snapshot_id1, "Tag_A").create_tag(snapshot_id2, "Tag_B")
         """
         return ManageSnapshots(transaction=Transaction(self, autocommit=True))
+    
+    def expire_snapshots(self) -> ExpireSnapshots:
+        """
+        Shorthand to run expire snapshots by id or by a timestamp.
+
+        Use table.expire_snapshots().<operation>().commit() to run a specific operation.
+        Use table.expire_snapshots().<operation-one>().<operation-two>().commit() to run multiple operations.
+        """
+        return ExpireSnapshots(transaction=Transaction(self, autocommit=True))
 
     def update_statistics(self) -> UpdateStatistics:
         """
