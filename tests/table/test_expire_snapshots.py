@@ -31,8 +31,9 @@ def test_expire_snapshot(table_v2: Table) -> None:
         uuid=uuid4(),
     )
 
-    # Mock the commit_table method to return the mock response
-    table_v2.catalog.commit_table = MagicMock(return_value=mock_response)
+    # Mock the catalog object and its commit_table method to return the mock response
+    table_v2.catalog = MagicMock()
+    table_v2.catalog.commit_table.return_value = mock_response
 
     # Print snapshot IDs for debugging
     print(f"Snapshot IDs before expiration: {[snapshot.snapshot_id for snapshot in table_v2.metadata.snapshots]}")
@@ -46,7 +47,7 @@ def test_expire_snapshot(table_v2: Table) -> None:
     try:
         table_v2.expire_snapshots().expire_snapshot_by_id(EXPIRE_SNAPSHOT).commit()
     except Exception as e:
-        assert False, f"Commit failed with error: {e}"
+        raise AssertionError(f"Commit failed with error: {e}") from e
 
     # Assert that commit_table was called once
     table_v2.catalog.commit_table.assert_called_once()
