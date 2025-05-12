@@ -751,11 +751,35 @@ class ManifestFile(Record):
 @cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
 def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
-    file = io.new_input(manifest_list)
+    bs = io.new_input(manifest_list).open().read()
+    from pyiceberg_core import manifest
+
+    manifest_list = manifest.read_manifest_list(bs)
+
+    for manifest in manifest_list.entries():
+        m  = ManifestFile(
+            manifest.manifest_path,
+            manifest.manifest_length,
+            manifest.partition_spec_id,
+            manifest.content,
+            manifest.sequence_number,
+            manifest.min_sequence_number,
+            manifest.added_snapshot_id,
+            manifest.added_files_count,
+            manifest.existing_files_count,
+            manifest.deleted_files_count,
+            manifest.added_rows_count,
+            manifest.existing_rows_count,
+            manifest.deleted_rows_count,
+            manifest.partitions,
+            manifest.key_metadata,
+        )
+
+
     return tuple(read_manifest_list(file))
 
 
-def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
+def  read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     Read the manifests from the manifest list.
 
@@ -1123,6 +1147,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
+                "content": "data"
             },
         )
         self._commit_snapshot_id = snapshot_id
