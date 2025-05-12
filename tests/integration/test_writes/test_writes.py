@@ -20,6 +20,7 @@ import os
 import random
 import time
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -50,6 +51,7 @@ from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
     DateType,
+    DecimalType,
     DoubleType,
     IntegerType,
     ListType,
@@ -306,13 +308,13 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     # APPEND
     assert summaries[0] == {
         "added-data-files": "3",
-        "added-files-size": "2570",
+        "added-files-size": "2618",
         "added-records": "5",
         "changed-partition-count": "3",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2570",
+        "total-files-size": "2618",
         "total-position-deletes": "0",
         "total-records": "5",
     }
@@ -341,16 +343,16 @@ def test_summaries_partial_overwrite(spark: SparkSession, session_catalog: Catal
     assert len(files) == 3
     assert summaries[1] == {
         "added-data-files": "1",
-        "added-files-size": "859",
+        "added-files-size": "875",
         "added-records": "2",
         "changed-partition-count": "1",
         "deleted-data-files": "1",
         "deleted-records": "3",
-        "removed-files-size": "866",
+        "removed-files-size": "882",
         "total-data-files": "3",
         "total-delete-files": "0",
         "total-equality-deletes": "0",
-        "total-files-size": "2563",
+        "total-files-size": "2611",
         "total-position-deletes": "0",
         "total-records": "4",
     }
@@ -1810,3 +1812,32 @@ def test_evolve_and_write(
         )
 
     assert session_catalog.load_table(identifier).scan().to_arrow().column(0).combine_chunks() == numbers
+
+
+@pytest.mark.integration
+def test_read_write_decimals(session_catalog: Catalog) -> None:
+    """Roundtrip decimal types to make sure that we correctly write them as ints"""
+    identifier = "default.test_read_write_decimals"
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "decimal8": pa.array([Decimal("123.45"), Decimal("678.91")], pa.decimal128(8, 2)),
+            "decimal16": pa.array([Decimal("12345679.123456"), Decimal("67891234.678912")], pa.decimal128(16, 6)),
+            "decimal19": pa.array([Decimal("1234567890123.123456"), Decimal("9876543210703.654321")], pa.decimal128(19, 6)),
+        },
+    )
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        properties={"format-version": 2},
+        schema=Schema(
+            NestedField(1, "decimal8", DecimalType(8, 2)),
+            NestedField(2, "decimal16", DecimalType(16, 6)),
+            NestedField(3, "decimal19", DecimalType(19, 6)),
+        ),
+    )
+
+    tbl.append(arrow_table)
+
+    assert tbl.scan().to_arrow() == arrow_table
