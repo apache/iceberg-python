@@ -16,9 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-import functools
 import itertools
-import operator
 import os
 import uuid
 import warnings
@@ -785,7 +783,7 @@ class Transaction:
 
         batches_to_overwrite = []
         overwrite_predicates = []
-        insert_filters = []
+        rows_to_insert = df
 
         for batch in matched_iceberg_record_batches:
             rows = pa.Table.from_batches([batch])
@@ -808,7 +806,8 @@ class Transaction:
                 expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
                 expr_match_arrow = expression_to_pyarrow(expr_match_bound)
 
-                insert_filters.append(~expr_match_arrow)
+                # Filter rows per batch.
+                rows_to_insert = rows_to_insert.filter(~expr_match_arrow)
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -822,11 +821,6 @@ class Transaction:
             )
 
         if when_not_matched_insert_all:
-            if insert_filters:
-                rows_to_insert = df.filter(functools.reduce(operator.and_, insert_filters))
-            else:
-                rows_to_insert = df
-
             insert_row_cnt = len(rows_to_insert)
             if rows_to_insert:
                 self.append(rows_to_insert)
