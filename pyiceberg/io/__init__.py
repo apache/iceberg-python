@@ -92,6 +92,8 @@ GCS_SESSION_KWARGS = "gcs.session-kwargs"
 GCS_SERVICE_HOST = "gcs.service.host"
 GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
+HF_ENDPOINT = "hf.endpoint"
+HF_TOKEN = "hf.token"
 PYARROW_USE_LARGE_TYPES_ON_READ = "pyarrow.use-large-types-on-read"
 
 
@@ -306,6 +308,7 @@ SCHEMA_TO_FILE_IO: Dict[str, List[str]] = {
     "viewfs": [ARROW_FILE_IO],
     "abfs": [FSSPEC_FILE_IO],
     "abfss": [FSSPEC_FILE_IO],
+    "hf": [FSSPEC_FILE_IO],
 }
 
 
