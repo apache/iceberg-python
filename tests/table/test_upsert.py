@@ -764,7 +764,6 @@ def test_transaction_multiple_upserts(catalog: Catalog) -> None:
         txn.append(df)
 
         # This should read the uncommitted changes
-        # TODO: currently fails because it only reads {"id": 1, "name": "Alice"}
         txn.upsert(df, join_cols=["id"])
 
     result = tbl.scan().to_arrow().to_pylist()

@@ -772,7 +772,14 @@ class Transaction:
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
-        matched_iceberg_table = self._table.scan(row_filter=matched_predicate, case_sensitive=case_sensitive).to_arrow()
+
+        # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
+        matched_iceberg_table = DataScan(
+            table_metadata=self.table_metadata,
+            io=self._table.io,
+            row_filter=matched_predicate,
+            case_sensitive=case_sensitive,
+        ).to_arrow()
 
         update_row_cnt = 0
         insert_row_cnt = 0
