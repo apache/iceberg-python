@@ -138,6 +138,7 @@ SIGV4 = "rest.sigv4-enabled"
 SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
+SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 
 NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
 
@@ -678,7 +679,15 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-        response = self._session.get(self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)))
+
+        params = {}
+        if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
+            if mode in {'all', 'refs'}:
+                params['snapshots'] = mode
+            else:
+                raise ValueError("Invalid snapshot-loading-mode: {}")
+
+        response = self._session.get(self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params)
         try:
             response.raise_for_status()
         except HTTPError as exc:
