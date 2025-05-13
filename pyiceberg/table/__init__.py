@@ -1723,7 +1723,7 @@ class DataScan(TableScan):
 
         manifests = [
             manifest_file
-            for manifest_file in snapshot.manifests(self.io)
+            for manifest_file in snapshot.manifests(self.io, self.table_metadata)
             if manifest_evaluators[manifest_file.partition_spec_id](manifest_file)
         ]
 

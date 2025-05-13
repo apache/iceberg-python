@@ -31,6 +31,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
+    from pyiceberg.table import Table
     from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -252,9 +253,9 @@ class Snapshot(IcebergBaseModel):
         result_str = f"{operation}id={self.snapshot_id}{parent_id}{schema_id}"
         return result_str
 
-    def manifests(self, io: FileIO) -> List[ManifestFile]:
+    def manifests(self, io: FileIO, table: TableMetadata) -> List[ManifestFile]:
         """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list))
+        return list(_manifests(io, self.manifest_list, table))
 
 
 class MetadataLogEntry(IcebergBaseModel):

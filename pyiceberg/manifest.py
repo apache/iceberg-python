@@ -30,7 +30,7 @@ from typing import (
     Optional,
     Tuple,
     Type,
-    Union,
+    Union, TYPE_CHECKING,
 )
 
 from cachetools import LRUCache, cached
@@ -56,6 +56,9 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+
+if TYPE_CHECKING:
+    from pyiceberg.table import TableMetadata
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
@@ -748,16 +751,23 @@ class ManifestFile(Record):
         ]
 
 
-@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list: hashkey(manifest_list))
-def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
+@cached(cache=LRUCache(maxsize=128), key=lambda io, manifest_list, table: hashkey(manifest_list))
+def _manifests(io: FileIO, manifest_list: str, table: "TableMetadata") -> Tuple[ManifestFile, ...]:
     """Read and cache manifests from the given manifest list, returning a tuple to prevent modification."""
     bs = io.new_input(manifest_list).open().read()
     from pyiceberg_core import manifest
 
-    manifest_list = manifest.read_manifest_list(bs)
+    def partition_spec(spec_id: int) -> str:
+        spec = table.specs()[spec_id]
+        partition_type = spec.partition_type(table.schema())
+        struct = Schema(*partition_type.fields).as_struct()
+        payload = struct.model_dump_json()
+        return payload
 
-    for manifest in manifest_list.entries():
-        m  = ManifestFile(
+    cb = manifest.PartitionSpecProviderCallbackHolder(partition_spec)
+
+    return tuple(
+        ManifestFile(
             manifest.manifest_path,
             manifest.manifest_length,
             manifest.partition_spec_id,
@@ -774,12 +784,11 @@ def _manifests(io: FileIO, manifest_list: str) -> Tuple[ManifestFile, ...]:
             manifest.partitions,
             manifest.key_metadata,
         )
+        for manifest in manifest.read_manifest_list(bs, cb).entries()
+    )
 
 
-    return tuple(read_manifest_list(file))
-
-
-def  read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
+def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     Read the manifests from the manifest list.
 
@@ -1147,7 +1156,7 @@ class ManifestListWriterV2(ManifestListWriter):
                 "parent-snapshot-id": str(parent_snapshot_id) if parent_snapshot_id is not None else "null",
                 "sequence-number": str(sequence_number),
                 "format-version": "2",
-                "content": "data"
+                "content": "data",
             },
         )
         self._commit_snapshot_id = snapshot_id
