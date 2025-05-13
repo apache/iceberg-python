@@ -734,7 +734,6 @@ def test_transaction(catalog: Catalog) -> None:
     assert df_before_transaction == df
 
 
-# @pytest.mark.skip("This test is just for reference. Multiple upserts or delete+upsert doesn't work in a transaction")
 def test_transaction_multiple_upserts(catalog: Catalog) -> None:
     identifier = "default.test_multi_upsert"
     _drop_table(catalog, identifier)
