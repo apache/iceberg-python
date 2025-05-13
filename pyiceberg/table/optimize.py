@@ -61,7 +61,7 @@ class OptimizeTable:
 
         from pyiceberg.io.pyarrow import _fs_from_file_path
 
-        all_known_files = self.tbl.inspect.all_known_files()
+        all_known_files = self.tbl.inspect._all_known_files()
         flat_known_files: set[str] = reduce(set.union, all_known_files.values(), set())
 
         fs = _fs_from_file_path(self.tbl.io, location)

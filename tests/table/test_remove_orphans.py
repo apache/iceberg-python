@@ -83,7 +83,7 @@ def test_remove_orphaned_files(catalog: Catalog) -> None:
     assert not orphaned_file.exists()
 
     # assert that all known files still exist...
-    all_known_files = tbl.inspect.all_known_files()
+    all_known_files = tbl.inspect._all_known_files()
     for files in all_known_files.values():
         for file in files:
             assert Path(file).exists()
