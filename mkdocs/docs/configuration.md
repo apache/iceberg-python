@@ -95,6 +95,7 @@ Iceberg works with the concept of a FileIO which is a pluggable module for readi
 - **hdfs**: `PyArrowFileIO`
 - **abfs**, **abfss**: `FsspecFileIO`
 - **oss**: `PyArrowFileIO`
+- **hf**: `FsspecFileIO`
 
 You can also set the FileIO explicitly:
 
@@ -190,6 +191,17 @@ PyIceberg uses [S3FileSystem](https://arrow.apache.org/docs/python/generated/pya
 | s3.secret-access-key | password                   | Configure the static secret access key used to access the FileIO.                                                                                                                                                                                         |
 | s3.session-token     | AQoDYXdzEJr...             | Configure the static session token used to access the FileIO.                                                                                                                                                                                             |
 | s3.force-virtual-addressing   | True                       | Whether to use virtual addressing of buckets. This is set to `True` by default as OSS can only be accessed with virtual hosted style address.                                                                                                                                                                                                        |
+
+<!-- markdown-link-check-enable-->
+
+### Hugging Face
+
+<!-- markdown-link-check-disable -->
+
+| Key         | Example                  | Description                                               |
+| ----------- | ------------------------ | --------------------------------------------------------- |
+| hf.endpoint | <https://huggingface.co> | Configure the endpoint for Hugging Face                   |
+| hf.token    | hf_xxx                   | The Hugging Face token to access HF Datasets repositories |
 
 <!-- markdown-link-check-enable-->
 
