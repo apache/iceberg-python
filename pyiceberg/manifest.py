@@ -59,7 +59,7 @@ from pyiceberg.types import (
 )
 
 if TYPE_CHECKING:
-    from pyiceberg.table import TableMetadata
+    from pyiceberg.table.metadata import TableMetadata
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
