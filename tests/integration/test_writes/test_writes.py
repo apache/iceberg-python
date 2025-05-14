@@ -19,6 +19,7 @@ import math
 import os
 import random
 import time
+import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -48,7 +49,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform
 from pyiceberg.types import (
     DateType,
     DecimalType,
@@ -58,6 +59,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    UUIDType,
 )
 from utils import _create_table
 
@@ -1841,3 +1843,56 @@ def test_read_write_decimals(session_catalog: Catalog) -> None:
     tbl.append(arrow_table)
 
     assert tbl.scan().to_arrow() == arrow_table
+
+
+@pytest.mark.integration
+def test_read_write_uuids_partitioned(session_catalog: Catalog) -> None:
+    """Test simple reading and writing partitioned UUID data types in supported transform.
+    - BucketTransform
+    - IdentityTransform
+    """
+
+    identifier = "default.test_read_write_uuids"
+    uuids = [
+        uuid.UUID("ec9b663b-062f-4200-a130-8de19c21b800").bytes,
+        uuid.UUID("5f473c64-dbeb-449b-bdfa-b6b4185b1bde").bytes,
+        None,
+    ]
+
+    arrow_table = pa.Table.from_pydict(
+        {
+            "uuid_1": pa.array(uuids, type=pa.binary(16)),
+            "uuid_2": pa.array(uuids, type=pa.binary(16)),
+        }
+    )
+
+    tbl = _create_table(
+        session_catalog,
+        identifier,
+        properties={"format-version": 2},
+        schema=Schema(
+            NestedField(field_id=1, name="uuid_1", field_type=UUIDType(), required=False),
+            NestedField(field_id=2, name="uuid_2", field_type=UUIDType(), required=False),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(source_id=1, field_id=1001, transform=BucketTransform(2), name="uuid_bucket"),
+            PartitionField(source_id=2, field_id=1002, transform=IdentityTransform(), name="uuid_indentity"),
+        ),
+    )
+
+    tbl.append(arrow_table)
+    assert tbl.scan().to_arrow() == arrow_table
+    # Check BucketTransform partitioning filtering
+    assert tbl.scan(row_filter=f"uuid_1 == '{uuid.UUID(bytes=uuids[0])}'").to_arrow() == pa.Table.from_pydict(
+        {
+            "uuid_1": pa.array([uuids[0]], type=pa.binary(16)),
+            "uuid_2": pa.array([uuids[0]], type=pa.binary(16)),
+        }
+    )
+    # Check IdentityTransform partitioning filtering
+    assert tbl.scan(row_filter=f"uuid_2 == '{uuid.UUID(bytes=uuids[1])}'").to_arrow() == pa.Table.from_pydict(
+        {
+            "uuid_1": pa.array([uuids[1]], type=pa.binary(16)),
+            "uuid_2": pa.array([uuids[1]], type=pa.binary(16)),
+        }
+    )
