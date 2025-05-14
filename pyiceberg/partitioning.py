@@ -467,7 +467,7 @@ def _(type: IcebergType, value: Optional[time]) -> Optional[int]:
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: Optional[Union[uuid.UUID,int]]) -> Optional[str|int]:
+def _(type: IcebergType, value: Optional[Union[uuid.UUID,int]]) -> Optional[Union[str,int]]:
     if value is None: 
         return None
     if isinstance(value, uuid.UUID):
