@@ -279,7 +279,7 @@ files = [
     {file = "attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3"},
     {file = "attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b"},
 ]
-markers = {main = "python_version == \"3.9\" and extra == \"ray\" or (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and python_version < \"3.10\" or python_version >= \"3.10\" and (extra == \"ray\" or extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\")"}
+markers = {main = "(extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\") and (extra == \"s3fs\" or extra == \"adlfs\" or extra == \"gcsfs\" or extra == \"ray\")"}
 
 [package.extras]
 benchmark = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothesis", "mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pympler", "pytest (>=4.3.0)", "pytest-codspeed", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-xdist[psutil]"]
@@ -3256,7 +3256,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "python_version >= \"3.10\" and (extra == \"pandas\" or extra == \"ray\")"
+markers = "(extra == \"pandas\" or extra == \"ray\") and python_version >= \"3.10\""
 files = [
     {file = "numpy-2.2.5-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:1f4a922da1729f4c40932b2af4fe84909c7a6e167e6e99f71838ce3a29f3fe26"},
     {file = "numpy-2.2.5-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:b6f91524d31b34f4a5fee24f5bc16dcd1491b668798b6d85585d836c1e633a6a"},
@@ -3453,8 +3453,8 @@ files = [
 [package.dependencies]
 numpy = [
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -3753,7 +3753,7 @@ description = ""
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version == \"3.9\" and (extra == \"ray\" or extra == \"gcsfs\") or extra == \"gcsfs\" or extra == \"ray\""
+markers = "extra == \"ray\" or extra == \"gcsfs\""
 files = [
     {file = "protobuf-6.30.2-cp310-abi3-win32.whl", hash = "sha256:b12ef7df7b9329886e66404bef5e9ce6a26b54069d7f7436a0853ccdeb91c103"},
     {file = "protobuf-6.30.2-cp310-abi3-win_amd64.whl", hash = "sha256:7653c99774f73fe6b9301b87da52af0e69783a2e371e8b599b3e9cb4da4b12b9"},
@@ -4149,19 +4149,19 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyiceberg-core"
-version = "0.55123123.0"
+version = "0.6848946131548.0"
 description = ""
 optional = false
 python-versions = "~=3.9"
 groups = ["main"]
 markers = "extra == \"pyiceberg-core\""
 files = [
-    {file = "pyiceberg_core-0.55123123.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:7d04a4812cd6607892c49b396f60dbe281b44b6a8deb2071f1e0cce107dc1aed"},
+    {file = "pyiceberg_core-0.6848946131548.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:85389816f581198480f861d1d04c67f970228e08fcf6d6a87396dc1ffa677e7a"},
 ]
 
 [package.source]
 type = "file"
-url = "../iceberg-rust/bindings/python/dist/pyiceberg_core-0.55123123.0-cp39-abi3-macosx_11_0_arm64.whl"
+url = "../iceberg-rust/bindings/python/dist/pyiceberg_core-0.6848946131548.0-cp39-abi3-macosx_11_0_arm64.whl"
 
 [[package]]
 name = "pyjwt"
@@ -6162,4 +6162,4 @@ zstandard = ["zstandard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9.2, !=3.9.7"
-content-hash = "47dde18edd71044d9f7cf41ec0ccbbcd80ee767c98c627a206a34e4545b5fc46"
+content-hash = "5d135ea10ea5df57f517ea8ddbd1292d1f8a9743e241293002ad82d83d5faa7d"
