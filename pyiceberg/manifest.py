@@ -22,6 +22,7 @@ from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     Iterator,
@@ -30,7 +31,7 @@ from typing import (
     Optional,
     Tuple,
     Type,
-    Union, TYPE_CHECKING,
+    Union,
 )
 
 from cachetools import LRUCache, cached

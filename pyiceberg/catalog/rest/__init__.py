@@ -679,15 +679,16 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     def load_table(self, identifier: Union[str, Identifier]) -> Table:
-
         params = {}
         if mode := self.properties.get(SNAPSHOT_LOADING_MODE):
-            if mode in {'all', 'refs'}:
-                params['snapshots'] = mode
+            if mode in {"all", "refs"}:
+                params["snapshots"] = mode
             else:
                 raise ValueError("Invalid snapshot-loading-mode: {}")
 
-        response = self._session.get(self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params)
+        response = self._session.get(
+            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params
+        )
         try:
             response.raise_for_status()
         except HTTPError as exc:

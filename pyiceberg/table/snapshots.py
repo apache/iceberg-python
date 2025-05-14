@@ -31,7 +31,6 @@ from pyiceberg.schema import Schema
 from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Table
     from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
