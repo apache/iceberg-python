@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Type
 from requests import HTTPError, PreparedRequest, Session
 from requests.auth import AuthBase
 
-from pyiceberg.catalog.rest.util import TokenResponse, _handle_non_200_response
+from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
 
 COLON = ":"

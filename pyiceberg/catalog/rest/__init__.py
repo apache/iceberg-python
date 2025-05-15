@@ -39,7 +39,7 @@ from pyiceberg.catalog import (
     PropertiesUpdateSummary,
 )
 from pyiceberg.catalog.rest.auth import AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
-from pyiceberg.catalog.rest.util import _handle_non_200_response
+from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
     CommitFailedException,
@@ -257,7 +257,7 @@ class RestCatalog(Catalog):
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.
 
-        This will be deprecated in PyIceberg 1.0
+        This will be removed in PyIceberg 1.0
         """
         client_credentials = self.properties.get(CREDENTIAL)
         # We want to call `self.auth_url` only when we are using CREDENTIAL
