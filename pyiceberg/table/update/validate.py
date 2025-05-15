@@ -131,7 +131,7 @@ def _deleted_data_files(
             yield entry
 
 
-def validate_deleted_data_files(
+def _validate_deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: Optional[BooleanExpression],

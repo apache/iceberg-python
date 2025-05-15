@@ -25,7 +25,7 @@ from pyiceberg.io import FileIO
 from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
-from pyiceberg.table.update.validate import _deleted_data_files, validation_history
+from pyiceberg.table.update.validate import _deleted_data_files, _validate_deleted_data_files, validation_history
 
 
 @pytest.fixture
@@ -197,3 +197,23 @@ def test_deleted_data_files(
         )
 
         assert result == [my_entry]
+
+
+def test_validate_deleted_data_files_raises_on_conflict(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    class DummyEntry:
+        snapshot_id = 123
+
+    with patch("pyiceberg.table.update.validate._deleted_data_files", return_value=[DummyEntry()]):
+        with pytest.raises(ValidationException):
+            _validate_deleted_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+            )
