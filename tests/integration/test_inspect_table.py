@@ -1102,6 +1102,7 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
     )
     assert_frame_equal(lhs, rhs, check_dtype=False)
 
+
 @pytest.mark.integration
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_inspect_all_entries(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
