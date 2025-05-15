@@ -2443,6 +2443,7 @@ def spark() -> "SparkSession":
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["AWS_ACCESS_KEY_ID"] = "admin"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
+    os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
 
     spark = (
         SparkSession.builder.appName("PyIceberg integration test")

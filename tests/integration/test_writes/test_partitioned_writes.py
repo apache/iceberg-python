@@ -547,14 +547,14 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-records": "6",
     }
     assert summaries[5] == {
-        "removed-files-size": "15774",
+        "removed-files-size": "16174",
         "changed-partition-count": "2",
         "total-equality-deletes": "0",
         "deleted-data-files": "4",
         "total-position-deletes": "0",
         "total-delete-files": "0",
         "deleted-records": "4",
-        "total-files-size": "8684",
+        "total-files-size": "8884",
         "total-data-files": "2",
         "total-records": "2",
     }
@@ -564,9 +564,9 @@ def test_summaries_with_null(spark: SparkSession, session_catalog: Catalog, arro
         "total-equality-deletes": "0",
         "added-records": "2",
         "total-position-deletes": "0",
-        "added-files-size": "7887",
+        "added-files-size": "8087",
         "total-delete-files": "0",
-        "total-files-size": "16571",
+        "total-files-size": "16971",
         "total-data-files": "4",
         "total-records": "4",
     }
