@@ -825,11 +825,16 @@ class CreateTableTransaction(Transaction):
         Returns:
             The table with the updates applied.
         """
-        self._requirements = (AssertCreate(),)
-        self._table._do_commit(  # pylint: disable=W0212
-            updates=self._updates,
-            requirements=self._requirements,
-        )
+        if len(self._updates) > 0:
+            self._requirements += (AssertCreate(),)
+            self._table._do_commit(  # pylint: disable=W0212
+                updates=self._updates,
+                requirements=self._requirements,
+            )
+
+        self._updates = ()
+        self._requirements = ()
+
         return self._table
 
 
