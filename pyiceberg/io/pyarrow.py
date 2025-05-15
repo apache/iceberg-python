@@ -936,24 +936,17 @@ def _read_delete_file(fs: FileSystem, data_file: DataFile) -> Iterator[PositionD
 
 
 def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedArray]:
-<<<<<<< HEAD
     if data_file.file_format == FileFormat.PARQUET:
         deletes_by_file: Dict[str, List[int]] = {}
         for delete in _read_delete_file(fs, data_file):
-            if delete.file_path not in deletes_by_file:
-                deletes_by_file[delete.file_path] = []
-            deletes_by_file[delete.file_path].append(delete.pos)
-=======
-    deletes_by_file: Dict[str, List[int]] = {}
-    for delete in _read_delete_file(fs, data_file):
-        if delete.path not in deletes_by_file:
-            deletes_by_file[delete.path] = []
-        deletes_by_file[delete.path].append(delete.pos)
->>>>>>> e4ed25e (fix if statment)
+            if delete.path not in deletes_by_file:
+                deletes_by_file[delete.path] = []
+            deletes_by_file[delete.path].append(delete.pos)
 
         # Convert lists of positions to ChunkedArrays
         return {
-            file_path: pa.chunked_array([pa.array(positions, type=pa.int64())]) for file_path, positions in deletes_by_file.items()
+            file_path: pa.chunked_array([pa.array(positions, type=pa.int64())])
+            for file_path, positions in deletes_by_file.items()
         }
     elif data_file.file_format == FileFormat.PUFFIN:
         _, _, path = PyArrowFileIO.parse_location(data_file.file_path)
@@ -963,6 +956,7 @@ def _read_deletes(fs: FileSystem, data_file: DataFile) -> Dict[str, pa.ChunkedAr
         return PuffinFile(payload).to_vector()
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
+
 
 def _combine_positional_deletes(positional_deletes: List[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
     if len(positional_deletes) == 1:

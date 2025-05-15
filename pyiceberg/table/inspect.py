@@ -761,7 +761,7 @@ class InspectTable:
     def all_delete_files(self) -> "pa.Table":
         return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
 
-   def position_deletes(self, snapshot_id: Optional[int] = None) -> "pa.Table":
+    def position_deletes(self, snapshot_id: Optional[int] = None) -> "pa.Table":
         import pyarrow as pa
 
         snapshot = self._get_snapshot(snapshot_id) if snapshot_id else self.tbl.current_snapshot()
