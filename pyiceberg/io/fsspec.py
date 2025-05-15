@@ -163,6 +163,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     fs = S3FileSystem(client_kwargs=client_kwargs, config_kwargs=config_kwargs)
 
     for event_name, event_function in register_events.items():
+        fs.s3.meta.events.unregister(event_name, unique_id=1925)
         fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
 
     return fs
