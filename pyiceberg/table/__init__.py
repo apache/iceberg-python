@@ -237,9 +237,6 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
-    SNAPSHOT_ID_INHERITANCE_ENABLED = "compatibility.snapshot-id-inheritance.enabled"
-    SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = False
-
 
 class Transaction:
     _table: Table

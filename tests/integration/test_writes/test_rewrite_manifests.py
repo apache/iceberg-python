@@ -180,8 +180,9 @@ def compute_manifest_entry_size_bytes(manifests: List[ManifestFile]) -> float:
 
     for manifest in manifests:
         total_size += manifest.manifest_length
-        num_entries += manifest.added_files_count + manifest.existing_files_count + manifest.deleted_files_count
-
+        num_entries += (
+            (manifest.added_files_count or 0) + (manifest.existing_files_count or 0) + (manifest.deleted_files_count or 0)
+        )
     return total_size / num_entries if num_entries > 0 else 0
 
 
@@ -212,7 +213,7 @@ def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog) -> 
     tbl.refresh()
 
     tbl.refresh()
-    manifests = tbl.current_snapshot().manifests(tbl.io)
+    manifests = tbl.current_snapshot().manifests(tbl.io)  # type: ignore
     assert len(manifests) == 4, "Should have 4 manifests before rewrite"
 
     # manifest_entry_size_bytes = compute_manifest_entry_size_bytes(manifests)
@@ -229,7 +230,7 @@ def test_rewrite_small_manifests_partitioned_table(session_catalog: Catalog) -> 
     assert len(result.rewritten_manifests) == 4, "Action should rewrite 4 manifests"
     assert len(result.added_manifests) == 2, "Action should add 2 manifests"
 
-    new_manifests = tbl.current_snapshot().manifests(tbl.io)
+    new_manifests = tbl.current_snapshot().manifests(tbl.io)  # type: ignore
     assert len(new_manifests) == 2, "Should have 2 manifests after rewrite"
 
     assert new_manifests[0].existing_files_count == 4

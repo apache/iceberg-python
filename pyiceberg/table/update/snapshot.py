@@ -22,7 +22,7 @@ import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from concurrent.futures import Future
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Optional, Set, Tuple
 
@@ -476,8 +476,8 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
 
 @dataclass(init=False)
 class RewriteManifestsResult:
-    rewritten_manifests: List[ManifestFile]
-    added_manifests: List[ManifestFile]
+    rewritten_manifests: List[ManifestFile] = field(default_factory=list)
+    added_manifests: List[ManifestFile] = field(default_factory=list)
 
     def __init__(
         self,
@@ -540,7 +540,11 @@ class _MergeAppendFiles(_FastAppendFiles):
 
 
 class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
+    _table: Table
+    _spec_id: int
     _target_size_bytes: int
+    _min_count_to_merge: int
+    _merge_enabled: bool
     rewritten_manifests: List[ManifestFile] = []
     added_manifests: List[ManifestFile] = []
     kept_manifests: List[ManifestFile] = []
@@ -555,10 +559,15 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
     ):
         from pyiceberg.table import TableProperties
 
-        _table: Table
-        _spec: PartitionSpec
-
         super().__init__(Operation.REPLACE, transaction, io, snapshot_properties=snapshot_properties)
+
+        snapshot = self._table.current_snapshot()
+        if self._spec_id and self._spec_id not in self._table.specs():
+            raise ValueError(f"Cannot find spec with id: {self._spec_id}")
+
+        if not snapshot:
+            raise ValueError("Cannot rewrite manifests without a current snapshot")
+
         self._target_size_bytes = property_as_int(
             self._transaction.table_metadata.properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
@@ -566,6 +575,17 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
         )  # type: ignore
         self._table = table
         self._spec_id = spec_id or table.spec().spec_id
+
+        self._min_count_to_merge = property_as_int(
+            self._transaction.table_metadata.properties,
+            TableProperties.MANIFEST_MIN_MERGE_COUNT,
+            TableProperties.MANIFEST_MIN_MERGE_COUNT_DEFAULT,
+        )  # type: ignore
+        self._merge_enabled = property_as_bool(
+            self._transaction.table_metadata.properties,
+            TableProperties.MANIFEST_MERGE_ENABLED,
+            TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+        )
 
     def _summary(self, snapshot_properties: Dict[str, str] = EMPTY_DICT) -> Summary:
         from pyiceberg.table import TableProperties
@@ -579,10 +599,10 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
         ssc.set_partition_summary_limit(partition_summary_limit)
 
         props = {
-            "manifests-kept": str(len([])),
+            "manifests-kept": "0",
             "manifests-created": str(len(self.added_manifests)),
             "manifests-replaced": str(len(self.rewritten_manifests)),
-            "entries-processed": str(len([])),
+            "entries-processed": "0",
         }
         previous_snapshot = (
             self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
@@ -597,28 +617,25 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
         )
 
     def rewrite_manifests(self) -> RewriteManifestsResult:
-        data_result = self._find_matching_manifests(ManifestContent.DATA)
+        snapshot = self._table.current_snapshot()
+        if not snapshot:
+            raise ValueError("Cannot rewrite manifests without a current snapshot")
+
+        data_result = self._find_matching_manifests(snapshot, ManifestContent.DATA)
 
         self.rewritten_manifests.extend(data_result.rewritten_manifests)
         self.added_manifests.extend(data_result.added_manifests)
 
-        deletes_result = self._find_matching_manifests(ManifestContent.DELETES)
+        deletes_result = self._find_matching_manifests(snapshot, ManifestContent.DELETES)
         self.rewritten_manifests.extend(deletes_result.rewritten_manifests)
         self.added_manifests.extend(deletes_result.added_manifests)
 
-        if not self.rewritten_manifests:
+        if len(self.rewritten_manifests) == 0:
             return RewriteManifestsResult(rewritten_manifests=[], added_manifests=[])
 
         return RewriteManifestsResult(rewritten_manifests=self.rewritten_manifests, added_manifests=self.added_manifests)
 
-    def _find_matching_manifests(self, content: ManifestContent) -> RewriteManifestsResult:
-        snapshot = self._table.current_snapshot()
-        if self._spec_id and self._spec_id not in self._table.specs():
-            raise ValueError(f"Cannot find spec with id: {self._spec_id}")
-
-        if not snapshot:
-            raise ValueError("Cannot rewrite manifests without a current snapshot")
-
+    def _find_matching_manifests(self, snapshot: Snapshot, content: ManifestContent) -> RewriteManifestsResult:
         manifests = [
             manifest
             for manifest in snapshot.manifests(io=self._io)
@@ -627,8 +644,8 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
 
         data_manifest_merge_manager = _ManifestMergeManager(
             target_size_bytes=self._target_size_bytes,
-            min_count_to_merge=2,
-            merge_enabled=True,
+            min_count_to_merge=self._min_count_to_merge,
+            merge_enabled=self._merge_enabled,
             snapshot_producer=self,
         )
         new_manifests = data_manifest_merge_manager.merge_manifests(manifests=manifests)
@@ -664,10 +681,7 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
         return [self._copy_manifest_file(manifest, self.snapshot_id) for manifest in self.added_manifests]
 
     def _deleted_entries(self) -> List[ManifestEntry]:
-        """To determine if we need to record any deleted manifest entries.
-
-        In case of an append, nothing is deleted.
-        """
+        """To determine if we need to record any deleted manifest entries."""
         return []
 
 
