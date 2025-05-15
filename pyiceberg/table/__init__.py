@@ -438,6 +438,7 @@ class Transaction:
     def rewrite_manifests(self) -> RewriteManifestsResult:
         if self._table.current_snapshot() is None:
             return RewriteManifestsResult(rewritten_manifests=[], added_manifests=[])
+
         with self.update_snapshot().rewrite() as rewrite:
             rewritten = rewrite.rewrite_manifests()
             return rewritten
@@ -1374,20 +1375,6 @@ class Table:
             tx.add_files(
                 file_paths=file_paths, snapshot_properties=snapshot_properties, check_duplicate_files=check_duplicate_files
             )
-
-    def rewrite_manifests(
-        self,
-        spec_id: Optional[int] = None,
-    ) -> RewriteManifestsResult:
-        """
-        Shorthand API for Rewriting manifests for the table.
-
-        Args:
-            spec_id: Spec id of the manifests to rewrite (defaults to current spec id)
-
-        """
-        with self.transaction() as tx:
-            return tx.rewrite_manifests(spec_id=spec_id)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)

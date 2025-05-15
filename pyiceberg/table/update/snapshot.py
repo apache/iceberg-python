@@ -474,18 +474,10 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         return []
 
 
-@dataclass(init=False)
+@dataclass(frozen=True)
 class RewriteManifestsResult:
     rewritten_manifests: List[ManifestFile] = field(default_factory=list)
     added_manifests: List[ManifestFile] = field(default_factory=list)
-
-    def __init__(
-        self,
-        rewritten_manifests: Optional[List[ManifestFile]],
-        added_manifests: Optional[List[ManifestFile]],
-    ) -> None:
-        self.rewritten_manifests = rewritten_manifests or []
-        self.added_manifests = added_manifests or []
 
 
 class _MergeAppendFiles(_FastAppendFiles):
@@ -653,14 +645,15 @@ class _RewriteManifests(_SnapshotProducer["_RewriteManifests"]):
         return RewriteManifestsResult(rewritten_manifests=manifests, added_manifests=new_manifests)
 
     def _copy_manifest_file(self, manifest_file: ManifestFile, snapshot_id: int) -> ManifestFile:
-        return ManifestFile(
+        return ManifestFile.from_args(
+            _table_format_version=self._transaction.table_metadata.format_version,
             manifest_path=manifest_file.manifest_path,
             manifest_length=manifest_file.manifest_length,
             partition_spec_id=manifest_file.partition_spec_id,
             content=manifest_file.content,
             sequence_number=manifest_file.sequence_number,
             min_sequence_number=manifest_file.min_sequence_number,
-            added_snapshot_id=snapshot_id,
+            added_snapshot_id=snapshot_id,  # Using the new snapshot ID here
             added_files_count=manifest_file.added_files_count,
             existing_files_count=manifest_file.existing_files_count,
             deleted_files_count=manifest_file.deleted_files_count,

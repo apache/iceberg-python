@@ -1102,6 +1102,7 @@ def test_inspect_files_partitioned(spark: SparkSession, session_catalog: Catalog
     )
     assert_frame_equal(lhs, rhs, check_dtype=False)
 
+
 def test_inspect_all_example(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     from pandas.testing import assert_frame_equal
 
@@ -1139,7 +1140,6 @@ def test_inspect_all_example(spark: SparkSession, session_catalog: Catalog, form
     spark.sql(f"INSERT OVERWRITE {identifier} VALUES (1, 'a')")
 
     tbl.refresh()
-
 
     tbl.rewrite_manifests()
     print("efd")
