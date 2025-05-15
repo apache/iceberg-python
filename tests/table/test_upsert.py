@@ -23,7 +23,7 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import And, EqualTo, Reference
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
@@ -709,3 +709,64 @@ def test_upsert_with_nulls(catalog: Catalog) -> None:
         ],
         schema=schema,
     )
+
+
+def test_transaction(catalog: Catalog) -> None:
+    """Test the upsert within a Transaction. Make sure that if something fails the entire Transaction is
+    rolled back."""
+    identifier = "default.test_merge_source_dups"
+    _drop_table(catalog, identifier)
+
+    ctx = SessionContext()
+
+    table = gen_target_iceberg_table(1, 10, False, ctx, catalog, identifier)
+    df_before_transaction = table.scan().to_arrow()
+
+    source_df = gen_source_dataset(5, 15, False, True, ctx)
+
+    with pytest.raises(Exception, match="Duplicate rows found in source dataset based on the key columns. No upsert executed"):
+        with table.transaction() as tx:
+            tx.delete(delete_filter=AlwaysTrue())
+            tx.upsert(df=source_df, join_cols=["order_id"])
+
+    df = table.scan().to_arrow()
+
+    assert df_before_transaction == df
+
+
+def test_transaction_multiple_upserts(catalog: Catalog) -> None:
+    identifier = "default.test_multi_upsert"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=True),
+        identifier_field_ids=[1],
+    )
+
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    # Define exact schema: required int32 and required string
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+        ]
+    )
+
+    tbl.append(pa.Table.from_pylist([{"id": 1, "name": "Alice"}], schema=arrow_schema))
+
+    df = pa.Table.from_pylist([{"id": 2, "name": "Bob"}, {"id": 1, "name": "Alicia"}], schema=arrow_schema)
+
+    with tbl.transaction() as txn:
+        txn.delete(delete_filter="id = 1")
+        txn.append(df)
+
+        # This should read the uncommitted changes
+        txn.upsert(df, join_cols=["id"])
+
+    result = tbl.scan().to_arrow().to_pylist()
+    assert sorted(result, key=lambda x: x["id"]) == [
+        {"id": 1, "name": "Alicia"},
+        {"id": 2, "name": "Bob"},
+    ]

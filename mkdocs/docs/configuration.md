@@ -332,6 +332,7 @@ catalog:
 | rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
 | oauth2-server-uri   | <https://auth-service/cc>          | Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens') |
+| snapshot-loading-mode | refs                             | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 
 <!-- markdown-link-check-enable-->
 
